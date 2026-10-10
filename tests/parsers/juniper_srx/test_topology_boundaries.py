@@ -25,8 +25,20 @@ set interfaces irb unit 10 family inet address 192.0.2.1/24
     assert rows["reth0"]["source_present"] is False
     assert rows["reth0"]["redundant_members"] == ("ge-0/0/2",)
     assert rows["reth0"]["redundant_parent_resolved"] is False
+    assert rows["reth0"]["redundancy_group"] is None
     assert rows["ae0"]["interface_type"] == "aggregate-ethernet"
     assert rows["irb"]["interface_type"] == "irb"
+
+
+def test_redundant_interface_topology_resolves_explicit_redundancy_group():
+    result = extract_juniper_source("""set interfaces ge-0/0/2 gigether-options redundant-parent reth0
+set interfaces reth0 redundant-ether-options redundancy-group 1
+""")
+    rows = {row["interface"]: row for row in result.derived.interface_topology if row["unit"] is None}
+
+    assert rows["ge-0/0/2"]["redundant_parent"] == "reth0"
+    assert rows["ge-0/0/2"]["redundancy_group"] == "1"
+    assert rows["reth0"]["redundancy_group"] == "1"
 
 
 def test_topology_resolves_unit_zone_and_routing_instance_memberships():

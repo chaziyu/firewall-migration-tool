@@ -96,7 +96,7 @@ def _write_summary(workbook: Workbook, context: _PANExcelContext, row_counts: Ma
     sheet.cell(section_row, 1, "Inventory")
     sheet.cell(section_row, 1).fill, sheet.cell(section_row, 1).font = _HEADER_FILL, _WHITE_FONT
     sheet.merge_cells(start_row=section_row, start_column=1, end_row=section_row, end_column=3)
-    inventory = [name for name in ACTIVE_SHEET_ORDER if name not in {"Summary", "Review Required", "Validation", "Unresolved References", "Unsupported", "PAN-OS Source Inventory", "Extraction Coverage"}]
+    inventory = [name for name in ACTIVE_SHEET_ORDER if name not in {"Summary", "Review Required", "Unresolved References", "Unsupported", "PAN-OS Source Inventory", "Extraction Coverage"}]
     for row, name in enumerate(inventory, section_row + 1):
         sheet.cell(row, 1, name)
         sheet.cell(row, 2, row_counts.get(name, 0))

@@ -65,6 +65,8 @@ export function MigrationWorkflow({ preview, decisionDocument, targetSource, tar
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setArtifact(null); setCommandText(''); setSessionId(''); setCandidateValidated(false)
     setBusy(false)
+    setError(null)
+    setStatus(decisionDocument ? 'Approve the proposed design before building an artifact.' : 'Migration review is updating. Previous candidate eligibility has been revoked.')
     void saveWorkspace({ artifact: null })
     if (decisionDocument && (!decisionDocument.draft_required || decisionDocument.design_approval)) void generatePlan()
   }, [decisionDocument, targetSource, targetDevice, preview.source_digest, generatePlan])
@@ -78,7 +80,7 @@ export function MigrationWorkflow({ preview, decisionDocument, targetSource, tar
   function log(line: string) { setActivityLog((lines) => [...lines, line]) }
 
   async function runDeployment(action: 'prepare' | 'validate' | 'commit') {
-    if (!artifact) return
+    if (!artifact || !decisionDocument) return
     const request = buildRequest.current
     setBusy(true); setError(null)
     const credentials = { ...connection, port: Number(connection.port) }
@@ -131,7 +133,7 @@ export function MigrationWorkflow({ preview, decisionDocument, targetSource, tar
   }
 
   async function saveArtifact(kind: 'bundle' | 'commands') {
-    if (!artifact) return
+    if (!artifact || !decisionDocument) return
     setBusy(true); setError(null)
     try {
       const blob = await (kind === 'bundle' ? downloadBundle(artifact, preview.source_evidence!) : downloadCommands(artifact))
@@ -173,12 +175,12 @@ export function MigrationWorkflow({ preview, decisionDocument, targetSource, tar
     </section>
     <section className="panel" aria-labelledby="deployment-title">
       <h2 id="deployment-title"><span className="step-num">03</span> Review &amp; deploy</h2>
-      <p aria-live="polite">{artifact ? `${artifact.artifact.command_count} reviewed commands · ${artifact.plan_status} · ${sessionId ? 'Candidate session active' : 'No deployment session'}` : 'No current reviewed artifact. Build and review a migration plan first.'}</p>
+      <p aria-live="polite">{artifact && decisionDocument ? `${artifact.artifact.command_count} reviewed commands · ${artifact.plan_status} · ${sessionId ? 'Candidate session active' : 'No deployment session'}` : 'No current reviewed artifact. Build and review a migration plan first.'}</p>
       <div className="workflow-stepper">
         {[
-          ['1', 'Prepare candidate', 'Push the reviewed artifact and validate the candidate automatically.', 'prepare', !artifact || busy || artifact.plan_status !== 'READY' || !artifact.artifact.command_count],
-          ['2', 'Validation', 'Revalidate the artifact-bound candidate session.', 'validate', busy || !sessionId],
-          ['3', 'Commit configuration', 'Submit an explicit commit after successful validation.', 'commit', busy || !sessionId || !candidateValidated],
+          ['1', 'Prepare candidate', 'Push the reviewed artifact and validate the candidate automatically.', 'prepare', !decisionDocument || !artifact || busy || artifact.plan_status !== 'READY' || !artifact.artifact.command_count],
+          ['2', 'Validation', 'Revalidate the artifact-bound candidate session.', 'validate', !decisionDocument || busy || !sessionId],
+          ['3', 'Commit configuration', 'Submit an explicit commit after successful validation.', 'commit', !decisionDocument || busy || !sessionId || !candidateValidated],
         ].map(([number, title, description, action, disabled]) => <div className="step-box" key={number as string}>
           <span className="step-badge" aria-hidden="true">{number}</span><span className="step-info"><strong>{title}</strong><span>{description}</span></span>
           <Button className={action === 'commit' ? 'outline-button' : ''} disabled={Boolean(disabled)} onClick={() => void runDeployment(action as 'prepare' | 'validate' | 'commit')}>{action === 'prepare' ? 'Prepare Candidate' : action === 'validate' ? 'Revalidate Candidate' : 'Commit'}</Button>

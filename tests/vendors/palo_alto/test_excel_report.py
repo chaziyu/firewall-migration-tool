@@ -20,7 +20,8 @@ def test_excel_report_contains_native_domain_sheets():
     reporter = PaloAltoSourceReporter()
     reporter.export_excel(reporter.analyze_source(source), output)
     sheetnames = set(load_workbook(io.BytesIO(output.getvalue()), read_only=True).sheetnames)
-    assert {"Summary", "Review Required", "Validation", "Interfaces", "Security Policies"}.issubset(sheetnames)
+    assert {"Summary", "Review Required", "Interfaces", "Security Policies"}.issubset(sheetnames)
+    assert "Validation" not in sheetnames
 
 
 def test_tags_sheet_exports_rows():
@@ -146,7 +147,7 @@ def test_partial_extraction_status_and_source_appendix_evidence():
     assert any(row[7].endswith("server/future-setting") and row[9] == "retain-me" for row in appendix)
     assert any(row[7].endswith("protocol/tcp/future-tcp-setting") and row[9] == "retain-protocol-source" for row in appendix)
     assert "Services" in workbook.sheetnames and workbook["Services"].max_row > 3
-    validation = list(workbook["Validation"].iter_rows(min_row=4, values_only=True))
+    validation = list(workbook["Review Required"].iter_rows(min_row=4, values_only=True))
     assert any(row[0] == "warning" and row[1] == "extraction" and "ValidationError" in str(row) for row in validation)
     unsupported = list(workbook["Unsupported"].iter_rows(min_row=4, values_only=True))
     assert any("not-a-scalar" in str(row) for row in unsupported)

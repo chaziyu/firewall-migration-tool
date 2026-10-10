@@ -168,6 +168,31 @@ def test_palo_alto_upload_cached_preview_and_excel_redact_secrets():
     assert b"palo-web-secret" not in response.data + workbook.data
 
 
+@pytest.mark.parametrize('profile', ('fast', 'full'))
+def test_palo_alto_excel_preserves_secret_like_object_names_after_upload(profile):
+    client = create_app({'TESTING': True}).test_client()
+    source = b'''<config><password>xml-secret</password><shared><address>
+      <entry name="token object"><ip-netmask>192.0.2.1</ip-netmask></entry>
+    </address></shared></config>'''
+    preview = client.post('/api/preview', data={
+        'source_vendor': 'palo_alto', 'file': (io.BytesIO(source), 'pan.xml'),
+    })
+    assert preview.status_code == 200
+    evidence = preview.get_json()['source_evidence']
+    response = client.post('/api/extract/excel', json={
+        'source_vendor': 'palo_alto', 'source': evidence, 'excel_profile': profile,
+    })
+    assert response.status_code == 200
+    workbook = load_workbook(io.BytesIO(response.data), read_only=True)
+    try:
+        names = [row[0] for row in workbook['Addresses'].iter_rows(min_row=4, values_only=True)]
+        assert names == ['token object']
+        values = str([row for sheet in workbook for row in sheet.values])
+        assert 'xml-secret' not in values + str(evidence)
+    finally:
+        workbook.close()
+
+
 def test_check_point_upload_cached_preview_and_excel_redact_secrets():
     client = create_app({"TESTING": True}).test_client()
     response = client.post("/api/preview", data={"source_vendor": "checkpoint", "file": (io.BytesIO(CHECKPOINT_SOURCE.encode()), "cp.json")}, content_type="multipart/form-data")
@@ -279,6 +304,10 @@ def test_excel_selector_reaches_real_vendor_profiles(vendor, fixture, excluded, 
         workbooks[profile] = load_workbook(io.BytesIO(response.data))
     assert write_modes == [True, False]
     fast, full = workbooks["fast"], workbooks["full"]
+    if vendor == "palo_alto":
+        for workbook in (fast, full):
+            assert "Review Required" in workbook.sheetnames
+            assert "Validation" not in workbook.sheetnames
     assert excluded <= set(full.sheetnames)
     assert excluded.isdisjoint(fast.sheetnames)
     assert set(fast.sheetnames) <= set(full.sheetnames)

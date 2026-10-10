@@ -107,7 +107,7 @@ def _domain(item):
 def _validate_duplicates(config):
     result = []
     seen_uids, seen_names = {}, {}
-    for field_name in config.model_fields:
+    for field_name in type(config).model_fields:
         objects = getattr(config, field_name)
         if not isinstance(objects, list):
             continue

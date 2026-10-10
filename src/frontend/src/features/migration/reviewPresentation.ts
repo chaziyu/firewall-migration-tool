@@ -31,6 +31,7 @@ export function visibleReviewDecisions(
   evidenceFilter: string,
   vdomFilter: string,
   pendingOnly: boolean,
+  reviewGroups: ReviewGroup[] = [],
 ) {
   return decisions.filter((item) => {
     if (decisionFilter === 'zones' && item.source_kind !== 'zone') return false
@@ -39,7 +40,7 @@ export function visibleReviewDecisions(
     if (vdomFilter !== 'all' && item.source_vdom !== vdomFilter) return false
     if (evidenceFilter === 'target' && item.evidence_source !== 'TARGET') return false
     if (evidenceFilter === 'source' && item.evidence_source === 'TARGET') return false
-    if (evidenceFilter === 'conflict' && item.review_state !== 'CONFLICT') return false
+    if (evidenceFilter === 'conflict' && !reviewGroups.some((group) => group.conflicts?.some((finding) => finding.decision_key === item.key))) return false
     if (evidenceFilter === 'required' && item.mode !== 'REQUIRED') return false
     if (evidenceFilter === 'confirmed' && item.review_state !== 'CONFIRMED') return false
     return !pendingOnly || item.review_state !== 'CONFIRMED'

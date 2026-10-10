@@ -5,6 +5,7 @@ from pathlib import Path
 from openpyxl import load_workbook
 
 from fwmigrate.extraction.models import ExtractionStatus
+from fwmigrate.vendors.juniper_srx.derived import build_juniper_derived_views
 from fwmigrate.vendors.juniper_srx.source_accounting import _account
 from fwmigrate.vendors.juniper_srx.source_report import extract_juniper_source
 from fwmigrate.vendors.juniper_srx.tokenizer import JunosCommand, JunosOperation
@@ -58,6 +59,34 @@ set security ipsec vpn VPN ike gateway GW
     assert any(row[5].value == "MISSING" for row in references.iter_rows(min_row=2))
     assert result.config.model_dump(mode="python") == source_before
     assert result.derived == derived_before
+
+
+def test_reth_redundancy_group_flows_through_derived_preview_and_excel():
+    result = extract_juniper_source("""set interfaces ge-0/0/2 gigether-options redundant-parent reth0
+set interfaces reth0 redundant-ether-options redundancy-group 1
+""")
+    source_before = deepcopy(result.config.model_dump(mode="python"))
+    derived = build_juniper_derived_views(result.config)
+    physical = next(row for row in derived.interface_topology if row["interface"] == "ge-0/0/2")
+    assert physical["redundant_parent"] == "reth0"
+    assert physical["redundancy_group"] == "1"
+    assert result.config.model_dump(mode="python") == source_before
+
+    preview = build_juniper_preview(result)
+    section_row = next(row for row in preview["sections"]["interface_topology"]
+                       if row["interface"] == "ge-0/0/2")
+    relationship_row = next(row for row in preview["relationships"]["interfaces"]
+                            if row["interface"] == "ge-0/0/2")
+    assert section_row["redundancy_group"] == relationship_row["redundancy_group"] == "1"
+
+    output = BytesIO()
+    export_juniper_excel(result, output)
+    output.seek(0)
+    workbook = load_workbook(output, read_only=True)
+    sheet = workbook["Interfaces"]
+    headers = [cell.value for cell in next(sheet.iter_rows(min_row=1, max_row=1))]
+    row = next(row for row in sheet.iter_rows(min_row=2) if row[headers.index("Interface")].value == "ge-0/0/2")
+    assert row[headers.index("Redundancy Group")].value == "1"
 
 
 def test_report_projection_keeps_logical_system_and_address_book_scope():

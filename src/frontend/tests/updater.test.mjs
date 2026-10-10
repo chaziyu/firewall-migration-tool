@@ -87,6 +87,7 @@ test('explicit installation reports bounded progress, unknown totals and verific
   let attempts = 0
   const update = { ...metadata(), async downloadAndInstall(callback, options) {
     assert.equal(options.restartAfterInstall, true)
+    assert.equal(options.timeout, 300_000)
     callback({ event: 'Started', data: { contentLength: 100 } })
     callback({ event: 'Progress', data: { chunkLength: 64 } })
     callback({ event: 'Progress', data: { chunkLength: 64 } })

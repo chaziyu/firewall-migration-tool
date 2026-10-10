@@ -12,9 +12,9 @@ def _workbook(source):
     return load_workbook(io.BytesIO(output.getvalue()), read_only=True, data_only=True)
 
 
-def test_validation_issue_is_exported_to_validation_sheet():
+def test_validation_issue_is_exported_to_review_required_sheet():
     workbook = _workbook("<config><shared><address><entry name='bad'><ip-netmask>999.999.999.999</ip-netmask></entry></address></shared></config>")
-    rows = list(workbook["Validation"].iter_rows(min_row=4, values_only=True))
+    rows = list(workbook["Review Required"].iter_rows(min_row=4, values_only=True))
     assert any("malformed ip_netmask" in str(row) for row in rows)
 
 

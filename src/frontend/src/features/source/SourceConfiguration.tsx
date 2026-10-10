@@ -228,11 +228,11 @@ export function SourceConfiguration({ view, onViewChange }: {
           onContextChange={(nextSource, nextDevice) => { setTargetSource(nextSource); setTargetDevice(nextDevice) }} />
         </section>
         <div hidden={view === 'migration' && migrationView !== 'plan'}>
-        {decisionDocument && <MigrationWorkflow key={previewId}
+        <MigrationWorkflow key={previewId}
           preview={preview} decisionDocument={decisionDocument}
           targetSource={targetSource} targetDevice={targetDevice} activeSection={view === 'live' ? 'live' : 'plan'}
           onReviewDecision={(key) => { setRequestedDecision({ key, request: Date.now() }); setMigrationView('mappings'); onViewChange('migration'); requestAnimationFrame(() => document.getElementById('migration-review-title')?.scrollIntoView({ block: 'start' })) }}
-          onViewChange={onViewChange} />}
+           onViewChange={onViewChange} />
         </div>
         {!decisionDocument && view === 'live' && <section className="panel"><h2>Migration plan required</h2><p>Review source mappings and generate a plan before preparing a target candidate.</p><Button onClick={() => onViewChange('migration')}>Open plan migration</Button></section>}
       </> : <section className="panel"><h2>Migration source required</h2><p>Load a FortiGate source configuration in Configuration report before planning migration.</p><Button onClick={() => onViewChange('report')}>Open configuration report</Button></section>}

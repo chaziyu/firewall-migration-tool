@@ -19,7 +19,8 @@ SHEET_ORDER = (
 SHEET_HEADERS = {
     "Interfaces": ("Context", "Interface", "Unit", "Parent", "Name", "Interface Type", "Source Present",
                     "Aggregate Parent", "Aggregate Parent Resolved", "Redundant Parent", "Redundant Parent Resolved",
-                    "Aggregate Members", "Redundant Members", "Zone Memberships", "Routing Instance Memberships"),
+                    "Redundancy Group", "Aggregate Members", "Redundant Members", "Zone Memberships",
+                    "Routing Instance Memberships"),
     "Zones": ("Context", "Zone", "Interface"),
     "Routing Instances": ("Context", "Name", "Interfaces"),
     "Address Books": ("Context", "Name", "Zones", "Addresses", "Address Sets"),

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, MutableMapping, Sequence
+from typing import Any, MutableMapping
 
 from fwmigrate.vendors.juniper_srx.extraction import sanitize_tokens
 
@@ -113,37 +113,9 @@ def mark_candidate_shadowed(candidate: JuniperEffectiveCandidate, reason=None) -
     candidate.reason = reason
 
 
-def record_excluded_candidate(history, field, value, cmd, reason="apply-groups-except", context=None):
-    candidate = _candidate(value, field, cmd, status=JuniperResolutionStatus.EXCLUDED,
-                          effective=False, reason=reason, context=context)
-    _append(history, field, candidate)
-    return candidate
-
-
-def record_inactive_candidate(history, field, value, cmd, reason="inactive", context=None):
-    candidate = _candidate(value, field, cmd, status=JuniperResolutionStatus.INACTIVE,
-                          effective=False, reason=reason, context=context)
-    _append(history, field, candidate)
-    return candidate
-
-
 def effective_candidates(history, field=None):
     values = history.get(field, []) if field is not None else [c for v in history.values() for c in v]
     return [c for c in values if c.status is JuniperResolutionStatus.EFFECTIVE and c.effective]
-
-
-def non_effective_history_key(target_path: Sequence[str], field: str) -> str:
-    return "/".join(str(part).casefold() for part in target_path) + "|" + field.casefold()
-
-
-def record_non_effective_candidate(context, target_path: Sequence[str], field: str,
-                                   candidate: JuniperEffectiveCandidate) -> None:
-    history = context.non_effective_candidate_history.setdefault(
-        non_effective_history_key(target_path, field), []
-    )
-    history.append(candidate)
-    history.sort(key=lambda item: (item.provenance.source_order if item.provenance else 0,
-                                   item.field_key, repr(item.value)))
 
 
 def is_effective_candidate(candidate) -> bool:
