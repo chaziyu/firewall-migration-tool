@@ -15,6 +15,7 @@ from fwmigrate.source_reporting import ExcelExportProfile
 from ..extraction.coverage import extraction_status, find_typed_source_object, supports_path
 from ..security.extraction import sanitize_source_attributes
 from ..transform.policies import effective_policy_action
+from .excel_schema import SHEET_ORDER
 from .excel_common import (
     _POLICY_ACTION_NOTE,
     _VISIBLE_MODEL_FIELDS_BY_SHEET,
@@ -92,14 +93,12 @@ def rows_for_sheet(
         "IPS Exempt IPs": _ips_exempt_rows,
         "Security Profiles": _security_profile_rows,
         "External Resources": _external_resource_rows,
-        "Firewall Policy Source Settings": _policy_source_rows,
-        "Interface Source Settings": _interface_source_rows,
-        "Interface Nested Configuration": _interface_nested_rows,
         "Unresolved References": _unresolved_reference_rows,
         "Unsupported": _unsupported_rows,
         "Extraction Coverage": _coverage_rows,
     }
 
+    assert builders.keys() <= set(SHEET_ORDER)
     builder = builders.get(sheet_name)
 
     if builder is not None:
@@ -391,25 +390,6 @@ def _address_group_rows(context: _ExcelContext, headers: Sequence[str]) -> Itera
         )
         _overlay_safe_raw(row, row["Additional Settings"], headers)
         yield row
-
-
-def _address_group_tag_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str, Any]]:
-    rows = []
-    for group in context.config.address_groups:
-        for tag in group.tagging:
-            rows.append(
-                {
-                    "Group Name": group.name,
-                    "Address Family": group.address_family,
-                    "Tag Entry": tag.name,
-                    "Category": tag.category,
-                    "Tags": tag.tags,
-                    "Extraction Status": "EXTRACTED",
-                    "Manual Review": "No",
-                    "Additional Settings": sanitize_source_attributes(tag.raw_extra),
-                }
-            )
-    return rows
 
 
 def _service_rows(context: _ExcelContext, headers: Sequence[str]) -> Iterator[dict[str, Any]]:
@@ -1489,64 +1469,6 @@ def _external_resource_rows(context: _ExcelContext, headers: Sequence[str]) -> l
         },
         domains=('external_resource',),
     )
-def _policy_source_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str, Any]]:
-    rows = []
-    policy_names = {str(item.policy_id): item.name for item in context.config.policies if item.policy_id is not None}
-    for record in context.source_by_path.get("firewall policy", ()):
-        for command in record.commands:
-            rows.append(
-                {
-                    "Source Policy ID": record.object_name,
-                    "Policy Name": policy_names.get(str(record.object_name), ""),
-                    "Operation": command.operation,
-                    "Setting": command.key,
-                    "Ordered Source Values": _safe_command_value(
-                        command.key,
-                        command.values,
-                    ),
-                }
-            )
-    return rows
-
-
-def _interface_source_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str, Any]]:
-    rows = []
-    for record in context.source_by_path.get("system interface", ()):
-        for command in record.commands:
-            rows.append(
-                {
-                    "Interface": record.object_name,
-                    "Setting": command.key,
-                    "Value": _safe_command_value(
-                        command.key,
-                        command.values,
-                    ),
-                    "Extraction Status": "EXTRACTED",
-                }
-            )
-    return rows
-
-
-def _interface_nested_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str, Any]]:
-    rows = []
-    for records in context.nested_source_by_parent.values():
-        for record in records:
-            interface = record.parent_objects[0] if record.parent_objects else None
-            for command in record.commands:
-                rows.append(
-                    {
-                        "Interface": interface,
-                        "Config Path": record.source_path,
-                        "Node Type": "edit" if record.object_name is not None else "config",
-                        "Object / Edit": record.object_name,
-                        "Operation": command.operation,
-                        "Setting": command.key,
-                        "Value": _safe_command_value(command.key, command.values),
-                        "Extraction Status": "EXTRACTED",
-                        "Manual Review": "No",
-                    }
-                )
-    return rows
 
 
 def _unresolved_reference_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str, Any]]:
@@ -1564,25 +1486,6 @@ def _unresolved_reference_rows(context: _ExcelContext, headers: Sequence[str]) -
             }
         )
     return rows
-
-
-def _warning_rows(
-    context: _ExcelContext,
-    headers: Sequence[str],
-) -> list[dict[str, Any]]:
-    del headers
-
-    return [
-        {
-            "ID": index,
-            "Category": issue.domain,
-            "Message": issue.message,
-        }
-        for index, issue in enumerate(
-            context.validation.warnings,
-            start=1,
-        )
-    ]
 
 
 def _unsupported_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str, Any]]:

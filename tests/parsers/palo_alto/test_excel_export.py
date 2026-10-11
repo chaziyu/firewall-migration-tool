@@ -10,7 +10,7 @@ from openpyxl import load_workbook
 from openpyxl.utils import get_column_letter
 
 from fwmigrate.vendors.palo_alto.source_report import PaloAltoSourceReporter, PaloAltoSourceResult
-from fwmigrate.vendors.palo_alto.export.excel_schema import HIDDEN_COLUMNS_BY_DEFAULT, SHEET_HEADERS, SHEET_IMPLEMENTATION_STATUS
+from fwmigrate.vendors.palo_alto.export.excel_schema import HIDDEN_COLUMNS_BY_DEFAULT, SHEET_HEADERS, SHEET_ORDER
 from fwmigrate.vendors.palo_alto.export.excel import _write_table
 from fwmigrate.vendors.palo_alto.model import PANAddress, PANOSConfig
 from fwmigrate.vendors.palo_alto.source_model import PANOSDerivedViews, PANScope
@@ -40,17 +40,14 @@ def test_supported_fixtures_export_real_workbooks(name):
     assert "Review Required" in workbook.sheetnames
     assert "Validation" not in workbook.sheetnames
     assert "PAN-OS Source Inventory" in workbook.sheetnames
-    assert {sheet for sheet, status in SHEET_IMPLEMENTATION_STATUS.items() if status != "NOT_IMPLEMENTED"} <= set(workbook.sheetnames)
-    assert not ({sheet for sheet, status in SHEET_IMPLEMENTATION_STATUS.items() if status == "NOT_IMPLEMENTED"} & set(workbook.sheetnames))
+    assert workbook.sheetnames == list(SHEET_ORDER)
     assert workbook["Summary"]["B3"].value == name
 
 
 def test_complete_schema_is_retained_and_route_path_monitors_are_implemented():
     workbook = _workbook("objects.xml")
     assert "DHCP Servers" in SHEET_HEADERS
-    assert SHEET_IMPLEMENTATION_STATUS["DHCP Servers"] == "IMPLEMENTED"
     assert "DHCP Servers" in workbook.sheetnames
-    assert SHEET_IMPLEMENTATION_STATUS["Route Path Monitors"] == "IMPLEMENTED"
     assert "Route Path Monitors" in workbook.sheetnames
 
 

@@ -18,6 +18,7 @@ from openpyxl.utils import get_column_letter
 
 from fwmigrate.source_reporting import ExcelExportProfile
 from fwmigrate.source_reporting.metrics import ExcelExportMetrics
+from ....source_reporting.collection_excel import collection_summary, write_collection_evidence
 
 from ..derived import DerivedViews, build_derived_views
 from ..extraction.result import ExtractionResult
@@ -122,6 +123,9 @@ def export_excel(
     profile: ExcelExportProfile | str = ExcelExportProfile.FULL,
     source_name: str | None = None,
     metrics: ExcelExportMetrics | None = None,
+    collection_status: str | None = None,
+    collection_parts: Iterable[Mapping[str, Any]] = (),
+    collection_warnings: Iterable[str] = (),
 ) -> None:
     """Write the FortiGate configuration report."""
 
@@ -136,6 +140,7 @@ def export_excel(
         validation=validation,
         profile=profile,
         source_name=source_name,
+        collection_status=collection_status,
     )
     if metrics is not None and profile is ExcelExportProfile.FAST:
         metrics.add_stage("excel_context", (perf_counter() - context_started) * 1000)
@@ -147,6 +152,7 @@ def export_excel(
     )
     if metrics is not None and profile is ExcelExportProfile.FAST:
         metrics.add_stage("workbook_build", (perf_counter() - build_started) * 1000)
+    write_collection_evidence(workbook, collection_status, collection_parts, collection_warnings)
     if isinstance(output, (str, Path)):
         path = Path(output)
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -170,6 +176,7 @@ class _ExcelContext:
         validation: ValidationResult,
         profile: ExcelExportProfile,
         source_name: str | None,
+        collection_status: str | None = None,
     ) -> None:
         self.extracted = extracted
         self.config = extracted.config
@@ -177,6 +184,7 @@ class _ExcelContext:
         self.validation = validation
         self.profile = profile
         self.source_name = source_name or ""
+        self.collection_status = collection_status
         self.source_by_path: dict[str, list[SourceObjectRecord]] = defaultdict(list)
         self.source_by_identity: dict[tuple[str, str, str | None], list[SourceObjectRecord]] = defaultdict(list)
         self.nested_source_by_parent: dict[tuple[str, str, str | None], list[SourceObjectRecord]] = defaultdict(list)
@@ -410,6 +418,7 @@ def _write_fast_summary(workbook: Workbook, context: _ExcelContext) -> None:
             "Use FULL export for complete source traceability.",
         ),
     ]
+    metadata.extend(collection_summary(context.collection_status))
     counts = _inventory_counts(context)
     navigation = [
         target
@@ -485,12 +494,13 @@ def _build_summary(
         ("Validation Warnings", len(context.validation.warnings)),
     ]
 
+    metadata.extend(collection_summary(context.collection_status))
     for row_number, (label, value) in enumerate(metadata, start=3):
         sheet.cell(row_number, 1, label).font = Font(bold=True, color="41504C")
         sheet.cell(row_number, 2, _excel_safe(value))
         sheet.cell(row_number, 2).alignment = Alignment(wrap_text=True, vertical="top")
 
-    section_row = 11
+    section_row = max(11, len(metadata) + 4)
     sheet.cell(section_row, 1, "Inventory")
     sheet.cell(section_row, 1).fill = _HEADER_FILL
     sheet.cell(section_row, 1).font = _WHITE_FONT

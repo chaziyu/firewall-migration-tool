@@ -11,10 +11,11 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
 from ....source_reporting.options import ExcelExportProfile
+from ....source_reporting.collection_excel import collection_summary, write_collection_evidence
 from ....source_reporting.excel_style import append_report_row, style_fast_sheet
 
 from .excel_rows import ROW_BUILDERS, _PANExcelContext
-from .excel_schema import ACTIVE_SHEET_ORDER, HIDDEN_COLUMNS_BY_DEFAULT, SHEET_HEADERS
+from .excel_schema import SHEET_ORDER, HIDDEN_COLUMNS_BY_DEFAULT, SHEET_HEADERS
 from ..source_report import PaloAltoSourceResult
 
 _TITLE_FILL = PatternFill("solid", fgColor="17324D")
@@ -67,7 +68,7 @@ def _write_table(workbook: Workbook, name: str, rows: Iterable[Mapping[str, Any]
     row_count = 0
     for row_count, row in enumerate(rows, 1):
         sheet.append([_excel_safe(row.get(header)) for header in headers])
-    note.value = f"{row_count} row(s). PAN-OS source values remain separate from derived and validation data."
+    note.value = f"{row_count} row(s). Analysis Status reports validation only; NO_VALIDATION_ISSUES does not imply complete extraction. Source Inventory reports extraction coverage."
     style_fast_sheet(sheet, header_row=3)
     sheet.freeze_panes = "D4" if name in {"Interfaces", "Security Policies", "NAT Rules"} else "C4" if len(headers) > 12 else "A4"
     for column, header in enumerate(headers, 1):
@@ -88,15 +89,16 @@ def _write_summary(workbook: Workbook, context: _PANExcelContext, row_counts: Ma
     details = (("Source File", context.source_name), ("Hostname", context.config.hostname), ("PAN-OS Version", context.config.source_version),
                ("Scopes", "\n".join(_scope for _scope in context.derived.scope_identities)), ("Generated UTC", datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")),
                ("Validation Errors", len(context.validation.errors)), ("Validation Warnings", len(context.validation.warnings)))
+    details += collection_summary(context.collection_status)
     for row, (label, value) in enumerate(details, 3):
         sheet.cell(row, 1, label).font = _LABEL_FONT
         sheet.cell(row, 2, _excel_safe(value))
         sheet.cell(row, 2).alignment = _BODY_ALIGNMENT
-    section_row = 11
+    section_row = max(11, len(details) + 4)
     sheet.cell(section_row, 1, "Inventory")
     sheet.cell(section_row, 1).fill, sheet.cell(section_row, 1).font = _HEADER_FILL, _WHITE_FONT
     sheet.merge_cells(start_row=section_row, start_column=1, end_row=section_row, end_column=3)
-    inventory = [name for name in ACTIVE_SHEET_ORDER if name not in {"Summary", "Review Required", "Unresolved References", "Unsupported", "PAN-OS Source Inventory", "Extraction Coverage"}]
+    inventory = [name for name in SHEET_ORDER if name not in {"Summary", "Review Required", "Unresolved References", "Unsupported", "PAN-OS Source Inventory", "Extraction Coverage"}]
     for row, name in enumerate(inventory, section_row + 1):
         sheet.cell(row, 1, name)
         sheet.cell(row, 2, row_counts.get(name, 0))
@@ -105,7 +107,7 @@ def _write_summary(workbook: Workbook, context: _PANExcelContext, row_counts: Ma
     nav_column = 5
     sheet.cell(3, nav_column, "Workbook navigation")
     sheet.cell(3, nav_column).fill, sheet.cell(3, nav_column).font = _HEADER_FILL, _WHITE_FONT
-    for row, name in enumerate((item for item in ACTIVE_SHEET_ORDER if item != "Summary"), 4):
+    for row, name in enumerate((item for item in SHEET_ORDER if item != "Summary"), 4):
         cell = sheet.cell(row, nav_column, name)
         cell.hyperlink, cell.font = f"#'{name}'!A1", _LINK_FONT
     for column in ("A", "B", "C", "D", "E", "F"):
@@ -124,7 +126,7 @@ def _write_table_fast(workbook: Workbook, name: str, rows: Iterable[Mapping[str,
     title = WriteOnlyCell(sheet, name)
     title.fill, title.font = _TITLE_FILL, _TITLE_FONT
     sheet.append([title])
-    sheet.append(["FAST lightweight export; source, derived and validation columns remain separate."])
+    sheet.append(["FAST lightweight export. Analysis Status reports validation only; NO_VALIDATION_ISSUES does not imply complete extraction. Source Inventory reports extraction coverage. Source Inventory is available in FULL."])
     cells = []
     for header in headers:
         cell = WriteOnlyCell(sheet, header)
@@ -143,8 +145,8 @@ def _build_fast_workbook(context: _PANExcelContext) -> Workbook:
     summary = workbook.create_sheet("Summary")
     counts = {}
     no_rows = object()
-    for name in ACTIVE_SHEET_ORDER:
-        if name in {"Summary", "PAN-OS Source Inventory", "Extraction Coverage"}:
+    for name in SHEET_ORDER:
+        if name in {"Summary", "PAN-OS Source Inventory", "Extraction Coverage", "PAN-OS Source Appendix"}:
             continue
         rows = iter(ROW_BUILDERS[name](context))
         first = next(rows, no_rows)
@@ -158,6 +160,8 @@ def _build_fast_workbook(context: _PANExcelContext) -> Workbook:
         ("Scopes", "\n".join(context.derived.scope_identities)),
         ("Generated UTC", datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")),
         ("Validation Errors", len(context.validation.errors)), ("Validation Warnings", len(context.validation.warnings)),
+        ("Export Profile", "FAST omits PAN-OS Source Inventory, Extraction Coverage, and PAN-OS Source Appendix. Use FULL for complete source traceability."),
+        *collection_summary(context.collection_status),
         *counts.items(),
     ):
         append_report_row(summary, (label, _excel_safe(value)))
@@ -167,20 +171,23 @@ def _build_fast_workbook(context: _PANExcelContext) -> Workbook:
 def export_panos_excel(
     analysis: PaloAltoSourceResult, output: BinaryIO | str | Path, *,
     source_name: str | None = None, profile: ExcelExportProfile | str = ExcelExportProfile.FULL,
+    collection_status: str | None = None, collection_parts: Iterable[Mapping[str, Any]] = (),
+    collection_warnings: Iterable[str] = (),
 ) -> None:
     profile = ExcelExportProfile(profile)
-    context = _PANExcelContext(analysis, source_name)
+    context = _PANExcelContext(analysis, source_name, collection_status=collection_status)
     if profile is ExcelExportProfile.FAST:
         workbook = _build_fast_workbook(context)
     else:
         workbook = Workbook()
         workbook.remove(workbook.active)
         row_counts = {}
-        for name in ACTIVE_SHEET_ORDER:
+        for name in SHEET_ORDER:
             if name != "Summary":
                 row_counts[name] = _write_table(workbook, name, ROW_BUILDERS[name](context))
         _write_summary(workbook, context, row_counts)
         workbook.move_sheet(workbook["Summary"], offset=-len(workbook.sheetnames) + 1)
+    write_collection_evidence(workbook, collection_status, collection_parts, collection_warnings)
     if isinstance(output, (str, Path)):
         Path(output).parent.mkdir(parents=True, exist_ok=True)
     workbook.save(output)

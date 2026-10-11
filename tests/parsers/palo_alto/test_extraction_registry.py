@@ -4,7 +4,7 @@ from openpyxl import load_workbook
 
 from fwmigrate.vendors.palo_alto.export.excel import export_panos_excel
 from fwmigrate.vendors.palo_alto.export.excel_rows import ROW_BUILDERS, _PANExcelContext, _TYPED_COUNT_FIELDS, _typed_counts
-from fwmigrate.vendors.palo_alto.export.excel_schema import ACTIVE_SHEET_ORDER, SHEET_HEADERS, SHEET_IMPLEMENTATION_STATUS
+from fwmigrate.vendors.palo_alto.export.excel_schema import SHEET_ORDER, SHEET_HEADERS
 from fwmigrate.vendors.palo_alto.extraction.extractor import _EXTRACTORS, registered_typed_collections
 from fwmigrate.vendors.palo_alto.model import PANOSConfig
 from fwmigrate.vendors.palo_alto.schema_registry import registered_paths
@@ -66,8 +66,8 @@ def test_registered_source_path_reaches_expected_collection():
 
 
 def test_active_excel_sheets_have_headers_and_row_generation_paths():
-    assert set(ACTIVE_SHEET_ORDER) <= set(SHEET_HEADERS)
-    assert set(ACTIVE_SHEET_ORDER) - {"Summary"} <= set(ROW_BUILDERS)
+    assert set(SHEET_ORDER) <= set(SHEET_HEADERS)
+    assert set(SHEET_ORDER) - {"Summary"} <= set(ROW_BUILDERS)
 
 
 def test_tags_sheet_is_active_and_exports_rows():
@@ -78,7 +78,6 @@ def test_tags_sheet_is_active_and_exports_rows():
     output = BytesIO()
     export_panos_excel(analysis, output)
     workbook = load_workbook(BytesIO(output.getvalue()), data_only=True)
-    assert SHEET_IMPLEMENTATION_STATUS["Tags"] == "IMPLEMENTED"
     sheet = workbook["Tags"]
     headers = {cell.value: cell.column for cell in sheet[3]}
     assert sheet.cell(4, headers["Name"]).value == "production"

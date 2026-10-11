@@ -86,6 +86,7 @@ def _text(value: Any) -> Any:
 class _PANExcelContext:
     analysis: PaloAltoSourceResult
     source_name: str | None = None
+    collection_status: str | None = None
     validation_by_object: dict[tuple[str, str, str, str | None], tuple[Any, ...]] = field(init=False)
     validation_by_scope: dict[str, tuple[Any, ...]] = field(init=False)
     typed_identities: dict[tuple[str, str | None, str, int | None], list[Any]] = field(init=False)
@@ -158,7 +159,7 @@ def _base(context: _PANExcelContext, item: Any, object_type: str) -> dict[str, A
     issues = context.issues_for(item, object_type)
     scope_type, scope_name = _scope(getattr(item, "scope", None))
     return {"Name": getattr(item, "name", None), "Scope Type": scope_type, "Scope Name": scope_name,
-            "Analysis Status": "REVIEW_REQUIRED" if issues else "EXTRACTED",
+            "Analysis Status": "REVIEW_REQUIRED" if issues else "NO_VALIDATION_ISSUES",
             "Review Reasons": _text(issue.message for issue in issues),
             "Source Explicit Fields": _text(sorted(getattr(item, "explicit_fields", ()))),
             "Additional Settings": _text(getattr(item, "raw_extra", {})),
