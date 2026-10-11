@@ -1,5 +1,3 @@
-import os
-import json
 import hashlib
 import click
 import yaml
@@ -12,9 +10,8 @@ from fwmigrate.conversion.fortigate_to_palo_alto import (
     PANMigrationOptions,
     run_migration_pipeline,
 )
-from fwmigrate.conversion.fortigate_to_palo_alto.rendering.renderer import PANSetRenderer, RenderedMigration
+from fwmigrate.conversion.fortigate_to_palo_alto.rendering.renderer import PANSetRenderer
 from fwmigrate.conversion.fortigate_to_palo_alto.target.target_suggestions import target_devices
-from fwmigrate.deployment import PANDeploymentOptions, PANSSHDeployer
 
 register_builtin_source_reporters()
 register_builtin_migration_planners()
@@ -124,35 +121,19 @@ def migrate(input, output, source_vendor, target_vendor, zone_map, target_config
 @click.option('--host', required=True)
 @click.option('--port', default=22, show_default=True, type=click.IntRange(1, 65535))
 @click.option('--username', required=True)
-@click.option('--password', prompt=True, hide_input=True)
+@click.option('--password', hide_input=True, help='Ignored; CLI deployment is disabled.')
 def deploy(commands_file, host, port, username, password):
-    """Push a .set file as a candidate and validate it. Does not commit."""
-    artifact_path = os.path.join(os.path.dirname(commands_file), 'migration_report.json')
-    with open(commands_file, encoding='utf-8') as stream:
-        commands = tuple(line.strip() for line in stream if line.strip())
-    with open(artifact_path, encoding='utf-8') as stream:
-        report = json.load(stream)
-    digest = hashlib.sha256("\n".join(commands).encode("utf-8")).hexdigest()
-    if (not isinstance(report, dict) or report.get('commands') != len(commands)
-            or report.get('command_sha256') != digest):
-        raise click.ClickException('The .set file does not match its rendered migration report')
-    rendered = RenderedMigration(commands, report)
-    result = PANSSHDeployer(PANDeploymentOptions(host, username, password, port=port)).deploy(rendered)
-    if result.failure_message or result.validation.status == 'FAILED':
-        raise click.ClickException(result.failure_message or result.validation.response or 'Candidate validation failed')
-    click.echo(f"Pushed {result.commands_succeeded} candidate commands; validation {result.validation.status}")
+    """Disabled: use the reviewed web or desktop candidate workflow."""
+    raise click.ClickException('CLI deployment is disabled. Use the web or desktop workflow to approve the design, prepare and validate the candidate, then explicitly commit.')
 
 @cli.command()
 @click.option('--host', required=True)
 @click.option('--port', default=22, show_default=True, type=click.IntRange(1, 65535))
 @click.option('--username', required=True)
-@click.option('--password', prompt=True, hide_input=True)
+@click.option('--password', hide_input=True, help='Ignored; CLI commit is disabled.')
 def commit(host, port, username, password):
-    """Explicitly commit the current Palo Alto candidate configuration."""
-    result = PANSSHDeployer(PANDeploymentOptions(host, username, password, port=port)).commit()
-    if result.status != 'SUCCESS':
-        raise click.ClickException(result.response or 'Commit failed')
-    click.echo(f"Commit submitted (job {result.job_id or 'unknown'})")
+    """Disabled: use the reviewed web or desktop candidate workflow."""
+    raise click.ClickException('CLI commit is disabled. Use the web or desktop workflow to commit an artifact-bound validated candidate.')
 
 @cli.command()
 @click.option('--port', default=5000, help='Port to run the web server on')

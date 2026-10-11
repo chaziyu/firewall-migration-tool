@@ -91,6 +91,35 @@ function workflowHarness(migrationApi) {
   })
 }
 
+test('candidate preparation fails closed and explains missing destination evidence', async () => {
+  for (const eligibility of [undefined, { eligible: false, reason: 'Approved destination serial evidence is required' }]) {
+    const artifact = { plan_status: 'READY', report: { deployment_eligibility: eligibility }, artifact: { commands: ['set address x'], command_count: 1 } }
+    const harness = workflowHarness({ buildPlan: async () => artifact, deployArtifact: async () => assert.fail('Ineligible artifact must not deploy') })
+    const tree = await harness.render({ preview: { vendor: 'fortigate', source_digest: 'source', source_evidence: {} },
+      decisionDocument: { design_approval: {} }, targetSource: null, targetDevice: '', activeSection: 'live' })
+    const prepare = elements(tree).find((node) => node.type === 'Button' && node.props.children === 'Prepare Candidate')
+    assert.equal(prepare.props.disabled, true)
+    await prepare.props.onClick()
+    assert.ok(elements(tree).some((node) => node.props?.role === 'status' && String(node.props.children).includes(eligibility?.reason || 'check candidate deployment eligibility')))
+  }
+})
+
+test('plan blockers retain VDOM, object identity and mapping links while grouping exact repeats', async () => {
+  const harness = component('../src/features/migration/PlanReview.tsx', 'PlanReview', {
+    '../report/reportPresentation': { asRecord: (value) => value, safeValue: (value) => value, compactValue: String },
+  })
+  const blocker = { code: 'DESIGN_GROUP_NOT_APPROVED', message: 'Design group not approved', source_vdom: 'root', source_kind: 'address', source_name: 'net' }
+  const rows = [blocker, { ...blocker, source_vdom: 'blue' }, { ...blocker, source_name: 'other' },
+    { ...blocker, decision_keys: ['mapping'] }, blocker]
+  const tree = await harness.render({ artifact: { blocking_reasons: rows, recommendations: [], report: {} }, onReviewDecision: () => {} })
+  const groups = elements(tree).find((node) => node.type?.name === 'PlanRows' && node.props.kind === 'blockers').props.rows
+  assert.equal(groups.length, 4)
+  assert.equal(groups[0].count, 2)
+  assert.equal(groups[1].source_vdom, 'blue')
+  assert.equal(groups[2].source_name, 'other')
+  assert.deepEqual(groups[3].decision_keys, ['mapping'])
+})
+
 test('unsigned legacy decisions never build and expose the design review action', async () => {
   let builds = 0
   let reviews = 0
@@ -112,7 +141,7 @@ test('unsigned legacy decisions never build and expose the design review action'
 })
 
 test('stale approval offers reapproval and candidate drift revokes commit', async () => {
-  const artifact = { artifact_id: 'artifact', plan_status: 'READY', artifact: { commands: ['set address x'], command_count: 1 } }
+  const artifact = { artifact_id: 'artifact', plan_status: 'READY', report: { deployment_eligibility: { eligible: true, reason: null } }, artifact: { commands: ['set address x'], command_count: 1 } }
   const stale = workflowHarness({ buildPlan: async () => { throw new Error('Approved design is stale') } })
   const props = { preview: { vendor: 'fortigate', source_digest: 'source', source_evidence: {} },
     decisionDocument: { design_approval: {} }, targetSource: null, targetDevice: '', activeSection: 'plan', onReviewDecision: () => {} }
@@ -137,7 +166,7 @@ test('stale approval offers reapproval and candidate drift revokes commit', asyn
 })
 
 test('expired deployment approval revokes the artifact and offers reapproval', async () => {
-  const artifact = { artifact_id: 'artifact', plan_status: 'READY', artifact: { commands: ['set address x'], command_count: 1 } }
+  const artifact = { artifact_id: 'artifact', plan_status: 'READY', report: { deployment_eligibility: { eligible: true, reason: null } }, artifact: { commands: ['set address x'], command_count: 1 } }
   const error = new api.RequestError('Design approval has expired')
   error.details = { error_code: 'artifact_ineligible' }
   const harness = workflowHarness({ buildPlan: async () => artifact, deployArtifact: async () => { throw error } })
@@ -195,7 +224,7 @@ test('manual proposal edits use draft preparation, conflict membership and visib
 
 test('review invalidation preserves live connection and history while revoking candidate actions', async () => {
   let prepares = 0
-  const artifact = { artifact_id: 'artifact', plan_status: 'READY', artifact: { commands: ['set address x'], command_count: 1 } }
+  const artifact = { artifact_id: 'artifact', plan_status: 'READY', report: { deployment_eligibility: { eligible: true, reason: null } }, artifact: { commands: ['set address x'], command_count: 1 } }
   const harness = component('../src/features/migration/MigrationWorkflow.tsx', 'MigrationWorkflow', {
     '../../storage/workspaceStore': workspace, '../../api/client': api,
     '../../components/common/ErrorBanner': { ErrorBanner: 'Error' }, '../../components/common/Button': { Button: 'Button' },

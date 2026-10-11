@@ -81,6 +81,7 @@ export function MigrationWorkflow({ preview, decisionDocument, targetSource, tar
 
   async function runDeployment(action: 'prepare' | 'validate' | 'commit') {
     if (!artifact || !decisionDocument?.design_approval) return
+    if (action === 'prepare' && artifact.report.deployment_eligibility?.eligible !== true) return
     const request = buildRequest.current
     setBusy(true); setError(null)
     const credentials = { ...connection, port: Number(connection.port) }
@@ -183,11 +184,12 @@ export function MigrationWorkflow({ preview, decisionDocument, targetSource, tar
     <section className="panel" aria-labelledby="deployment-title">
       <h2 id="deployment-title"><span className="step-num">03</span> Review &amp; deploy</h2>
       <p aria-live="polite">{artifact && decisionDocument ? `${artifact.artifact.command_count} reviewed commands · ${artifact.plan_status} · ${sessionId ? 'Candidate session active' : 'No deployment session'}` : 'No current reviewed artifact. Build and review a migration plan first.'}</p>
+      {artifact && artifact.report.deployment_eligibility?.eligible !== true && <p role="status">{artifact.report.deployment_eligibility?.reason || 'Build a current artifact to check candidate deployment eligibility.'}</p>}
       {status && <p role="status" aria-live="polite">{status}</p>}
       {(!decisionDocument?.design_approval || (!artifact && error)) && <Button onClick={() => onReviewDecision('')}>Review and approve design</Button>}
       <div className="workflow-stepper">
         {[
-          ['1', 'Prepare candidate', 'Push the reviewed artifact and validate the candidate automatically.', 'prepare', !decisionDocument?.design_approval || !artifact || busy || artifact.plan_status !== 'READY' || !artifact.artifact.command_count],
+          ['1', 'Prepare candidate', 'Push the reviewed artifact and validate the candidate automatically.', 'prepare', !decisionDocument?.design_approval || !artifact || busy || artifact.report.deployment_eligibility?.eligible !== true],
           ['2', 'Validation', 'Revalidate the artifact-bound candidate session.', 'validate', !decisionDocument?.design_approval || busy || !sessionId],
           ['3', 'Commit configuration', 'Submit an explicit commit after successful validation.', 'commit', !decisionDocument?.design_approval || busy || !sessionId || !candidateValidated],
         ].map(([number, title, description, action, disabled]) => <div className="step-box" key={number as string}>

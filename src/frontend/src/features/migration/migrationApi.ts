@@ -16,15 +16,6 @@ export type Decision = {
 }
 
 export type DecisionDocument = Record<string, unknown> & { decisions: Decision[] }
-export type ReviewData = {
-  decision_document: DecisionDocument
-  decisions: { decisions: Decision[] }
-  target_devices: string[]
-  target_device: string | null
-  requirements: { required: unknown[]; optional: unknown[] }
-  decision_candidates: Record<string, Array<{ value: string; target_scope?: string; class?: string; strong_evidence?: string[]; supporting_evidence?: string[] }>>
-  target_evidence: { device?: string; config_digest?: string } | null
-}
 export type PlanArtifact = {
   artifact_id: string
   plan_status: string
@@ -36,7 +27,7 @@ export type PlanArtifact = {
   blocking_reasons: Array<Record<string, unknown>>
   recommendations: Array<Record<string, unknown>>
   support_guidance?: Array<Record<string, unknown>>
-  report: { items?: Array<Record<string, unknown>>; command_sha256?: string }
+  report: { items?: Array<Record<string, unknown>>; command_sha256?: string; deployment_eligibility?: { eligible: boolean; reason: string | null } }
   decision_document: DecisionDocument
 }
 
