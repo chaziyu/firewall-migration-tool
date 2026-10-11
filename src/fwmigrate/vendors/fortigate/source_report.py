@@ -110,6 +110,9 @@ class FortiGateSourceReporter:
             profile=profile,
             source_name=options.get("source_name"),
             metrics=metrics,
+            collection_status=options.get("collection_status"),
+            collection_parts=options.get("collection_parts", ()),
+            collection_warnings=options.get("collection_warnings", ()),
         )
 
 

@@ -91,6 +91,103 @@ end
 """
 
 
+@pytest.mark.parametrize("profile", ("fast", "full"))
+@pytest.mark.parametrize("vendor,source", (("fortigate", FORTIGATE_SOURCE), ("palo_alto", PALO_SOURCE)), ids=("fortigate", "palo_alto"))
+@pytest.mark.parametrize("status", ("PARTIAL", "SUCCESS"))
+def test_snapshot_excel_preserves_collection_evidence(profile, vendor, source, status, monkeypatch):
+    from fwmigrate.collection.snapshot import FORMAT
+
+    client = create_app({"TESTING": True}).test_client()
+    reporter = source_reporters.get(vendor)
+    analyze = reporter.analyze_source
+    analyzed = []
+
+    def capture_analysis(source, **options):
+        analysis = analyze(source, **options)
+        analyzed.append((analysis, deepcopy(analysis)))
+        return analysis
+
+    monkeypatch.setattr(reporter, "analyze_source", capture_analysis)
+    parts = [
+        {"name": "config", "status": "SUCCESS", "complete": True, "count": 1},
+        {"name": "empty", "status": "EMPTY", "complete": True, "count": 0},
+    ]
+    if status == "PARTIAL":
+        parts.append({"name": "unavailable", "status": "PERMISSION_DENIED", "complete": False, "count": None})
+    snapshot = {
+        "format": FORMAT, "vendor_id": vendor, "source_name": "snapshot.conf",
+        "collection_method": "test", "status": status, "source_text": source,
+        "parts": parts, "warnings": ["password evidence-secret", "=1+1", "+1+1", "@SUM(1)"],
+    }
+    before = deepcopy(snapshot)
+    response = client.post("/api/extract/excel", json={
+        "source_vendor": vendor, "source": snapshot, "excel_profile": profile,
+    })
+    assert response.status_code == 200
+    assert snapshot == before
+    assert len(analyzed) == 1
+    assert analyzed[0][0] == analyzed[0][1]
+    workbook = load_workbook(io.BytesIO(response.data))
+    try:
+        summary = {row[0]: row[1] for row in workbook["Summary"].values if row[0]}
+        assert summary["Collection Status"] == status
+        if status == "PARTIAL":
+            assert "Missing configuration is unknown" in summary["Collection Completeness"]
+        evidence = workbook["Collection Evidence"]
+        rows = list(evidence.values)
+        assert rows[0] == ("Part Name", "Status", "Complete", "Count", "Warnings")
+        assert [row[:4] for row in rows[1:len(parts) + 1]] == [
+            (part["name"], part["status"], part["complete"], part["count"]) for part in parts
+        ]
+        assert [row[4] for row in rows[len(parts) + 1:]] == [
+            "password [REDACTED]", "'=1+1", "'+1+1", "'@SUM(1)",
+        ]
+        assert all(cell.data_type != "f" for row in evidence for cell in row)
+        values = str([row for sheet in workbook for row in sheet.values])
+        assert "evidence-secret" not in values
+        assert "palo-web-secret" not in values
+        assert ("192.0.2.1" if vendor == "fortigate" else "203.0.113.10") in values
+    finally:
+        workbook.close()
+
+
+@pytest.mark.parametrize("vendor,source", (("fortigate", FORTIGATE_SOURCE), ("palo_alto", PALO_SOURCE)), ids=("fortigate", "palo_alto"))
+@pytest.mark.parametrize("profile", ("fast", "full"))
+def test_excel_rejects_failed_collection_snapshot(vendor, source, profile):
+    from fwmigrate.collection.snapshot import FORMAT
+
+    client = create_app({"TESTING": True}).test_client()
+    response = client.post("/api/extract/excel", json={
+        "source_vendor": vendor, "excel_profile": profile,
+        "source": {"format": FORMAT, "vendor_id": vendor, "status": "FAILED", "source_text": source},
+    })
+    assert response.status_code == 400
+    assert response.get_json()["error"] == "Invalid source configuration"
+
+
+def test_panos_fast_does_not_build_source_appendix(monkeypatch):
+    from fwmigrate.vendors.palo_alto.export.excel_rows import ROW_BUILDERS
+
+    def unexpected_appendix(context):
+        pytest.fail("FAST must skip XML appendix processing")
+
+    monkeypatch.setitem(ROW_BUILDERS, "PAN-OS Source Appendix", unexpected_appendix)
+    client = create_app({"TESTING": True}).test_client()
+    response = client.post("/api/extract/excel", data={
+        "source_vendor": "palo_alto", "excel_profile": "fast",
+        "file": (io.BytesIO(PALO_SOURCE.encode()), "pan.xml"),
+    })
+    assert response.status_code == 200
+    workbook = load_workbook(io.BytesIO(response.data))
+    try:
+        summary = str(list(workbook["Summary"].values))
+        for name in ("PAN-OS Source Inventory", "Extraction Coverage", "PAN-OS Source Appendix"):
+            assert name not in workbook.sheetnames
+            assert name in summary
+    finally:
+        workbook.close()
+
+
 def _post(client, path, **fields):
     data = {"source_vendor": "cisco_asa", **fields}
     if path == "/api/preview" or "file" not in data:
@@ -260,7 +357,7 @@ def test_removed_source_diagnostics_endpoint_is_not_exposed():
 @pytest.mark.parametrize("transport", ("upload", "preview"))
 @pytest.mark.parametrize(("vendor", "fixture", "excluded"), (
     ("fortigate", "example_fortigate.conf", {"FortiGate Source Inventory", "Extraction Coverage"}),
-    ("palo_alto", "example_palo_alto.xml", {"PAN-OS Source Inventory", "Extraction Coverage"}),
+    ("palo_alto", "example_palo_alto.xml", {"PAN-OS Source Inventory", "Extraction Coverage", "PAN-OS Source Appendix"}),
     ("cisco_asa", "example_cisco_asa.cfg", {"Source Inventory", "Extraction Coverage"}),
     ("cisco_ftd", "cisco_ftd/fmc_selected_domains.json", set()),
     ("checkpoint", "checkpoint/multidomain_full.json", set()),
@@ -304,6 +401,11 @@ def test_excel_selector_reaches_real_vendor_profiles(vendor, fixture, excluded, 
         workbooks[profile] = load_workbook(io.BytesIO(response.data))
     assert write_modes == [True, False]
     fast, full = workbooks["fast"], workbooks["full"]
+    if vendor in {"fortigate", "palo_alto"}:
+        for workbook in (fast, full):
+            assert "Collection Evidence" not in workbook.sheetnames
+            assert "Collection Status" not in str(list(workbook["Summary"].values))
+        assert full["Summary"]["A11"].value == "Inventory"
     if vendor == "palo_alto":
         for workbook in (fast, full):
             assert "Review Required" in workbook.sheetnames
