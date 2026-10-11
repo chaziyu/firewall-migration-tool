@@ -65,8 +65,23 @@
 .vendor-select-wrap::after { content: ''; position: absolute; top: calc(50% - 5px); right: 18px; width: 7px; height: 7px; border-right: 1.5px solid var(--text-muted); border-bottom: 1.5px solid var(--text-muted); transform: rotate(45deg); pointer-events: none; }
 .field select.vendor-select { height: 56px; padding: 10px 40px 10px 48px; appearance: none; }
 .field small, .field > small { color: var(--text-muted); font-weight: 500; }
-.selected-file { max-width: 560px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius-sm); }
-.selected-file button, .text-button { border: 0; padding: 0; background: none; color: var(--color-primary); font: inherit; cursor: pointer; }
+.selected-file { min-width: 0; padding: 18px; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface-muted); }
+.selected-file-header { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+.selected-file-icon { display: grid; place-items: center; flex: 0 0 42px; height: 42px; border-radius: var(--radius-sm); background: var(--color-primary-subtle); color: var(--color-primary); }
+.selected-file-icon svg { width: 22px; height: 22px; }
+.selected-file-details { display: grid; gap: 4px; flex: 1 1 150px; min-width: 0; overflow-wrap: anywhere; }
+.selected-file-details strong { color: var(--text-heading); }
+.selected-file-details small { color: var(--text-muted); }
+.selected-file-actions { display: flex; align-items: center; gap: 16px; margin-left: auto; }
+.selected-file-actions button { min-width: 36px; }
+.selected-file-status { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); font-size: 13px; }
+.selected-file-status .loading-state { display: inline-flex; align-items: center; gap: 8px; margin-left: 0; }
+.selected-file-status .loading-state::before { content: ''; width: 12px; height: 12px; flex-shrink: 0; border: 2px solid var(--line); border-top-color: var(--color-primary); border-radius: 50%; animation: upload-spin 1s linear infinite; }
+.selected-file-status .error-banner { flex-basis: 100%; margin-top: 0; }
+.selected-file-success { color: var(--success); }
+@keyframes upload-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .selected-file-status .loading-state::before { animation: none; } }
+.text-button { border: 0; padding: 0; background: none; color: var(--color-primary); font: inherit; cursor: pointer; }
 .file-upload { display: grid; gap: 12px; }
 .migration-view-nav { display: flex; gap: 8px; }
 .migration-view-nav button { padding: 10px 16px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface); color: var(--text-main); font-weight: 600; }
@@ -88,7 +103,7 @@
 .target-xml-upload .dropzone small { margin-top: 8px; }
 .dropzone { min-height: 240px; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 6px; padding: 26px 18px; border: 2px dashed var(--line-strong); border-radius: var(--radius-md); text-align: center; cursor: pointer; background: var(--surface-muted); color: var(--text-muted); font-weight: 500; }
 .dropzone:hover { border-color: var(--color-primary); background: var(--surface-hover); }
-.file-upload:has(input:focus-visible) .dropzone { outline: 2px solid var(--focus-ring); outline-offset: 3px; }
+.file-upload:has(input:focus-visible) .dropzone, .file-upload:has(input:focus-visible) .selected-file { outline: 2px solid var(--focus-ring); outline-offset: 3px; }
 .dropzone strong { color: var(--text-heading); font-size: 15px; }
 .dropzone small { margin-top: 16px; color: var(--text-muted); font-size: 12px; }
 .browse-link { color: var(--color-primary); font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
