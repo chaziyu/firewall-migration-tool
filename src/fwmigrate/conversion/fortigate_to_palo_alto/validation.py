@@ -66,6 +66,8 @@ def validate_plan(plan: PANMigrationPlan) -> MigrationValidationResult:
         key = _key(item)
         for warning in item.warnings:
             issues.append(MigrationIssue("planned_item_warning", warning, PANMigrationStatus.MANUAL_REVIEW, _ref(item)))
+        if item.source_object_type == "security_rule" and item.status is PANMigrationStatus.UNSUPPORTED:
+            add("unsupported_security_rule", "security rule source semantics require manual design", item)
         if item.source_name and key in seen:
             add("duplicate_target_name", "duplicate target name", item)
         seen.add(key)

@@ -14,6 +14,8 @@ class PANValidationResult:
     job_id: str | None = None
     status: str = "NOT_RUN"
     response: str = ""
+    device_serial: str | None = None
+    candidate_sha256: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,6 +47,8 @@ class PANDeploymentSession:
     port: int
     validation_job_id: str | None
     validated_at: float
+    device_serial: str | None = None
+    candidate_sha256: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,3 +60,5 @@ class PANDeploymentOptions:
     port: int = 22
     job_poll_interval: float = 1.0
     job_poll_attempts: int = 60
+    expected_serial: str | None = None
+    expected_candidate_sha256: str | None = None

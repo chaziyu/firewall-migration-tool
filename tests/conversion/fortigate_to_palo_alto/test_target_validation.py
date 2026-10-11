@@ -34,7 +34,7 @@ def test_confirmed_target_conflict_is_report_only():
             item.update(value="ethernet1/1", review_state="CONFIRMED")
         if item["source_kind"] == "interface" and item["source_name"] == "lan" and item["target_field"] == "target_zone":
             item.update(value="untrust", review_state="CONFIRMED")
-    result = client.post("/api/migrate", json={
+    result = client.post("/api/migration/requirements", json={
         "source": source_preview,
         "decision_document": document,
         "target_source": target_preview,
@@ -47,7 +47,7 @@ def test_confirmed_target_conflict_is_report_only():
                     and item["target_field"] == "target_zone")
     assert result["decision_evidence"][zone_key] == "CONFLICT"
     assert result["evidence_summary"]["conflicts"] >= 1
-    assert result["support_guidance"]
+    assert "design_approval" not in result["decision_document"]
 
 
 def _direct_target(*, target_address="198.51.100.1/24", target_tag=None, target_parent=None,

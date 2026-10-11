@@ -5,6 +5,70 @@ import pytest
 from fwmigrate.web import create_app
 
 
+@pytest.mark.parametrize('legacy', ['mapping', 'decisions', 'decision_set', 'decision_document'])
+def test_legacy_inputs_cannot_issue_executable_artifacts(legacy):
+    client, payload = setup()
+    data, payload = allocate(client, payload)
+    document = payload.pop('decision_document')
+    payload[legacy] = ({'vdoms': {'root': {'vsys': 'vsys1'}}} if legacy == 'mapping' else
+                       document if legacy == 'decision_document' else {'decisions': document['decisions']})
+    response = client.post('/api/migrate', json=payload)
+    assert response.status_code == 400
+    assert 'artifact' not in response.get_json()
+
+
+@pytest.mark.parametrize('change', ['legacy', 'forged', 'digest', 'source', 'target', 'unapproved', 'configuration', 'expired'])
+def test_signed_artifact_requires_matching_approved_design_before_deployment(monkeypatch, change):
+    import fwmigrate.web as web
+    from fwmigrate.web_support.artifact_signing import sign_envelope
+    from tests.test_web_candidate_sessions import CREDS
+    client, payload = setup(TARGET.replace('name="fw"', 'name="fw" serial="012345678901"'))
+    data, payload = allocate(client, payload)
+    payload['decision_document'] = approve(client, payload, data).get_json()['decision_document']
+    artifact = client.post('/api/migrate', json=payload).get_json()['artifact']
+    if change == 'legacy':
+        artifact['decision_document'].pop('design_approval')
+    elif change == 'forged':
+        artifact['decision_document']['design_approval']['signature'] = 'forged'
+    elif change == 'digest':
+        artifact['report']['approved_design_digest'] = 'different'
+    elif change == 'source':
+        artifact['report']['source']['digest'] = 'different'
+    elif change == 'target':
+        artifact['report']['target_evidence']['serial'] = 'different'
+    elif change == 'expired':
+        approval = artifact['decision_document']['design_approval']
+        approval['expires_at'] = 0
+        artifact['decision_document']['design_approval'] = sign_envelope(approval, b'd' * 32)
+    elif change == 'configuration':
+        artifact['report']['items'][0]['target_name'] = 'unapproved-name'
+    else:
+        approval = artifact['decision_document']['design_approval']
+        approval['configuration'] = {}
+        artifact['decision_document']['design_approval'] = sign_envelope(approval, b'd' * 32)
+    artifact = sign_envelope(artifact, b'd' * 32)
+    monkeypatch.setattr(web, 'PANSSHDeployer', lambda *_: pytest.fail('Invalid approval must not connect'))
+    response = client.post('/api/deploy', json={**CREDS, 'artifact': artifact})
+    assert response.status_code == 400
+    if change == 'expired':
+        assert response.get_json()['error_code'] == 'artifact_ineligible'
+        assert 'expired' in response.get_json()['error']
+
+
+def test_hostname_evidence_does_not_allow_live_candidate_preparation(monkeypatch):
+    import fwmigrate.web as web
+    from tests.test_web_candidate_sessions import CREDS
+    client, payload = setup()
+    data, payload = allocate(client, payload)
+    payload['decision_document'] = approve(client, payload, data).get_json()['decision_document']
+    artifact = client.post('/api/migrate', json=payload).get_json()['artifact']
+    assert artifact['report']['plan_status'] == 'READY'
+    monkeypatch.setattr(web, 'PANSSHDeployer', lambda *_: pytest.fail('Hostname must not be used as serial'))
+    response = client.post('/api/deploy', json={**CREDS, 'artifact': artifact})
+    assert response.status_code == 400
+    assert 'serial evidence' in response.get_json()['error']
+
+
 SOURCE = '''config system interface
     edit "port1"
         set type physical

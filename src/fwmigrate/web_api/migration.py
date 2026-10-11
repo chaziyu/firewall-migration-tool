@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 import json
 import logging
+import time
 import re
 import zipfile
 from dataclasses import dataclass, replace
@@ -14,6 +15,8 @@ from flask import jsonify, request, send_file
 
 from fwmigrate.conversion.fortigate_to_palo_alto.application import (
     AutomationPolicy,
+    DESIGN_APPROVAL_TTL_SECONDS,
+    approval_is_current,
     InterfaceMappingConfirmationError,
     MigrationRuleType,
     PANAutomationMode,
@@ -32,7 +35,6 @@ from fwmigrate.conversion.fortigate_to_palo_alto.application import (
     build_review_state,
     classify_auto_decisions,
     confirm_interface_mappings,
-    confirm_mapping_decisions,
     decision_evidence as build_decision_evidence,
     draft_context,
     evidence_summary,
@@ -46,6 +48,9 @@ from fwmigrate.conversion.fortigate_to_palo_alto.application import (
     run_migration_pipeline,
     target_device_metadata,
     target_devices,
+    target_serial,
+    validate_artifact_approval,
+    validate_approved_plan,
     target_evidence_changed as target_evidence_has_changed,
     target_evidence_identity,
 )
@@ -72,7 +77,8 @@ class _TargetEvidenceContext:
 
     @property
     def metadata(self):
-        return {"vendor": "palo_alto", "config_digest": self.source_digest, "device": self.selected_device}
+        return {"vendor": "palo_alto", "config_digest": self.source_digest, "device": self.selected_device,
+                "serial": target_serial(self.analysis, self.selected_device)}
 
 
 def _target_evidence(payload):
@@ -123,7 +129,12 @@ def register_migration_routes(
         return entry
 
     def _request_artifact(payload):
-        return verify_artifact(payload.get('artifact'), signing_key)
+        artifact = payload.get('artifact')
+        rendered = verify_artifact(artifact, signing_key)
+        document = artifact.get('decision_document') or {}
+        approval = verify_envelope(document.get('design_approval'), signing_key)
+        validate_artifact_approval(rendered, document, approval)
+        return rendered
 
     def _decision_approval_snapshot(decisions):
         fields = ('value', 'review_state', 'approved_operation', 'approval_context',
@@ -156,7 +167,7 @@ def register_migration_routes(
             payload.get('target_intent', bound['intent']))
         context['overrides'] = payload.get('draft_overrides', bound.get('overrides', {}))
         current = _decision_approval_snapshot(decisions)
-        stale = context != bound or current != approval.get('decisions')
+        stale = not approval_is_current(approval) or context != bound or current != approval.get('decisions')
         if stale:
             if strict:
                 raise ValueError('Approved design is stale or modified; prepare and review it again')
@@ -222,6 +233,7 @@ def register_migration_routes(
             # Bind the exact approved operations, values, scope, evidence and dependency context.
             approval = sign_envelope({'envelope_type': 'pan_design_approval', 'context': body['context'],
                 'draft_digest': body['digest'], 'configuration': approved_rows,
+                'expires_at': time.time() + DESIGN_APPROVAL_TTL_SECONDS,
                 'decisions': _decision_approval_snapshot(confirmed)}, signing_key)
             document = build_decision_document(entry.source_digest, confirmed,
                 state['target_context'].metadata if state['target_context'] and body['context']['reference_role'] == 'DESTINATION' else None)
@@ -241,8 +253,8 @@ def register_migration_routes(
         return jsonify({'success': True, 'source_digest': entry.source_digest, 'requirements': state['requirements'],
                         'decisions': decisions.to_dict(),
                         'design_session': state['design_session'].to_dict(),
-                        'decision_document': build_decision_document(entry.source_digest, decisions,
-                                                                 target_context.metadata if target_context else None),
+                        'decision_document': {**build_decision_document(entry.source_digest, decisions,
+                                                                 target_context.metadata if target_context else None), 'draft_required': True},
                         'target_devices': list(target_context.devices) if target_context else [],
                         'target_device': state['target_device'],
                         'target_device_metadata': target_device_metadata(target) if target else [],
@@ -316,8 +328,7 @@ def register_migration_routes(
                 target_device_count=len(target_context.devices) if target_context else 0,
             )
             response = _migration_review_response(entry, {'target_context': target_context, **state}).get_json()
-            if approval or (document or {}).get('draft_required'):
-                response['decision_document']['draft_required'] = True
+            response['decision_document']['draft_required'] = True
             return jsonify(response)
         except InterfaceMappingConfirmationError as exc:
             return jsonify({'success': False, 'error': str(exc), 'errors': exc.errors}), 400
@@ -370,8 +381,8 @@ def register_migration_routes(
                 )
             decisions = PANMigrationDecisionSet(tuple(sorted(by_key.values(), key=lambda item: item.key)))
             return jsonify({'success': True, 'approved_count': len(payload['decision_keys']),
-                'decisions': decisions.to_dict(), 'decision_document': build_decision_document(entry.source_digest, decisions,
-                    target_context.metadata if target_context else None),
+                'decisions': decisions.to_dict(), 'decision_document': {**build_decision_document(entry.source_digest, decisions,
+                    target_context.metadata if target_context else None), 'draft_required': True},
                 'invalidated_target_decisions': list(invalidated_target_decisions)})
         except (ValueError, KeyError, TypeError) as exc:
             return jsonify({'success': False, 'error': str(exc)}), 400
@@ -405,8 +416,8 @@ def register_migration_routes(
                 enabled_policies=enabled,
             )
             return jsonify({'success': True, 'decisions': result.decisions.to_dict(),
-                'decision_document': build_decision_document(entry.source_digest, result.decisions,
-                    target_context.metadata if target_context else None),
+                'decision_document': {**build_decision_document(entry.source_digest, result.decisions,
+                    target_context.metadata if target_context else None), 'draft_required': True},
                 'audit': list(result.audit), 'iterations': result.iterations, 'stable': result.stable,
                 'invalidated_target_decisions': list(invalidated_target_decisions)})
         except (ValueError, KeyError, TypeError) as exc:
@@ -438,8 +449,8 @@ def register_migration_routes(
             decisions = automation.decisions
             auto = auto_review_results(analysis.extracted.config, analysis.derived, decisions, target, device)
             return jsonify({'success': True, 'decisions': decisions.to_dict(),
-                'decision_document': build_decision_document(entry.source_digest, decisions,
-                    target_context.metadata if target_context else None), 'auto_decisions': auto,
+                'decision_document': {**build_decision_document(entry.source_digest, decisions,
+                    target_context.metadata if target_context else None), 'draft_required': True}, 'auto_decisions': auto,
                 'target_intent': export_target_intent(decisions), 'automation_audit': list(automation.audit),
                 'automation_stable': automation.stable,
                 'invalidated_target_decisions': list(invalidated_target_decisions)})
@@ -473,8 +484,8 @@ def register_migration_routes(
                     source_vdom=payload.get('source_vdom'), source_zone=payload.get('source_zone'),
                     value=payload.get('value'), apply_to=payload.get('apply_to'))
                 return jsonify({'success': True, 'applied_count': len(payload['apply_to']),
-                    'decision_document': build_decision_document(entry.source_digest, decisions,
-                        document.get('target_evidence'))})
+                    'decision_document': {**build_decision_document(entry.source_digest, decisions,
+                        document.get('target_evidence')), 'draft_required': True}})
             try:
                 raw_rule_type = payload.get('rule_type')
                 rule_type = MigrationRuleType.ZONE_TO_MEMBERS if raw_rule_type == 'APPLY_ZONE_TO_MEMBERS' else MigrationRuleType(raw_rule_type)
@@ -495,16 +506,16 @@ def register_migration_routes(
                 decisions = apply_zone_to_members(analysis.extracted.config, previous,
                     source_key=payload.get('source_key'), value=payload.get('value'), apply_to=apply_to)
                 return jsonify({'success': True, 'applied_count': len(apply_to),
-                    'decision_document': build_decision_document(entry.source_digest, decisions,
-                        document.get('target_evidence'))})
+                    'decision_document': {**build_decision_document(entry.source_digest, decisions,
+                        document.get('target_evidence')), 'draft_required': True}})
             target_context = _target_evidence(payload)
             results = classify_auto_decisions(analysis.extracted.config, analysis.derived, previous,
                 target_context.analysis if target_context else None,
                 target_context.selected_device if target_context else None)
             return jsonify({'success': True, 're_evaluated_count': len(apply_to),
                 'auto_decisions': {key: results.get(key, {'status': 'MANUAL'}) for key in apply_to},
-                'decision_document': build_decision_document(entry.source_digest, previous,
-                    target_context.metadata if target_context else document.get('target_evidence'))})
+                'decision_document': {**build_decision_document(entry.source_digest, previous,
+                    target_context.metadata if target_context else document.get('target_evidence')), 'draft_required': True}})
         except (ValueError, KeyError, TypeError):
             _LOGGER.exception('Invalid migration rule request')
             return jsonify({'success': False, 'error': 'Invalid migration rule request'}), 400
@@ -593,49 +604,25 @@ def register_migration_routes(
             analysis = entry.analysis
 
             _require_complete_collection(entry)
-            serialized = payload.get('decision_document', payload.get('decisions', payload.get('decision_set')))
-            design_approval = None
-            if isinstance(serialized, dict) and 'format_version' in serialized:
-                serialized, design_approval = _reviewed_design_document(payload, entry, strict=True)
-                if serialized.get('draft_required') and design_approval is None:
-                    raise ValueError('Review and approve the deterministic draft before building an artifact')
-            decision_set = None
-            options = None
-            if serialized is not None:
-                if isinstance(serialized, dict) and 'format_version' in serialized:
-                    decision_set = load_decision_document(serialized, entry.source_digest)
-                else:
-                    decision_set = PANMigrationDecisionSet.from_dict(
-                        serialized if isinstance(serialized, dict) else {'decisions': serialized}
-                    )
-                    if any(row.approved_operation for row in decision_set.decisions):
-                        raise ValueError('Draft operations require a signed engineer approval')
-            else:
-                mapping_value = payload.get('mapping', '{}')
-                mapping = json.loads(mapping_value) if isinstance(mapping_value, str) else mapping_value
-                if not isinstance(mapping, dict):
-                    raise ValueError('Mapping must contain an object')
-                options = PANMigrationOptions(**mapping)
+            serialized, design_approval = _reviewed_design_document(payload, entry, strict=True)
+            if design_approval is None:
+                raise ValueError('Review and approve the deterministic draft before building an artifact')
+            decision_set = load_decision_document(serialized, entry.source_digest)
 
             target_context = _target_evidence(payload)
             target_evidence_changed = target_evidence_has_changed((serialized.get('target_evidence') if isinstance(serialized, dict) else None), (target_context.metadata if target_context else None))
             target = target_context.analysis if target_context else None
             target_device = target_context.selected_device if target_context else None
-            if design_approval and design_approval['context']['reference_role'] != 'DESTINATION':
+            if design_approval['context']['reference_role'] != 'DESTINATION':
                 target, target_device = None, None
-            mode_value = payload.get('automation_mode', PANAutomationMode.REVIEW_ONLY.value if design_approval else PANAutomationMode.VERIFIED_AND_DERIVED.value)
-            if not isinstance(mode_value, str):
-                raise ValueError('automation_mode must be a string')
-            try:
-                automation_mode = PANAutomationMode(mode_value.upper())
-            except ValueError as exc:
-                raise ValueError('Unsupported automation_mode') from exc
+            if payload.get('automation_mode', 'REVIEW_ONLY') != 'REVIEW_ONLY':
+                raise ValueError('Approved designs require REVIEW_ONLY planning')
+            automation_mode = PANAutomationMode.REVIEW_ONLY
 
             result = run_migration_pipeline(
                 analysis.extracted.config,
                 analysis.derived,
                 decisions=decision_set,
-                options=options,
                 target=target,
                 target_device=target_device,
                 target_evidence=target_context.metadata if target_context else None,
@@ -643,23 +630,23 @@ def register_migration_routes(
                 source_digest=entry.source_digest,
                 planner=migration_planner_registry.get(source_vendor, target_vendor),
                 target_object_reuse_classifier=object_reuse_classifier,
-                approved_item_keys=set(design_approval['configuration']) if design_approval else None,
+                approved_item_keys=set(design_approval['configuration']),
             )
+            validate_approved_plan(result.plan, design_approval)
             target_evidence_changed = target_evidence_changed or bool(result.invalidated_target_decisions)
             decision_set = result.decisions
             mapping = options_mapping(result.options)
             safe_target_evidence = target_context.metadata if target_context else None
             decision_document = build_decision_document(entry.source_digest, decision_set, safe_target_evidence)
-            if design_approval:
-                decision_document['design_approval'] = design_approval
+            decision_document['design_approval'] = design_approval
             decision_evidence = build_decision_evidence(decision_set, result.target_findings)
 
             rendered = replace(result.rendered, report={
                 **result.rendered.report,
                 'source': {'vendor': 'fortigate', 'digest': entry.source_digest},
                 'target_evidence': safe_target_evidence,
-                'approved_design_digest': design_approval['draft_digest'] if design_approval else None,
-                'destination_verified': bool(design_approval and design_approval['context']['reference_role'] == 'DESTINATION'
+                'approved_design_digest': design_approval['draft_digest'],
+                'destination_verified': bool(design_approval['context']['reference_role'] == 'DESTINATION'
                                              and target is not None and target_device),
                 'review': {
                     'target_evidence_changed': target_evidence_changed,
@@ -675,7 +662,7 @@ def register_migration_routes(
                 },
             })
             plan_status = result.artifact_status
-            if design_approval and not rendered.report['destination_verified']:
+            if not rendered.report['destination_verified']:
                 plan_status = 'PARTIAL'
                 rendered = replace(rendered, report={**rendered.report, 'plan_status': plan_status})
             artifact_id = uuid_factory().hex
@@ -783,9 +770,10 @@ def register_migration_routes(
             return jsonify(response)
         except (ValueError, KeyError, TypeError) as exc:
             _LOGGER.warning('Migration request validation failed')
-            message = (_SAFE_COLLECTION_ERROR
-                       if isinstance(exc, ValueError) and str(exc) == _SAFE_COLLECTION_ERROR
-                       else 'Invalid migration request')
+            message = 'Invalid migration request'
+            if isinstance(exc, ValueError) and (str(exc) == _SAFE_COLLECTION_ERROR
+                    or str(exc).startswith(('Review and approve', 'Approved design', 'Approved configuration'))):
+                message = str(exc)
             return jsonify({'success': False, 'error': message}), 400
 
     @app.route('/api/migration/bundle', methods=['POST'])

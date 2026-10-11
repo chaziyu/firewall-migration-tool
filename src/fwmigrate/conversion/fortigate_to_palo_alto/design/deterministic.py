@@ -22,7 +22,7 @@ def draft_context(source_digest, reference=None, reference_role=None, target_dev
     if role not in {None, "DESTINATION", "TEMPLATE"}:
         raise ValueError("reference_role must be DESTINATION, TEMPLATE, or null")
     return {"source_digest": source_digest, "reference_digest": (reference or {}).get("config_digest"),
-            "reference_role": role, "target_device": target_device,
+            "reference_role": role, "target_device": target_device, "target_serial": (reference or {}).get("serial"),
             "intent": parse_target_intent(intent), "schema_version": 1}
 
 

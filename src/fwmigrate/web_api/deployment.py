@@ -11,9 +11,9 @@ from functools import wraps
 
 from flask import jsonify, request
 
-from fwmigrate.conversion.fortigate_to_palo_alto.application import deployment_validation_feedback
+from fwmigrate.conversion.fortigate_to_palo_alto.application import ArtifactEligibilityError, deployment_validation_feedback, deployment_serial
 from fwmigrate.deployment import PANDeploymentOptions, PANDeploymentSession
-from fwmigrate.web_support.artifact_signing import verify_artifact
+from fwmigrate.web_support.artifact_signing import verify_artifact, verify_envelope
 from fwmigrate.web_support.reporting import _parse_bool
 
 _LOGGER = logging.getLogger(__name__)
@@ -59,7 +59,12 @@ def register_deployment_routes(
     coordination_lock = coordinator.lock
 
     def _request_artifact(payload):
-        return verify_artifact(payload.get('artifact'), signing_key)
+        artifact = payload.get('artifact')
+        rendered = verify_artifact(artifact, signing_key)
+        document = artifact.get('decision_document') or {}
+        approval = verify_envelope(document.get('design_approval'), signing_key)
+        deployment_serial(rendered, document, approval)
+        return rendered
 
     def _candidate_operation(function):
         @wraps(function)
@@ -81,9 +86,11 @@ def register_deployment_routes(
                     if not rendered.commands:
                         return jsonify({'success': False, 'error': 'The migration artifact contains no renderable commands'}), 400
                 options = _deployment_options(payload)
-            except ValueError:
+            except ArtifactEligibilityError as exc:
+                return jsonify({'success': False, 'error': str(exc), 'error_code': 'artifact_ineligible'}), 400
+            except (ValueError, KeyError, TypeError):
                 _LOGGER.warning('Invalid deployment request payload.')
-                return jsonify({'success': False, 'error': 'Invalid deployment request.'}), 400
+                return jsonify({'success': False, 'error': 'A signed READY design with approved destination serial evidence is required.'}), 400
             key = (options.host.casefold(), options.port)
             with coordination_lock:
                 lock, users = target_locks.get(key, (threading.RLock(), 0))
@@ -149,6 +156,11 @@ def register_deployment_routes(
         options = _deployment_options(payload)
         if (options.host.casefold(), options.port) != (session.host.casefold(), session.port):
             raise _CandidateSessionError('target_mismatch')
+        if not session.device_serial or not session.candidate_sha256:
+            deployment_sessions.pop(session_id, None)
+            raise _CandidateSessionError('session_missing')
+        options = replace(options, expected_serial=session.device_serial,
+                          expected_candidate_sha256=session.candidate_sha256)
         return session, rendered, options
 
     @app.route('/api/deploy', methods=['POST'])
@@ -166,6 +178,8 @@ def register_deployment_routes(
             for session_id, session in tuple(deployment_sessions.items()):
                 if (session.host.casefold(), session.port) == (options.host.casefold(), options.port):
                     deployment_sessions.pop(session_id, None)
+            serial = payload['artifact']['decision_document']['design_approval']['context']['target_serial']
+            options = replace(options, expected_serial=serial)
             result = deployer_factory(options).deploy(rendered)
             decision_document = payload['artifact']['decision_document']
             validation_feedback = deployment_validation_feedback(rendered, decision_document, result.validation)
@@ -173,6 +187,8 @@ def register_deployment_routes(
                 result.failure_message is None
                 and result.failed_command_index is None
                 and result.validation.status == 'SUCCESS'
+                and result.validation.device_serial == serial
+                and bool(result.validation.candidate_sha256)
             )
             deployment_session_id = None
             if succeeded:
@@ -186,6 +202,8 @@ def register_deployment_routes(
                     port=options.port,
                     validation_job_id=result.validation.job_id,
                     validated_at=time.time(),
+                    device_serial=result.validation.device_serial,
+                    candidate_sha256=result.validation.candidate_sha256,
                 )
             return jsonify({
                 'success': succeeded,
@@ -196,7 +214,7 @@ def register_deployment_routes(
                 'candidate_validated': succeeded,
             }), (200 if succeeded else 502)
         except (ValueError, KeyError, TypeError):
-            _LOGGER.exception('Deployment request rejected due to invalid payload or state')
+            _LOGGER.info('Deployment request rejected due to invalid payload or state')
             return jsonify({'success': False, 'error': 'Invalid deployment request'}), 400
 
     @app.route('/api/validate-candidate', methods=['POST'])
@@ -208,7 +226,9 @@ def register_deployment_routes(
             result = deployer_factory(replace(options, validate=True)).validate()
             decision_document = payload['artifact']['decision_document']
             validation_feedback = deployment_validation_feedback(rendered, decision_document, result)
-            if result.status == 'SUCCESS':
+            valid = (result.status == 'SUCCESS' and result.device_serial == session.device_serial
+                     and result.candidate_sha256 == session.candidate_sha256)
+            if valid:
                 deployment_sessions[session.session_id] = replace(
                     session,
                     validation_job_id=result.job_id,
@@ -217,19 +237,23 @@ def register_deployment_routes(
             else:
                 deployment_sessions.pop(session.session_id, None)
             return jsonify({
-                'success': result.status == 'SUCCESS',
-                'error': None if result.status == 'SUCCESS' else result.response or 'Candidate validation failed',
+                'success': valid,
+                'error': None if valid else result.response or 'Candidate identity or state verification failed',
                 'result': asdict(result),
-                'deployment_session_id': session.session_id if result.status == 'SUCCESS' else None,
+                'deployment_session_id': session.session_id if valid else None,
                 'validation_feedback': validation_feedback,
-            }), (200 if result.status == 'SUCCESS' else 502)
+            }), (200 if valid else 502)
+        except ArtifactEligibilityError as exc:
+            deployment_sessions.pop(payload.get('deployment_session_id'), None)
+            return jsonify({'success': False, 'error': str(exc), 'error_code': 'artifact_ineligible'}), 400
         except _CandidateSessionError as exc:
             return jsonify({
                 'success': False,
                 'error': _CandidateSessionError.MESSAGES[exc.code],
                 'error_code': exc.code,
             }), 400
-        except ValueError:
+        except Exception:
+            deployment_sessions.pop(payload.get('deployment_session_id'), None)
             _LOGGER.info('Invalid candidate validation request')
             return jsonify({'success': False, 'error': 'Invalid candidate validation request'}), 400
 
@@ -240,20 +264,23 @@ def register_deployment_routes(
             payload = request.get_json(silent=True) or {}
             session, _rendered, options = _require_deployment_session(payload)
             result = deployer_factory(replace(options, validate=False)).commit()
-            if result.status == 'SUCCESS':
-                deployment_sessions.pop(session.session_id, None)
+            deployment_sessions.pop(session.session_id, None)
             return jsonify({
                 'success': result.status == 'SUCCESS',
                 'error': None if result.status == 'SUCCESS' else result.response or 'Candidate commit failed',
                 'result': asdict(result),
-                'deployment_session_id': session.session_id if result.status != 'SUCCESS' else None,
+                'deployment_session_id': None,
             }), (200 if result.status == 'SUCCESS' else 502)
+        except ArtifactEligibilityError as exc:
+            deployment_sessions.pop(payload.get('deployment_session_id'), None)
+            return jsonify({'success': False, 'error': str(exc), 'error_code': 'artifact_ineligible'}), 400
         except _CandidateSessionError as exc:
             return jsonify({
                 'success': False,
                 'error': _CandidateSessionError.MESSAGES[exc.code],
                 'error_code': exc.code,
             }), 400
-        except ValueError:
+        except Exception:
+            deployment_sessions.pop(payload.get('deployment_session_id'), None)
             _LOGGER.info("Invalid candidate commit request")
             return jsonify({'success': False, 'error': 'Invalid candidate commit request'}), 400

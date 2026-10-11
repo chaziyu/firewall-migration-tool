@@ -77,7 +77,7 @@ def test_different_targets_can_deploy_concurrently(monkeypatch):
             release.set()
         assert first.result(timeout=5).status_code == 200
     assert {item.name for item in fields(PANDeploymentSession)} == {
-        'session_id', 'artifact_id', 'command_count', 'command_sha256', 'host', 'port', 'validation_job_id', 'validated_at'}
+        'session_id', 'artifact_id', 'command_count', 'command_sha256', 'host', 'port', 'validation_job_id', 'validated_at', 'device_serial', 'candidate_sha256'}
 
 
 def test_fortigate_workspace_evidence_redacts_multiline_secrets():

@@ -1,6 +1,9 @@
 """Optional, explicit candidate deployment for Palo Alto."""
 
 import re
+import hashlib
+import xml.etree.ElementTree as ET
+from dataclasses import replace
 import time
 
 from .models import (PANCommitResult, PANDeploymentCommandResult, PANDeploymentOptions,
@@ -21,6 +24,10 @@ def _safe_text(value, password):
     return text.replace(password, "<redacted>") if password else text
 
 
+class _CandidateIntegrityError(ValueError):
+    pass
+
+
 class PANSSHDeployer:
     def __init__(self, options: PANDeploymentOptions):
         self.options = options
@@ -36,6 +43,40 @@ class PANSSHDeployer:
                                          password=self.options.password,
                                          ssh_strict=True, system_host_keys=True)
         return self
+
+    def _candidate_identity(self):
+        """Read full device state without exporting or logging configuration values."""
+        try:
+            info = self.connection.send_command("show system info")
+            serials = re.findall(r"(?m)^\s*serial:\s*(\S+)\s*$", info or "")
+            if len(serials) != 1 or serials[0] != self.options.expected_serial:
+                raise _CandidateIntegrityError("Live PAN-OS serial is missing or differs from the approved destination")
+            response = self.connection.send_command("set cli config-output-format xml")
+            if _ERROR.search(response or ""):
+                raise _CandidateIntegrityError("Cannot read complete PAN-OS candidate state")
+            candidate = self.connection.send_command("show config candidate")
+            try:
+                root = ET.fromstring(candidate)
+            except (ET.ParseError, TypeError):
+                raise _CandidateIntegrityError("Cannot read complete PAN-OS candidate state") from None
+            if root.tag != "config" or not len(root):
+                raise _CandidateIntegrityError("Cannot read complete PAN-OS candidate state")
+            # Persist only the fingerprint; secret changes must also invalidate validation.
+            canonical = ET.canonicalize(ET.tostring(root, encoding="unicode"), strip_text=False)
+            digest = hashlib.sha256(canonical.encode()).hexdigest()
+        except _CandidateIntegrityError:
+            raise
+        except Exception:
+            raise _CandidateIntegrityError("Cannot verify live PAN-OS identity and candidate state") from None
+        if self.options.expected_candidate_sha256 and digest != self.options.expected_candidate_sha256:
+            raise _CandidateIntegrityError("Candidate changed after validation; prepare the candidate again")
+        return serials[0], digest
+
+    def _unchanged_candidate(self, expected):
+        serial, digest = self._candidate_identity()
+        if digest != expected:
+            raise _CandidateIntegrityError("Candidate changed during validation; prepare the candidate again")
+        return serial, digest
 
     def push_candidate(self, rendered: RenderedMigration):
         if not isinstance(rendered, RenderedMigration):
@@ -135,11 +176,23 @@ class PANSSHDeployer:
         except Exception as exc:
             return PANDeploymentResult(False, failure_message=_safe_text(exc, self.options.password))
         try:
+            if self.options.expected_serial:
+                self._candidate_identity()
+                try:
+                    diff = self.connection.send_command("show config diff")
+                except Exception:
+                    raise ValueError("Cannot verify whether the candidate has existing changes") from None
+                if not isinstance(diff, str) or diff.strip():
+                    raise ValueError("Candidate has existing or unknown unreviewed changes; resolve them before preparation")
             pushed = self.push_candidate(rendered)
             if pushed.failure_message is not None or pushed.failed_command_index is not None:
                 return pushed
             try:
+                before = self._candidate_identity()[1] if self.options.expected_serial else None
                 validation = self.validate_candidate() if self.options.validate else PANValidationResult()
+                if before and validation.status == "SUCCESS":
+                    serial, digest = self._unchanged_candidate(before)
+                    validation = replace(validation, device_serial=serial, candidate_sha256=digest)
             except Exception as exc:
                 validation = PANValidationResult(None, "FAILED", _safe_text(exc, self.options.password))
             failure_message = pushed.failure_message
@@ -148,6 +201,8 @@ class PANSSHDeployer:
             return PANDeploymentResult(pushed.connected, pushed.commands_attempted, pushed.commands_succeeded,
                                        pushed.failed_command_index, failure_message, pushed.command_results,
                                        validation)
+        except Exception as exc:
+            return PANDeploymentResult(True, failure_message=_safe_text(exc, self.options.password))
         finally:
             try:
                 self.connection.disconnect()
@@ -162,6 +217,10 @@ class PANSSHDeployer:
         except Exception as exc:
             return PANCommitResult(None, "FAILED", _safe_text(exc, self.options.password))
         try:
+            if self.options.expected_serial:
+                if not self.options.expected_candidate_sha256:
+                    raise ValueError("A validated candidate fingerprint is required")
+                self._candidate_identity()
             return self._commit_candidate()
         except Exception as exc:
             return PANCommitResult(None, "FAILED", _safe_text(exc, self.options.password))
@@ -179,7 +238,15 @@ class PANSSHDeployer:
         except Exception as exc:
             return PANValidationResult(None, "FAILED", _safe_text(exc, self.options.password))
         try:
-            return self.validate_candidate()
+            if self.options.expected_serial:
+                if not self.options.expected_candidate_sha256:
+                    raise ValueError("A validated candidate fingerprint is required")
+                self._candidate_identity()
+            result = self.validate_candidate()
+            if self.options.expected_serial and result.status == "SUCCESS":
+                serial, digest = self._candidate_identity()
+                result = replace(result, device_serial=serial, candidate_sha256=digest)
+            return result
         except Exception as exc:
             return PANValidationResult(None, "FAILED", _safe_text(exc, self.options.password))
         finally:

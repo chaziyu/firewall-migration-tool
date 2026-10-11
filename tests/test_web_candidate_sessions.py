@@ -1,5 +1,6 @@
 import io
 import pytest
+from tests.approved_design import approved_migrate
 
 import fwmigrate.web as web
 from fwmigrate.deployment import (
@@ -32,7 +33,7 @@ def _ready_artifact(client):
         content_type="multipart/form-data",
     )
     assert preview.status_code == 200
-    plan = client.post("/api/migrate", json={
+    plan = approved_migrate(client, json={
         "source": preview.get_json()["source_evidence"],
         "mapping": {"vdoms": {"root": {"vsys": "vsys1"}}},
     })
@@ -55,11 +56,11 @@ class _SuccessfulDeployer:
             connected=True,
             commands_attempted=len(rendered.commands),
             commands_succeeded=len(rendered.commands),
-            validation=PANValidationResult("71", "SUCCESS", "FIN OK"),
+            validation=PANValidationResult("71", "SUCCESS", "FIN OK", "012345678901", "candidate-hash"),
         )
 
     def validate(self):
-        return PANValidationResult("72", "SUCCESS", "FIN OK")
+        return PANValidationResult("72", "SUCCESS", "FIN OK", "012345678901", "candidate-hash")
 
     def commit(self):
         return PANCommitResult("73", "SUCCESS", "FIN OK")
@@ -74,6 +75,48 @@ class _FailedValidationDeployer(_SuccessfulDeployer):
             failure_message="candidate validation failed",
             validation=PANValidationResult("71", "FAILED", "FIN FAIL"),
         )
+
+
+@pytest.mark.parametrize('status,digest', [('SUCCESS', 'drifted-candidate'), ('FAILED', None), ('TIMEOUT', None)])
+def test_revalidation_failure_or_drift_invalidates_commit_session(monkeypatch, status, digest):
+    class Drifted(_SuccessfulDeployer):
+        def validate(self):
+            return PANValidationResult('72', status, 'Candidate state changed', '012345678901', digest)
+    monkeypatch.setattr(web, 'PANSSHDeployer', Drifted)
+    client = web.create_app({'TESTING': True}).test_client()
+    artifact = _ready_artifact(client)
+    session = client.post('/api/deploy', json={**CREDS, 'artifact': artifact}).get_json()['deployment_session_id']
+    response = client.post('/api/validate-candidate', json={**CREDS, 'artifact': artifact, 'deployment_session_id': session})
+    assert response.status_code == 502
+    assert response.get_json()['deployment_session_id'] is None
+    assert client.post('/api/commit', json={**CREDS, 'artifact': artifact, 'deployment_session_id': session}).status_code == 400
+
+
+def test_unknown_commit_state_consumes_session(monkeypatch):
+    class Unknown(_SuccessfulDeployer):
+        def commit(self):
+            raise RuntimeError('private device detail')
+    monkeypatch.setattr(web, 'PANSSHDeployer', Unknown)
+    client = web.create_app({'TESTING': True}).test_client()
+    artifact = _ready_artifact(client)
+    session = client.post('/api/deploy', json={**CREDS, 'artifact': artifact}).get_json()['deployment_session_id']
+    response = client.post('/api/commit', json={**CREDS, 'artifact': artifact, 'deployment_session_id': session})
+    assert response.status_code == 400
+    assert 'private device detail' not in response.get_data(as_text=True)
+    retry = client.post('/api/commit', json={**CREDS, 'artifact': artifact, 'deployment_session_id': session})
+    assert retry.get_json()['error_code'] == 'session_missing'
+
+
+def test_expired_candidate_session_never_connects(monkeypatch):
+    import fwmigrate.web_api.deployment as deployment
+    monkeypatch.setattr(web, 'PANSSHDeployer', _SuccessfulDeployer)
+    client = web.create_app({'TESTING': True}).test_client()
+    artifact = _ready_artifact(client)
+    session = client.post('/api/deploy', json={**CREDS, 'artifact': artifact}).get_json()['deployment_session_id']
+    now = deployment.time.time()
+    monkeypatch.setattr(deployment.time, 'time', lambda: now + 1801)
+    monkeypatch.setattr(web, 'PANSSHDeployer', lambda *_: pytest.fail('Expired session must not connect'))
+    assert client.post('/api/commit', json={**CREDS, 'artifact': artifact, 'deployment_session_id': session}).status_code == 400
 
 
 def test_prepare_candidate_forces_validation_and_commit_requires_bound_session(monkeypatch):

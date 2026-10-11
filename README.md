@@ -499,6 +499,12 @@ command SHA-256
 
 CLI deployment verifies that the supplied `.set` file matches its adjacent `migration_report.json` before sending commands to the target firewall.
 
+Web artifact generation requires a signed approval from `/api/migration/design/prepare` → `/api/migration/design/approve`. Raw mappings and unsigned decision documents are proposal inputs: they cannot issue executable artifacts. The compatibility interface-confirmation, decision-approval, automation, and rule APIs preserve editable proposals and imports; their outputs still require deterministic design approval. Approvals expire after 24 hours, matching the browser workspace lifetime, and require renewed engineer review. Partial approvals render only approved groups with satisfied dependencies. IPv6 and mixed-family policy matches remain visible as unsupported evidence and render no security rules.
+
+Web candidate preparation requires a signed `READY` artifact and an explicit serial in the approved destination XML evidence. A device name or hostname alone cannot establish serial identity. The SSH workflow checks `show system info`, requires `show config diff` to be empty, and hashes the complete XML candidate from `show config candidate` without exporting its contents. Revalidation and explicit commit check the same live serial and candidate fingerprint. Drift, validation failure, unknown commit state, session expiry, and server restart require another candidate preparation. `READY_NO_CHANGES` artifacts are downloadable but cannot deploy.
+
+These guards apply to the web workflow; CLI deployment and commit behavior remain unchanged. Device-native configuration locking is not enforced: another administrator can still change the candidate between the final fingerprint check and commit. Coordinate administrator access during candidate preparation and commit. Command SHA-256 and candidate SHA-256 identify different artifacts and remain separate.
+
 This provides the intended flow:
 
 ```text
