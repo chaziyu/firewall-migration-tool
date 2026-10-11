@@ -14,6 +14,7 @@ import yaml
 from flask import jsonify, request, send_file
 
 from fwmigrate.conversion.fortigate_to_palo_alto.application import (
+    ArtifactEligibilityError,
     AutomationPolicy,
     DESIGN_APPROVAL_TTL_SECONDS,
     approval_is_current,
@@ -37,6 +38,7 @@ from fwmigrate.conversion.fortigate_to_palo_alto.application import (
     confirm_interface_mappings,
     decision_evidence as build_decision_evidence,
     draft_context,
+    deployment_serial,
     evidence_summary,
     export_target_intent,
     item_key,
@@ -669,6 +671,12 @@ def register_migration_routes(
             if not rendered.report['destination_verified']:
                 plan_status = 'PARTIAL'
                 rendered = replace(rendered, report={**rendered.report, 'plan_status': plan_status})
+            try:
+                deployment_serial(rendered, decision_document, design_approval)
+                deployment_eligibility = {'eligible': True, 'reason': None}
+            except ArtifactEligibilityError as exc:
+                deployment_eligibility = {'eligible': False, 'reason': str(exc)}
+            rendered = replace(rendered, report={**rendered.report, 'deployment_eligibility': deployment_eligibility})
             artifact_id = uuid_factory().hex
             artifact = sign_envelope({
                 'artifact_id': artifact_id, 'commands': list(rendered.commands),

@@ -46,7 +46,8 @@ export function PlanReview({ artifact, onReviewDecision }: { artifact: PlanArtif
   const blockers = useMemo(() => {
     const groups = new Map<string, Record<string, unknown>>()
     for (const row of [...artifact.blocking_reasons, ...(artifact.support_guidance ?? [])]) {
-      const key = JSON.stringify([row.code, row.decision_key, row.title ?? row.message, row.next_action])
+      const key = JSON.stringify([row.code, row.decision_key, row.decision_keys, row.title ?? row.message, row.next_action,
+        row.source_vdom, row.source_kind, row.source_name, row.source_policy_id, row.target_name])
       const group = groups.get(key)
       if (group) group.count = Number(group.count) + 1
       else groups.set(key, { ...row, count: 1 })

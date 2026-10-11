@@ -63,10 +63,21 @@ def test_hostname_evidence_does_not_allow_live_candidate_preparation(monkeypatch
     payload['decision_document'] = approve(client, payload, data).get_json()['decision_document']
     artifact = client.post('/api/migrate', json=payload).get_json()['artifact']
     assert artifact['report']['plan_status'] == 'READY'
+    assert artifact['report']['deployment_eligibility']['eligible'] is False
+    assert 'serial evidence' in artifact['report']['deployment_eligibility']['reason']
     monkeypatch.setattr(web, 'PANSSHDeployer', lambda *_: pytest.fail('Hostname must not be used as serial'))
     response = client.post('/api/deploy', json={**CREDS, 'artifact': artifact})
     assert response.status_code == 400
     assert 'serial evidence' in response.get_json()['error']
+
+
+def test_serial_evidence_enables_candidate_preparation():
+    client, payload = setup(TARGET.replace('name="fw"', 'name="fw" serial="012345678901"'))
+    data, payload = allocate(client, payload)
+    payload['decision_document'] = approve(client, payload, data).get_json()['decision_document']
+    payload['compact_response'] = True
+    result = client.post('/api/migrate', json=payload).get_json()
+    assert result['artifact']['report']['deployment_eligibility'] == {'eligible': True, 'reason': None}
 
 
 SOURCE = '''config system interface
