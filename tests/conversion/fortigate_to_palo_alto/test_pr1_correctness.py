@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+import pytest
 
 from fwmigrate.conversion.fortigate_to_palo_alto.models import (
     PANMigrationPlan, PANMigrationStatus, PlannedAddress, PlannedAddressGroup,
@@ -13,6 +14,45 @@ from fwmigrate.vendors.fortigate.derived import build_derived_views
 from fwmigrate.vendors.fortigate.model.address import FGAddress, FGAddressGroup
 from fwmigrate.vendors.fortigate.model.route_static import FGStaticRoute
 from fwmigrate.vendors.fortigate.model.source import FGConfig
+
+
+@pytest.mark.parametrize('src4,dst4,src6,dst6,supported', [
+    (['all'], ['all'], None, None, True),
+    (None, None, ['v6-source'], ['v6-destination'], False),
+    (['all'], ['all'], ['v6-source'], ['v6-destination'], False),
+    (['all'], ['all'], [], [], False),
+    ([], [], ['v6-source'], ['v6-destination'], False),
+    (None, None, None, None, False),
+    ([], [], None, None, False),
+])
+def test_policy_address_families_never_fall_back_or_drop_ipv6(src4, dst4, src6, dst6, supported):
+    from fwmigrate.vendors.fortigate.model.policy import FGPolicy
+    from fwmigrate.conversion.fortigate_to_palo_alto.planning.policies import plan_policies
+    from fwmigrate.conversion.fortigate_to_palo_alto.rendering.renderer import PANSetRenderer
+    policy = FGPolicy(vdom='root', policy_id=42, name='family-policy',
+        srcintf=['lan'], dstintf=['wan'], srcaddr=src4, dstaddr=dst4, srcaddr6=src6, dstaddr6=dst6,
+        service=['ALL'], schedule='always', action='accept')
+    config = FGConfig(policies=[policy])
+    options = PANMigrationOptions(vdoms={'root': {'vsys': 'vsys1'}}, interfaces={'root': {
+        'lan': {'target_zone': 'trust'}, 'wan': {'target_zone': 'untrust'}}})
+    rules = plan_policies(config, options)
+    plan = PANMigrationPlan(security_rules=rules, zones=(
+        PlannedZone(source_vdom='root', source_kind='zone', source_name='trust',
+            target_name='trust', target_vsys='vsys1', status=PANMigrationStatus.SUPPORTED),
+        PlannedZone(source_vdom='root', source_kind='zone', source_name='untrust',
+            target_name='untrust', target_vsys='vsys1', status=PANMigrationStatus.SUPPORTED)))
+    validation = validate_plan(plan)
+    artifact = PANSetRenderer().render(plan, validation)
+    assert any('set rulebase security' in command for command in artifact.commands) == supported
+    assert config.policies[0].srcaddr6 == src6
+    rule = artifact.report['items'][-1]
+    assert rule['source_policy_id'] == 42
+    if src6 is not None or dst6 is not None:
+        assert rules[0].status is PANMigrationStatus.UNSUPPORTED
+        assert rules[0].sources == tuple('any' if name == 'all' else name for name in (src4 or ()))
+        assert f'explicit source srcaddr6 = {src6!r}' in rule['warnings']
+        assert f'explicit source dstaddr6 = {dst6!r}' in rule['warnings']
+        assert rule['render_disposition'] == 'BLOCK'
 
 
 def _objects(*, address_status=PANMigrationStatus.SUPPORTED, service_status=PANMigrationStatus.SUPPORTED,

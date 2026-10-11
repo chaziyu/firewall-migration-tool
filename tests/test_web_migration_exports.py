@@ -1,3 +1,4 @@
+from tests.approved_design import approved_migrate, approved_payload
 import io
 import json
 import zipfile
@@ -142,7 +143,7 @@ def test_target_intent_import_export_and_bulk_approval_recheck_current_evidence(
     assert rejected.status_code == 400
 
 
-def test_migrate_returns_authoritative_automated_decision_document():
+def test_migrate_rejects_unsigned_automated_decision_document():
     client = create_app({"TESTING": True}).test_client()
     source_preview, target_preview = _preview(client), _target_preview(client)
     requirements = client.post("/api/migration/requirements", json={
@@ -155,16 +156,8 @@ def test_migrate_returns_authoritative_automated_decision_document():
         "target_source": target_preview,
         "decision_document": requirements["decision_document"],
     })
-    assert response.status_code == 200
-    payload = response.get_json()
-    assert payload["decision_document"]["format_version"] == 4
-    assert payload["decisions"]["decisions"] == payload["decision_document"]["decisions"]
-    assert payload["automation_audit"]
-    assert any(
-        item["review_state"] == "CONFIRMED"
-        and item["evidence_type"] in {"AUTOMATION_VERIFIED", "AUTOMATION_DERIVED"}
-        for item in payload["decisions"]["decisions"]
-    )
+    assert response.status_code == 400
+    assert 'artifact' not in response.get_json()
 
 
 def test_fixed_point_automation_requires_opt_in_policies_and_records_deterministic_provenance():
@@ -287,11 +280,8 @@ def test_changed_target_evidence_restores_decisions_and_reports_staleness():
         "target_source": second_target,
         "target_device": "integrated-fw",
     })
-    assert migration.status_code == 200
-    migrated = migration.get_json()
-    assert migrated["target_evidence_changed"] is True
-    assert migrated["report"]["review"]["target_evidence_changed"] is True
-
+    assert migration.status_code == 400
+    assert 'artifact' not in migration.get_json()
 
 
 def test_changed_target_evidence_invalidates_auto_confirmations_until_reproved():
@@ -339,10 +329,9 @@ def test_changed_target_evidence_invalidates_auto_confirmations_until_reproved()
         "target_source": changed_target,
         "decision_document": auto_document,
         "automation_mode": "REVIEW_ONLY",
-    }).get_json()
-    assert plan["plan_status"] == "NEEDS_MAPPING"
-    assert {item["decision_key"] for item in plan["invalidated_target_decisions"]} == auto_confirmed
-    assert plan["report"]["review"]["invalidated_target_decisions"] == plan["invalidated_target_decisions"]
+    })
+    assert plan.status_code == 400
+    assert 'artifact' not in plan.get_json()
 
 
 def test_legacy_v2_auto_confirmations_are_bound_then_invalidated_by_new_target():
@@ -417,7 +406,7 @@ def test_decision_documents_round_trip_confirmed_values_and_reject_other_sources
             decision["value"] = value
             decision["review_state"] = "CONFIRMED"
 
-    planned = client.post("/api/migrate", json={
+    planned = approved_migrate(client, json={
         "source": preview_id, "decision_document": document,
     })
     assert planned.status_code == 200
@@ -475,7 +464,7 @@ def test_plan_reports_missing_mappings_and_blocks_empty_bundle():
     preview_id = _preview(client)
     requirements = client.post("/api/migration/requirements", json={"source": preview_id}).get_json()["requirements"]
     assert {item["source_vdom"] for item in requirements["vdoms"]} == {"root"}
-    plan = client.post("/api/migrate", json={"source": preview_id, "mapping": {}}).get_json()
+    plan = client.post("/api/migrate", json=approved_payload(client, {"source": preview_id}, configuration=False)).get_json()
     assert plan["plan_status"] == "NEEDS_MAPPING"
     assert plan["command_count"] == 0
     assert plan["missing_mappings"]
@@ -495,7 +484,7 @@ def test_complete_mappings_create_zip_for_same_plan_artifact():
             "untrust": {"target_zone": "untrust"},
         }},
     }
-    plan = client.post("/api/migrate", json={"source": preview_id, "mapping": mapping}).get_json()
+    plan = approved_migrate(client, json={"source": preview_id, "mapping": mapping}).get_json()
     assert plan["command_count"] > 0
     response = client.post("/api/migration/bundle", json={"artifact": plan["artifact"], "source": preview_id})
     assert response.status_code == 200
@@ -528,7 +517,7 @@ def test_complete_mappings_create_zip_for_same_plan_artifact():
 def test_vsys_only_mapping_renders_objects_and_keeps_policy_for_review():
     client = create_app({"TESTING": True}).test_client()
     preview_id = _preview(client)
-    plan = client.post("/api/migrate", json={
+    plan = approved_migrate(client, json={
         "source": preview_id,
         "mapping": {"vdoms": {"root": {"vsys": "vsys1", "virtual_router": "default"}}},
     }).get_json()
@@ -549,10 +538,10 @@ def test_vsys_only_mapping_renders_objects_and_keeps_policy_for_review():
 def test_deploy_rejects_empty_rendered_artifact_before_credentials():
     client = create_app({"TESTING": True}).test_client()
     preview_id = _preview(client)
-    plan = client.post("/api/migrate", json={"source": preview_id, "mapping": {}}).get_json()
+    plan = client.post("/api/migrate", json=approved_payload(client, {"source": preview_id}, configuration=False)).get_json()
     response = client.post("/api/deploy", json={"artifact": plan["artifact"], "source": preview_id})
     assert response.status_code == 400
-    assert "no renderable commands" in response.get_json()["error"]
+    assert "READY artifact with commands" in response.get_json()["error"]
 
 
 def test_candidate_validation_failure_maps_to_rendered_migration_item_when_unique():
@@ -586,7 +575,7 @@ def test_migration_recommendations_are_review_only_and_reported():
     client = create_app({"TESTING": True}).test_client()
     fixture = Path(__file__).parent / "fixtures" / "fortigate" / "identity_authentication_full.conf"
     preview = client.post("/api/preview", data={
-        "file": (io.BytesIO(fixture.read_bytes()), fixture.name),
+        "file": (io.BytesIO(fixture.read_bytes() + b'\nconfig firewall address\n edit host-a\n set subnet 192.0.2.10 255.255.255.255\n next\nend\n'), fixture.name),
     }, content_type="multipart/form-data").get_json()["source_evidence"]
 
     requirements = client.post("/api/migration/requirements", json={"source": preview}).get_json()
@@ -594,7 +583,7 @@ def test_migration_recommendations_are_review_only_and_reported():
     assert any(item["family"] == "Users/Admin" for item in requirements["recommendations"])
     assert all("review_state" not in item and "planner_value" not in item for item in requirements["recommendations"])
 
-    plan = client.post("/api/migrate", json={"source": preview, "mapping": {}}).get_json()
+    plan = approved_migrate(client, json={"source": preview, "mapping": {}}).get_json()
     assert plan["recommendations"] == plan["report"]["review"]["recommendations"]
     assert plan["coverage"] == plan["report"]["coverage"]
     assert plan["coverage"]["complete"] is False

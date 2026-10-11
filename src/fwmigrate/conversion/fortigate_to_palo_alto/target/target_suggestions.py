@@ -33,6 +33,12 @@ def target_devices(target):
     return sorted({_device(item) for item in items if _device(item)})
 
 
+def target_serial(target, device):
+    scopes = [scope for scope in target.config.scopes if _device(scope) == device]
+    serials = {scope.device_serial for scope in scopes if scope.device_serial}
+    return next(iter(serials)) if len(serials) == 1 else None
+
+
 def target_device_metadata(target):
     result = []
     for device in target_devices(target):

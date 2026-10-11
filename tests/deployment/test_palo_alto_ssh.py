@@ -54,6 +54,95 @@ def fake_netmiko(monkeypatch, connect):
     monkeypatch.setitem(sys.modules, "netmiko", SimpleNamespace(ConnectHandler=connect))
 
 
+class GuardedConnection(FakeConnection):
+    serial = '012345678901'
+    candidate = '<config><devices><entry name="fw"/></devices></config>'
+    diff = ''
+    drift_during_validation = False
+
+    def send_command(self, command):
+        if command == 'show system info':
+            return f'serial: {self.serial}\n'
+        if command == 'set cli config-output-format xml':
+            return ''
+        if command == 'show config candidate':
+            return self.candidate
+        if command == 'show config diff':
+            return self.diff
+        if command == 'validate full' and self.drift_during_validation:
+            self.candidate = self.candidate.replace('fw', 'changed')
+        return super().send_command(command)
+
+
+@pytest.mark.parametrize('field,value', [
+    ('serial', 'wrong-device'), ('serial', ''), ('diff', '+ unreviewed changes'),
+    ('diff', 'unknown command'), ('candidate', '<not-config/>'),
+    ('candidate', '<config>incomplete'), ('candidate', ''),
+])
+def test_web_guard_rejects_unknown_target_or_dirty_candidate_before_push(monkeypatch, field, value):
+    connection = GuardedConnection()
+    setattr(connection, field, value)
+    fake_netmiko(monkeypatch, lambda **kwargs: connection)
+    result = PANSSHDeployer(PANDeploymentOptions('fw', 'admin', 'secret',
+        expected_serial='012345678901')).deploy(rendered('set one'))
+    assert result.failure_message
+    assert result.commands_attempted == 0
+    assert connection.commits == 0
+    assert connection.disconnected
+
+
+def test_candidate_fingerprint_survives_revalidation_and_guards_explicit_commit(monkeypatch):
+    from dataclasses import replace, asdict
+    connection = GuardedConnection(['ok'], ['Job 42', 'FIN: OK'])
+    connection.candidate = '<config><secret>private-key-value</secret><devices><entry name="fw"/></devices></config>'
+    fake_netmiko(monkeypatch, lambda **kwargs: connection)
+    options = PANDeploymentOptions('fw', 'admin', 'secret', expected_serial=connection.serial)
+    pushed = PANSSHDeployer(options).deploy(rendered('set one'))
+    assert pushed.validation.status == 'SUCCESS'
+    assert pushed.validation.device_serial == connection.serial
+    digest = pushed.validation.candidate_sha256
+    assert len(digest) == 64
+    assert 'private-key-value' not in str(asdict(pushed))
+    assert connection.commits == 0
+    guarded = replace(options, expected_candidate_sha256=digest)
+    connection.validation_responses = iter(['Job 43', 'FIN: OK'])
+    result = PANSSHDeployer(guarded).validate()
+    assert result.status == 'SUCCESS' and result.candidate_sha256 == digest
+    connection.candidate = connection.candidate.replace('private-key-value', 'changed-secret')
+    assert PANSSHDeployer(guarded).validate().status == 'FAILED'
+    assert PANSSHDeployer(guarded).commit().status == 'FAILED'
+    assert connection.commits == 0
+    connection.candidate = connection.candidate.replace('changed-secret', 'private-key-value')
+    connection.validation_responses = iter(['FIN: OK'])
+    assert PANSSHDeployer(guarded).commit().status == 'SUCCESS'
+    assert connection.commits == 1
+
+
+def test_drift_during_validation_never_creates_a_validated_fingerprint(monkeypatch):
+    connection = GuardedConnection(['ok'], ['Job 42', 'FIN: OK'])
+    connection.drift_during_validation = True
+    fake_netmiko(monkeypatch, lambda **kwargs: connection)
+    result = PANSSHDeployer(PANDeploymentOptions('fw', 'admin', 'secret',
+        expected_serial=connection.serial)).deploy(rendered('set one'))
+    assert result.validation.status == 'FAILED'
+    assert result.validation.candidate_sha256 is None
+    assert connection.commits == 0
+
+
+def test_candidate_read_failure_never_exposes_raw_configuration(monkeypatch):
+    class Broken(GuardedConnection):
+        def send_command(self, command):
+            if command == 'show config candidate':
+                raise ValueError('private-key-value')
+            return super().send_command(command)
+    connection = Broken()
+    fake_netmiko(monkeypatch, lambda **kwargs: connection)
+    result = PANSSHDeployer(PANDeploymentOptions('fw', 'admin', 'secret',
+        expected_serial=connection.serial)).deploy(rendered('set one'))
+    assert 'private-key-value' not in str(result)
+    assert result.failure_message
+
+
 def test_successful_candidate_push_and_validation_without_default_commit(monkeypatch):
     connection = FakeConnection(["ok"], ["Job 42", "FIN: OK", "FIN: OK"])
     fake_netmiko(monkeypatch, lambda **kwargs: connection)

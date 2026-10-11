@@ -33,7 +33,7 @@ export function MigrationWorkflow({ preview, decisionDocument, targetSource, tar
 
   const generatePlan = useCallback(async () => {
     if (!decisionDocument || preview.vendor !== 'fortigate'
-        || (decisionDocument.draft_required && !decisionDocument.design_approval)) return
+        || !decisionDocument.design_approval) return
     const request = ++buildRequest.current
     setArtifact(null); setCommandText('')
     setBusy(true); setError(null); setStatus('Building migration plan…'); setSessionId(''); setCandidateValidated(false)
@@ -68,7 +68,7 @@ export function MigrationWorkflow({ preview, decisionDocument, targetSource, tar
     setError(null)
     setStatus(decisionDocument ? 'Approve the proposed design before building an artifact.' : 'Migration review is updating. Previous candidate eligibility has been revoked.')
     void saveWorkspace({ artifact: null })
-    if (decisionDocument && (!decisionDocument.draft_required || decisionDocument.design_approval)) void generatePlan()
+    if (decisionDocument && decisionDocument.design_approval) void generatePlan()
   }, [decisionDocument, targetSource, targetDevice, preview.source_digest, generatePlan])
 
   useEffect(() => {
@@ -80,7 +80,7 @@ export function MigrationWorkflow({ preview, decisionDocument, targetSource, tar
   function log(line: string) { setActivityLog((lines) => [...lines, line]) }
 
   async function runDeployment(action: 'prepare' | 'validate' | 'commit') {
-    if (!artifact || !decisionDocument) return
+    if (!artifact || !decisionDocument?.design_approval) return
     const request = buildRequest.current
     setBusy(true); setError(null)
     const credentials = { ...connection, port: Number(connection.port) }
@@ -117,8 +117,14 @@ export function MigrationWorkflow({ preview, decisionDocument, targetSource, tar
       setSessionId(''); setCandidateValidated(false)
       const message = cause instanceof Error ? cause.message : 'Deployment action failed'
       setError(message)
+      setStatus('Candidate session invalidated. Prepare the candidate again after resolving the failure.')
       log(`[ERROR] ${action === 'prepare' ? 'Candidate preparation' : action === 'validate' ? 'Candidate revalidation' : 'Commit'} failed: ${message}`)
       if (cause instanceof RequestError) {
+        if (cause.details.error_code === 'artifact_ineligible') {
+          setArtifact(null); setCommandText('')
+          setStatus('Review and approve the current design before preparing another candidate.')
+          void saveWorkspace({ artifact: null })
+        }
         const feedback = cause.details.validation_feedback as { mapping_status?: string; migration_items?: Array<{ source_vdom?: string; source_name?: string; decision_keys?: string[] }> } | undefined
         if (feedback?.mapping_status) log(`[REVIEW] Validation feedback: ${feedback.mapping_status}`)
         for (const item of feedback?.migration_items || []) {
@@ -133,7 +139,7 @@ export function MigrationWorkflow({ preview, decisionDocument, targetSource, tar
   }
 
   async function saveArtifact(kind: 'bundle' | 'commands') {
-    if (!artifact || !decisionDocument) return
+    if (!artifact || !decisionDocument?.design_approval) return
     setBusy(true); setError(null)
     try {
       const blob = await (kind === 'bundle' ? downloadBundle(artifact, preview.source_evidence!) : downloadCommands(artifact))
@@ -145,7 +151,8 @@ export function MigrationWorkflow({ preview, decisionDocument, targetSource, tar
   return activeSection === 'plan' ? <section className="panel migration-workflow" aria-labelledby="migration-title">
     <h2 id="migration-title"><span className="step-num">03</span> Migration plan</h2>
     <p>The plan updates as source, target evidence, or confirmed decisions change.</p>
-    <Button disabled={busy || !decisionDocument || Boolean(decisionDocument.draft_required && !decisionDocument.design_approval)} onClick={() => void generatePlan()}>Build approved artifact</Button>
+    <Button disabled={busy || !decisionDocument || !decisionDocument.design_approval} onClick={() => void generatePlan()}>Build approved artifact</Button>
+    {(!decisionDocument?.design_approval || (!artifact && error)) && <Button onClick={() => onReviewDecision('')}>Review and approve design</Button>}
     {status && <p role="status" aria-live="polite">{status}</p>}
     {artifact && <div className="artifact-summary">
       <h3>04 Review migration plan</h3>
@@ -176,11 +183,13 @@ export function MigrationWorkflow({ preview, decisionDocument, targetSource, tar
     <section className="panel" aria-labelledby="deployment-title">
       <h2 id="deployment-title"><span className="step-num">03</span> Review &amp; deploy</h2>
       <p aria-live="polite">{artifact && decisionDocument ? `${artifact.artifact.command_count} reviewed commands · ${artifact.plan_status} · ${sessionId ? 'Candidate session active' : 'No deployment session'}` : 'No current reviewed artifact. Build and review a migration plan first.'}</p>
+      {status && <p role="status" aria-live="polite">{status}</p>}
+      {(!decisionDocument?.design_approval || (!artifact && error)) && <Button onClick={() => onReviewDecision('')}>Review and approve design</Button>}
       <div className="workflow-stepper">
         {[
-          ['1', 'Prepare candidate', 'Push the reviewed artifact and validate the candidate automatically.', 'prepare', !decisionDocument || !artifact || busy || artifact.plan_status !== 'READY' || !artifact.artifact.command_count],
-          ['2', 'Validation', 'Revalidate the artifact-bound candidate session.', 'validate', !decisionDocument || busy || !sessionId],
-          ['3', 'Commit configuration', 'Submit an explicit commit after successful validation.', 'commit', !decisionDocument || busy || !sessionId || !candidateValidated],
+          ['1', 'Prepare candidate', 'Push the reviewed artifact and validate the candidate automatically.', 'prepare', !decisionDocument?.design_approval || !artifact || busy || artifact.plan_status !== 'READY' || !artifact.artifact.command_count],
+          ['2', 'Validation', 'Revalidate the artifact-bound candidate session.', 'validate', !decisionDocument?.design_approval || busy || !sessionId],
+          ['3', 'Commit configuration', 'Submit an explicit commit after successful validation.', 'commit', !decisionDocument?.design_approval || busy || !sessionId || !candidateValidated],
         ].map(([number, title, description, action, disabled]) => <div className="step-box" key={number as string}>
           <span className="step-badge" aria-hidden="true">{number}</span><span className="step-info"><strong>{title}</strong><span>{description}</span></span>
           <Button className={action === 'commit' ? 'outline-button' : ''} disabled={Boolean(disabled)} onClick={() => void runDeployment(action as 'prepare' | 'validate' | 'commit')}>{action === 'prepare' ? 'Prepare Candidate' : action === 'validate' ? 'Revalidate Candidate' : 'Commit'}</Button>

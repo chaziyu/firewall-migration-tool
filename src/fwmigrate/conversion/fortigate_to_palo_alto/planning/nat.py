@@ -3,6 +3,7 @@
 from typing import Any
 
 from fwmigrate.conversion.fortigate_to_palo_alto.models import PANMigrationStatus, PlannedNATRule
+from .policies import ipv6_match_warnings
 
 
 def plan_nat(source: Any, derived: Any, options: Any):
@@ -29,6 +30,7 @@ def plan_nat(source: Any, derived: Any, options: Any):
         elif len(policy.service) > 1:
             warnings.append("source NAT policy has multiple services; service-group semantics are not verified")
         if policy is not None:
+            warnings.extend(ipv6_match_warnings(policy))
             for field, names in (("source", policy.srcintf or ()), ("destination", item.egress_interfaces)):
                 if not names or len(_policy_zones(policy, names, options, zone_names)) != len(names):
                     warnings.append(f"NAT {field} zone mapping is incomplete")
@@ -78,6 +80,7 @@ def plan_nat(source: Any, derived: Any, options: Any):
             warnings.append("VIP has no referencing firewall policy for NAT source zone")
         from_contexts = []
         for policy in referencing:
+            warnings.extend(ipv6_match_warnings(policy))
             names = policy.srcintf or ()
             zones = _policy_zones(policy, names, options, zone_names)
             if not names or len(zones) != len(names):

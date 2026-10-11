@@ -83,6 +83,75 @@ const workspace = { workspace: () => ({ referenceRole: 'TEMPLATE', targetSource:
   targetDevice: '', deterministicDraft: null, artifact: null }), saveWorkspace: async () => {} }
 const api = { RequestError: class extends Error {} }
 
+function workflowHarness(migrationApi) {
+  return component('../src/features/migration/MigrationWorkflow.tsx', 'MigrationWorkflow', {
+    '../../storage/workspaceStore': workspace, '../../api/client': api,
+    '../../components/common/ErrorBanner': { ErrorBanner: 'Error' }, '../../components/common/Button': { Button: 'Button' },
+    './PlanReview': { PlanReview: 'PlanReview' }, './migrationApi': migrationApi,
+  })
+}
+
+test('unsigned legacy decisions never build and expose the design review action', async () => {
+  let builds = 0
+  let reviews = 0
+  const harness = workflowHarness({ buildPlan: async () => { builds++; assert.fail('Unsigned build') } })
+  const props = { preview: { vendor: 'fortigate', source_digest: 'source', source_evidence: {} },
+    decisionDocument: { decisions: [] }, targetSource: null, targetDevice: '', activeSection: 'plan',
+    onReviewDecision: () => { reviews++ } }
+  let tree = await harness.render(props)
+  const build = elements(tree).find((node) => node.type === 'Button' && node.props.children === 'Build approved artifact')
+  assert.equal(build.props.disabled, true)
+  await build.props.onClick()
+  assert.equal(builds, 0)
+  elements(tree).find((node) => node.type === 'Button' && node.props.children === 'Review and approve design').props.onClick()
+  assert.equal(reviews, 1)
+  tree = await harness.render({ ...props, activeSection: 'live' })
+  for (const label of ['Prepare Candidate', 'Revalidate Candidate', 'Commit']) {
+    assert.equal(elements(tree).find((node) => node.type === 'Button' && node.props.children === label).props.disabled, true)
+  }
+})
+
+test('stale approval offers reapproval and candidate drift revokes commit', async () => {
+  const artifact = { artifact_id: 'artifact', plan_status: 'READY', artifact: { commands: ['set address x'], command_count: 1 } }
+  const stale = workflowHarness({ buildPlan: async () => { throw new Error('Approved design is stale') } })
+  const props = { preview: { vendor: 'fortigate', source_digest: 'source', source_evidence: {} },
+    decisionDocument: { design_approval: {} }, targetSource: null, targetDevice: '', activeSection: 'plan', onReviewDecision: () => {} }
+  let tree = await stale.render(props)
+  assert.ok(elements(tree).some((node) => node.type === 'Button' && node.props.children === 'Review and approve design'))
+  assert.ok(elements(tree).some((node) => node.type === 'Error' && node.props.message.includes('stale')))
+  const live = workflowHarness({ buildPlan: async () => artifact,
+    deployArtifact: async () => ({ deployment_session_id: 'session', candidate_validated: true, result: { validation: { status: 'SUCCESS' } } }),
+    validateCandidate: async () => { throw new Error('Candidate changed after validation; prepare the candidate again') },
+    commitCandidate: async () => assert.fail('Drifted candidate must not commit'),
+  })
+  const liveProps = { ...props, activeSection: 'live' }
+  tree = await live.render(liveProps)
+  await elements(tree).find((node) => node.type === 'Button' && node.props.children === 'Prepare Candidate').props.onClick()
+  tree = await live.render(liveProps)
+  assert.equal(elements(tree).find((node) => node.type === 'Button' && node.props.children === 'Commit').props.disabled, false)
+  await elements(tree).find((node) => node.type === 'Button' && node.props.children === 'Revalidate Candidate').props.onClick()
+  tree = await live.render(liveProps)
+  assert.equal(elements(tree).find((node) => node.type === 'Button' && node.props.children === 'Commit').props.disabled, true)
+  assert.ok(elements(tree).some((node) => node.type === 'Error' && node.props.message.includes('Candidate changed')))
+  assert.ok(elements(tree).some((node) => node.props?.role === 'status' && node.props.children.includes('Prepare the candidate again')))
+})
+
+test('expired deployment approval revokes the artifact and offers reapproval', async () => {
+  const artifact = { artifact_id: 'artifact', plan_status: 'READY', artifact: { commands: ['set address x'], command_count: 1 } }
+  const error = new api.RequestError('Design approval has expired')
+  error.details = { error_code: 'artifact_ineligible' }
+  const harness = workflowHarness({ buildPlan: async () => artifact, deployArtifact: async () => { throw error } })
+  const props = { preview: { vendor: 'fortigate', source_digest: 'source', source_evidence: {} },
+    decisionDocument: { design_approval: {} }, targetSource: null, targetDevice: '', activeSection: 'live', onReviewDecision: () => {} }
+  let tree = await harness.render(props)
+  await elements(tree).find((node) => node.type === 'Button' && node.props.children === 'Prepare Candidate').props.onClick()
+  tree = await harness.render(props)
+  for (const label of ['Prepare Candidate', 'Revalidate Candidate', 'Commit']) {
+    assert.equal(elements(tree).find((node) => node.type === 'Button' && node.props.children === label).props.disabled, true)
+  }
+  assert.ok(elements(tree).some((node) => node.type === 'Button' && node.props.children === 'Review and approve design'))
+})
+
 test('manual proposal edits use draft preparation, conflict membership and visible blocker navigation', async () => {
   const decision = { key: 'port', source_vdom: 'root', source_kind: 'interface', source_name: 'port1',
     target_field: 'target_interface', mode: 'REQUIRED', review_state: 'PENDING', value: null, suggested_value: null }

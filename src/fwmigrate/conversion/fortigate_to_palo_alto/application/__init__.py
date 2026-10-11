@@ -1,5 +1,7 @@
 """Application services for the FortiGate to PAN-OS workflow."""
 
+from .artifact_eligibility import (ArtifactEligibilityError, DESIGN_APPROVAL_TTL_SECONDS, approval_is_current, deployment_serial,
+                                   validate_artifact_approval, validate_approved_plan)
 from .decision_documents import (
     build_decision_document,
     confirm_mapping_decisions,
@@ -44,7 +46,7 @@ from ..target.target_evidence import (
 from ..target.target_intent import apply_target_intent, export_target_intent
 from ..target.target_object_reuse import classify_target_object_reuse
 from ..target.target_plan_validation import assess_target_plan, validate_target_plan
-from ..target.target_suggestions import target_device_metadata, target_devices
+from ..target.target_suggestions import target_device_metadata, target_devices, target_serial
 from ..validation import validate_plan
 from ..target.target_suggestions import suggest_from_target
 from ..target.target_suggestions import discover_target_candidates
@@ -57,6 +59,8 @@ from ..auto_decisions import classify_auto_decisions
 from .. import build_recommendations
 
 __all__ = [
+    "ArtifactEligibilityError", "DESIGN_APPROVAL_TTL_SECONDS", "approval_is_current",
+    "deployment_serial", "validate_artifact_approval", "validate_approved_plan", "target_serial",
     "build_decision_document",
     "load_decision_document",
     "options_mapping",
