@@ -16,12 +16,11 @@ def test_tcp_destination_tcp_source_and_udp_service_commands():
     ))
 
     assert PANSetRenderer().render(plan).commands == (
-        "set system setting target-vsys vsys1",
-        "set service https protocol tcp",
-        "set service https protocol tcp port 443",
-        "set service tcp-source protocol tcp",
-        "set service tcp-source protocol tcp port 443",
-        "set service tcp-source protocol tcp source-port 1024-65535",
-        "set service dns protocol udp",
-        "set service dns protocol udp port 53",
+        "set vsys vsys1 service https protocol tcp",
+        "set vsys vsys1 service https protocol tcp port 443",
+        "set vsys vsys1 service tcp-source protocol tcp",
+        "set vsys vsys1 service tcp-source protocol tcp port 443",
+        "set vsys vsys1 service tcp-source protocol tcp source-port 1024-65535",
+        "set vsys vsys1 service dns protocol udp",
+        "set vsys vsys1 service dns protocol udp port 53",
     )

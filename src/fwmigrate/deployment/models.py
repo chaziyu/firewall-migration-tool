@@ -62,3 +62,5 @@ class PANDeploymentOptions:
     job_poll_attempts: int = 60
     expected_serial: str | None = None
     expected_candidate_sha256: str | None = None
+    expected_baseline_sha256: str | None = None
+    baseline_format: str | None = None

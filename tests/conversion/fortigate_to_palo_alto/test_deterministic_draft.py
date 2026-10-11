@@ -18,6 +18,39 @@ def derived():
                            topology=SimpleNamespace(interfaces=(), vpns=()))
 
 
+def test_source_only_coverage_is_visible_and_cannot_be_approved():
+    from fwmigrate.vendors.fortigate.model.vip import FGVIPGroup
+    config = FGConfig(addresses=[FGAddress(name='net', subnet='192.0.2.0 255.255.255.0')],
+                      vip_groups=[FGVIPGroup(name='unsupported-group', vdom='blue')])
+    result, decisions = draft(config)
+    gap = next(row for row in result.configuration if row['source_kind'] == 'vip_group')
+    assert gap['source_vdom'] == 'blue' and gap['source_name'] == 'unsupported-group'
+    assert gap['status'] == 'UNSUPPORTED' and gap['operation'] is None
+    assert 'Manual implementation required' in gap['blocking_reasons'][-1]
+    with pytest.raises(ValueError, match='blocked'):
+        approve_draft(decisions, result, [gap['group_key']])
+    without_gap, _ = draft(FGConfig(addresses=config.addresses))
+    assert result.to_dict()['digest'] != without_gap.to_dict()['digest']
+
+
+def test_recommendation_only_work_is_visible_as_manual_work_before_approval():
+    from fwmigrate.vendors.fortigate.source_report import FortiGateSourceReporter
+    analysis = FortiGateSourceReporter().analyze_source('''config user local
+ edit manual-user
+  set type password
+ next
+end
+''')
+    config = analysis.extracted.config
+    state = build_review_state(config, analysis.derived, 'source', include_configuration=True)
+    result = build_deterministic_draft(config, analysis.derived, state['decisions'], source_digest='source')
+    gap = next(row for row in result.configuration if row['source_kind'] == 'local_user')
+    assert gap['status'] == 'UNSUPPORTED' and gap['source_name'] == 'manual-user'
+    assert 'review guidance' in gap['blocking_reasons'][0]
+    with pytest.raises(ValueError, match='blocked'):
+        approve_draft(state['decisions'], result, [gap['group_key']])
+
+
 def draft(config, overrides=None, **kwargs):
     views = derived()
     state = build_review_state(config, views, 'source', include_configuration=True)

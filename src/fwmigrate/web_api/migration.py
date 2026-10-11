@@ -55,6 +55,7 @@ from fwmigrate.conversion.fortigate_to_palo_alto.application import (
     target_evidence_identity,
 )
 from fwmigrate.source_reporting import source_reporters
+from fwmigrate.vendors.palo_alto.config_fingerprint import BASELINE_FORMAT, destination_fingerprint
 from fwmigrate.web_support.artifact_signing import sign_envelope, verify_artifact, verify_envelope
 from fwmigrate.web_support.request_source import (
     _clone_preview,
@@ -74,11 +75,13 @@ class _TargetEvidenceContext:
     source_digest: str
     devices: tuple[str, ...]
     selected_device: str | None
+    baseline_sha256: str
 
     @property
     def metadata(self):
         return {"vendor": "palo_alto", "config_digest": self.source_digest, "device": self.selected_device,
-                "serial": target_serial(self.analysis, self.selected_device)}
+                "serial": target_serial(self.analysis, self.selected_device),
+                "baseline_sha256": self.baseline_sha256, "baseline_format": BASELINE_FORMAT}
 
 
 def _target_evidence(payload):
@@ -90,7 +93,8 @@ def _target_evidence(payload):
     selected = payload.get('target_device') or (devices[0] if len(devices) == 1 else None)
     if selected and selected not in devices:
         raise ValueError('Selected target device is not in the uploaded PAN-OS configuration')
-    return _TargetEvidenceContext(analysis, entry.source_digest, tuple(devices), selected)
+    return _TargetEvidenceContext(analysis, entry.source_digest, tuple(devices), selected,
+                                  destination_fingerprint(entry.evidence['source_text']))
 
 
 def _build_migration_review_state(entry, payload, apply_deterministic=False):

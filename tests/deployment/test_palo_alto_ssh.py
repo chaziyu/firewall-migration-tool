@@ -2,6 +2,7 @@ import sys
 from types import SimpleNamespace
 import pytest
 
+from fwmigrate.vendors.palo_alto.config_fingerprint import BASELINE_FORMAT, destination_fingerprint
 from fwmigrate.deployment import PANDeploymentOptions, PANSSHDeployer
 from fwmigrate.conversion.fortigate_to_palo_alto.rendering.renderer import RenderedMigration
 
@@ -29,6 +30,7 @@ class FakeConnection:
 
     def send_config_set(self, commands, **kwargs):
         assert self.in_config_mode
+        assert all(not command.startswith("set system ") for command in commands)
         assert kwargs == {"exit_config_mode": False, "strip_command": True, "strip_prompt": True}
         response = next(self.command_responses)
         if isinstance(response, Exception):
@@ -61,6 +63,7 @@ class GuardedConnection(FakeConnection):
     drift_during_validation = False
 
     def send_command(self, command):
+        assert self.in_config_mode == (command == 'validate full')
         if command == 'show system info':
             return f'serial: {self.serial}\n'
         if command == 'set cli config-output-format xml':
@@ -72,6 +75,36 @@ class GuardedConnection(FakeConnection):
         if command == 'validate full' and self.drift_during_validation:
             self.candidate = self.candidate.replace('fw', 'changed')
         return super().send_command(command)
+
+
+@pytest.mark.parametrize('changed', [False, True])
+def test_reviewed_baseline_ignores_formatting_but_blocks_committed_drift_before_writes(monkeypatch, changed):
+    baseline = '<config><devices><entry name="fw"/></devices></config>'
+    connection = GuardedConnection(['ok'], ['Job 42', 'FIN: OK'])
+    connection.candidate = '<config>\n  <devices>\n    <entry name="fw" />\n  </devices>\n</config>'
+    if changed:
+        connection.candidate = connection.candidate.replace('<entry name="fw" />',
+            '<entry name="fw"><vsys><entry name="vsys1"><address><entry name="net">'
+            '<ip-netmask>203.0.113.1</ip-netmask></entry></address></entry></vsys></entry>')
+    fake_netmiko(monkeypatch, lambda **kwargs: connection)
+    result = PANSSHDeployer(PANDeploymentOptions('fw', 'admin', 'secret',
+        expected_serial=connection.serial, expected_baseline_sha256=destination_fingerprint(baseline),
+        baseline_format=BASELINE_FORMAT)).deploy(rendered('set vsys vsys1 address net ip-netmask 192.0.2.1'))
+    assert result.commands_attempted == (0 if changed else 1)
+    if changed:
+        assert 'Destination changed since review' in result.failure_message
+    else:
+        assert result.validation.status == 'SUCCESS'
+    assert connection.commits == 0 and connection.disconnected
+
+
+def test_missing_reviewed_baseline_fails_before_push(monkeypatch):
+    connection = GuardedConnection()
+    fake_netmiko(monkeypatch, lambda **kwargs: connection)
+    result = PANSSHDeployer(PANDeploymentOptions('fw', 'admin', 'secret',
+        expected_serial=connection.serial)).deploy(rendered('set one'))
+    assert result.commands_attempted == 0
+    assert 'baseline evidence is required' in result.failure_message
 
 
 @pytest.mark.parametrize('field,value', [
@@ -96,7 +129,8 @@ def test_candidate_fingerprint_survives_revalidation_and_guards_explicit_commit(
     connection = GuardedConnection(['ok'], ['Job 42', 'FIN: OK'])
     connection.candidate = '<config><secret>private-key-value</secret><devices><entry name="fw"/></devices></config>'
     fake_netmiko(monkeypatch, lambda **kwargs: connection)
-    options = PANDeploymentOptions('fw', 'admin', 'secret', expected_serial=connection.serial)
+    options = PANDeploymentOptions('fw', 'admin', 'secret', expected_serial=connection.serial, expected_baseline_sha256=destination_fingerprint(connection.candidate),
+        baseline_format=BASELINE_FORMAT)
     pushed = PANSSHDeployer(options).deploy(rendered('set one'))
     assert pushed.validation.status == 'SUCCESS'
     assert pushed.validation.device_serial == connection.serial
@@ -123,7 +157,8 @@ def test_drift_during_validation_never_creates_a_validated_fingerprint(monkeypat
     connection.drift_during_validation = True
     fake_netmiko(monkeypatch, lambda **kwargs: connection)
     result = PANSSHDeployer(PANDeploymentOptions('fw', 'admin', 'secret',
-        expected_serial=connection.serial)).deploy(rendered('set one'))
+        expected_serial=connection.serial, expected_baseline_sha256=destination_fingerprint(connection.candidate),
+        baseline_format=BASELINE_FORMAT)).deploy(rendered('set one'))
     assert result.validation.status == 'FAILED'
     assert result.validation.candidate_sha256 is None
     assert connection.commits == 0
@@ -138,7 +173,8 @@ def test_candidate_read_failure_never_exposes_raw_configuration(monkeypatch):
     connection = Broken()
     fake_netmiko(monkeypatch, lambda **kwargs: connection)
     result = PANSSHDeployer(PANDeploymentOptions('fw', 'admin', 'secret',
-        expected_serial=connection.serial)).deploy(rendered('set one'))
+        expected_serial=connection.serial, expected_baseline_sha256=destination_fingerprint(connection.candidate),
+        baseline_format=BASELINE_FORMAT)).deploy(rendered('set one'))
     assert 'private-key-value' not in str(result)
     assert result.failure_message
 

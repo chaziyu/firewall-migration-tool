@@ -179,7 +179,9 @@ def register_deployment_routes(
                 if (session.host.casefold(), session.port) == (options.host.casefold(), options.port):
                     deployment_sessions.pop(session_id, None)
             serial = payload['artifact']['decision_document']['design_approval']['context']['target_serial']
-            options = replace(options, expected_serial=serial)
+            context = payload['artifact']['decision_document']['design_approval']['context']
+            options = replace(options, expected_serial=serial,
+                expected_baseline_sha256=context['baseline_sha256'], baseline_format=context['baseline_format'])
             result = deployer_factory(options).deploy(rendered)
             decision_document = payload['artifact']['decision_document']
             validation_feedback = deployment_validation_feedback(rendered, decision_document, result.validation)

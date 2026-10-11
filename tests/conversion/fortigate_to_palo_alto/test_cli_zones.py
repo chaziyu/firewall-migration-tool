@@ -11,6 +11,5 @@ def test_zone_interface_membership_commands():
     ))
 
     assert PANSetRenderer().render(plan).commands == (
-        "set system setting target-vsys vsys1",
-        "set zone trust network layer3 [ ethernet1/1 ethernet1/3 ]",
+        "set vsys vsys1 zone trust network layer3 [ ethernet1/1 ethernet1/3 ]",
     )

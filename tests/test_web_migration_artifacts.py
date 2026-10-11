@@ -61,9 +61,9 @@ def test_duplicate_interface_imports_cannot_reach_reviewed_artifact_commands():
     command_preview = client.post('/api/migration/command-preview', json=artifact).get_json()
     command_download = client.post('/api/migration/download', json=artifact).data.decode()
     assert 'set network interface' not in command_download
-    assert 'set zone ' not in command_download
-    assert 'set rulebase security' not in command_download
-    assert 'set address web-host' in command_download
+    assert 'set vsys vsys1 zone ' not in command_download
+    assert 'set vsys vsys1 rulebase security' not in command_download
+    assert 'set vsys vsys1 address web-host' in command_download
     assert command_preview['command_sha256'] == result['report']['command_sha256']
     assert command_preview['command_text'] == command_download
     bundle = client.post('/api/migration/bundle', json=artifact)

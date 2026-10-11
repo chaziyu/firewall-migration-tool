@@ -15,9 +15,8 @@ def test_weekly_and_one_time_schedule_commands():
     ))
 
     assert PANSetRenderer().render(plan).commands == (
-        "set system setting target-vsys vsys1",
-        "set schedule work schedule-type recurring",
-        "set schedule work schedule-type recurring weekly monday [ 08:00-17:00 ]",
-        "set schedule work schedule-type recurring weekly friday [ 08:30-16:00 ]",
-        "set schedule holiday schedule-type non-recurring [ 2026/12/25@00:00-2026/12/26@00:00 ]",
+        "set vsys vsys1 schedule work schedule-type recurring",
+        "set vsys vsys1 schedule work schedule-type recurring weekly monday [ 08:00-17:00 ]",
+        "set vsys vsys1 schedule work schedule-type recurring weekly friday [ 08:30-16:00 ]",
+        "set vsys vsys1 schedule holiday schedule-type non-recurring [ 2026/12/25@00:00-2026/12/26@00:00 ]",
     )

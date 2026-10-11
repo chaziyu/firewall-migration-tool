@@ -239,7 +239,7 @@ def test_partial_group_approval_and_decision_export_import_keep_the_boundary():
     document = response.get_json()['decision_document']
     partial = client.post('/api/migrate', json={**payload, 'decision_document': document}).get_json()
     assert partial['plan_status'] != 'READY'
-    assert partial['commands'] == ['set system setting target-vsys vsys1', 'set address net ip-netmask 192.0.2.0/24']
+    assert partial['commands'] == ['set vsys vsys1 address net ip-netmask 192.0.2.0/24']
     exported = client.post('/api/migration/decisions/export', json={**payload, 'decision_document': document}).get_json()['document']
     assert exported['design_approval'] == document['design_approval']
     imported = client.post('/api/migration/decisions/import', json={**payload, 'document': exported}).get_json()['decision_document']

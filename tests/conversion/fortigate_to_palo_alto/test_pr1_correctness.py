@@ -43,7 +43,7 @@ def test_policy_address_families_never_fall_back_or_drop_ipv6(src4, dst4, src6, 
             target_name='untrust', target_vsys='vsys1', status=PANMigrationStatus.SUPPORTED)))
     validation = validate_plan(plan)
     artifact = PANSetRenderer().render(plan, validation)
-    assert any('set rulebase security' in command for command in artifact.commands) == supported
+    assert any('set vsys vsys1 rulebase security' in command for command in artifact.commands) == supported
     assert config.policies[0].srcaddr6 == src6
     rule = artifact.report['items'][-1]
     assert rule['source_policy_id'] == 42

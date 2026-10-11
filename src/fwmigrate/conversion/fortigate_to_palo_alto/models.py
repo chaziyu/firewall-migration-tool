@@ -124,6 +124,8 @@ class PlannedSecurityRule(PlannedPANItem):
     negate_destination: bool = False
     disabled: bool = False
     description: str | None = None
+    log_start: str | None = None
+    log_end: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

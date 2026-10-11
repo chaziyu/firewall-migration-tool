@@ -118,6 +118,8 @@ def security_rule(item):
     if item.disabled: commands.append(("vsys", *base, "disabled", "yes"))
     if item.description: commands.append(("vsys", *base, "description", item.description))
     if item.action: commands.append(("vsys", *base, "action", item.action))
+    if item.log_start is not None: commands.append(("vsys", *base, "log-start", item.log_start))
+    if item.log_end is not None: commands.append(("vsys", *base, "log-end", item.log_end))
     return commands
 
 

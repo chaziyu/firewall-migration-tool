@@ -13,7 +13,6 @@ def test_address_and_static_address_group_commands():
     )
 
     assert PANSetRenderer().render(plan).commands == (
-        "set system setting target-vsys vsys1",
-        "set address web ip-netmask 10.0.0.10/32",
-        "set address-group servers static [ web ]",
+        "set vsys vsys1 address web ip-netmask 10.0.0.10/32",
+        "set vsys vsys1 address-group servers static [ web ]",
     )

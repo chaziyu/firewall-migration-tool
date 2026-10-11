@@ -70,6 +70,12 @@ def plan_policies(source: Any, options: Any, derived: Any = None):
             warnings.append("FortiGate traffic shaping is not mapped")
         if policy.srcaddr6_negate not in {None, "disable"} or policy.dstaddr6_negate not in {None, "disable"}:
             warnings.append("IPv6 address negation requires manual review")
+        log_end = {"all": "yes", "disable": "no"}.get(policy.logtraffic)
+        log_start = None
+        if policy.logtraffic not in {None, "all", "disable"}:
+            warnings.append(f"policy logging {policy.logtraffic!r} requires manual target semantics")
+        if policy.logtraffic == "disable":
+            log_start = "no"
         for key in policy.raw_extra:
             if key not in {"uuid", "global-label", "label"}:
                 warnings.append(f"unclassified policy setting {key!r} requires manual review")
@@ -97,6 +103,7 @@ def plan_policies(source: Any, options: Any, derived: Any = None):
             negate_destination=getattr(policy, "dstaddr_negate", None) in {"enable", "yes", "1"},
             disabled=getattr(policy, "status", None) in {"disable", "disabled"},
             description=getattr(policy, "comments", None),
+            log_start=log_start, log_end=log_end,
         ))
     return tuple(result)
 

@@ -67,43 +67,43 @@ def test_structured_plan_renders_scoped_policy_and_nat_commands_in_order():
     )
     validation = validate_plan(plan)
     commands = PANSetRenderer().render(plan, validation).commands
-    assert commands[0] == "set system setting target-vsys vsys1"
-    assert "set address web ip-netmask 10.0.0.5/32" in commands
-    assert "set address-group web-group static [ web ]" in commands
-    assert "set service web-svc protocol tcp port 443" in commands
-    assert "set service web-svc protocol tcp source-port 1024-65535" in commands
-    assert "set service dns protocol udp port 53" in commands
-    assert "set service-group web-services members [ web-svc ]" in commands
-    assert "set schedule business-hours schedule-type recurring" in commands
-    assert "set schedule business-hours schedule-type recurring weekly monday [ 08:00-17:00 ]" in commands
-    assert "set schedule holiday schedule-type non-recurring [ 2026/12/25@00:00-2026/12/26@00:00 ]" in commands
-    assert "set zone trust network layer3 [ ethernet1/1 ]" in commands
-    snat_match = ["set rulebase nat rules snat from [ trust ]", "set rulebase nat rules snat to [ untrust ]",
-                  "set rulebase nat rules snat source [ web ]", "set rulebase nat rules snat destination [ any ]",
-                  "set rulebase nat rules snat service web-svc", "set rulebase nat rules snat to-interface ethernet1/2",
-                  "set rulebase nat rules snat source-translation dynamic-ip-and-port translated-address [ 203.0.113.5 ]"]
+    assert commands[0] == "set vsys vsys1 address web ip-netmask 10.0.0.5/32"
+    assert "set vsys vsys1 address web ip-netmask 10.0.0.5/32" in commands
+    assert "set vsys vsys1 address-group web-group static [ web ]" in commands
+    assert "set vsys vsys1 service web-svc protocol tcp port 443" in commands
+    assert "set vsys vsys1 service web-svc protocol tcp source-port 1024-65535" in commands
+    assert "set vsys vsys1 service dns protocol udp port 53" in commands
+    assert "set vsys vsys1 service-group web-services members [ web-svc ]" in commands
+    assert "set vsys vsys1 schedule business-hours schedule-type recurring" in commands
+    assert "set vsys vsys1 schedule business-hours schedule-type recurring weekly monday [ 08:00-17:00 ]" in commands
+    assert "set vsys vsys1 schedule holiday schedule-type non-recurring [ 2026/12/25@00:00-2026/12/26@00:00 ]" in commands
+    assert "set vsys vsys1 zone trust network layer3 [ ethernet1/1 ]" in commands
+    snat_match = ["set vsys vsys1 rulebase nat rules snat from [ trust ]", "set vsys vsys1 rulebase nat rules snat to [ untrust ]",
+                  "set vsys vsys1 rulebase nat rules snat source [ web ]", "set vsys vsys1 rulebase nat rules snat destination [ any ]",
+                  "set vsys vsys1 rulebase nat rules snat service web-svc", "set vsys vsys1 rulebase nat rules snat to-interface ethernet1/2",
+                  "set vsys vsys1 rulebase nat rules snat source-translation dynamic-ip-and-port translated-address [ 203.0.113.5 ]"]
     assert [commands.index(command) for command in snat_match] == sorted(commands.index(command) for command in snat_match)
-    assert "set rulebase nat rules dnat destination-translation translated-address 10.0.0.20" in commands
-    assert "set rulebase nat rules dnat destination-translation translated-port 8443" in commands
-    assert "set rulebase nat rules if-snat source-translation dynamic-ip-and-port interface-address" in commands
+    assert "set vsys vsys1 rulebase nat rules dnat destination-translation translated-address 10.0.0.20" in commands
+    assert "set vsys vsys1 rulebase nat rules dnat destination-translation translated-port 8443" in commands
+    assert "set vsys vsys1 rulebase nat rules if-snat source-translation dynamic-ip-and-port interface-address" in commands
     assert all("pool" not in command for command in commands)
-    security_commands = ["set rulebase security rules allow-web from [ trust ]",
-                         "set rulebase security rules allow-web to [ untrust ]",
-                         "set rulebase security rules allow-web source [ web ]",
-                         "set rulebase security rules allow-web destination [ any ]",
-                         "set rulebase security rules allow-web service [ web-svc ]",
-                         "set rulebase security rules allow-web schedule business-hours",
-                         "set rulebase security rules allow-web negate-source yes",
-                         "set rulebase security rules allow-web negate-destination yes",
-                         "set rulebase security rules allow-web disabled yes",
-                         "set rulebase security rules allow-web description \"web access\"",
-                         "set rulebase security rules allow-web action allow"]
+    security_commands = ["set vsys vsys1 rulebase security rules allow-web from [ trust ]",
+                         "set vsys vsys1 rulebase security rules allow-web to [ untrust ]",
+                         "set vsys vsys1 rulebase security rules allow-web source [ web ]",
+                         "set vsys vsys1 rulebase security rules allow-web destination [ any ]",
+                         "set vsys vsys1 rulebase security rules allow-web service [ web-svc ]",
+                         "set vsys vsys1 rulebase security rules allow-web schedule business-hours",
+                         "set vsys vsys1 rulebase security rules allow-web negate-source yes",
+                         "set vsys vsys1 rulebase security rules allow-web negate-destination yes",
+                         "set vsys vsys1 rulebase security rules allow-web disabled yes",
+                         "set vsys vsys1 rulebase security rules allow-web description \"web access\"",
+                         "set vsys vsys1 rulebase security rules allow-web action allow"]
     assert [commands.index(command) for command in security_commands] == sorted(commands.index(command) for command in security_commands)
     nat_end = max(i for i, command in enumerate(commands) if "rulebase nat rules" in command)
     security_start = min(i for i, command in enumerate(commands) if "rulebase security rules" in command)
     assert nat_end < security_start
-    assert commands[commands.index("set system setting target-vsys vsys2") + 1] == "set address db ip-netmask 10.0.0.6/32"
-    reset = commands.index("set system target-vsys none")
+    assert "set vsys vsys2 address db ip-netmask 10.0.0.6/32" in commands
+    reset = commands.index("set vsys vsys2 address db ip-netmask 10.0.0.6/32")
     assert commands[reset + 1] == "set network virtual-router default routing-table ip static-route default destination 0.0.0.0/0"
     assert commands[reset + 2] == "set network virtual-router default routing-table ip static-route default interface ethernet1/1"
     assert commands[reset + 3] == "set network virtual-router default routing-table ip static-route default nexthop ip-address 192.0.2.1"
