@@ -542,5 +542,6 @@ def classify_target_object_reuse(plan: PANMigrationPlan, target, device: str | N
     result.extend(_rule_collisions(plan.security_rules, target, device, "security_rule", "security_rules", lambda rule: (
         ("from_zones", "from_zones", rule.from_zones), ("to_zones", "to_zones", rule.to_zones),
         ("source", "source", rule.sources), ("destination", "destination", rule.destinations),
-        ("service", "service", rule.services), ("schedule", "schedule", rule.schedule), ("action", "action", rule.action))))
+        ("service", "service", rule.services), ("schedule", "schedule", rule.schedule), ("action", "action", rule.action),
+        ("log_start", "log_start", rule.log_start), ("log_end", "log_end", rule.log_end))))
     return tuple(sorted(result, key=lambda item: (item["family"], item["source_vdom"], item["source_name"])))

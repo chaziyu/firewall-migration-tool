@@ -9,6 +9,7 @@ import time
 from .models import (PANCommitResult, PANDeploymentCommandResult, PANDeploymentOptions,
                      PANDeploymentResult, PANValidationResult)
 from fwmigrate.conversion.fortigate_to_palo_alto.rendering.renderer import RenderedMigration
+from fwmigrate.vendors.palo_alto.config_fingerprint import BASELINE_FORMAT, destination_fingerprint
 
 
 _ERROR = re.compile(
@@ -44,9 +45,10 @@ class PANSSHDeployer:
                                          ssh_strict=True, system_host_keys=True)
         return self
 
-    def _candidate_identity(self):
+    def _candidate_identity(self, *, verify_baseline=False):
         """Read full device state without exporting or logging configuration values."""
         try:
+            self.connection.exit_config_mode()
             info = self.connection.send_command("show system info")
             serials = re.findall(r"(?m)^\s*serial:\s*(\S+)\s*$", info or "")
             if len(serials) != 1 or serials[0] != self.options.expected_serial:
@@ -64,6 +66,12 @@ class PANSSHDeployer:
             # Persist only the fingerprint; secret changes must also invalidate validation.
             canonical = ET.canonicalize(ET.tostring(root, encoding="unicode"), strip_text=False)
             digest = hashlib.sha256(canonical.encode()).hexdigest()
+            if verify_baseline:
+                if (self.options.baseline_format != BASELINE_FORMAT
+                        or not self.options.expected_baseline_sha256):
+                    raise _CandidateIntegrityError("Approved destination baseline evidence is required before preparation")
+                if destination_fingerprint(candidate) != self.options.expected_baseline_sha256:
+                    raise _CandidateIntegrityError("Destination changed since review; refresh evidence and approve the design again")
         except _CandidateIntegrityError:
             raise
         except Exception:
@@ -147,6 +155,7 @@ class PANSSHDeployer:
 
     def _commit_candidate(self):
         response = _safe_text(self.connection.commit(), self.options.password)
+        self.connection.exit_config_mode()
         if _ERROR.search(response or ""):
             return PANCommitResult(None, "FAILED", response or "")
         match = _JOB.search(response or "")
@@ -177,7 +186,7 @@ class PANSSHDeployer:
             return PANDeploymentResult(False, failure_message=_safe_text(exc, self.options.password))
         try:
             if self.options.expected_serial:
-                self._candidate_identity()
+                self._candidate_identity(verify_baseline=True)
                 try:
                     diff = self.connection.send_command("show config diff")
                 except Exception:

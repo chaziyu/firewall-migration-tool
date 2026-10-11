@@ -2,31 +2,29 @@ set network interface ethernet ethernet1/1 layer3
 set network interface ethernet ethernet1/1 layer3 ip 10.0.0.1/24
 set network interface ethernet ethernet1/2 layer3
 set network interface ethernet ethernet1/2 layer3 ip 192.0.2.2/24
-set system setting target-vsys vsys1
-set import network interface [ ethernet1/1 ]
-set import network interface [ ethernet1/2 ]
-set address web-host fqdn web.example.test
-set address-group web-servers static [ web-host ]
-set service HTTPS protocol tcp
-set service HTTPS protocol tcp port 443
-set schedule work-hours schedule-type recurring
-set schedule work-hours schedule-type recurring weekly monday [ 08:00-17:00 ]
-set schedule work-hours schedule-type recurring weekly tuesday [ 08:00-17:00 ]
-set schedule work-hours schedule-type recurring weekly wednesday [ 08:00-17:00 ]
-set schedule work-hours schedule-type recurring weekly thursday [ 08:00-17:00 ]
-set schedule work-hours schedule-type recurring weekly friday [ 08:00-17:00 ]
-set schedule holiday schedule-type non-recurring [ "2026/12/25 00:00-2026/12/26 00:00" ]
-set zone trust network layer3 [ ethernet1/1 ]
-set zone untrust network layer3 [ ethernet1/2 ]
-set rulebase security rules allow-web from [ trust ]
-set rulebase security rules allow-web to [ untrust ]
-set rulebase security rules allow-web source [ web-host ]
-set rulebase security rules allow-web destination [ web-host ]
-set rulebase security rules allow-web service [ HTTPS ]
-set rulebase security rules allow-web schedule work-hours
-set rulebase security rules allow-web negate-source yes
-set rulebase security rules allow-web description "Allow web access"
-set rulebase security rules allow-web action allow
-set system target-vsys none
+set vsys vsys1 import network interface [ ethernet1/1 ]
+set vsys vsys1 import network interface [ ethernet1/2 ]
+set vsys vsys1 address web-host fqdn web.example.test
+set vsys vsys1 address-group web-servers static [ web-host ]
+set vsys vsys1 service HTTPS protocol tcp
+set vsys vsys1 service HTTPS protocol tcp port 443
+set vsys vsys1 schedule work-hours schedule-type recurring
+set vsys vsys1 schedule work-hours schedule-type recurring weekly monday [ 08:00-17:00 ]
+set vsys vsys1 schedule work-hours schedule-type recurring weekly tuesday [ 08:00-17:00 ]
+set vsys vsys1 schedule work-hours schedule-type recurring weekly wednesday [ 08:00-17:00 ]
+set vsys vsys1 schedule work-hours schedule-type recurring weekly thursday [ 08:00-17:00 ]
+set vsys vsys1 schedule work-hours schedule-type recurring weekly friday [ 08:00-17:00 ]
+set vsys vsys1 schedule holiday schedule-type non-recurring [ "2026/12/25 00:00-2026/12/26 00:00" ]
+set vsys vsys1 zone trust network layer3 [ ethernet1/1 ]
+set vsys vsys1 zone untrust network layer3 [ ethernet1/2 ]
+set vsys vsys1 rulebase security rules allow-web from [ trust ]
+set vsys vsys1 rulebase security rules allow-web to [ untrust ]
+set vsys vsys1 rulebase security rules allow-web source [ web-host ]
+set vsys vsys1 rulebase security rules allow-web destination [ web-host ]
+set vsys vsys1 rulebase security rules allow-web service [ HTTPS ]
+set vsys vsys1 rulebase security rules allow-web schedule work-hours
+set vsys vsys1 rulebase security rules allow-web negate-source yes
+set vsys vsys1 rulebase security rules allow-web description "Allow web access"
+set vsys vsys1 rulebase security rules allow-web action allow
 set network virtual-router default interface [ ethernet1/1 ]
 set network virtual-router default interface [ ethernet1/2 ]

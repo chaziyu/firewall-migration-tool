@@ -5,7 +5,10 @@ Callers authenticate both envelopes before checking these pair-specific facts.
 
 from dataclasses import asdict
 import math
+import re
 import time
+
+from fwmigrate.vendors.palo_alto.config_fingerprint import BASELINE_FORMAT
 
 from ..design.draft import design_digest
 from ..plan_dependencies import item_key
@@ -38,7 +41,9 @@ def validate_artifact_approval(rendered, document, approval):
     target = report.get("target_evidence") or {}
     if (target.get("config_digest") != context.get("reference_digest")
             or target.get("device") != context.get("target_device")
-            or target.get("serial") != context.get("target_serial")):
+            or target.get("serial") != context.get("target_serial")
+            or target.get("baseline_sha256") != context.get("baseline_sha256")
+            or target.get("baseline_format") != context.get("baseline_format")):
         raise ArtifactEligibilityError("Artifact approval belongs to different target evidence")
     fields = ('value', 'review_state', 'approved_operation', 'approval_context',
               'evidence_source', 'evidence_type', 'evidence_value', 'target_object',
@@ -73,6 +78,10 @@ def deployment_serial(rendered, document, approval):
         raise ArtifactEligibilityError("Candidate deployment requires a READY artifact with commands")
     context = approval["context"]
     serial = context.get("target_serial")
+    if (context.get("baseline_format") != BASELINE_FORMAT
+            or not isinstance(context.get("baseline_sha256"), str)
+            or not re.fullmatch(r"[0-9a-f]{64}", context["baseline_sha256"])):
+        raise ArtifactEligibilityError("Approved destination baseline evidence is required; prepare and approve the design again")
     if (context.get("reference_role") != "DESTINATION"
             or not rendered.report.get("destination_verified")
             or not isinstance(serial, str) or not serial.strip()):

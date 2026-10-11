@@ -431,7 +431,7 @@ def test_exact_interface_reuse_skips_creation_and_conflicts_block_dependents():
     rendered = PANSetRenderer().render(plan, dispositions=dispositions)
     assert not any("network interface ethernet ethernet1/1 layer3" in command
                    for command in rendered.commands)
-    assert any("set zone trust" in command for command in rendered.commands)
+    assert any("set vsys vsys1 zone trust" in command for command in rendered.commands)
 
     conflict = classify_target_object_reuse(plan, _interface_target("198.51.100.1/24"), "dev")
     conflict_dispositions, _ = assess_target_plan(plan, conflict, (), decisions, index)

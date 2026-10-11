@@ -79,7 +79,8 @@ class PANSetRenderer:
         ]]
         vsys_commands = []
         item_commands = {
-            _key(item): [_serialize(path[1:]) for path in paths]
+            _key(item): [_serialize(("vsys", item.target_vsys, *path[1:]))
+                         if path[0] == "vsys" else _serialize(path[1:]) for path in paths]
             for item, paths in interface_items
         }
         for vsys in dict.fromkeys(item.target_vsys for item, _ in vsys_items if item.target_vsys is not None):
@@ -87,7 +88,7 @@ class PANSetRenderer:
             vsys_commands.extend(self._render_vsys_scope(vsys, scoped_items))
             for item, paths in scoped_items:
                 item_commands.setdefault(_key(item), []).extend(
-                    command for command in (_serialize(path[1:]) for path in paths)
+                    command for command in (_serialize(("vsys", vsys, *path[1:])) for path in paths)
                     if command not in item_commands.setdefault(_key(item), [])
                 )
         routes = [(item, cli_paths.static_route(item)) for item in plan.static_routes
@@ -96,23 +97,21 @@ class PANSetRenderer:
                         if item.status is PANMigrationStatus.SUPPORTED and _key(item) in allowed and can_create(item)]
         item_commands.update({_key(item): [_serialize(path[1:]) for path in paths] for item, paths in routes})
         item_commands.update({_key(item): [_serialize(path[1:]) for path in paths] for item, paths in dhcp_servers})
-        commands.extend(self._render_device_scope(interface_pre, reset_vsys=False))
+        commands.extend(self._render_device_scope(interface_pre))
         commands[0:0] = [_serialize(("network", "virtual-router", name)) for name in dict.fromkeys(virtual_router_names)]
         commands.extend(vsys_commands)
         device_tail = [*interface_post, *dhcp_servers, *routes]
-        commands.extend(self._render_device_scope(device_tail, reset_vsys=bool(vsys_commands)))
+        commands.extend(self._render_device_scope(device_tail))
         return RenderedMigration(tuple(commands), _report(plan, commands, validation, item_commands,
                                                           dispositions, render_blockers, decision_keys))
 
     def _render_vsys_scope(self, vsys, items):
-        return [f"set system setting target-vsys {_v(vsys)}", *(
-            _serialize(path[1:]) for _, paths in items for path in paths
-        )]
+        return [_serialize(("vsys", vsys, *path[1:])) for _, paths in items for path in paths]
 
-    def _render_device_scope(self, items, *, reset_vsys):
+    def _render_device_scope(self, items):
         if not items:
             return []
-        commands = ["set system target-vsys none"] if reset_vsys else []
+        commands = []
         commands.extend(_serialize(path[1:]) for _, paths in items for path in paths)
         return commands
 

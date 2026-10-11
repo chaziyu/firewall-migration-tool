@@ -146,8 +146,7 @@ def test_pipeline_renders_supported_objects_from_explicit_mapping():
     assert result.artifact_status == "READY"
     assert result.unresolved_decisions == ()
     assert result.rendered.commands == (
-        "set system setting target-vsys vsys1",
-        "set address host-a ip-netmask 192.0.2.10/32",
+        "set vsys vsys1 address host-a ip-netmask 192.0.2.10/32",
     )
     assert result.rendered.report["plan_status"] == "READY"
 
@@ -169,7 +168,7 @@ def test_pipeline_marks_unsupported_dhcp_plan_partial_without_coverage_gap():
     assert result.coverage["unplanned_count"] == 0
     assert result.plan.dhcp_servers[0].status.value == "MANUAL_REVIEW"
     assert result.rendered.report["coverage"] == result.coverage
-    assert any("set address host-a" in command for command in result.rendered.commands)
+    assert any("set vsys vsys1 address host-a" in command for command in result.rendered.commands)
     assert not any("network dhcp" in command for command in result.rendered.commands)
 
 

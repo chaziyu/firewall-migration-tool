@@ -32,7 +32,7 @@ def test_renderer_emits_only_supported_commands_and_complete_report():
 
     rendered = PANSetRenderer().render(plan)
 
-    assert rendered.commands == ("set system setting target-vsys vsys1", "set address net ip-netmask 10.0.0.0/24")
+    assert rendered.commands == ("set vsys vsys1 address net ip-netmask 10.0.0.0/24",)
     assert rendered.report["counts"]["SUPPORTED"] == 1
     assert rendered.report["counts"]["MANUAL_REVIEW"] == 1
 

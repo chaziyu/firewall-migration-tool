@@ -15,6 +15,8 @@ from ..target.target_plan_validation import assess_target_plan, _items, item_key
 from ..plan_dependencies import build_plan_dependency_index
 from ..validation import validate_plan
 from ..requirements import build_mapping_requirements
+from ..coverage import build_migration_coverage
+from ..recommendations.recommendation_engine import build_recommendations
 
 
 def draft_context(source_digest, reference=None, reference_role=None, target_device=None, intent=None):
@@ -23,6 +25,8 @@ def draft_context(source_digest, reference=None, reference_role=None, target_dev
         raise ValueError("reference_role must be DESTINATION, TEMPLATE, or null")
     return {"source_digest": source_digest, "reference_digest": (reference or {}).get("config_digest"),
             "reference_role": role, "target_device": target_device, "target_serial": (reference or {}).get("serial"),
+            "baseline_sha256": (reference or {}).get("baseline_sha256"),
+            "baseline_format": (reference or {}).get("baseline_format"),
             "intent": parse_target_intent(intent), "schema_version": 1}
 
 
@@ -232,6 +236,15 @@ def build_deterministic_draft(config, derived, decisions, *, source_digest, targ
                 "CONFLICT" if any(code.startswith("TARGET_") for code in blockers.get(key, ())) else "NEEDS_INPUT",
             "dependencies": list(required) + item_dependencies, "blocking_reasons": reasons,
             "configuration": asdict(item)})
+    coverage = build_migration_coverage(config,
+        build_recommendations(config, derived, provisional, destination, target_device))
+    for number, gap in enumerate(coverage["unplanned"]):
+        configuration.append({"group_key": f"coverage:{number}",
+            "source_vdom": gap["source_vdom"], "source_kind": gap["source_kind"],
+            "source_name": gap["source_name"], "family": gap["family"],
+            "target_name": None, "target_scope": None, "operation": None,
+            "status": "UNSUPPORTED", "dependencies": [],
+            "blocking_reasons": [gap["reason"], "Manual implementation required; approving supported groups leaves a partial migration."]})
     findings.extend({"code": row.code, "message": row.message} for row in validation.issues)
     if destination is None:
         findings.append({"code": "DESTINATION_UNVERIFIED", "message": "Destination compatibility, collisions, hardware capacity and licensing are unverified."})

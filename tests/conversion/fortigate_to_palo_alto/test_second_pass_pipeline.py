@@ -96,13 +96,13 @@ config firewall policy
     assert all(("security_rule", "vsys1", f"rule-{name}") in validation.renderable_item_keys
                for name in ("all", "http", "https", "dns", "ping", "mixed", "group"))
     commands = rendered.commands
-    assert "set service HTTP protocol tcp port 80" in commands
-    assert "set service FG-DNS-TCP protocol tcp port 53" in commands
-    assert "set service FG-DNS-UDP protocol udp port 53" in commands
-    assert "set service-group web-group members [ HTTP service-https ]" in commands
-    assert "set rulebase security rules rule-https service [ service-https ]" in commands
-    assert "set rulebase security rules rule-all service [ any ]" in commands
-    assert "set rulebase security rules rule-ping application [ ping ]" in commands
+    assert "set vsys vsys1 service HTTP protocol tcp port 80" in commands
+    assert "set vsys vsys1 service FG-DNS-TCP protocol tcp port 53" in commands
+    assert "set vsys vsys1 service FG-DNS-UDP protocol udp port 53" in commands
+    assert "set vsys vsys1 service-group web-group members [ HTTP service-https ]" in commands
+    assert "set vsys vsys1 rulebase security rules rule-https service [ service-https ]" in commands
+    assert "set vsys vsys1 rulebase security rules rule-all service [ any ]" in commands
+    assert "set vsys vsys1 rulebase security rules rule-ping application [ ping ]" in commands
 
 
 def test_vip_uses_original_packet_zone_and_conflicts_fail_closed():
@@ -126,7 +126,7 @@ end
     assert vip.from_zones == ("untrust",)
     assert vip.to_zones == ("untrust",)
     assert ("nat_rule", "vsys1", "web-vip") in validation.renderable_item_keys
-    assert any("set rulebase nat rules web-vip" in command for command in rendered.commands)
+    assert any("set vsys vsys1 rulebase nat rules web-vip" in command for command in rendered.commands)
 
     same_zone = source.replace(
         ' edit 1\n  set srcintf "wan"',
@@ -142,7 +142,7 @@ end
     _, plan, validation, rendered = _plan(conflicting)
     assert plan.nat_rules[0].from_zones == ()
     assert ("nat_rule", "vsys1", "web-vip") not in validation.renderable_item_keys
-    assert not any("set rulebase nat rules web-vip" in command for command in rendered.commands)
+    assert not any("set vsys vsys1 rulebase nat rules web-vip" in command for command in rendered.commands)
 
     unreferenced = source.replace('  set dstaddr "web-vip"\n', '')
     _, plan, validation, _ = _plan(unreferenced)
@@ -152,7 +152,7 @@ end
     _, plan, validation, rendered = _plan(source.replace('  set extintf "wan"\n', ''))
     assert plan.nat_rules[0].to_zones == ()
     assert ("nat_rule", "vsys1", "web-vip") not in validation.renderable_item_keys
-    assert not any("set rulebase nat rules web-vip" in command for command in rendered.commands)
+    assert not any("set vsys vsys1 rulebase nat rules web-vip" in command for command in rendered.commands)
 
 
 def test_invalid_subnets_do_not_become_pan_values():

@@ -34,6 +34,7 @@ export function MigrationDesignReview({ draft, busy, approvedItems, onPrepare, o
       </select></label>
     </div>
     <p className="report-count-note">Approval includes the shown values, operations, configuration and prerequisites. Unresolved groups stay blocked.</p>
+    {rows.some((row) => row.status === 'UNSUPPORTED') && <p role="status">Unsupported work requires manual implementation. Approving ready groups leaves a partial migration.</p>}
     {filtered.slice((page - 1) * 30, page * 30).map((row) => <article key={keyFor(row)} className="review-work-card">
       <label><input type="checkbox" checked={selected.includes(keyFor(row))} disabled={busy || row.status !== 'READY' || isApproved(row)}
         onChange={(event) => setSelected((keys) => event.target.checked ? [...keys, keyFor(row)] : keys.filter((key) => key !== keyFor(row)))} /> {row.source_vdom} / {row.source_name} · {row.target_field || row.family}</label>
