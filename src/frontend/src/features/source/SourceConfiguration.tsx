@@ -177,7 +177,7 @@ export function SourceConfiguration({ view, onViewChange }: {
 
   if (!workspaceReady) return <LoadingState label="Restoring browser workspace…" />
   return <main className="feature-content">
-    <section id="source-configuration" className="panel source-configuration" hidden={view !== 'collect' && Boolean(preview)} aria-labelledby="source-title">
+    <section id="source-configuration" className="panel source-configuration" hidden={view !== 'collect' && Boolean(preview) && !(file && view === 'report')} aria-labelledby="source-title">
       <h2 id="source-title"><span className="step-num">01</span> Source configuration</h2>
       <div className={`source-vendor-grid${view === 'migration' || view === 'live' ? ' with-target' : ''}`}>
         <VendorSelect value={vendor} onChange={changeVendor} vendors={vendors} />
@@ -189,10 +189,12 @@ export function SourceConfiguration({ view, onViewChange }: {
         {!preview && <><div className="ingest-tabs" role="tablist" aria-label="Configuration source">
           <button className={`ingest-tab-btn${ingestMode === 'config' ? ' active' : ''}`} role="tab" aria-selected={ingestMode === 'config'} type="button" onClick={() => setIngestMode('config')}>↑ Upload Config</button>
           <button className={`ingest-tab-btn${ingestMode === 'snapshot' ? ' active' : ''}`} role="tab" aria-selected={ingestMode === 'snapshot'} type="button" onClick={() => setIngestMode('snapshot')}>▤ Upload Snapshot</button>
-        </div>
-        {ingestMode === 'config' ? selectedVendor && <FileUpload key={vendor} file={file} onChange={updateFile} accept={selectedVendor.file_extensions.join(',')} /> : <FileUpload key="snapshot" file={null} onChange={(snapshot) => { if (snapshot) void importSnapshot(snapshot) }} accept=".json,application/json" disabled={loading} title="Drop your collection snapshot here" helpText="Import a previously collected, sanitized snapshot (.json)" />}</>}
-        {preview && <SourceOverview vendor={vendor} vendorName={selectedVendor?.display_name ?? ''} file={file} preview={preview} />}
-        {loading && <LoadingState label="Reading configuration and preparing the inventory…" />}
+        </div></>}
+        {ingestMode === 'config' ? selectedVendor && <FileUpload key={vendor} file={file} onChange={updateFile} description={selectedVendor.display_name} accept={selectedVendor.file_extensions.join(',')}>
+          {loading ? <LoadingState label="Reading configuration and preparing the inventory…" /> : preview ? <span className="selected-file-success" role="status"><span aria-hidden="true">✓ </span>Configuration loaded</span> : error && <><ErrorBanner message={error} /><Button type="button" className="text-button" onClick={() => void analyse()}>Retry</Button></>}
+        </FileUpload> : !preview && <FileUpload key="snapshot" file={null} onChange={(snapshot) => { if (snapshot) void importSnapshot(snapshot) }} accept=".json,application/json" disabled={loading} title="Drop your collection snapshot here" helpText="Import a previously collected, sanitized snapshot (.json)" />}
+        {preview && !file && <SourceOverview vendor={vendor} vendorName={selectedVendor?.display_name ?? ''} file={file} preview={preview} />}
+        {loading && (ingestMode !== 'config' || !file) && <LoadingState label="Reading configuration and preparing the inventory…" />}
       </>}
     </section>
 
@@ -237,6 +239,6 @@ export function SourceConfiguration({ view, onViewChange }: {
         {!decisionDocument && view === 'live' && <section className="panel"><h2>Migration plan required</h2><p>Review source mappings and generate a plan before preparing a target candidate.</p><Button onClick={() => onViewChange('migration')}>Open plan migration</Button></section>}
       </> : <section className="panel"><h2>Migration source required</h2><p>Load a FortiGate source configuration in Configuration report before planning migration.</p><Button onClick={() => onViewChange('report')}>Open configuration report</Button></section>}
     </div>
-    {error && <ErrorBanner message={error} />}
+    {error && !(file && !preview && ingestMode === 'config' && view !== 'collect') && <ErrorBanner message={error} />}
   </main>
 }

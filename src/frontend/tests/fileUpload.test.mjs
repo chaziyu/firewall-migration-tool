@@ -12,7 +12,7 @@ test('upload button opens its input and selection forwards the file', async () =
     const useId = () => 'upload-test';
     const useState = () => [null, () => {}];
     const React = { createElement: (type, props, ...children) => ({ type, props, children }) };
-  `)
+  `).replace(/import .* from '..\/..\/components\/common\/Button';/, `const Button = 'button';`)
   const { FileUpload } = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`)
   const selected = []
   const render = (disabled = false) => FileUpload({ file: null, onChange: (file) => selected.push(file), disabled })
@@ -34,4 +34,23 @@ test('upload button opens its input and selection forwards the file', async () =
   assert.equal(disabledTree.children[1].props.disabled, true)
   disabledTree.children[0].props.onDrop({ preventDefault() {}, dataTransfer: { files: [file] } })
   assert.equal(selected.length, 1)
+
+  const status = { type: 'span', props: { role: 'status' }, children: ['Reading configuration…'] }
+  const cardTree = FileUpload({ file, onChange: (next) => selected.push(next), description: 'PAN-OS', children: status })
+  assert.equal(cardTree.children[0], false, 'selected file replaces the empty dropzone')
+  const cardInput = cardTree.children[1]
+  cardInput.props.ref.current = { click: () => clicks++, value: 'target.xml' }
+  const card = cardTree.children[2]
+  const header = card.children[0]
+  assert.equal(header.children[1].children[0].children[0], 'target.xml')
+  assert.equal(header.children[1].children[1].children.join(''), '42 Bytes · PAN-OS')
+  assert.equal(card.children[1].children[0], status, 'status stays inside the file card')
+  const [replace, remove] = header.children[2].children
+  replace.props.onClick()
+  assert.equal(clicks, 2)
+  remove.props.onClick()
+  assert.equal(selected.at(-1), null)
+  assert.equal(cardInput.props.ref.current.value, '')
+  const lockedCard = FileUpload({ file, onChange() {}, disabled: true })
+  for (const action of lockedCard.children[2].children[0].children[2].children) assert.equal(action.props.disabled, true)
 })

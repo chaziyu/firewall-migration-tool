@@ -1,12 +1,16 @@
 import { useId, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
+import { Button } from '../../components/common/Button'
 
-export function FileUpload({ file, onChange, accept, title = 'Drop your configuration here', helpText, disabled = false }: {
+export function FileUpload({ file, onChange, accept, title = 'Drop your configuration here', helpText, disabled = false, description, children }: {
   file: File | null
   onChange: (file: File | null) => void
   accept?: string
   title?: string
   helpText?: string
   disabled?: boolean
+  description?: string
+  children?: ReactNode
 }) {
   const input = useRef<HTMLInputElement>(null)
   const inputId = useId()
@@ -32,7 +36,7 @@ export function FileUpload({ file, onChange, accept, title = 'Drop your configur
 
   return (
     <div className="file-upload">
-      <button type="button" className="dropzone" disabled={disabled} onClick={() => input.current?.click()} onDragOver={(event) => event.preventDefault()} onDrop={(event) => {
+      {!file && <button type="button" className="dropzone" disabled={disabled} onClick={() => input.current?.click()} onDragOver={(event) => event.preventDefault()} onDrop={(event) => {
         event.preventDefault()
         selectFile(event.dataTransfer.files[0])
       }}>
@@ -40,7 +44,7 @@ export function FileUpload({ file, onChange, accept, title = 'Drop your configur
         <strong>{title}</strong>
         <span>or <span className="browse-link">browse files</span> on your computer</span>
         <small>{helpText ?? `Supports configuration files${accept ? ` (${accept.split(',').join(', ')})` : ''}`}</small>
-      </button>
+      </button>}
       <input
         ref={input}
         id={inputId}
@@ -53,9 +57,16 @@ export function FileUpload({ file, onChange, accept, title = 'Drop your configur
         onChange={(event) => { selectFile(event.currentTarget.files?.[0]); event.currentTarget.value = '' }}
       />
       {file && (
-        <div className="selected-file" role="status">
-          <span><strong>{file.name}</strong> <small>{formatFileSize(file.size)}</small></span>
-          <button type="button" aria-label="Remove configuration file" onClick={removeFile}>×</button>
+        <div className="selected-file">
+          <div className="selected-file-header">
+            <span className="selected-file-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9Zm0 0v6h6M8 13h8M8 17h5" /></svg></span>
+            <span className="selected-file-details"><strong>{file.name}</strong><small>{formatFileSize(file.size)}{description && ` · ${description}`}</small></span>
+            <div className="selected-file-actions">
+              <Button type="button" className="text-button" disabled={disabled} onClick={() => input.current?.click()}>Replace</Button>
+              <Button type="button" className="text-button" disabled={disabled} aria-label="Remove configuration file" onClick={removeFile}>×</Button>
+            </div>
+          </div>
+          {children && <div className="selected-file-status">{children}</div>}
         </div>
       )}
       {error && <small id={`${inputId}-error`} role="alert">{error}</small>}
