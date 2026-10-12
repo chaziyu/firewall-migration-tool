@@ -38,9 +38,21 @@ def build_panos_preview(analysis: PaloAltoSourceResult) -> dict[str, Any]:
         if issue.source_path is None:
             review_fallbacks[(scope_id, issue.source_name)].append(issue.message)
 
-    def vdom(item: Any) -> str | None:
-        scope = getattr(item, "scope", None)
-        return scope.vsys if scope else None
+    def scope_fields(item: Any) -> dict[str, Any]:
+        scope = item if isinstance(item, PANScope) else getattr(item, "scope", None)
+        return {
+            "scope": _scope_id(scope),
+            "scope_type": scope.kind if scope else None,
+            "scope_name": scope.name if scope else None,
+            "device_name": scope.device_name if scope else None,
+            "device_serial": scope.device_serial if scope else None,
+            "device_group": scope.device_group if scope else None,
+            "parent_device_group": scope.parent_device_group if scope else None,
+            "vsys": scope.vsys if scope else None,
+            "template": scope.template_provenance.get("template") if scope else None,
+            "template_stack": scope.template_stack if scope else None,
+            "rulebase_position": getattr(item, "rulebase_position", None),
+        }
 
     def review(item: Any) -> list[str]:
         scope_id = _scope_id(getattr(item, "scope", None))
@@ -56,21 +68,21 @@ def build_panos_preview(analysis: PaloAltoSourceResult) -> dict[str, Any]:
             "address_family": "IPv6" if ":" in (item.ip_netmask or item.ip_range or item.ip_wildcard or "") else "IPv4" if item.ip_netmask or item.ip_range or item.ip_wildcard else None,
             "associated_interface": None,
             "review": review(item),
-            "vdom": vdom(item),
+            **scope_fields(item),
         }
         for item in config.addresses
     ]
-    address_groups = [{"name": item.name, "members": item.static_members, "address_family": None, "exclude_members": [], "review": review(item), "vdom": vdom(item)} for item in config.address_groups]
+    address_groups = [{"name": item.name, "members": item.static_members, "address_family": None, "exclude_members": [], "review": review(item), **scope_fields(item)} for item in config.address_groups]
     services = []
     for item in config.services:
         protocol = item.tcp or item.udp
         services.append({"name": item.name, "protocol": "tcp" if item.tcp else "udp" if item.udp else None,
                          "port": protocol.port if protocol else None, "source_port": protocol.source_port if protocol else None,
-                         "generated": False, "review": review(item), "vdom": vdom(item)})
-    service_groups = [{"name": item.name, "members": item.members, "generated": False, "review": review(item), "vdom": vdom(item)} for item in config.service_groups]
+                         "generated": False, "review": review(item), **scope_fields(item)})
+    service_groups = [{"name": item.name, "members": item.members, "generated": False, "review": review(item), **scope_fields(item)} for item in config.service_groups]
     policies = [{"policy_id": item.source_order, "name": item.name, "source_interfaces": item.from_zones,
                  "destination_interfaces": item.to_zones, "services": item.service, "action": item.action,
-                 "nat": False, "review": review(item), "vdom": vdom(item)} for item in config.security_rules]
+                 "review": review(item), **scope_fields(item)} for item in config.security_rules]
     nat_rows = []
     for item in config.nat_rules:
         source_translation = item.source_translation
@@ -100,7 +112,7 @@ def build_panos_preview(analysis: PaloAltoSourceResult) -> dict[str, Any]:
             "source_translation_ip": getattr(source_translation, "ip", None),
             "egress_interfaces": [item.to_interface] if item.to_interface else item.to_zones,
             "review": review(item),
-            "vdom": vdom(item),
+            **scope_fields(item),
         })
     interface_by_key = {
         (_scope_id(item.scope), item.name): item
@@ -114,7 +126,7 @@ def build_panos_preview(analysis: PaloAltoSourceResult) -> dict[str, Any]:
                                "ip": getattr(source, "ipv4_addresses", None), "zone": item.zones, "parent": item.parent,
                                "aggregate": item.aggregate, "physical_interfaces": item.physical_interfaces,
                                "status": "EXTRACTED", "review": item.issues,
-                               "vdom": item.imported_vsys[0] if item.imported_vsys else vdom(source), "_scope": item.scope,
+                               **(scope_fields(source) if source else {"scope": item.scope}), "_scope": item.scope,
                                "_attached_tunnels": item.attached_tunnels})
     topology_rows = {(row["_scope"], row["name"]): row for row in interface_rows}
     children = defaultdict(list)
@@ -143,7 +155,7 @@ def build_panos_preview(analysis: PaloAltoSourceResult) -> dict[str, Any]:
             emit(child, prefix + ("└─ " if last else "├─ "))
         for index, tunnel in enumerate(tunnels, len(child_keys) + 1):
             rendered.append({"display_name": f"{prefix}{'└─ ' if index == total else '├─ '}◈ {tunnel}", "name": tunnel,
-                             "kind": "vpn", "parent": key[1], "zone": None, "status": "EXTRACTED", "review": [], "vdom": row.get("vdom")})
+                             "kind": "vpn", "parent": key[1], "zone": None, "status": "EXTRACTED", "review": [], "scope": row.get("scope")})
 
     for key in sorted(topology_rows, key=lambda value: (ranks.get(topology_rows[value]["kind"], 9), value[1])):
         if not topology_rows[key]["parent"] or (key[0], topology_rows[key]["parent"]) not in topology_rows:
@@ -165,24 +177,24 @@ def build_panos_preview(analysis: PaloAltoSourceResult) -> dict[str, Any]:
             "ipsec_crypto_profile": item.ipsec_crypto_profile,
             "topology_path": topology.path if topology else (),
             "review": review(item),
-            "vdom": vdom(item),
+            **scope_fields(item),
         })
     routes = []
     for router in config.virtual_routers:
         for item in router.static_routes or ():
             routes.append({"route_id": item.name, "destination": item.destination, "gateway": item.nexthop_ip_address or item.nexthop,
                            "device": item.interface, "distance": item.admin_distance, "status": "EXTRACTED",
-                           "review": review(item), "vdom": vdom(router), "router_type": "virtual-router",
+                           "review": review(item), **scope_fields(router), "router_type": "virtual-router",
                            "router": router.name, "vrf": None})
     for router in config.logical_routers:
         for vrf in router.vrfs or ():
             for item in vrf.static_routes or ():
                 routes.append({"route_id": item.name, "destination": item.destination, "gateway": item.nexthop_ip_address or item.nexthop,
                                "device": item.interface, "distance": item.admin_distance, "status": "EXTRACTED",
-                               "review": review(item), "vdom": vdom(router), "router_type": "logical-router",
+                               "review": review(item), **scope_fields(router), "router_type": "logical-router",
                                "router": router.name, "vrf": vrf.name})
     validation_rows = [{"severity": item.severity, "domain": item.domain, "object_name": item.source_name,
-                        "field": item.field, "message": item.message, "vdom": item.source_scope.vsys if item.source_scope else None}
+                        "field": item.field, "message": item.message, **scope_fields(item.source_scope)}
                        for item in analysis.validation.issues]
     object_counts = {"interfaces": sum(row.get("kind") != "vpn" for row in interface_rows), "addresses": len(addresses), "address_groups": len(address_groups),
                      "services": len(services), "service_groups": len(service_groups), "policies": len(policies),
@@ -288,16 +300,16 @@ def build_panos_preview(analysis: PaloAltoSourceResult) -> dict[str, Any]:
             "vpn_phase2": [],
             "validation": validation_rows,
             "unresolved_references": [_jsonable(item) for item in analysis.derived.unresolved_references],
-            "vulnerability_profiles": [{"name": item.name, "rules": len(item.rules or ()), "exceptions": len(item.exceptions or ()), "vdom": vdom(item)} for item in config.vulnerability_profiles],
-            "dhcp_servers": [{"name": item.name, "interface": item.interface, "mode": item.mode, "vdom": vdom(item)} for item in config.dhcp_servers],
-            "sdwan_rules": [{"name": item.name, "path_quality_profile": item.path_quality_profile, "saas_quality_profile": item.saas_quality_profile, "vdom": vdom(item)} for item in config.sdwan_rules],
-            "administrators": [{"name": item.name, "custom_admin_role": item.custom_admin_role, "password_configured": item.password_configured, "vdom": vdom(item)} for item in config.administrators],
-            "local_users": [{"name": item.name, "disabled": item.disabled, "password_configured": item.password_configured, "vdom": vdom(item)} for item in config.local_users],
-            "local_user_groups": [{"name": item.name, "members": item.members, "vdom": vdom(item)} for item in config.local_user_groups],
-            "group_mappings": [{"name": item.name, "server_profile": item.server_profile, "disabled": item.disabled, "vdom": vdom(item)} for item in config.group_mappings],
-            "ike_gateways": [{"name": item.name, "ike_version": item.ike_version, "pre_shared_key_configured": item.pre_shared_key_configured, "vdom": vdom(item)} for item in config.ike_gateways],
-            "ipsec_tunnels": [{"name": item.name, "ike_gateways": item.ike_gateways, "ipsec_crypto_profile": item.ipsec_crypto_profile, "manual_key_configured": item.manual_key_configured, "vdom": vdom(item)} for item in config.ipsec_tunnels],
-            "globalprotect_portals": [{"name": item.name, "ssl_tls_service_profile": item.ssl_tls_service_profile, "vdom": vdom(item)} for item in config.globalprotect_portals],
-            "globalprotect_gateways": [{"name": item.name, "local_interface": item.local_interface, "vdom": vdom(item)} for item in config.globalprotect_gateways],
+            "vulnerability_profiles": [{"name": item.name, "rules": len(item.rules or ()), "exceptions": len(item.exceptions or ()), **scope_fields(item)} for item in config.vulnerability_profiles],
+            "dhcp_servers": [{"name": item.name, "interface": item.interface, "mode": item.mode, **scope_fields(item)} for item in config.dhcp_servers],
+            "sdwan_rules": [{"name": item.name, "path_quality_profile": item.path_quality_profile, "saas_quality_profile": item.saas_quality_profile, **scope_fields(item)} for item in config.sdwan_rules],
+            "administrators": [{"name": item.name, "custom_admin_role": item.custom_admin_role, "password_configured": item.password_configured, **scope_fields(item)} for item in config.administrators],
+            "local_users": [{"name": item.name, "disabled": item.disabled, "password_configured": item.password_configured, **scope_fields(item)} for item in config.local_users],
+            "local_user_groups": [{"name": item.name, "members": item.members, **scope_fields(item)} for item in config.local_user_groups],
+            "group_mappings": [{"name": item.name, "server_profile": item.server_profile, "disabled": item.disabled, **scope_fields(item)} for item in config.group_mappings],
+            "ike_gateways": [{"name": item.name, "ike_version": item.ike_version, "pre_shared_key_configured": item.pre_shared_key_configured, **scope_fields(item)} for item in config.ike_gateways],
+            "ipsec_tunnels": [{"name": item.name, "ike_gateways": item.ike_gateways, "ipsec_crypto_profile": item.ipsec_crypto_profile, "manual_key_configured": item.manual_key_configured, **scope_fields(item)} for item in config.ipsec_tunnels],
+            "globalprotect_portals": [{"name": item.name, "ssl_tls_service_profile": item.ssl_tls_service_profile, **scope_fields(item)} for item in config.globalprotect_portals],
+            "globalprotect_gateways": [{"name": item.name, "local_interface": item.local_interface, **scope_fields(item)} for item in config.globalprotect_gateways],
         },
     }

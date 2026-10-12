@@ -28,6 +28,12 @@ def _inventory_record(element: ET.Element, path: tuple[str, ...], context, sourc
     return PANSourceRecord(kind=path[-2] if len(path) > 1 else "entry", source_path="/".join(path), name=element.get("name"), scope=context.scope, rulebase_position=context.rulebase_position, values=sanitize_source_attributes(_record_value(element)), source_order=source_order, raw_xml=sanitize_raw_text(ET.tostring(element, encoding="unicode")))
 
 
+def _inventory_unsupported_branch(element: ET.Element, path: tuple[str, ...], context, source_order: int) -> PANSourceRecord:
+    return PANSourceRecord(kind=element.tag, source_path="/".join(path), name=element.get("name"), scope=context.scope,
+        rulebase_position=context.rulebase_position, values=sanitize_source_attributes(_record_value(element)),
+        source_order=source_order, raw_xml=sanitize_raw_text(ET.tostring(element, encoding="unicode")))
+
+
 def build_panos_config(content: str) -> PANOSConfig:
     source = load_pan_source(content)
     scopes: list[PANScope] = []
@@ -35,14 +41,27 @@ def build_panos_config(content: str) -> PANOSConfig:
     unknown_paths: list[str] = []
     extraction_issues: list[PANExtractionIssue] = []
     typed: dict[str, list[object]] = {collection: [] for collection in registered_typed_collections()}
+    preserved_branches: list[str] = []
     for element, path, context in walk_pan_source(source.root):
         if context.scope and pan_scope_identity(context.scope) not in {pan_scope_identity(item) for item in scopes}:
             scopes.append(context.scope)
         spec = match_path_spec(path)
+        path_string = "/".join(path)
+        if any(path_string.startswith(branch + "/") for branch in preserved_branches):
+            continue
         if element.tag == "entry":
             records.append(_inventory_record(element, path, context, len(records) + 1))
             source_order = len(records)
         elif spec is None:
+            # Keep maximal unsupported branches that are outside an inventoried
+            # entry. Their descendants cannot contain separate entry records, so
+            # one source-only record preserves their path and sanitized evidence.
+            excluded_roots = {"config", "devices", "device", "shared", "vsys"}
+            has_entry_ancestor = "entry" in path[:-1]
+            has_entry_descendant = any(child.tag == "entry" for child in element.iter() if child is not element)
+            if path[-1] not in excluded_roots and not has_entry_ancestor and not has_entry_descendant:
+                records.append(_inventory_unsupported_branch(element, path, context, len(records) + 1))
+                preserved_branches.append(path_string)
             continue
         else:
             source_order = len(records) + 1

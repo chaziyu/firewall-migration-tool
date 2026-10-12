@@ -155,3 +155,29 @@ def test_partial_extraction_status_and_source_appendix_evidence():
     assert any(row[0] == "warning" and row[1] == "extraction" and "ValidationError" in str(row) for row in validation)
     unsupported = list(workbook["Unsupported"].iter_rows(min_row=4, values_only=True))
     assert any("not-a-scalar" in str(row) for row in unsupported)
+
+
+def test_interface_units_only_link_to_parents_in_the_same_scope():
+    source = """<config><devices>
+      <entry name='fw-a'><vsys><entry name='vsys1'><import><network><interface><member>ethernet1/1</member></interface></network></import></entry></vsys>
+        <network><interface><ethernet><entry name='ethernet1/1'><layer3/></entry></ethernet></interface></network>
+      </entry>
+      <entry name='fw-b'><vsys><entry name='vsys1'><import><network><interface><member>ethernet1/1</member></interface></network></import></entry></vsys>
+        <network><interface><ethernet><entry name='ethernet1/1'><layer3><units><entry name='ethernet1/1.10'><tag>10</tag><layer3/></entry></units></layer3></entry></ethernet></interface></network>
+      </entry>
+    </devices></config>"""
+    rows = _sheet_rows(source, "Interfaces")
+    assert len(rows) == 3
+    unit = next(row for row in rows if row["Name"] == "ethernet1/1.10")
+    assert unit["Parent Interface"] == "ethernet1/1"
+    assert unit["Device"] == "fw-b"
+
+
+def test_source_appendix_does_not_repeat_nested_entry_evidence():
+    source = """<config><shared><profiles><vulnerability><entry name='parent'>
+      <rules><entry name='child'><severity>high</severity></entry></rules>
+    </entry></vulnerability></profiles></shared></config>"""
+    rows = _sheet_rows(source, "PAN-OS Source Appendix")
+    entry_name_values = [row["Evidence Value"] for row in rows if row["Evidence Path"].endswith("/@name")]
+    assert entry_name_values.count("parent") == 1
+    assert entry_name_values.count("child") == 1

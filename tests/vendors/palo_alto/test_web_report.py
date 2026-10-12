@@ -57,6 +57,24 @@ def test_same_named_scoped_policies_keep_review_reasons_in_their_scope():
     assert rows[0]["name"] == rows[1]["name"] == "Allow-Web"
     assert rows[0]["review"]
     assert rows[1]["review"] == []
+    assert rows[0]["scope_type"] == rows[1]["scope_type"] == "device-group"
+    assert rows[0]["scope_name"] == "dg-a"
+    assert rows[0]["rulebase_position"] == "pre"
+    assert "vdom" not in rows[0] and "nat" not in rows[0]
+
+
+def test_preview_reports_shared_scope_and_keeps_security_and_nat_separate():
+    source = """<config><shared>
+      <rulebase><security><rules><entry name='allow-web'><action>allow</action></entry></rules></security>
+        <nat><rules><entry name='snat'><source-translation><dynamic-ip-and-port><interface-address><interface>ethernet1/1</interface></interface-address></dynamic-ip-and-port></source-translation></entry></rules></nat>
+      </rulebase>
+    </shared></config>"""
+    preview = PaloAltoSourceReporter().build_preview(PaloAltoSourceReporter().analyze_source(source))
+    policy = preview["sections"]["policies"][0]
+    nat = preview["sections"]["nat"][0]
+    assert (policy["scope_type"], policy["scope_name"], policy["rulebase_position"]) == ("shared", "shared", "local")
+    assert (nat["scope_type"], nat["scope_name"], nat["rulebase_position"]) == ("shared", "shared", "local")
+    assert "nat" not in policy
 
 
 def test_preview_includes_logical_router_routes_with_ownership():
