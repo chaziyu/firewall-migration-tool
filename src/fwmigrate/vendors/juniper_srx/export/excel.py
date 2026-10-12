@@ -7,7 +7,7 @@ from typing import Any
 from fwmigrate.extraction.models import ExtractionStatus
 from fwmigrate.extraction.sanitize import sanitize_source_attributes
 from ....source_reporting.options import ExcelExportProfile
-from ....source_reporting.excel_style import append_report_row, finish_report_workbook
+from ....source_reporting.excel_style import append_report_row, append_report_title, finish_report_workbook
 
 from .excel_schema import SHEET_HEADERS, SHEET_ORDER
 from ..transforms.effective_state import effective_path_state
@@ -326,6 +326,8 @@ def export_juniper_excel(
             continue
         sheet = workbook.create_sheet(name)
         if name == "Summary":
+            if profile is ExcelExportProfile.FAST:
+                append_report_title(sheet, "Juniper SRX Configuration Report")
             append_report_row(sheet, ("Field", "Value"))
             append_report_row(sheet, ("Vendor", "Juniper SRX"))
             append_report_row(sheet, ("Hostname", result.config.hostname))
@@ -404,7 +406,7 @@ def export_juniper_excel(
             elif hasattr(item, "__dict__"):
                 item = item.__dict__
             append_report_row(sheet, tuple(_value(item.get(header.lower().replace(" ", "_"))) for header in SHEET_HEADERS[name]))
-    finish_report_workbook(workbook)
+    finish_report_workbook(workbook, summary_title="Juniper SRX Configuration Report")
     if hasattr(output, "write"):
         workbook.save(output)
         return output

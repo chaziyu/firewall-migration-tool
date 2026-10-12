@@ -51,11 +51,71 @@ export function portExceptionGroups(rows: DraftRow[]): Map<string, DraftRow[]> {
   return groups
 }
 
-export function candidateLabel(candidate: Candidate) {
+export function candidateLabel(candidate: Candidate, targetField = 'target_interface') {
   if (candidate.available === false) return `Already assigned to ${candidate.assigned_to?.map((owner) => `${owner.source_vdom} / ${owner.source_name}`).join(', ')}`
   if (candidate.contested) return 'Competing suggestion'
   if (candidate.class === 'STRONG') return 'Strong match'
-  return candidate.supporting_evidence?.some((fact) => !['INTERFACE_FAMILY_MATCH', 'physical interface family'].includes(fact)) ? 'Possible match' : 'Available interface'
+  if (candidate.supporting_evidence?.some((fact) => !['INTERFACE_FAMILY_MATCH', 'physical interface family'].includes(fact))) return 'Possible match'
+  const field = ({ target_interface: 'interface', target_zone: 'zone', target_virtual_router: 'virtual router', vsys: 'VSYS' } as Record<string, string>)[targetField] ?? 'target'
+  return `Available ${field} — no match evidence`
+}
+
+export function orderReviewGroups<T extends { decision_keys: string[]; source_vdom: string; source_kind: string; source_name: string; queue: string; affected_count: number }>(
+  groups: T[], rows: DraftRow[], context: Record<string, Record<string, unknown>>,
+) {
+  const rowByKey = new Map(rows.map((row) => [draftRowKey(row), row]))
+  const groupByKey = new Map(groups.flatMap((group) => group.decision_keys.map((key) => [key, group] as const)))
+  const prerequisites = new Map(groups.map((group) => [group, new Set<T>()]))
+  for (const group of groups) for (const key of group.decision_keys) {
+    for (const dependency of rowByKey.get(key)?.dependencies ?? []) {
+      const row = rowByKey.get(dependency)
+      const owner = groupByKey.get(dependency)
+      if (owner && owner !== group && !row?.approved && row?.status !== 'READY') prerequisites.get(group)!.add(owner)
+    }
+  }
+  const originalOrder = new Map(groups.map((group, index) => [group, index]))
+  const rank = (group: T) => {
+    const facts = group.decision_keys.map((key) => context[key] ?? {})
+    const parent = facts.some((item) => item.source_parent)
+    const physical = facts.some((item) => ['physical', 'ethernet', 'aggregate'].includes(String(item.source_type)))
+    const unavailable = group.decision_keys.some((key) => !rowByKey.has(key) || (rowByKey.get(key)?.dependencies ?? []).some((dependency) => !rowByKey.has(dependency)))
+    if (unavailable) return [1, originalOrder.get(group)!]
+    return [group.queue === 'COMPLETE' ? 3 : reviewGroupActionable(group, rows) ? 0 : 2,
+      group.source_kind === 'vdom' ? 0 : parent ? 3 : physical ? 1 : group.source_kind === 'zone' ? 2 : 2,
+      -Number(group.affected_count ?? 0), group.source_vdom, group.source_name]
+  }
+  const compare = (a: T, b: T) => {
+    const x = rank(a), y = rank(b)
+    for (let i = 0; i < x.length; i++) {
+      const result = typeof x[i] === 'number' ? Number(x[i]) - Number(y[i]) : String(x[i]).localeCompare(String(y[i]))
+      if (result) return result
+    }
+    return 0
+  }
+  const remaining = new Set(groups)
+  const ordered: T[] = []
+  while (remaining.size) {
+    const ready = [...remaining].filter((group) => [...prerequisites.get(group)!].every((item) => !remaining.has(item))).sort(compare)
+    const next = ready[0] ?? [...remaining].sort(compare)[0]
+    ordered.push(next)
+    remaining.delete(next)
+  }
+  return ordered
+}
+
+export function reviewGroupActionable(group: { decision_keys: string[]; queue: string }, rows: DraftRow[]) {
+  if (group.queue === 'COMPLETE') return false
+  const byKey = new Map(rows.map((row) => [draftRowKey(row), row]))
+  const taskKeys = new Set(group.decision_keys)
+  const taskRows = group.decision_keys.map((key) => byKey.get(key))
+  if (taskRows.some((row) => !row)) return false
+  if (taskRows.some((row) => (row!.dependencies ?? []).some((key) => {
+    if (taskKeys.has(key)) return false
+    const prerequisite = byKey.get(key)
+    return !prerequisite || (prerequisite.status !== 'READY' && !prerequisite.approved)
+  }))) return false
+  return ['READY_TO_CONFIRM', 'CHOOSE_CANDIDATE'].includes(group.queue)
+    || taskRows.some((row) => row!.status === 'NEEDS_INPUT' || row!.status === 'CONFLICT')
 }
 
 export function reconcileReviewDrafts(current: Record<string, string>, previous: Decision[], next: Decision[], contextChanged: boolean, candidates: Record<string, Candidate[]> = {}, proposals: Record<string, string | null> = {}, previousProposals: Record<string, string | null> = {}) {

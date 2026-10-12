@@ -238,7 +238,7 @@ test('manual proposal edits use draft preparation, conflict membership and visib
     target_devices: [], target_device: null, target_evidence: null, decision_candidates: {}, rule_suggestions: [],
     review_groups: [{ source_vdom: 'root', source_kind: 'interface', source_name: 'port1', queue: 'CONFLICT',
       decision_keys: ['port'], conflicts: [{ decision_key: 'port' }] }],
-    draft: { digest: 'draft', context: { overrides: {} }, decisions: [{ decision_key: 'port', proposed_value: null }] } }
+    draft: { digest: 'draft', context: { overrides: {} }, decisions: [{ decision_key: 'port', proposed_value: null }], configuration: [] } }
   const harness = component('../src/features/migration/MigrationReview.tsx', 'MigrationReview', {
     '../../storage/workspaceStore': workspace,
     '../../api/client': { ...api, postJson: async (path, payload) => { calls.push({ path, payload }); return review } },
@@ -301,4 +301,60 @@ test('review invalidation preserves live connection and history while revoking c
   for (const title of ['Prepare Candidate', 'Revalidate Candidate', 'Commit']) {
     assert.equal(elements(tree).find((node) => node.type === 'Button' && node.props.children === title).props.disabled, true)
   }
+})
+
+test('a server-validated mapping proposal is reported as pending approval without approving or building', async () => {
+  const decision = { key: 'port', source_vdom: 'root', source_kind: 'interface', source_name: 'port8', target_field: 'target_interface', mode: 'REQUIRED', review_state: 'PENDING', value: null, suggested_value: null }
+  const group = { decision_keys: ['port'], source_vdom: 'root', source_kind: 'interface', source_name: 'port8', queue: 'NEEDS_INPUT', decisions: [decision], candidates: {}, source_evidence: {}, affected_count: 0, dependent_decision_count: 0, conflicts: [] }
+  const result = { decisions: { decisions: [decision] }, decision_document: { decisions: [decision] }, target_devices: [], target_device: null,
+    target_evidence: null, decision_candidates: {}, review_groups: [group], review_summary: {}, rule_suggestions: [], decision_context: {},
+    draft: { digest: 'fresh', context: { overrides: {}, service_names: {} }, decisions: [{ decision_key: 'port', proposed_value: 'ethernet1/2', status: 'READY', approved: false, dependencies: [] }], configuration: [] } }
+  const calls = []
+  const saves = []
+  const harness = component('../src/features/migration/MigrationReview.tsx', 'MigrationReview', {
+    '../../storage/workspaceStore': { ...workspace, saveWorkspace: async (value) => saves.push(value) },
+    '../../api/client': { RequestError: api.RequestError, postJson: async (path, payload) => { calls.push({ path, payload }); return result } },
+    '../source/FileUpload': { FileUpload: 'FileUpload' }, './download': {}, './reviewDrafts': drafts, './reviewPresentation': presentation,
+    './components/MigrationDesignReview': { MigrationDesignReview: 'Design' }, './components/MigrationReviewQueues': { MigrationReviewQueues: 'Queues' },
+    './components/MigrationDecisionTable': { MigrationDecisionTable: 'Decisions' }, './components/MigrationInterfaceMappings': { MigrationInterfaceMappings: 'Interfaces' },
+  })
+  const props = { preview: { source_digest: 'source', source_evidence: {} }, vendor: 'fortigate' }
+  let tree = await harness.render(props)
+  let queues = elements(tree).find((node) => node.type === 'Queues')
+  queues.props.setDrafts({ port: 'ethernet1/2' })
+  tree = await harness.render(props)
+  queues = elements(tree).find((node) => node.type === 'Queues')
+  await queues.props.updateGroup(group)
+  tree = await harness.render(props)
+  assert.ok(elements(tree).some((node) => node.props?.role === 'status' && node.props.children?.[0] === 'Proposal saved — awaiting approval.'))
+  assert.deepEqual(calls.map((call) => call.path), ['/api/migration/design/prepare', '/api/migration/design/prepare'])
+  assert.deepEqual(calls[1].payload.draft_overrides, { port: 'ethernet1/2' })
+  assert.ok(saves.some((value) => value.artifact === null))
+})
+
+test('a failed proposal save keeps the staged target value for retry', async () => {
+  const decision = { key: 'port', source_vdom: 'root', source_kind: 'interface', source_name: 'port8', target_field: 'target_interface', mode: 'REQUIRED', review_state: 'PENDING', value: null, suggested_value: null }
+  const group = { decision_keys: ['port'], source_vdom: 'root', source_kind: 'interface', source_name: 'port8', queue: 'NEEDS_INPUT', decisions: [decision], candidates: {}, source_evidence: {}, affected_count: 0, dependent_decision_count: 0, conflicts: [] }
+  const result = { decisions: { decisions: [decision] }, decision_document: { decisions: [decision] }, target_devices: [], target_device: null, target_evidence: null,
+    decision_candidates: {}, review_groups: [group], review_summary: {}, rule_suggestions: [], decision_context: {},
+    draft: { digest: 'draft', context: { overrides: {} }, decisions: [{ decision_key: 'port', status: 'NEEDS_INPUT', approved: false, dependencies: [] }], configuration: [] } }
+  let prepareCount = 0
+  const harness = component('../src/features/migration/MigrationReview.tsx', 'MigrationReview', {
+    '../../storage/workspaceStore': workspace,
+    '../../api/client': { RequestError: api.RequestError, postJson: async () => { if (prepareCount++ === 1) throw new Error('prepare failed'); return result } },
+    '../source/FileUpload': { FileUpload: 'FileUpload' }, './download': {}, './reviewDrafts': drafts, './reviewPresentation': presentation,
+    './components/MigrationDesignReview': { MigrationDesignReview: 'Design' }, './components/MigrationReviewQueues': { MigrationReviewQueues: 'Queues' },
+    './components/MigrationDecisionTable': { MigrationDecisionTable: 'Decisions' }, './components/MigrationInterfaceMappings': { MigrationInterfaceMappings: 'Interfaces' },
+  })
+  const props = { preview: { source_digest: 'source', source_evidence: {} }, vendor: 'fortigate' }
+  let tree = await harness.render(props)
+  let queues = elements(tree).find((node) => node.type === 'Queues')
+  queues.props.setDrafts({ port: 'ethernet1/9' })
+  tree = await harness.render(props)
+  queues = elements(tree).find((node) => node.type === 'Queues')
+  await assert.rejects(queues.props.updateGroup(group), /prepare failed/)
+  tree = await harness.render(props)
+  queues = elements(tree).find((node) => node.type === 'Queues')
+  assert.equal(queues.props.drafts.port, 'ethernet1/9')
+  assert.equal(queues.props.selectedGroupKey, 'port')
 })

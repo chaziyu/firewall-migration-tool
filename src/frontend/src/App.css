@@ -104,7 +104,7 @@
 .mapping-list button[aria-current='true'] { background: var(--color-primary-subtle); box-shadow: inset 3px 0 var(--color-primary); }
 .mapping-editor { min-width: 0; }
 .mapping-editor .review-work-card { margin-top: 0; }
-@media (max-width: 900px) { .mapping-workspace { grid-template-columns: 1fr; } .mapping-list { max-height: 240px; } }
+@media (max-width: 900px) { .mapping-workspace { grid-template-columns: 1fr; } .mapping-list { max-height: 140px; } }
 .target-xml-upload { width: 100%; min-width: 0; }
 .target-xml-upload h3 { margin: 0 0 10px; font-size: 15px; }
 .target-xml-upload .dropzone { min-height: 170px; padding: 12px 18px; }
@@ -450,3 +450,15 @@ body:has(.finding-inspector[open]) { overflow: hidden; }
   .source-report .validation-group { display: grid; grid-template-columns: max-content max-content 1fr; gap: 8px; }
   .source-report .validation-group > span:last-child { grid-column: 1 / -1; }
 }
+.review-source-summary, .review-task-state { padding: 10px 12px; border-radius: var(--radius-sm); background: var(--surface-muted); }
+.review-source-summary p { margin: 4px 0 0; color: var(--text-muted); }
+.review-candidate-options { display: grid; gap: 8px; max-width: 680px; margin: 10px 0; padding: 12px; border: 1px solid var(--line); border-radius: var(--radius-sm); }
+.review-candidate-options legend { padding: 0 5px; color: var(--text-heading); font-weight: 600; }
+.review-candidate-option { display: flex; align-items: flex-start; gap: 9px; padding: 9px; border-radius: var(--radius-sm); background: var(--surface); }
+.review-candidate-option span { display: grid; gap: 3px; }
+.review-candidate-option small, .review-custom-target li, .review-custom-target p, .review-work-field > p { color: var(--text-muted); overflow-wrap: anywhere; }
+.review-custom-target { margin: 8px 0; }
+.review-custom-target summary, .review-prerequisite { cursor: pointer; }
+.review-custom-target ul { overflow-wrap: anywhere; }
+.review-task-state { display: inline-block; margin: 0 0 8px; font-size: 13px; }
+.review-prerequisite { display: block; margin: 6px 0; }

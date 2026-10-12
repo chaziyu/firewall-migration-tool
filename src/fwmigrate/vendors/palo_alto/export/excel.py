@@ -12,7 +12,7 @@ from openpyxl.utils import get_column_letter
 
 from ....source_reporting.options import ExcelExportProfile
 from ....source_reporting.collection_excel import collection_summary, write_collection_evidence
-from ....source_reporting.excel_style import append_report_row, style_fast_sheet
+from ....source_reporting.excel_style import append_report_navigation, append_report_row, append_report_title, style_fast_sheet
 
 from .excel_rows import ROW_BUILDERS, _PANExcelContext
 from .excel_schema import SHEET_ORDER, HIDDEN_COLUMNS_BY_DEFAULT, SHEET_HEADERS
@@ -143,6 +143,7 @@ def _write_table_fast(workbook: Workbook, name: str, rows: Iterable[Mapping[str,
 def _build_fast_workbook(context: _PANExcelContext) -> Workbook:
     workbook = Workbook(write_only=True)
     summary = workbook.create_sheet("Summary")
+    append_report_title(summary, "PAN-OS Configuration Report")
     counts = {}
     no_rows = object()
     for name in SHEET_ORDER:
@@ -153,7 +154,7 @@ def _build_fast_workbook(context: _PANExcelContext) -> Workbook:
         if first is no_rows and name != "Review Required":
             continue
         counts[name] = _write_table_fast(workbook, name, () if first is no_rows else chain((first,), rows))
-    append_report_row(summary, ("PAN-OS Configuration Report", "Value"))
+    append_report_row(summary, ("Field", "Value"))
     for label, value in (
         ("Excel Profile", "FAST"), ("Source File", context.source_name),
         ("Hostname", context.config.hostname), ("PAN-OS Version", context.config.source_version),
@@ -165,6 +166,7 @@ def _build_fast_workbook(context: _PANExcelContext) -> Workbook:
         *counts.items(),
     ):
         append_report_row(summary, (label, _excel_safe(value)))
+    append_report_navigation(workbook)
     return workbook
 
 
