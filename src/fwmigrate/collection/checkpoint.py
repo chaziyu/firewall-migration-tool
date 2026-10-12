@@ -118,6 +118,14 @@ class CheckPointCollector:
         try:
             for command, spec in self.command_registry.items():
                 selectors = self._plan_selectors(command, spec, bundle, options)
+                if not selectors and spec.required:
+                    scope = self._response_scope(spec, options)
+                    bundle.collection_completeness[self._operation_key(command, scope)] = CollectionCompletenessRecord(
+                        command=command, status=CPStatus.NOT_ATTEMPTED, complete=False,
+                        error_message="Required operation could not be scheduled because its selector was unavailable.",
+                        **scope,
+                    )
+                    parts.append(CollectionPart(command, CPStatus.NOT_ATTEMPTED.value, False))
                 for selector in selectors:
                     self._collect_command(session, base, command, spec, selector, bundle, parts, options)
                 if command == "show-domains" and not options["domain"]:
@@ -195,6 +203,7 @@ class CheckPointCollector:
                     complete = False
             if selectors and complete:
                 return selectors
+            return []
         return [
             (selector_key, item["name"])
             for response in bundle.responses if response.command == inventory_command
@@ -472,7 +481,7 @@ def _collection_stats(bundle):
     return {
         "successful": sum(collection_status_is_success(status) for status in normalized),
         "failed": sum(status in {
-            CPStatus.API_ERROR, CPStatus.TRANSPORT_ERROR, CPStatus.ERROR,
+            CPStatus.API_ERROR, CPStatus.TRANSPORT_ERROR, CPStatus.ERROR, CPStatus.NOT_ATTEMPTED,
         } for status in normalized),
         "unsupported": sum(status == CPStatus.UNSUPPORTED_COMMAND for status in normalized),
         "permission_denied": sum(status == CPStatus.PERMISSION_DENIED for status in normalized),

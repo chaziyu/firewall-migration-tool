@@ -89,6 +89,23 @@ def test_automatic_nat_settings_are_traceable_and_unknown_when_incomplete():
     assert config.model_dump() == before
     assert view.owner_kind == "CPHost"
 
+
+def test_automatic_gateway_hide_does_not_require_a_fixed_translation_address():
+    owner = CPHost(uid="host", name="Web", nat_settings={"auto-rule": True, "method": "hide", "hide-behind": "gateway"})
+
+    view = build_checkpoint_derived_views(CheckPointConfig(hosts=[owner])).nat.views[0]
+
+    assert view.translation_method == "hide"
+    assert view.translated_source is None
+    assert not view.issues
+
+
+def test_empty_collection_diagnostics_do_not_claim_derived_source_is_complete():
+    completeness = build_checkpoint_derived_views(CheckPointConfig()).nat_completeness
+
+    assert completeness.complete is False
+    assert completeness.unknown is True
+
 @pytest.mark.parametrize("owner", [
     CPHost(uid="host", name="host-auto", nat_settings={"auto-rule": True, "method": "static", "ipv4-address": "192.0.2.10"}),
     CPNetwork(uid="network", name="network-auto", nat_settings={"auto-rule": True, "method": "hide", "ipv4-address": "192.0.2.20"}),

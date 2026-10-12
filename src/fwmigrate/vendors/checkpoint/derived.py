@@ -23,6 +23,7 @@ from .transform.vpn import CPVPNTransformResult, transform_vpn
 class DerivedSourceCompleteness:
     complete: bool = True
     incomplete_commands: tuple[str, ...] = ()
+    unknown: bool = False
 
 
 @dataclass(frozen=True)
@@ -152,6 +153,9 @@ def _derived_completeness(
         for item in collection
         if not item.complete and item.command in dependencies
     }))
+    unknown = not collection or any(item.status.value == "UNKNOWN" for item in collection)
+    if unknown:
+        return DerivedSourceCompleteness(False, incomplete, True)
     return DerivedSourceCompleteness(not incomplete, incomplete)
 
 

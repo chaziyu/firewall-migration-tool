@@ -144,12 +144,17 @@ const FORTIGATE_COLUMNS: Record<string, string[]> = {
   ssl_vpn_bookmarks: ['name', 'vdom', 'owner_name', 'apptype', 'host', 'url'],
   schedules: ['name', 'vdom', 'type', 'days', 'start', 'end'],
 }
+const CHECKPOINT_COLUMNS: Record<string, string[]> = {
+  addresses: ['name', 'scope', 'type', 'address_family', 'ipv4_value', 'ipv4_mask_length', 'ipv4_range_end', 'ipv6_value', 'ipv6_mask_length', 'value', 'review'],
+}
 export function fieldLabel(key: string) {
   const labels: Record<string, string> = { policy_id: 'Policy ID', rule_id: 'Rule ID', route_id: 'Route ID',
     domain_id: 'Domain ID', device_id: 'Device ID', device_name: 'Device', virtual_router_name: 'Virtual Router',
     parent_policy_name: 'Parent Policy', vdom: 'VDOM', ip: 'IP / prefix', nat: 'NAT',
     ike_version: 'IKE version', vpn_tunnels: 'VPN tunnels', vpn_phase2: 'VPN phase 2',
-    ssl_vpn_bookmarks: 'SSL VPN bookmarks', status: 'Reported status', review: 'Review' }
+    ssl_vpn_bookmarks: 'SSL VPN bookmarks', status: 'Reported status', review: 'Review',
+    ipv4_value: 'IPv4 definition', ipv6_value: 'IPv6 definition', address_family: 'Address family',
+    ipv4_mask_length: 'IPv4 mask length', ipv4_range_end: 'IPv4 range end', ipv6_mask_length: 'IPv6 mask length' }
   return labels[key] ?? key.replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())
 }
 export function columnWidth(key: string) {
@@ -164,6 +169,7 @@ export function rowColumns(rows: ReportRow[], subsection = '', vendor = '') {
     ? ['name', 'display_name', 'vdom', 'domain_id', 'device_name', 'device_id', 'scope', 'kind', 'ip', 'prefix', 'parent', 'members', 'aggregate', 'physical_interfaces', 'path', 'topology_path', 'issues']
     : vendor === 'fortigate' && FORTIGATE_COLUMNS[subsection]
       || vendor === 'cisco_ftd' && CISCO_FTD_COLUMNS[subsection]
+      || vendor === 'checkpoint' && CHECKPOINT_COLUMNS[subsection]
       || ['name', 'policy_id', 'rule_id', 'route_id', 'display_name', 'policy_name', 'domain_id', 'device_name', 'device_id', 'vdom', 'scope']
   return [...identity.filter((key) => keys.includes(key)), ...keys.filter((key) => !identity.includes(key))]
 }
@@ -172,6 +178,7 @@ export function defaultColumns(rows: ReportRow[], subsection = '', vendor = '') 
   if (subsection === 'interface_topology') return columns.filter((key) => !['type', 'parent', 'members', 'aggregate', 'path', 'topology_path'].includes(key))
   const preferred = vendor === 'fortigate' ? FORTIGATE_COLUMNS[subsection]
     : vendor === 'cisco_ftd' ? CISCO_FTD_COLUMNS[subsection]
+    : vendor === 'checkpoint' ? CHECKPOINT_COLUMNS[subsection]
     : undefined
   const selected = preferred ? columns.filter((key) => preferred.includes(key)) : []
   return selected.length ? selected : columns.slice(0, 8)

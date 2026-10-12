@@ -82,9 +82,45 @@ def test_paginated_pages_produce_one_operation_diagnostic():
     ]})
     result = extract_checkpoint_config(bundle)
 
-    assert len(result.collection) == 1
+    assert len(result.collection) == 2
+    assert result.collection[1].status.value == "UNKNOWN"
     assert result.collection[0].complete is True
     assert [host.name for host in result.config.hosts] == ["a", "b"]
+
+
+def test_reversed_pages_are_merged_in_source_order():
+    bundle = CheckPointExportBundle.model_validate({"responses": [
+        {"command": "show-hosts", "from": 2, "to": 2, "total": 2, "data": {"objects": [{"type": "host", "name": "second"}]}},
+        {"command": "show-hosts", "from": 1, "to": 1, "total": 2, "data": {"objects": [{"type": "host", "name": "first"}]}},
+    ]})
+
+    result = extract_checkpoint_config(bundle)
+
+    assert [host.name for host in result.config.hosts] == ["first", "second"]
+
+
+def test_manifest_only_missing_operation_is_reported():
+    bundle = CheckPointExportBundle.model_validate({"collection_completeness": {
+        "show-access-rulebase|package=P|layer=L": {
+            "command": "show-access-rulebase", "package": "P", "layer": "L",
+            "status": "NOT_ATTEMPTED", "complete": False,
+            "error_message": "Selector unavailable.",
+        },
+    }})
+
+    result = extract_checkpoint_config(bundle)
+
+    assert len(result.collection) == 1
+    assert result.collection[0].status.value == "NOT_ATTEMPTED"
+    assert result.collection[0].error == "Selector unavailable."
+
+
+def test_absent_manifest_is_explicitly_unknown():
+    result = extract_checkpoint_source('{"responses":[{"command":"show-hosts","data":{"objects":[]}}]}')
+
+    assert any(item.status.value == "UNKNOWN" for item in result.collection)
+    assert result.derived.nat_completeness.unknown
+    assert not result.derived.nat_completeness.complete
 
 
 def test_management_bundle_loader_returns_bundle_and_scope():

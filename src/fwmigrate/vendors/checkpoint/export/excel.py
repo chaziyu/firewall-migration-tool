@@ -15,6 +15,35 @@ from ..validation.index import CheckPointValidationIndex
 from .excel_schema import DERIVED_SHEETS, SHEET_HEADERS, SHEET_ORDER, SOURCE_SHEETS
 
 
+_SOURCE_LABELS = {
+    "name": "Name", "uid": "UID", "object_type": "Object Type", "domain": "Domain",
+    "domain_uid": "Domain UID", "source_plane": "Source Plane", "command": "Source Command",
+    "package": "Package", "package_uid": "Package UID", "layer": "Layer", "layer_uid": "Layer UID",
+    "order": "Source Order", "enabled": "Enabled", "comments": "Comments", "tags": "Tags",
+    "nat_settings": "Automatic NAT Settings", "ipv4_address": "IPv4 Address", "ipv6_address": "IPv6 Address",
+    "network": "Network", "subnet4": "IPv4 Subnet", "mask_length4": "IPv4 Mask Length",
+    "subnet6": "IPv6 Subnet", "mask_length6": "IPv6 Mask Length",
+    "ipv4_address_first": "IPv4 Range Start", "ipv4_address_last": "IPv4 Range End",
+    "original_source": "Original Source", "original_destination": "Original Destination",
+    "original_service": "Original Service", "translated_source": "Translated Source",
+    "translated_destination": "Translated Destination", "translated_service": "Translated Service",
+    "method": "Translation Method", "hide_behind": "Hide Behind", "rule_number": "Rule Number",
+    "source": "Source", "destination": "Destination", "service": "Service", "action": "Action",
+    "inline_layer": "Inline Layer", "install_on": "Install On", "explicit_fields": "Source Explicit Fields",
+    "raw_extra": "Additional Settings",
+}
+_SOURCE_PREFERRED = {
+    "Hosts": ("name", "domain", "domain_uid", "uid", "object_type", "ipv4_address", "ipv6_address", "comments", "nat_settings"),
+    "Networks": ("name", "domain", "domain_uid", "uid", "object_type", "subnet4", "mask_length4", "subnet6", "mask_length6", "comments", "nat_settings"),
+    "Access Rules": ("name", "domain", "domain_uid", "uid", "package", "package_uid", "layer", "layer_uid", "order", "rule_number", "enabled", "source", "destination", "service", "action", "inline_layer", "install_on"),
+    "NAT Rules": ("name", "domain", "domain_uid", "uid", "package", "package_uid", "layer", "layer_uid", "order", "rule_number", "enabled", "original_source", "original_destination", "original_service", "translated_source", "translated_destination", "translated_service", "method", "hide_behind", "install_on"),
+}
+
+
+def _source_label(key: str) -> str:
+    return _SOURCE_LABELS.get(key, key.replace("_", " ").title())
+
+
 def _excel_safe(value: Any) -> Any:
     value = _plain_value(value)
     if isinstance(value, (dict, list)):
@@ -49,7 +78,11 @@ def _source_headers(result: Any, field: str) -> tuple[str, ...]:
     item_type = item_type or next((arg for arg in get_args(annotation)
                                    if isinstance(arg, type) and hasattr(arg, "model_fields")), None)
     fields = tuple(item_type.model_fields) if item_type else ()
-    return tuple(dict.fromkeys(("Domain", "UID", "Object Type", "Source Plane", "Source Command", "Package", "Layer", "Analysis Status", "Review Reasons", "Source Explicit Fields", "Additional Settings", *fields)))
+    sheet = next((name for name, model_field in SOURCE_SHEETS.items() if model_field == field), "")
+    preferred = _SOURCE_PREFERRED.get(sheet, ())
+    ordered = (*preferred, *(key for key in fields if key not in preferred))
+    labels = (_source_label(key) for key in ordered)
+    return tuple(dict.fromkeys(("Domain", "Domain UID", "UID", "Object Type", "Source Plane", "Source Command", "Package", "Layer", "Source Order", "Analysis Status", "Review Reasons", "Source Explicit Fields", "Additional Settings", *labels)))
 
 
 def _source_rows(items: Any, headers: tuple[str, ...], validation: CheckPointValidationIndex, sheet_name: str):
@@ -60,7 +93,9 @@ def _source_rows(items: Any, headers: tuple[str, ...], validation: CheckPointVal
         row = {"Domain": item.domain or item.domain_uid, "UID": item.uid, "Object Type": item.object_type or type(item).__name__,
                "Source Plane": item.source_plane, "Source Command": item.command, "Package": item.package, "Layer": item.layer,
                "Source Explicit Fields": item.explicit_fields, "Additional Settings": _additional_settings(item)}
-        row.update(values)
+        row.update({_source_label(key): value for key, value in values.items()})
+        row.update({"Domain": item.domain or item.domain_uid, "Domain UID": item.domain_uid,
+                    "UID": item.uid, "Object Type": item.object_type or type(item).__name__})
         row["Analysis Status"] = "Review Required" if issues else "EXTRACTED"
         row["Review Reasons"] = "; ".join(issue.message for issue in issues)
         result.append(tuple(_excel_safe(row.get(header)) for header in headers))
@@ -84,10 +119,10 @@ def _unsupported_inventory(result: Any):
 
 def _derived_completeness_rows(result: Any):
     return [
-        ("NAT Migration Views", result.derived.nat_completeness.complete, result.derived.nat_completeness.incomplete_commands),
-        ("Policy Traversal", result.derived.policy_completeness.complete, result.derived.policy_completeness.incomplete_commands),
-        ("Interface Views", result.derived.interface_completeness.complete, result.derived.interface_completeness.incomplete_commands),
-        ("VPN Views", result.derived.vpn_completeness.complete, result.derived.vpn_completeness.incomplete_commands),
+        ("NAT Migration Views", result.derived.nat_completeness.complete, result.derived.nat_completeness.unknown, result.derived.nat_completeness.incomplete_commands),
+        ("Policy Traversal", result.derived.policy_completeness.complete, result.derived.policy_completeness.unknown, result.derived.policy_completeness.incomplete_commands),
+        ("Interface Views", result.derived.interface_completeness.complete, result.derived.interface_completeness.unknown, result.derived.interface_completeness.incomplete_commands),
+        ("VPN Views", result.derived.vpn_completeness.complete, result.derived.vpn_completeness.unknown, result.derived.vpn_completeness.incomplete_commands),
     ]
 
 
@@ -157,7 +192,7 @@ def export_checkpoint_excel(result: Any, output: Any, *, profile: ExcelExportPro
             for row in _derived_rows(result, name): append_report_row(sheet, tuple(_excel_safe(v) for v in row))
         elif name == "Collection":
             append_report_row(sheet, SHEET_HEADERS[name])
-            for i in result.collection: append_report_row(sheet, tuple(_excel_safe(v) for v in (i.command, i.source_plane, i.status, i.complete, i.error)))
+            for i in result.collection: append_report_row(sheet, tuple(_excel_safe(v) for v in (i.command, i.source_plane, i.domain, i.package, i.layer, i.status, i.complete, i.error)))
         elif name == "Scope":
             append_report_row(sheet, SHEET_HEADERS[name])
             scope = getattr(result.scope, "model_dump", lambda: vars(result.scope))()

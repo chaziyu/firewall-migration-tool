@@ -43,7 +43,44 @@ def build_typed_object(
 ) -> CheckPointSourceObject:
     context = dict(value)
     inline_layer_context = context.pop("_checkpoint_inline_layer_context", None)
+    object_domain = context.pop("domain", None)
     source_values, raw_extra, explicit_fields = build_source_fields(model, context)
+    if object_domain is not None:
+        explicit_fields = tuple(sorted((*explicit_fields, "domain")))
+    if isinstance(object_domain, dict):
+        safe_domain = sanitize_source_attributes(object_domain)
+        domain_uid = safe_domain.get("uid")
+        domain_name = safe_domain.get("name")
+        raw_extra["domain_metadata"] = safe_domain
+        response_names = {name for name in (response.domain_name, response.domain) if name}
+        source_values["domain"] = domain_name or domain_uid or response.domain
+        source_values["domain_uid"] = domain_uid or (response.domain_uid if domain_name in response_names else None)
+        object_identity = domain_uid or domain_name
+        uid_conflict = bool(domain_uid and response.domain_uid and domain_uid != response.domain_uid)
+        name_conflict = bool(domain_name and response_names and domain_name not in response_names)
+        if uid_conflict or name_conflict:
+            raw_extra["domain_scope_conflict"] = {
+                "object_domain": object_identity,
+                "response_domain": response.domain_uid or response.domain_name or response.domain,
+            }
+        if not object_identity:
+            raw_extra["domain_scope_unresolved"] = True
+    elif isinstance(object_domain, str) and object_domain:
+        source_values["domain"] = object_domain
+        response_identities = {value for value in (response.domain, response.domain_name, response.domain_uid) if value}
+        if response_identities and object_domain not in response_identities:
+            source_values["domain_uid"] = None
+            raw_extra["domain_scope_conflict"] = {
+                "object_domain": object_domain, "response_domain": response.domain_uid or response.domain_name or response.domain,
+            }
+        else:
+            source_values["domain_uid"] = response.domain_uid
+    else:
+        source_values["domain"] = response.domain
+        source_values["domain_uid"] = response.domain_uid
+        if object_domain is not None:
+            raw_extra["domain_metadata"] = sanitize_source_attributes({"domain": object_domain})["domain"]
+            raw_extra["domain_scope_unresolved"] = True
     if inline_layer_context is not None and "inline_layer" in model.model_fields:
         source_values["inline_layer"] = inline_layer_context
     values = {

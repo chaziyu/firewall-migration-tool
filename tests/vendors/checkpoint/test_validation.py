@@ -19,6 +19,7 @@ def test_unknown_commands_and_permission_failures_are_validation_evidence():
         ("selected_area_unsupported", "unsupported", "show-vpn-communities"),
         ("collection_incomplete", "collection", "show-certificates"),
         ("collection_incomplete", "collection", "show-nat-rulebase"),
+        ("collection_coverage_unknown", "collection", "collection-coverage"),
     }
 
 

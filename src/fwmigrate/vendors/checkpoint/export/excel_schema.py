@@ -28,10 +28,10 @@ SHEET_ORDER = ("Summary", "Review Required", "Collection", "Scope", *SOURCE_SHEE
                "Derived Completeness", *DERIVED_SHEETS,
                "Check Point Source Inventory", "Unsupported")
 SHEET_HEADERS = {
-    "Collection": ("Command", "Source Plane", "Status", "Complete", "Error"),
+    "Collection": ("Command", "Source Plane", "Domain", "Package", "Layer", "Status", "Complete", "Error"),
     "Scope": ("Selected Scope", "Value"),
     "Review Required": ("Severity", "Category", "Code", "Domain", "Object Type", "Object", "UID", "Field", "Issue / Review Reason", "Reference", "Source Sheet"),
-    "Derived Completeness": ("Derived View", "Source Complete", "Incomplete Commands"),
+    "Derived Completeness": ("Derived View", "Source Complete", "Coverage Unknown", "Incomplete Commands"),
     "NAT Migration Views": ("Source Kind", "Source Owner", "Translation Classification", "Resolved Source", "Resolved Destination", "Resolved Translation", "Issues"),
     "Policy Traversal": ("Package", "Layer", "Section", "Rule", "Source Rule Order", "Derived Traversal Position", "Parent Rule", "Inline Depth", "Issues"),
     "Interface Views": ("Device", "Device Kind", "Interface", "Resolved Zone", "Zone Assignment Source", "Management Source Present", "Gaia Source Present", "Topology Issues"),

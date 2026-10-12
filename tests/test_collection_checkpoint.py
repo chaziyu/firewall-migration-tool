@@ -283,6 +283,16 @@ def test_selected_package_discovers_its_layers_without_labeling_layer_scope_as_p
     assert CheckPointCollector._operation_key("show-access-rulebase", scope) == "show-access-rulebase|domain=Domain A|layer=Layer A"
 
 
+def test_unresolved_package_layer_reference_does_not_fall_back_to_all_layers():
+    bundle = CheckPointExportBundle.model_validate({"responses": [
+        {"command": "show-packages", "domain": "Domain A", "data": {"objects": [{"name": "Package A", "access-layers": [{"uid": "missing"}]}]}},
+        {"command": "show-access-layers", "domain": "Domain A", "data": {"objects": [{"uid": "other", "name": "Unrelated"}]}},
+    ]})
+    options = {"package": "Package A", "layer": None, "domain": "Domain A"}
+
+    assert CheckPointCollector._plan_selectors("show-access-rulebase", R81_COMMAND_REGISTRY["show-access-rulebase"], bundle, options) == []
+
+
 def test_multiple_management_domains_require_explicit_selection():
     def handle(command, kwargs):
         if command == "login":

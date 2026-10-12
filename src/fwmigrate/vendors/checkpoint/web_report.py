@@ -63,13 +63,16 @@ def build_checkpoint_preview(result: CheckPointSourceResult) -> dict[str, Any]:
     addresses = []
     for field in ("hosts", "networks", "address_ranges", "dns_domains", "wildcard_addresses", "dynamic_addresses", "updatable_objects"):
         for item in getattr(config, field):
-            address_family = ("IPv6" if getattr(item, "ipv6_address", None) or getattr(item, "subnet6", None)
-                              else "IPv4" if any(getattr(item, key, None) for key in
-                                  ("ip_address", "ipv4_address", "network", "subnet4", "ipv4_address_first"))
-                              else None)
-            addresses.append({"name": item.name, "value": next((getattr(item, key, None) for key in
-                ("ip_address", "ipv4_address", "ipv6_address", "network", "subnet4", "subnet6", "fqdn", "domain_name", "wildcard")
-                if getattr(item, key, None) is not None), None), "type": field,
+            ipv4 = next((getattr(item, key, None) for key in
+                         ("ip_address", "ipv4_address", "network", "subnet4", "ipv4_address_first") if getattr(item, key, None) is not None), None)
+            ipv6 = next((getattr(item, key, None) for key in ("ipv6_address", "subnet6") if getattr(item, key, None) is not None), None)
+            other = next((getattr(item, key, None) for key in
+                          ("ipv4_address_first", "fqdn", "domain_name", "wildcard") if getattr(item, key, None) is not None), None)
+            address_family = "Dual Stack" if ipv4 is not None and ipv6 is not None else "IPv6" if ipv6 is not None else "IPv4" if ipv4 is not None else None
+            addresses.append({"name": item.name, "value": ipv4 or ipv6 or other,
+                "ipv4_value": ipv4, "ipv6_value": ipv6, "type": field,
+                "ipv4_mask_length": item.mask_length4, "ipv4_range_end": item.ipv4_address_last,
+                "ipv6_mask_length": item.mask_length6,
                 "address_family": address_family,
                 "scope": item.domain, "review": []})
     address_groups = [{"name": item.name, "members": ref_names(item.members), "exclude_members": [],
@@ -143,6 +146,12 @@ def build_checkpoint_preview(result: CheckPointSourceResult) -> dict[str, Any]:
                         "policy": derived.policy_completeness.complete,
                         "interfaces": derived.interface_completeness.complete,
                         "vpn": derived.vpn_completeness.complete,
+                    },
+                    "derived_source_coverage_unknown": {
+                        "nat": derived.nat_completeness.unknown,
+                        "policy": derived.policy_completeness.unknown,
+                        "interfaces": derived.interface_completeness.unknown,
+                        "vpn": derived.vpn_completeness.unknown,
                     },
                     "objects": {"interfaces": len(interfaces), "addresses": len(addresses),
                                 "address_groups": len(address_groups), "services": len(services),
