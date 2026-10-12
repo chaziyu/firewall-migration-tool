@@ -41,13 +41,13 @@ if not exist "src\frontend\node_modules\.bin\vite.cmd" (
 )
 
 echo Backend:  http://127.0.0.1:5000
-echo Frontend: http://127.0.0.1:5000
+echo Frontend: http://127.0.0.1:5173
 echo Press Ctrl+C in each server window to stop it.
 start "Firewall Migration Backend" cmd /k ""%PYTHON%" -m fwmigrate.main serve --host 127.0.0.1 --port 5000"
 if errorlevel 1 goto :failed
 
 cd /d "%~dp0src\frontend"
-call npm run dev -- --host 127.0.0.1 --port 5173 --strictPort --open http://127.0.0.1:5000/
+call npm run dev -- --host 127.0.0.1 --port 5173 --strictPort --open
 if errorlevel 1 goto :failed
 exit /b 0
 
