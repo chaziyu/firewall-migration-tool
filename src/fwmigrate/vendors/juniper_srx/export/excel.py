@@ -83,14 +83,35 @@ def _context_scope(context: Any) -> str:
     return "root" if context.context_type == "root" else f"{context.context_type} {context.name}"
 
 
-def _native_source_rows(config: Any, inheritance_view: dict[str, Any]) -> dict[str, tuple[dict[str, Any], ...]]:
+def _native_source_rows(
+    config: Any,
+    inheritance_view: dict[str, Any],
+    policy_relationships: Any = (),
+) -> dict[str, tuple[dict[str, Any], ...]]:
     rows: dict[str, list[dict[str, Any]]] = {
         "Addresses": [], "Address Sets": [], "Application Sets": [], "Schedulers": [],
         "Policy Details": [], "NAT Pools": [], "NAT Rules": [],
+        "Administrators": [], "Login Classes": [], "IDP Policies": [], "IDP Rules": [],
+        "UTM Policies": [], "UTM Profiles": [],
         "IKE Proposals": [], "IKE Policies": [], "IKE Gateways": [],
         "IPsec Proposals": [], "IPsec Policies": [], "IPsec VPNs": [],
         "Traffic Selectors": [], "Static Routes": [],
     }
+    policy_orders = {}
+    for view in policy_relationships:
+        for group in view["zone_policy_sets"]:
+            for item in group["policies"]:
+                key = (item["context"], "zone", item["from_zone"], item["to_zone"], item["name"])
+                policy_orders[key] = item["order"]
+        for item in view["global_policies"]:
+            policy_orders[(item["context"], "global", item["from_zone"], item["to_zone"], item["name"])] = item["order"]
+
+    for item in config.admin_users.values():
+        rows["Administrators"].append({"context": "root", "name": item.name,
+                                       "login_class": item.login_class, "settings": dict(item.settings)})
+    for item in config.login_classes.values():
+        rows["Login Classes"].append({"context": "root", "name": item.name, "settings": dict(item.settings)})
+
     for context in config.iter_contexts():
         scope = _context_scope(context)
         state = lambda path: effective_path_state(inheritance_view, scope, path)
@@ -130,7 +151,11 @@ def _native_source_rows(config: Any, inheritance_view: dict[str, Any]) -> dict[s
                 "effective_state": state(("schedulers", "scheduler", item.name)),
             })
 
-        for order, item in enumerate((*context.policies, *context.global_policies), 1):
+        for item in (*context.policies, *context.global_policies):
+            policy_scope = item.policy_scope
+            from_zone = item.from_zone if policy_scope == "zone" else tuple(item.from_zones) or None
+            to_zone = item.to_zone if policy_scope == "zone" else tuple(item.to_zones) or None
+            order = policy_orders.get((scope, policy_scope, from_zone, to_zone, item.name))
             policy_path = (
                 ("security", "policies", "global", "policy", item.name)
                 if item.policy_scope == "global"
@@ -150,6 +175,30 @@ def _native_source_rows(config: Any, inheritance_view: dict[str, Any]) -> dict[s
                 "security_profile_references": dict(item.security_profile_references),
                 "description": item.description, "effective_state": state(policy_path),
             })
+
+        for item in context.idp_policies.values():
+            rows["IDP Policies"].append({"context": scope, "name": item.name,
+                                         "rulebases": list(item.rulebase),
+                                         "source_attributes": sanitize_source_attributes(item.source_attributes)})
+            for rulebase, rules in item.rulebase.items():
+                for order, rule in enumerate(rules):
+                    rows["IDP Rules"].append({"context": scope, "policy": item.name, "rulebase": rulebase,
+                                              "name": rule.name, "order": order, "match": dict(rule.match),
+                                              "exceptions": list(rule.exceptions), "action": rule.action,
+                                              "severity": list(rule.severity),
+                                              "source_attributes": sanitize_source_attributes(rule.source_attributes)})
+        for item in context.utm_policies.values():
+            rows["UTM Policies"].append({"context": scope, "name": item.name,
+                                         "settings": dict(item.settings)})
+        for profile_type, profiles in (("anti-virus", context.antivirus_profiles),
+                                       ("web-filtering", context.web_filtering_profiles),
+                                       ("content-filtering", context.content_filtering_profiles),
+                                       ("anti-spam", context.anti_spam_profiles)):
+            for item in profiles.values():
+                rows["UTM Profiles"].append({"context": scope, "profile_type": profile_type,
+                                             "name": item.name,
+                                             "settings": item.model_dump(mode="python", exclude={"name", "source_attributes"}),
+                                             "source_attributes": sanitize_source_attributes(item.source_attributes)})
 
         for nat_type, pools in (("source", context.nat.source_pools), ("destination", context.nat.destination_pools)):
             for item in pools.values():
@@ -293,7 +342,8 @@ def export_juniper_excel(
     rows = {"Interfaces": views.interface_topology, "Zones": views.zone_memberships,
             "Routing Instances": views.routing_instances, "Address Books": views.address_books,
             "Applications": views.applications, "Policies": views.policies, "NAT": views.nat_rule_sets,
-            "VPN": views.vpn_relationships, **_native_source_rows(result.config, views.inheritance_view),
+            "VPN": views.vpn_relationships,
+            **_native_source_rows(result.config, views.inheritance_view, views.policy_relationships),
             "DHCP Local Servers": tuple(item for item in views.dhcp if item["kind"] == "local-server"),
             "DHCP Relay Groups": tuple(item for item in views.dhcp if item["kind"] == "relay-group"),
             "DHCP Pools": tuple(item for item in views.dhcp if item["kind"] == "address-assignment-pool"),

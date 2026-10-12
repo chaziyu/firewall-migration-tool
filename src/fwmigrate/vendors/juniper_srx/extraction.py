@@ -312,6 +312,8 @@ def sanitize_source_attributes(attributes: Mapping[str, Any]) -> Dict[str, Any]:
             sanitized[normalized_key] = "[REDACTED]"
         elif isinstance(value, dict):
             sanitized[normalized_key] = sanitize_source_attributes(value)
+        elif normalized_key == "tokens" and isinstance(value, list) and all(isinstance(token, str) for token in value):
+            sanitized[normalized_key] = sanitize_tokens(value)
         elif isinstance(value, list):
             sanitized[normalized_key] = [
                 sanitize_source_attributes(v) if isinstance(v, dict) else v

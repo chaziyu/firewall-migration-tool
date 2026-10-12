@@ -196,12 +196,54 @@ set routing-options static route 203.0.113.0/24 next-hop 192.0.2.254
 
     assert policy["source_zones"] == ["trust"]
     assert policy["destination_zones"] == ["untrust"]
+    assert "nat" not in policy
+    assert preview["sections"]["nat"]
     assert "source_interfaces" not in policy
     assert nat["from_interfaces"] == ["ge-0/0/0.0"]
     assert nat["to_zones"] == ["untrust"]
     assert "egress_interfaces" not in nat
     assert interface["status"] is None
     assert route["status"] is None
+
+
+def test_native_juniper_admin_idp_and_utm_reporting_preserves_context_and_order():
+    result = extract_juniper_source("""set system login class super-user permissions all
+set system login user admin class super-user
+set logical-systems TENANT security idp idp-policy IPS rulebase-ips rule R1 match signature 1
+set logical-systems TENANT security idp idp-policy IPS rulebase-ips rule R1 action drop
+set logical-systems TENANT security idp idp-policy IPS rulebase-ips rule R2 action reject
+set logical-systems TENANT security utm utm-policy UTM description source-only-policy
+set logical-systems TENANT security utm feature-profile anti-virus profile AV type juniper-express-engine
+set logical-systems TENANT security utm feature-profile web-filtering profile WEB url-category social-networking
+set logical-systems TENANT security utm feature-profile content-filtering profile CONTENT content-type documents
+set logical-systems TENANT security utm feature-profile anti-spam profile SPAM server mail.example.test
+""")
+    preview = build_juniper_preview(result)["sections"]
+    assert preview["administrators"][0]["name"] == "admin"
+    assert preview["login_classes"][0]["name"] == "super-user"
+    assert preview["idp_policies"][0]["context"] == "logical-system TENANT"
+    rules = preview["idp_rules"]
+    assert [(item["name"], item["order"]) for item in rules] == [("R1", 0), ("R2", 1)]
+    assert {item["profile_type"] for item in preview["utm_profiles"]} == {
+        "anti-virus", "web-filtering", "content-filtering", "anti-spam"
+    }
+    assert preview["utm_policies"][0]["context"] == "logical-system TENANT"
+
+    from fwmigrate.source_reporting.options import ExcelExportProfile
+    for profile in (ExcelExportProfile.FULL, ExcelExportProfile.FAST):
+        output = BytesIO()
+        export_juniper_excel(result, output, profile=profile)
+        output.seek(0)
+        workbook = load_workbook(output, read_only=True)
+        assert {"Administrators", "Login Classes", "IDP Policies", "IDP Rules",
+                "UTM Policies", "UTM Profiles"} <= set(workbook.sheetnames)
+        assert len(list(workbook["IDP Policies"].values)) > 1
+        idp_rules = list(workbook["IDP Rules"].values)
+        assert [(row[3], row[4]) for row in idp_rules[1:]] == [("R1", 0), ("R2", 1)]
+        utm_profiles = list(workbook["UTM Profiles"].values)
+        assert {row[1] for row in utm_profiles[1:]} == {
+            "anti-virus", "web-filtering", "content-filtering", "anti-spam"
+        }
 
 
 

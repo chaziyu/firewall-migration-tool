@@ -38,6 +38,11 @@ def build_juniper_preview(result: Any) -> dict[str, Any]:
               for context in config.iter_contexts()]
     interfaces, addresses, address_groups, services, service_groups = [], [], [], [], []
     schedules, policies, nat, routes, vpn_tunnels = [], [], [], [], []
+    administrators = [{"context": "root", "name": item.name, "login_class": item.login_class,
+                       "settings": item.settings} for item in config.admin_users.values()]
+    login_classes = [{"context": "root", "name": item.name, "settings": item.settings}
+                     for item in config.login_classes.values()]
+    idp_policies, idp_rules, utm_policies, utm_profiles = [], [], [], []
     for context in config.iter_contexts():
         scope = context.name if context.context_type == "root" else f"{context.context_type} {context.name}"
         zone_by_interface = {name: zone.name for zone in context.zones.values() for name in zone.interfaces}
@@ -113,10 +118,28 @@ def build_juniper_preview(result: Any) -> dict[str, Any]:
                              "source_zones": item.from_zones, "destination_zones": item.to_zones,
                              "source_addresses": item.source_addresses, "destination_addresses": item.destination_addresses,
                              "services": [*item.applications, *item.dynamic_applications], "schedule": item.scheduler_name,
-                             "action": item.action, "nat": False, "policy_scope": item.policy_scope,
+                             "action": item.action, "policy_scope": item.policy_scope,
                              "scope": scope,
                              "effective_state": effective_path_state(result.derived.inheritance_view, scope, policy_path),
                              "provenance": _project(getattr(item, "provenance", None))})
+        for item in context.idp_policies.values():
+            idp_policies.append({"context": scope, "name": item.name, "rulebases": list(item.rulebase),
+                                 "source_attributes": item.source_attributes})
+            for rulebase, rules in item.rulebase.items():
+                for order, rule in enumerate(rules):
+                    idp_rules.append({"context": scope, "policy": item.name, "rulebase": rulebase,
+                                      "name": rule.name, "order": order, "match": rule.match,
+                                      "exceptions": rule.exceptions, "action": rule.action,
+                                      "severity": rule.severity, "source_attributes": rule.source_attributes})
+        utm_policies.extend({"context": scope, "name": item.name, "settings": item.settings}
+                            for item in context.utm_policies.values())
+        for profile_type, profiles in (("anti-virus", context.antivirus_profiles),
+                                       ("web-filtering", context.web_filtering_profiles),
+                                       ("content-filtering", context.content_filtering_profiles),
+                                       ("anti-spam", context.anti_spam_profiles)):
+            utm_profiles.extend({"context": scope, "profile_type": profile_type, "name": item.name,
+                                 "settings": item.model_dump(mode="python", exclude={"name", "source_attributes"}),
+                                 "source_attributes": item.source_attributes} for item in profiles.values())
         for sets in (context.nat.source_rule_sets, context.nat.destination_rule_sets, context.nat.static_rule_sets):
             for rule_set in sets.values():
                 for item in rule_set.rules:
@@ -173,6 +196,9 @@ def build_juniper_preview(result: Any) -> dict[str, Any]:
                 "services": services, "service_groups": service_groups,
                 "schedules": schedules, "policies": policies, "nat": nat,
                 "routes": routes, "vpn_tunnels": vpn_tunnels, "vpn_phase2": [],
+                "administrators": administrators, "login_classes": login_classes,
+                "idp_policies": idp_policies, "idp_rules": idp_rules,
+                "utm_policies": utm_policies, "utm_profiles": utm_profiles,
                 "validation": validation_rows,
                 "unresolved_references": [row for row in validation_rows if row.get("reference")]}
     return {
