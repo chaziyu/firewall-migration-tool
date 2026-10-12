@@ -91,6 +91,7 @@ class PlannedStaticRoute(PlannedPANItem):
     nexthop_type: str | None = None
     nexthop: str | None = None
     admin_distance: int | None = None
+    priority: int | None = None
     interface: str | None = None
     virtual_router: str | None = None
     disabled: bool = False

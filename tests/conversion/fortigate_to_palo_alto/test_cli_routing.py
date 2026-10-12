@@ -23,3 +23,13 @@ def test_virtual_router_gateway_and_blackhole_route_commands():
         "set network virtual-router default routing-table ip static-route blackhole destination 198.51.100.0/24",
         "set network virtual-router default routing-table ip static-route blackhole nexthop discard",
     )
+
+
+def test_route_priority_or_disabled_state_blocks_cli_generation():
+    for item in (
+        PlannedStaticRoute(source_name="disabled", status=PANMigrationStatus.SUPPORTED,
+            virtual_router="default", destination="192.0.2.0/24", disabled=True),
+        PlannedStaticRoute(source_name="priority-zero", status=PANMigrationStatus.SUPPORTED,
+            virtual_router="default", destination="192.0.2.0/24", priority=0),
+    ):
+        assert not __import__("fwmigrate.conversion.fortigate_to_palo_alto.rendering.cli_paths", fromlist=["static_route"]).static_route(item)

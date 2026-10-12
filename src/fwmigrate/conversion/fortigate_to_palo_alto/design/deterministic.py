@@ -172,6 +172,11 @@ def build_deterministic_draft(config, derived, decisions, *, source_digest, targ
     provisional = PANMigrationDecisionSet(tuple(replace(item, approved_operation=operations[item.key]) for item in provisional.decisions))
     target_findings = validate_against_target(config, provisional, destination, target_device)
     findings = [row.to_dict() for row in target_findings]
+    findings.extend({"code": "TARGET_RULE_PLACEMENT_UNVERIFIED",
+        "message": f"Target {row['family'].replace('_', ' ')} placement for {row['target_name']!r} is unverified because the applicable rulebase is populated.",
+        "source_vdom": row.get("source_vdom"), "source_name": row.get("source_name"),
+        "target_name": row.get("target_name"), "evidence": row.get("evidence", [])}
+        for row in classifications if row.get("status") == "ORDER_UNVERIFIED")
     decision_blockers = {key: [] for key in by_key}
     for finding in target_findings:
         if finding.severity == "error":

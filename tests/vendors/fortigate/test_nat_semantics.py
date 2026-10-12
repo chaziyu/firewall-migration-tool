@@ -100,7 +100,7 @@ class NatSemanticsTest(unittest.TestCase):
                 ippool="enable",
                 poolname=["POOL1"],
             ),
-            ip_pools=[FGIPPool(name="POOL1", startip="198.51.100.10", endip="198.51.100.10")],
+            ip_pools=[FGIPPool(name="POOL1", type="overload", startip="198.51.100.10", endip="198.51.100.10", explicit_fields={"type"})],
         )
         self.assertEqual(result.translation_type, "ip_pool")
         self.assertEqual(result.translated_addresses, ("198.51.100.10",))
@@ -109,7 +109,7 @@ class NatSemanticsTest(unittest.TestCase):
     def test_nat64_uses_its_pool_without_ordinary_nat(self):
         result = self._policy_nat(
             FGPolicy(policy_id=1, nat64="enable", poolname=["POOL64"]),
-            ip_pools=[FGIPPool(name="POOL64", startip="198.51.100.10", endip="198.51.100.20")],
+            ip_pools=[FGIPPool(name="POOL64", type="overload", startip="198.51.100.10", endip="198.51.100.20", explicit_fields={"type"})],
         )
 
         self.assertEqual(result.translation_type, "nat64_ip_pool")
@@ -117,7 +117,7 @@ class NatSemanticsTest(unittest.TestCase):
 
     def test_explicit_nat_and_nat64_are_derived_separately(self):
         rows = transform_nat(FGConfig(
-            ip_pools=[FGIPPool(name="POOL1", startip="198.51.100.10", endip="198.51.100.10")],
+            ip_pools=[FGIPPool(name="POOL1", type="overload", startip="198.51.100.10", endip="198.51.100.10", explicit_fields={"type"})],
             policies=[FGPolicy(nat="enable", nat64="enable", ippool="enable", poolname=["POOL1"])],
         ))
 
@@ -155,8 +155,8 @@ class NatSemanticsTest(unittest.TestCase):
 
     def test_incomplete_pool_endpoints_are_not_translations(self):
         for pool in (
-            FGIPPool(name="POOL1", startip="198.51.100.10"),
-            FGIPPool(name="POOL1", endip="198.51.100.20"),
+            FGIPPool(name="POOL1", type="overload", startip="198.51.100.10", explicit_fields={"type"}),
+            FGIPPool(name="POOL1", type="overload", endip="198.51.100.20", explicit_fields={"type"}),
         ):
             with self.subTest(pool=pool):
                 result = self._policy_nat(
@@ -230,6 +230,9 @@ if __name__ == "__main__":
 
 class Phase2SemanticTest(unittest.TestCase):
 
+    def _policy_nat(self, policy, *, interfaces=(), ip_pools=()):
+        return transform_nat(FGConfig(interfaces=list(interfaces), ip_pools=list(ip_pools), policies=[policy]))[0]
+
 
 
 
@@ -280,3 +283,65 @@ end
         self.assertEqual(policy.nat64, "enable")
         self.assertIn("nat64", policy.explicit_fields)
         self.assertEqual(analysis.derived.nat[0].translation_type, "nat64_ip_pool")
+
+    def test_ip_pool_pat_requires_explicit_overload_and_rejects_other_modes(self):
+        policy = FGPolicy(policy_id=10, nat="enable", ippool="enable", poolname=["POOL"])
+        for pool_type in (None, "one-to-one", "fixed-port-range", "port-block-allocation",
+                          "cgn-resource-allocation", "future-mode"):
+            pool = FGIPPool(name="POOL", type=pool_type, startip="198.51.100.1",
+                            endip="198.51.100.2", explicit_fields={"type"} if pool_type else set())
+            row = self._policy_nat(policy, ip_pools=[pool])
+            self.assertEqual(row.translated_addresses, ("198.51.100.1-198.51.100.2",))
+            self.assertTrue(row.issues)
+            self.assertEqual(row.pool_names, ("POOL",))
+        overload = self._policy_nat(policy, ip_pools=[FGIPPool(name="POOL", type="overload",
+            startip="198.51.100.1", endip="198.51.100.2", explicit_fields={"type"})])
+        self.assertEqual(overload.pool_types, ("overload",))
+        self.assertFalse(overload.issues)
+
+    def test_ip_pool_pat_rejects_translation_affecting_settings(self):
+        pool = FGIPPool(name="POOL", type="overload", startip="198.51.100.1", endip="198.51.100.2",
+                        source_startip="10.0.0.1", explicit_fields={"type", "source_startip"})
+        row = self._policy_nat(FGPolicy(nat="enable", ippool="enable", poolname=["POOL"]), ip_pools=[pool])
+        self.assertEqual(row.translated_addresses, ("198.51.100.1-198.51.100.2",))
+        self.assertTrue(any("source_startip" in issue for issue in row.issues))
+
+    def test_disabled_policy_nat_evidence_is_preserved_and_flagged(self):
+        row = self._policy_nat(FGPolicy(policy_id=1, nat="enable", status="disable", dstintf=["wan"]),
+                               interfaces=[FGInterface(name="wan", ip="192.0.2.1/24")])
+        self.assertTrue(row.policy_disabled)
+        self.assertEqual(row.translated_addresses, ("192.0.2.1",))
+        self.assertTrue(any("explicitly disabled" in issue for issue in row.issues))
+
+    def test_ip_pool_pat_preserves_unknown_settings_as_review_evidence(self):
+        pool = FGIPPool(name="POOL", type="overload", startip="198.51.100.1", endip="198.51.100.1",
+                        raw_extra={"future_nat_option": "on"}, explicit_fields={"type"})
+        row = self._policy_nat(FGPolicy(nat="enable", ippool="enable", poolname=["POOL"]), ip_pools=[pool])
+        self.assertTrue(any("future_nat_option" in issue for issue in row.issues))
+        self.assertEqual(row.translated_addresses, ("198.51.100.1",))
+
+    def test_cli_ip_pool_type_and_unknown_options_reach_nat_transform(self):
+        analysis = FortiGateSourceReporter().analyze_source('''config firewall ippool
+    edit "PAT"
+        set type overload
+        set startip 198.51.100.10
+        set endip 198.51.100.10
+        set port-block-allocation enable
+    next
+end
+config firewall policy
+    edit 90
+        set nat enable
+        set ippool enable
+        set poolname "PAT"
+        set dstintf "wan"
+    next
+end
+''')
+        pool = analysis.extracted.config.ip_pools[0]
+        self.assertEqual(pool.type, "overload")
+        self.assertIn("type", pool.explicit_fields)
+        row = analysis.derived.nat[0]
+        self.assertEqual(row.pool_types, ("overload",))
+        self.assertEqual(row.translated_addresses, ("198.51.100.10",))
+        self.assertTrue(any("port-block-allocation" in issue for issue in row.issues))

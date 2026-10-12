@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from dataclasses import replace
 from ipaddress import ip_address, ip_interface
 
 from ..model.interface import FGInterface
@@ -42,6 +43,8 @@ class NormalizedSourceNAT:
         str,
         ...
     ]
+    policy_disabled: bool = False
+    pool_types: tuple[str | None, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -98,27 +101,22 @@ def transform_nat(
 
         if ordinary_nat:
             if _enabled(policy.ippool) or policy.poolname:
-                result.append(
-                    _pool_nat(policy, references)
-                )
+                nat = _pool_nat(policy, references)
             else:
-                result.append(
-                    _interface_nat(
-                        policy,
-                        references,
-                        sdwan_zone_interfaces,
-                    )
-                )
+                nat = _interface_nat(policy, references, sdwan_zone_interfaces)
+            if _explicitly_disabled(policy.status):
+                nat = replace(nat, issues=(*nat.issues,
+                    "Source firewall policy is explicitly disabled; activating its NAT is unsafe."),
+                    policy_disabled=True)
+            result.append(nat)
 
         if nat64:
-            result.append(
-                _pool_nat(
-                    policy,
-                    references,
-                    translation_type="nat64_ip_pool",
-                    nat64=True,
-                )
-            )
+            nat = _pool_nat(policy, references, translation_type="nat64_ip_pool", nat64=True)
+            if _explicitly_disabled(policy.status):
+                nat = replace(nat, issues=(*nat.issues,
+                    "Source firewall policy is explicitly disabled; activating its NAT is unsafe."),
+                    policy_disabled=True)
+            result.append(nat)
 
     return result
 
@@ -132,6 +130,7 @@ def _pool_nat(
 ) -> NormalizedSourceNAT:
     addresses: list[str] = []
     issues: list[str] = []
+    pool_types: list[str | None] = []
 
     pool_names = policy.poolname or ()
     if not pool_names:
@@ -164,6 +163,29 @@ def _pool_nat(
             continue
 
         pool = resolution.target
+        pool_types.append(pool.type)
+        if "type" not in (pool.explicit_fields or set()) or not pool.type:
+            issues.append(f"IP pool {pool_name!r} has no explicitly configured pool type.")
+        elif pool.type.lower() != "overload":
+            issues.append(f"IP pool {pool_name!r} uses unsupported pool type {pool.type!r}; only overload PAT is supported.")
+
+        unsupported_settings = {
+            "source_startip": pool.source_startip,
+            "source_endip": pool.source_endip,
+            "startport": pool.startport,
+            "endport": pool.endport,
+            "associated_interface": pool.associated_interface,
+            "arp_reply": pool.arp_reply,
+            "arp_intf": pool.arp_intf,
+            "permit_any_host": pool.permit_any_host,
+            "nat64": pool.nat64,
+            "add_nat64_route": pool.add_nat64_route,
+        }
+        configured = [name for name, value in unsupported_settings.items() if value is not None]
+        configured.extend(name for name, value in (("exclude_ip", pool.exclude_ip),) if value)
+        configured.extend((pool.raw_extra or {}).keys())
+        if configured:
+            issues.append(f"IP pool {pool_name!r} has unsupported translation-affecting settings: {', '.join(sorted(set(configured)))}.")
         if nat64 and (pool.nat64 or "").lower() == "disable":
             issues.append(
                 f"IP pool {pool_name!r} explicitly disables NAT64."
@@ -210,6 +232,8 @@ def _pool_nat(
         ),
         egress_interfaces=tuple(policy.dstintf or ()),
         issues=tuple(issues),
+        policy_disabled=_explicitly_disabled(policy.status),
+        pool_types=tuple(pool_types),
     )
 
 
@@ -338,7 +362,12 @@ def _interface_nat(
         issues=tuple(
             dict.fromkeys(issues)
         ),
+        policy_disabled=_explicitly_disabled(policy.status),
     )
+
+
+def _explicitly_disabled(value: str | None) -> bool:
+    return isinstance(value, str) and value.strip().lower() in {"disable", "disabled", "no", "0"}
 
 
 def _interface_address(

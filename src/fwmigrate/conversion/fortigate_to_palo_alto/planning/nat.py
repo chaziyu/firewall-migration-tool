@@ -30,6 +30,10 @@ def plan_nat(source: Any, derived: Any, options: Any):
             warnings.append("NAT has multiple possible egress interfaces")
         if policy is None:
             warnings.append("source NAT policy could not be resolved")
+        elif getattr(item, "policy_disabled", False) or str(getattr(policy, "status", "")).strip().lower() in {
+            "disable", "disabled", "no", "0"
+        }:
+            warnings.append("source firewall policy is explicitly disabled; automated NAT activation is unsafe")
         elif not policy.service:
             warnings.append("source NAT policy has no explicit service match")
         elif len(policy.service) > 1:
@@ -43,12 +47,18 @@ def plan_nat(source: Any, derived: Any, options: Any):
                 warnings.append("source NAT policy is missing explicit address match")
         if item.egress_interfaces and (egress_mapping is None or not getattr(egress_mapping, "target_interface", None)):
             warnings.append("missing mapped target interface for NAT egress")
+        if item.translation_type == "ip_pool" and (
+            len(getattr(item, "pool_types", ())) != len(getattr(item, "pool_names", ()))
+            or not item.pool_types
+            or any((pool_type or "").lower() != "overload" for pool_type in item.pool_types)
+        ):
+            warnings.append("source IP-pool type is not explicitly verified as overload")
         source_translation_type = None
         translated_addresses = ()
         source_interface_address = False
         if translated and item.translation_type == "ip_pool":
             source_translation_type, translated_addresses = "dynamic-ip-and-port", (translated,)
-        elif item.translation_type == "interface":
+        elif item.translation_type == "interface_address":
             source_translation_type, source_interface_address = "dynamic-ip-and-port", True
         if not source_translation_type:
             warnings.append("unsafe source NAT was not rendered")
