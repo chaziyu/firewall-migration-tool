@@ -7,7 +7,7 @@ from ....source_reporting.options import ExcelExportProfile
 from ....source_reporting.excel_style import append_report_row, append_report_title, finish_report_workbook
 from .excel_schema import SHEET_HEADERS, SHEET_ORDER
 from ..presentation_schema import DERIVED_SECTIONS, SOURCE_SECTIONS
-from ..presentation import excel_value, has_source_evidence, source_value
+from ..presentation import excel_value, has_source_evidence, source_explicit_fields, source_value
 
 
 def _name(value: Any) -> Any:
@@ -70,8 +70,17 @@ def _row(sheet: str, item: Any) -> tuple[Any, ...]:
     raise KeyError(sheet)
 
 
-def export_asa_excel(result: Any, output: Any, *, profile: ExcelExportProfile | str = ExcelExportProfile.FULL) -> Any:
+def export_asa_excel(
+    result: Any,
+    output: Any,
+    *,
+    profile: ExcelExportProfile | str = ExcelExportProfile.FULL,
+    collection_status: str | None = None,
+    collection_parts: Any = (),
+    collection_warnings: Any = (),
+) -> Any:
     from openpyxl import Workbook
+    from fwmigrate.source_reporting.collection_excel import collection_summary, write_collection_evidence
 
     profile = ExcelExportProfile(profile)
     workbook = Workbook(write_only=profile is ExcelExportProfile.FAST)
@@ -93,13 +102,15 @@ def export_asa_excel(result: Any, output: Any, *, profile: ExcelExportProfile | 
                 "Unsupported Commands": len(result.unsupported_items),
             }.items():
                 append_report_row(sheet, (key, excel_value(value)))
+            for row in collection_summary(collection_status):
+                append_report_row(sheet, tuple(excel_value(value) for value in row))
             continue
         if name == "Source Inventory":
             append_report_row(sheet, SHEET_HEADERS[name])
             for item in result.inventory_items:
                 append_report_row(sheet, (item.domain, item.source_context, item.source_path,
                               item.source_id, item.status.value, item.requires_manual_review,
-                              "; ".join(item.notes)))
+                              "; ".join(item.notes), excel_value(item.source_attributes.get("raw"))))
             continue
         if name == "Review Required":
             append_report_row(sheet, SHEET_HEADERS[name])
@@ -156,7 +167,9 @@ def export_asa_excel(result: Any, output: Any, *, profile: ExcelExportProfile | 
                 append_report_row(sheet, (label, ", ".join(families), sum(c for _, _, _, c in matching),
                               sum(c for _, s, _, c in matching if s == "EXTRACTED"),
                               sum(c for _, s, _, c in matching if s == "PARTIAL"),
+                sum(c for _, s, _, c in matching if s == "SOURCE_ONLY"),
                               sum(c for _, s, _, c in matching if s == "UNSUPPORTED"),
+                              sum(c for _, s, _, c in matching if s == "UNKNOWN"),
                               sum(c for _, s, _, c in matching if s == "PARSE_ERROR"),
                               sum(c for _, _, r, c in matching if r)))
             continue
@@ -191,7 +204,12 @@ def export_asa_excel(result: Any, output: Any, *, profile: ExcelExportProfile | 
             fields = SOURCE_SECTIONS[name][1].split()
             for item in config.interfaces:
                 view = topology.get((item.source_context, item.name.casefold()))
-                values = (*(source_value(item, field) for field in fields), getattr(view, "kind", None),
+                source_values = []
+                for field in fields:
+                    source_values.append(source_value(item, field))
+                    if field == "source_context":
+                        source_values.append(source_explicit_fields(item))
+                values = (*source_values, getattr(view, "kind", None),
                           _name(getattr(view, "parent", None)), _name(getattr(view, "aggregate", None)),
                           tuple(_name(value) for value in getattr(view, "physical_interfaces", ())),
                           getattr(view, "issues", ()))
@@ -276,6 +294,7 @@ def export_asa_excel(result: Any, output: Any, *, profile: ExcelExportProfile | 
             for item in values:
                 append_report_row(sheet, tuple(excel_value(value) for value in _derived_row(name, item)))
             continue
+    write_collection_evidence(workbook, collection_status, collection_parts, collection_warnings)
     finish_report_workbook(workbook, summary_title="Cisco ASA Configuration Report")
     if hasattr(output, "write"):
         workbook.save(output)

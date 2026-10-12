@@ -89,7 +89,7 @@ SHEET_HEADERS = {name: tuple(field.replace("_", " ").title() for field in spec[1
 SHEET_HEADERS.update({
     "Summary": ("Field", "Value"),
     "Review Required": ("Domain", "Context", "Object", "Source Status", "Reason", "Source Path / Identity"),
-    "Source Inventory": ("Domain", "Context", "Source Path", "Source ID", "Status", "Review Required", "Notes"),
+    "Source Inventory": ("Domain", "Context", "Source Path", "Source ID", "Status", "Review Required", "Notes", "Sanitized Command"),
     "ACL Bindings": ("ACL", "Context", "Scope", "Interface", "Direction", "Resolved ACL", "Resolved Interface", "Issues"),
     "Zones": ("Name", "Context", "Explicit Members", "Resolved Members", "Unresolved Members", "Additional Settings", "Review Required"),
     "IPS Actions": ("Policy Map", "Class", "Mode", "Failure Mode", "Sensor Reference", "Context", "Service Policy Activation", "Issues"),
@@ -99,10 +99,13 @@ SHEET_HEADERS.update({
     "Published Services - VIPs": ("Source Rule", "Mapped Address", "Real Address", "Mapped Service", "Real Service", "Protocol", "Source NAT Interface", "Destination NAT Interface", "NAT Order", "Context", "Issues"),
     "Validation": ("Severity", "Category", "Message", "Context", "Object"),
     "Unsupported": ("Line", "Context", "Command Family", "Reason", "Sanitized Source"),
-    "Extraction Coverage": ("Selected Area", "ASA Source Family", "Detected", "Structured", "Partial", "Unsupported", "Parse Errors", "Review Required"),
+    "Extraction Coverage": ("Selected Area", "ASA Source Family", "Detected", "Structured", "Partial", "Source Only", "Unsupported", "Unknown", "Parse Errors", "Review Required"),
     "Failover": ("Record Type", "Context", "Source Values"),
     "DHCP Reservations": ("IP", "MAC", "Interface", "Context", "Source Order"),
     "NAT Rules": ("Name", "Source Order", "Effective Order", "Order Status", "Section", "Context", "Syntax Family", "Source Order Within Section", "Source Sequence", "Translation Semantics", "Source Interface", "Destination Interface", "Real Source", "Mapped Source", "Source Mode", "Mapped Source Mode", "Real Destination", "Mapped Destination", "Destination Mode", "Object NAT Real Port", "Object NAT Mapped Port", "Object NAT Protocol", "Twice NAT Service Operand 1", "Twice NAT Service Operand 2", "Owning Object", "ACL", "PAT Pool", "PAT Pool Options", "Identity NAT", "NAT Exemption", "DNS", "No Proxy ARP", "Route Lookup", "Unidirectional", "Inactive", "Additional Settings", "Issues", "Raw"),
     "Routes": ("Interface", "Destination", "Mask", "Destination Prefix (Normalized)", "Gateway", "Configured Administrative Distance", "Effective Administrative Distance", "Track", "Context", "Raw"),
 })
 SHEET_HEADERS["Interfaces"] += ("Topology Kind", "Resolved Parent", "Aggregate", "Physical Interfaces", "Topology Issues")
+SHEET_HEADERS["Interfaces"] = (
+    *SHEET_HEADERS["Interfaces"][:2], "Source Explicit Fields", *SHEET_HEADERS["Interfaces"][2:],
+)
