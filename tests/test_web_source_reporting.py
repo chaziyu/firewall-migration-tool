@@ -92,7 +92,7 @@ end
 
 
 @pytest.mark.parametrize("profile", ("fast", "full"))
-@pytest.mark.parametrize("vendor,source", (("fortigate", FORTIGATE_SOURCE), ("palo_alto", PALO_SOURCE)), ids=("fortigate", "palo_alto"))
+@pytest.mark.parametrize("vendor,source", (("fortigate", FORTIGATE_SOURCE), ("palo_alto", PALO_SOURCE), ("cisco_asa", ASA_SOURCE)), ids=("fortigate", "palo_alto", "cisco_asa"))
 @pytest.mark.parametrize("status", ("PARTIAL", "SUCCESS"))
 def test_snapshot_excel_preserves_collection_evidence(profile, vendor, source, status, monkeypatch):
     from fwmigrate.collection.snapshot import FORMAT
@@ -146,12 +146,14 @@ def test_snapshot_excel_preserves_collection_evidence(profile, vendor, source, s
         values = str([row for sheet in workbook for row in sheet.values])
         assert "evidence-secret" not in values
         assert "palo-web-secret" not in values
-        assert ("192.0.2.1" if vendor == "fortigate" else "203.0.113.10") in values
+        assert "web-secret" not in values
+        address = {"fortigate": "192.0.2.1", "palo_alto": "203.0.113.10", "cisco_asa": "203.0.113.1"}[vendor]
+        assert address in values
     finally:
         workbook.close()
 
 
-@pytest.mark.parametrize("vendor,source", (("fortigate", FORTIGATE_SOURCE), ("palo_alto", PALO_SOURCE)), ids=("fortigate", "palo_alto"))
+@pytest.mark.parametrize("vendor,source", (("fortigate", FORTIGATE_SOURCE), ("palo_alto", PALO_SOURCE), ("cisco_asa", ASA_SOURCE)), ids=("fortigate", "palo_alto", "cisco_asa"))
 @pytest.mark.parametrize("profile", ("fast", "full"))
 def test_excel_rejects_failed_collection_snapshot(vendor, source, profile):
     from fwmigrate.collection.snapshot import FORMAT

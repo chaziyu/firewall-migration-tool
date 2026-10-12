@@ -56,6 +56,28 @@ object network WEB
     assert all(issue.resolved for issue in result.derived.relationship_issues)
 
 
+def test_nested_object_nat_inventory_keeps_command_line_and_context_ownership():
+    content = (
+        "changeto context blue\n"
+        "object network WEB\n"
+        " host 10.0.0.10\n"
+        " nat (inside,outside) static 192.0.2.10\n"
+        "changeto context green\n"
+        "object network WEB\n"
+        " host 10.0.1.10\n"
+        " nat (inside,outside) static 192.0.2.11\n"
+        "nat (inside,outside) source static WEB interface\n"
+    )
+    result = extract_cisco_asa_source(content)
+    rows = {item.source_id: item for item in result.inventory_items}
+
+    assert rows["4"].source_path == rows["8"].source_path == "nat object"
+    assert rows["4"].source_context == "blue"
+    assert rows["8"].source_context == "green"
+    assert rows["9"].source_path == "nat manual"
+    assert len([item for item in result.inventory_items if item.source_id in {"4", "8", "9"}]) == 3
+
+
 def test_derived_and_validation_are_read_only():
     result = extract_cisco_asa_source(
         "object network WEB\n host 10.0.0.10\n"

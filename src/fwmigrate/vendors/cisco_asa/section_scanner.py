@@ -168,6 +168,13 @@ def scan_cisco_asa_sections(text: str) -> list[SourceSectionResult]:
         if indented and current is not None and current_path in block_paths:
             current.line_end = number
             current.object_count_source = (current.object_count_source or 0) + 1
+            nested_path = _path(line, current_path)
+            if nested_path == "nat object":
+                sections.append(SourceSectionResult(
+                    path=nested_path, source_context=contexts.get(number),
+                    line_start=number, line_end=number,
+                    object_count_source=1, status=ExtractionStatus.UNSUPPORTED,
+                ))
             continue
         if current is not None:
             current.line_end = number - 1

@@ -135,6 +135,47 @@ def test_absent_and_explicit_no_values_remain_distinct_in_source():
     assert explicit_no.ip is None and "ip" in explicit_no.explicit_fields
     assert [route.administrative_distance for route in result.config.static_routes] == [None, 10]
 
+
+def test_interface_excel_shows_explicit_fields_and_command_inventory_statuses():
+    result = extract_cisco_asa_source(
+        "interface Ethernet0/0\n nameif outside\n no shutdown\n future-interface-option keep\n"
+        "interface Ethernet0/1\n"
+        "future-global-command keep\n"
+    )
+    assert "source_explicit_fields" not in str(build_asa_preview(result))
+    output = BytesIO()
+    export_asa_excel(result, output)
+    workbook = load_workbook(BytesIO(output.getvalue()), read_only=True)
+    try:
+        interfaces = workbook["Interfaces"]
+        headers = next(interfaces.iter_rows(values_only=True))
+        interface_rows = [dict(zip(headers, row)) for row in interfaces.iter_rows(min_row=2, values_only=True)]
+        fields, missing = interface_rows
+        assert {"nameif", "shutdown"} <= set(fields["Source Explicit Fields"].split("; "))
+        assert fields["Shutdown"] is False
+        assert "nameif" not in missing["Source Explicit Fields"].split("; ")
+        assert "shutdown" not in missing["Source Explicit Fields"].split("; ")
+        assert missing["Shutdown"] is None
+
+        inventory = list(workbook["Source Inventory"].iter_rows(values_only=True))
+        inventory_headers = inventory[0]
+        rows = {row[inventory_headers.index("Source ID")]: row for row in inventory[1:]}
+        assert rows["2"][inventory_headers.index("Sanitized Command")] == "nameif outside"
+        assert rows["4"][inventory_headers.index("Status")] == "SOURCE_ONLY"
+        assert rows["4"][inventory_headers.index("Review Required")] is True
+        assert rows["6"][inventory_headers.index("Status")] == "UNSUPPORTED"
+        assert rows["4"][inventory_headers.index("Source Path")] == "interface"
+
+        coverage = list(workbook["Extraction Coverage"].iter_rows(values_only=True))
+        coverage_headers = coverage[0]
+        zones = next(row for row in coverage[1:] if row[0] == "Zones")
+        assert zones[coverage_headers.index("Source Only")] == 1
+        assert zones[coverage_headers.index("Detected")] == sum(
+            row[inventory_headers.index("Source Path")] == "interface" for row in inventory[1:]
+        )
+    finally:
+        workbook.close()
+
 def test_nat_optional_flags_remain_absent_in_preview_and_excel():
     result = extract_cisco_asa_source(
         "nat (inside,outside) source static REAL MAPPED\n"

@@ -28,6 +28,10 @@ def source_value(record: Any, field_name: str) -> Any:
     return value
 
 
+def source_explicit_fields(record: Any) -> str:
+    return "; ".join(sorted(getattr(record, "explicit_fields", ())))
+
+
 def safe_value(value: Any) -> Any:
     if isinstance(value, dict):
         return {key: safe_value(item) for key, item in value.items()

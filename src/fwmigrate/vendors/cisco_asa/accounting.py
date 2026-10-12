@@ -56,22 +56,47 @@ def _walk_models(value: Any, seen: Optional[set[int]] = None) -> Iterable[BaseMo
 
 
 def _record_line(record: BaseModel, source_positions: Dict[str, list[int]]) -> Optional[int]:
-    for attribute in ("source_line_number", "source_order", "line_number"):
+    for attribute in ("source_line_number", "line_number"):
         value = getattr(record, attribute, None)
         if isinstance(value, int) and value > 0:
             return value
     source_attributes = getattr(record, "source_attributes", None)
     if isinstance(source_attributes, dict):
-        for key in ("source_line_number", "line_number", "source_order"):
+        for key in ("source_line_number", "line_number"):
             value = source_attributes.get(key)
             if isinstance(value, int) and value > 0:
                 return value
     raw_line = getattr(record, "raw_line", None)
-    if not raw_line:
-        raw_lines = getattr(record, "raw_lines", None)
-        raw_line = raw_lines[0] if isinstance(raw_lines, list) and raw_lines else None
-    positions = source_positions.get(sanitize_raw_text(str(raw_line)).strip(), []) if raw_line else []
-    return positions[0] if len(positions) == 1 else None
+    if raw_line:
+        positions = source_positions.get(sanitize_raw_text(str(raw_line)).strip(), [])
+        return positions[0] if len(positions) == 1 else None
+    raw_lines = getattr(record, "raw_lines", None)
+    if isinstance(raw_lines, list) and len(raw_lines) == 1:
+        positions = source_positions.get(sanitize_raw_text(raw_lines[0]).strip(), [])
+        return positions[0] if len(positions) == 1 else None
+    return None
+
+
+def _record_lines(record: BaseModel, source_positions: Dict[str, list[int]]) -> set[int]:
+    lines = set()
+    line = _record_line(record, source_positions)
+    if line is not None:
+        lines.add(line)
+    for raw_line in getattr(record, "raw_lines", ()):
+        positions = source_positions.get(sanitize_raw_text(str(raw_line)).strip(), ())
+        lines.update(positions)
+    raw_extra = getattr(record, "raw_extra", {})
+    if isinstance(raw_extra, dict):
+        for raw_line in raw_extra.get("unmodeled_lines", ()):
+            positions = source_positions.get(sanitize_raw_text(str(raw_line)).strip(), ())
+            lines.update(positions)
+    return lines
+
+
+def _section_for_line(sections: list[SourceSectionResult], number: int) -> Optional[SourceSectionResult]:
+    matching = [section for section in sections
+                if (section.line_start or 0) <= number <= (section.line_end or section.line_start or 0)]
+    return min(matching, key=lambda section: (section.line_end or 0) - (section.line_start or 0), default=None)
 
 
 def _set_worst(mapping: Dict[int, ExtractionStatus], line: int, status: ExtractionStatus) -> None:
@@ -94,11 +119,20 @@ def build_asa_source_accounting(
 
     actual_status_by_line: Dict[int, ExtractionStatus] = {}
     review_by_line: Dict[int, bool] = {}
+    source_only_lines: set[int] = set()
+    fallback_status_by_section = {id(section): section.status for section in sections}
     for record in _walk_models(config):
         record_status = _status(getattr(record, "extraction_status", None))
-        line_number = _record_line(record, source_positions)
-        if record_status is not None and line_number is not None:
-            _set_worst(actual_status_by_line, line_number, record_status)
+        record_lines = _record_lines(record, source_positions)
+        raw_extra = getattr(record, "raw_extra", {})
+        if isinstance(raw_extra, dict):
+            for raw_line in raw_extra.get("unmodeled_lines", ()):
+                source_only_lines.update(source_positions.get(sanitize_raw_text(str(raw_line)).strip(), ()))
+        for line_number in record_lines:
+            if record_status == ExtractionStatus.PARSE_ERROR and line_number != _record_line(record, source_positions):
+                continue
+            if record_status is not None:
+                _set_worst(actual_status_by_line, line_number, record_status)
             if getattr(record, "requires_manual_review", False):
                 review_by_line[line_number] = True
 
@@ -119,33 +153,33 @@ def build_asa_source_accounting(
             if worst == ExtractionStatus.PARSE_ERROR:
                 section.notes.append("A recognized command in this section failed safe parsing.")
 
-    status_by_line = {
-        line: section.status
-        for section in sections
-        for line in range(section.line_start or 0, (section.line_end or section.line_start or 0) + 1)
-    }
     inventory = []
     unsupported = []
     for number, raw in enumerate(text.splitlines(), 1):
         line = raw.strip()
         if not line or line.startswith(("!", ":")):
             continue
-        status = status_by_line.get(number, ExtractionStatus.UNSUPPORTED)
+        source_section = _section_for_line(sections, number)
         actual = actual_status_by_line.get(number)
-        if actual is not None and _SEVERITY[actual] > _SEVERITY[status]:
+        if actual == ExtractionStatus.PARSE_ERROR:
             status = actual
+        elif number in source_only_lines:
+            status = ExtractionStatus.SOURCE_ONLY
+        elif number in actual_status_by_line:
+            status = actual
+        elif source_section is not None:
+            status = fallback_status_by_section[id(source_section)]
+        else:
+            status = ExtractionStatus.UNSUPPORTED
         safe_line = sanitize_raw_text(line)
         safe_parts = safe_line.split()
         requires_review = review_by_line.get(number, False) or status in {
             ExtractionStatus.PARTIAL,
+            ExtractionStatus.SOURCE_ONLY,
             ExtractionStatus.UNSUPPORTED,
             ExtractionStatus.PARSE_ERROR,
             ExtractionStatus.UNKNOWN,
         }
-        source_section = next(
-            (s for s in sections if (s.line_start or 0) <= number <= (s.line_end or s.line_start or 0)),
-            None,
-        )
         source_path = source_section.path if source_section is not None else "other"
         source_context = source_section.source_context if source_section is not None else None
         inventory.append(SourceInventoryItem(
