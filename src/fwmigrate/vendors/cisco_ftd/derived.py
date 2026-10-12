@@ -165,7 +165,8 @@ def build_ftd_derived_views(config: CiscoFTDConfig) -> FTDDerivedViews:
     for policy, rules, family in (
         *((item, item.rules, "file") for item in config.file_policies),
         *((item, item.rules, "decryption") for item in config.decryption_policies),
-        *((item, item.rules, "dns") for item in config.dns_policies),
+        *((item, rules, "dns") for item in config.dns_policies
+          for rules in (item.rules, item.block_rules)),
     ):
         inspection_relationships.append({"relationship_type": "policy", "policy_type": family,
             "policy_id": policy.source_id, "policy_name": policy.name, "rule_id": None,
@@ -174,6 +175,7 @@ def build_ftd_derived_views(config: CiscoFTDConfig) -> FTDDerivedViews:
             inspection_relationships.append({"relationship_type": "policy-rule", "policy_type": family,
                 "policy_id": policy.source_id, "policy_name": policy.name, "rule_id": rule.source_id,
                 "rule_name": rule.name, "collection_order": rule.collection_order,
+                "rule_family": rule.source_attributes.get("rule_family"),
                 "source_plane": rule.source_plane})
             fields = {
                 "file": (),
@@ -192,7 +194,8 @@ def build_ftd_derived_views(config: CiscoFTDConfig) -> FTDDerivedViews:
                     inspection_relationships.append({"relationship_type": "rule-reference", "policy_type": family,
                         "policy_id": policy.source_id, "policy_name": policy.name, "rule_id": rule.source_id,
                         "rule_name": rule.name, "field": field_name, "reference_id": ref.source_id,
-                        "reference_name": ref.name, "source_plane": rule.source_plane})
+                        "reference_name": ref.name, "rule_family": rule.source_attributes.get("rule_family"),
+                        "source_plane": rule.source_plane})
 
     for policy in config.intrusion_policies:
         if policy.variable_set is not None:
@@ -478,7 +481,8 @@ def build_ftd_derived_views(config: CiscoFTDConfig) -> FTDDerivedViews:
     if config.collection_metadata.provided:
         state = {"SUCCESS": "present", "EMPTY": "known-empty", "PARTIAL": "partial", "FAILED": "failed"}
         for part in config.collection_metadata.parts:
-            expected[f"collection:{part.name}"] = state.get(part.status, "unknown")
+            part_state = "known-empty" if part.status == "SUCCESS" and part.count == 0 else state.get(part.status, "unknown")
+            expected[f"collection:{part.name}"] = part_state
         families = {
             "hosts": ("hosts",), "networks": ("networks",), "ranges": ("ranges",),
             "network_objects": ("networkaddresses", "hosts", "networks", "ranges", "networkgroups"),
@@ -515,13 +519,14 @@ def build_ftd_derived_views(config: CiscoFTDConfig) -> FTDDerivedViews:
         def child_collection_state(matching: list[Any]) -> str:
             if not matching:
                 return "unknown"
+            statuses = ["known-empty" if part.status == "SUCCESS" and part.count == 0 else part.status
+                        for part in matching]
             if any(part.status == "PARTIAL" for part in matching) or (
-                    any(part.status == "FAILED" for part in matching) and
-                    any(part.status in {"SUCCESS", "EMPTY"} for part in matching)):
+                    "FAILED" in statuses and any(status in {"SUCCESS", "EMPTY", "known-empty"} for status in statuses)):
                 return "partial"
-            if all(part.status == "FAILED" for part in matching):
+            if all(status == "FAILED" for status in statuses):
                 return "failed"
-            if all(part.status == "EMPTY" for part in matching):
+            if all(status in {"EMPTY", "known-empty"} for status in statuses):
                 return "known-empty"
             return "present"
 
@@ -541,10 +546,24 @@ def build_ftd_derived_views(config: CiscoFTDConfig) -> FTDDerivedViews:
                                                     and part.name.endswith(suffix)])
         for family, prefixes in (("file", ("filepolicies/", "filepolicyrules/")),
                                  ("decryption", ("decryptionpolicies/", "decryptionpolicyrules/")),
-                                 ("dns", ("dnspolicies/", "block_rules/"))):
+                                 ("dns", ("dnspolicies/",))):
             matching = [part for part in parts if part.name.startswith(prefixes) and
                         part.name.rsplit("/", 1)[-1] in {"rules", "filepolicyrules", "decryptionpolicyrules", "block_rules"}]
-            expected[f"{family}_rules"] = child_collection_state(matching)
+            if family == "dns" and config.dns_policies:
+                dns_parts_by_policy = {
+                    policy.source_id: {part.name.rsplit("/", 1)[-1] for part in matching
+                                       if part.name.startswith(f"dnspolicies/{policy.source_id}/")}
+                    for policy in config.dns_policies if policy.source_id is not None
+                }
+                expected["dns_rules"] = (
+                    "unknown" if len(dns_parts_by_policy) != len(config.dns_policies) or
+                    any(not {"rules", "block_rules"} <= names for names in dns_parts_by_policy.values())
+                    else child_collection_state(matching)
+                )
+            elif family == "dns" and not config.dns_policies and expected.get("dns") == "known-empty":
+                expected["dns_rules"] = "known-empty"
+            else:
+                expected[f"{family}_rules"] = child_collection_state(matching)
     else:
         expected.update({"intrusion_policies": "unknown", "intrusion_rule_groups": "unknown",
                          "intrusion_rule_behaviors": "unknown", "intrusion_rule_overrides": "unknown", "file_rules": "unknown",

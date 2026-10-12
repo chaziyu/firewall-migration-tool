@@ -89,7 +89,7 @@ def test_missing_collection_metadata_is_reported_as_unknown_not_zero():
     export_ftd_excel(result, output)
     output.seek(0)
     workbook = load_workbook(output, read_only=True)
-    summary = dict(workbook["Summary"].iter_rows(min_row=2, values_only=True))
+    summary = {row[0]: row[1] for row in workbook["Summary"].iter_rows(min_row=2, values_only=True)}
     assert summary["Collection Status"] == "NOT_PROVIDED"
     assert summary["Collection Parts"] == "Not provided"
     assert summary["Incomplete Collection Parts"] == "Not provided"

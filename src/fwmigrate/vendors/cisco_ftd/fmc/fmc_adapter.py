@@ -231,7 +231,8 @@ class CiscoFMCBundleParser:
                 explicit.append(target)
             return record(item, index, cls, **values, **extra, explicit_fields=explicit)
 
-        def adapt_inspection_rule(item: dict, index: int, policy: dict, cls, fields: dict[str, tuple[str, ...]]):
+        def adapt_inspection_rule(item: dict, index: int, policy: dict, cls, fields: dict[str, tuple[str, ...]],
+                                  rule_family: str | None = None):
             metadata = item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
             position = item.get("position", item.get("order", metadata.get("ruleIndex")))
             values = {"parent_policy_id": str(policy["id"]) if policy.get("id") is not None else None,
@@ -256,13 +257,18 @@ class CiscoFMCBundleParser:
                 raw_extra["metadata"] = {key: value for key, value in metadata.items() if key != "ruleIndex"}
                 if not raw_extra["metadata"]:
                     raw_extra.pop("metadata")
+            source_attributes = {"parent_policy_id": values["parent_policy_id"],
+                                 "parent_policy_name": values["parent_policy_name"]}
+            if rule_family is not None:
+                source_attributes["rule_family"] = rule_family
             return record(item, index, cls, **values, explicit_fields=explicit,
-                source_attributes={"parent_policy_id": values["parent_policy_id"],
-                                   "parent_policy_name": values["parent_policy_name"]},
+                source_attributes=source_attributes,
                 raw_extra=sanitize_source_attributes(raw_extra))
 
         def adapt_inspection_policy(item: dict, index: int, cls, child_cls, child_keys: tuple[str, ...],
-                                    fields: dict[str, tuple[str, ...]], policy_fields: dict[str, tuple[str, ...]]):
+                                    fields: dict[str, tuple[str, ...]], policy_fields: dict[str, tuple[str, ...]],
+                                    *, child_collections: tuple[tuple[str, str, str | None], ...] | None = None,
+                                    collection_family: str | None = None):
             values: dict[str, Any] = {}
             explicit: list[str] = []
             for target, keys in policy_fields.items():
@@ -270,15 +276,28 @@ class CiscoFMCBundleParser:
                 if key is not None:
                     values[target] = ref_field(item, key) if target == "decryption_policy" else item[key]
                     explicit.append(target)
-            rules_key = next((key for key in child_keys if key in item), None)
-            if rules_key is not None and isinstance(item[rules_key], list):
-                values["rules"] = [adapt_inspection_rule(child, child_index, item, child_cls, fields)
-                                    for child_index, child in enumerate(item[rules_key], 1)
-                                    if isinstance(child, dict)]
-                explicit.append("rules")
+            selected_key = next((key for key in child_keys if key in item), None)
+            collections = child_collections
+            if collections is None:
+                collections = ((selected_key, "rules", None),) if selected_key else ()
+            used_child_keys = set()
+            for source_key, target_field, rule_family in collections:
+                if source_key not in item or not isinstance(item[source_key], list):
+                    continue
+                used_child_keys.add(source_key)
+                children = [adapt_inspection_rule(child, child_index, item, child_cls, fields, rule_family)
+                            for child_index, child in enumerate(item[source_key], 1)
+                            if isinstance(child, dict)]
+                part = next((part for part in collection_metadata.parts
+                             if collection_family and item.get("id") is not None
+                             and part.name == f"{collection_family}/{item['id']}/{source_key}"), None)
+                if collection_provided and not children and (part is None or part.status == "FAILED"):
+                    values[target_field] = None
+                else:
+                    values[target_field] = children
+                    explicit.append(target_field)
             used = {key for keys in policy_fields.values() for key in keys}
-            if rules_key is not None:
-                used.add(rules_key)
+            used.update(used_child_keys)
             values["explicit_fields"] = explicit
             return record(item, index, cls, **values,
                 raw_extra=sanitize_source_attributes({key: value for key, value in item.items() if key not in used}))
@@ -1299,17 +1318,21 @@ class CiscoFMCBundleParser:
         }
         file_policies = [adapt_inspection_policy(item, index, CiscoFTDFilePolicy, CiscoFTDFileRule,
             ("rules", "filerules", "filepolicyrules"), file_rule_fields,
-            {"description": ("description",)}) for index, item in enumerate(objects.get("filepolicies", []), 1)]
+            {"description": ("description",)}, collection_family="filepolicies")
+            for index, item in enumerate(objects.get("filepolicies", []), 1)]
         decryption_policies = [adapt_inspection_policy(item, index, CiscoFTDDecryptionPolicy, CiscoFTDDecryptionRule,
             ("rules", "decryptionpolicyrules"), decryption_rule_fields,
             {"description": ("description",), "default_action": ("defaultAction",),
              "undecryptable_action": ("undecryptableActions", "undecryptableAction", "undecryptableTrafficAction"),
-             "advanced_settings": ("advancedOptions", "advancedSettings")})
+             "advanced_settings": ("advancedOptions", "advancedSettings")}, collection_family="decryptionpolicies")
             for index, item in enumerate(objects.get("decryptionpolicies", []), 1)]
         dns_policies = [adapt_inspection_policy(item, index, CiscoFTDDNSPolicy, CiscoFTDDNSRule,
             ("rules", "block_rules"), dns_rule_fields,
             {"description": ("description",), "default_action": ("defaultAction",),
-             "umbrella_settings": ("umbrellaSettings", "umbrella")})
+             "umbrella_settings": ("umbrellaSettings", "umbrella")},
+            child_collections=(("rules", "rules", "allowdnsrules"),
+                               ("block_rules", "block_rules", "blockdnsrules")),
+            collection_family="dnspolicies")
             for index, item in enumerate(objects.get("dnspolicies", []), 1)]
 
         return CiscoFTDConfig(

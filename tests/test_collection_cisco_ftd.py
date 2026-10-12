@@ -84,6 +84,45 @@ def test_fmc_partial_endpoint_failure_keeps_usable_source():
     assert "secret-password" not in str(source)
 
 
+def test_fmc_s2s_endpoints_use_ftds2svpns_path_and_keep_bundle_key():
+    calls = []
+
+    class Session:
+        headers = {}
+        verify = None
+
+        def post(self, *args, **kwargs):
+            calls.append(("POST", args[0]))
+            return Response(headers={"X-auth-access-token": "token", "DOMAINS": '[{"uuid":"d1","name":"Global"}]'})
+
+        def get(self, url, **kwargs):
+            calls.append(("GET", url))
+            path = url.split("?", 1)[0]
+            if path.endswith("/policy/ftds2svpns"):
+                return Response({"items": [{"id": "vpn1", "name": "Branch VPN"}], "paging": {"total": 1}})
+            if path.endswith("/policy/ftds2svpns/vpn1/endpoints"):
+                return Response({"items": [{"id": "endpoint1", "name": "Branch"}], "paging": {"total": 1}})
+            return Response({"items": [], "paging": {"total": 0}})
+
+        def close(self):
+            pass
+
+    collector = CiscoFTDCollector(session_factory=Session)
+    source = collector.collect(collector.validate_options({"host": "fmc", "username": "u", "password": "p"}))
+    payload = json.loads(source.source_text)
+    assert payload["objects"]["s2svpns"][0]["endpoints"][0]["id"] == "endpoint1"
+    assert any(call[1].split("?", 1)[0].endswith("/policy/ftds2svpns/vpn1/endpoints") for call in calls if call[0] == "GET")
+    assert not any("/policy/s2svpns/" in call[1] for call in calls if call[0] == "GET")
+    assert all(method == "GET" for method, _ in calls if method != "POST")
+    assert [method for method, _ in calls if method == "POST"] == ["POST"]
+    endpoint_part = next(part for part in source.parts if part.name == "s2svpns/vpn1/endpoints")
+    assert (endpoint_part.status, endpoint_part.complete, endpoint_part.count) == ("SUCCESS", True, 1)
+    analysis = CiscoFTDSourceReporter().analyze_source(source.source_text)
+    assert [(item.source_id, item.source_attributes.get("parent_topology_id"))
+            for item in analysis.config.s2s_vpn_endpoints] == [("endpoint1", "vpn1")]
+    assert analysis.derived.vpn_relationships[0]["endpoints"] == ["Branch"]
+
+
 def test_fmc_failed_later_page_keeps_first_page():
     class Session:
         headers = {}

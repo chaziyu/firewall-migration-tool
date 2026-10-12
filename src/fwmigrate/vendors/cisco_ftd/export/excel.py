@@ -60,28 +60,55 @@ def _nat_row(policy: Any, rule: Any, section: str | None, kind: str) -> tuple[An
         getattr(rule, "source_translation_mode", None), getattr(rule, "destination_translation_mode", None))
 
 
-def _inspection_rows(config: Any) -> list[tuple[Any, ...]]:
+def _inspection_rows(config: Any, completeness: dict[str, str] | None = None) -> list[tuple[Any, ...]]:
     rows = []
-    groups = (("File", config.file_policies, ()),
-              ("Decryption", config.decryption_policies, ("default_action", "undecryptable_action", "advanced_settings")),
-              ("DNS", config.dns_policies, ("default_action", "umbrella_settings")))
-    for kind, policies, behavior_fields in groups:
+    groups = (("File", "filepolicies", config.file_policies, ()),
+              ("Decryption", "decryptionpolicies", config.decryption_policies,
+               ("default_action", "undecryptable_action", "advanced_settings")),
+              ("DNS", "dnspolicies", config.dns_policies, ("default_action", "umbrella_settings")))
+
+    def collection_status(policy, family, rules_fields, rules):
+        if completeness is None:
+            return "UNKNOWN" if rules is None else "PRESENT" if rules else "KNOWN EMPTY"
+        if not config.collection_metadata.provided:
+            return "UNKNOWN" if rules is None else "PRESENT" if rules else "KNOWN EMPTY"
+        policy_id = policy.source_id
+        if policy_id is None:
+            return "UNKNOWN"
+        states = [completeness.get(f"collection:{family}/{policy_id}/{field}") for field in rules_fields]
+        if not states or any(state is None for state in states):
+            return "UNKNOWN"
+        if "partial" in states or ("failed" in states and any(state != "failed" for state in states)):
+            return "PARTIAL"
+        if all(state == "failed" for state in states):
+            return "FAILED"
+        if all(state == "known-empty" for state in states):
+            return "KNOWN EMPTY"
+        return "PRESENT"
+
+    for kind, family, policies, behavior_fields in groups:
         for policy in policies:
             rules = policy.rules
-            for rule in rules or [None]:
-                fields = {} if rule is None else rule.model_dump(exclude_none=True, exclude={
+            rule_entries = [(rule, "rules") for rule in rules or []]
+            rule_families = ("rules", "block_rules") if kind == "DNS" else ("rules",)
+            if kind == "DNS":
+                rule_entries.extend((rule, "block_rules") for rule in policy.block_rules or [])
+            status = collection_status(policy, family, rule_families, rules)
+            for rule, rule_family in rule_entries or [(None, None)]:
+                condition_fields = {} if rule is None else rule.model_dump(exclude_none=True, exclude={
                     "name", "source_id", "source_plane", "source_context", "domain_id", "device_id",
                     "explicit_fields", "source_attributes", "raw_extra", "parent_policy_id", "parent_policy_name",
                     "position", "collection_order", "enabled", "action"})
                 behavior = {field: getattr(policy, field) for field in behavior_fields
                             if getattr(policy, field) is not None}
                 rows.append((kind, _source_name(policy), policy.source_id, _source_name(rule) if rule else None,
-                    rule.source_id if rule else None, "UNKNOWN" if rules is None else "PRESENT" if rules else "KNOWN EMPTY",
+                    rule.source_id if rule else None, status,
                     rule.position if rule else None, rule.collection_order if rule else None,
                     rule.enabled if rule else None, rule.action if rule else None,
-                    json.dumps(fields, default=str), json.dumps(behavior, default=str),
+                    json.dumps(condition_fields, default=str), json.dumps(behavior, default=str),
                     json.dumps({"policy": policy.raw_extra, "rule": rule.raw_extra if rule else {}}, default=str),
-                    policy.source_plane, policy.source_context))
+                    policy.source_plane, policy.source_context,
+                    rule.source_attributes.get("rule_family") if rule else None))
     return rows
 
 
@@ -149,7 +176,16 @@ def export_ftd_excel(result: Any, output: Any, *, profile: ExcelExportProfile | 
             _text(rule.urls), _refs(rule.url_categories), _refs([rule.time_range] if rule.time_range else None),
             _refs([rule.intrusion_policy] if rule.intrusion_policy else None),
             _refs([rule.variable_set] if rule.variable_set else None), _refs([rule.file_policy] if rule.file_policy else None),
-            rule.log_begin, rule.log_end, rule.comments, rule.source_plane, rule.source_context)
+            rule.log_begin, rule.log_end, rule.comments, rule.source_plane, rule.source_context,
+            json.dumps(_refs(rule.source_dynamic_objects), default=str) if rule.source_dynamic_objects is not None else None,
+            json.dumps(_refs(rule.destination_dynamic_objects), default=str) if rule.destination_dynamic_objects is not None else None,
+            json.dumps(_refs(rule.vlan_tags), default=str) if rule.vlan_tags is not None else None,
+            json.dumps(_refs(rule.source_security_group_tags), default=str) if rule.source_security_group_tags is not None else None,
+            json.dumps(_refs(rule.destination_security_group_tags), default=str) if rule.destination_security_group_tags is not None else None,
+            json.dumps(_ra_ref(rule.realm), default=str) if rule.realm is not None else None,
+            json.dumps(rule.logging, default=str) if rule.logging is not None else None,
+            rule.collection_order, rule.policy_id, rule.domain_id, rule.device_id,
+            json.dumps(rule.raw_extra, default=str))
             for policy in config.access_control_policies for rule in (policy.rules or [])],
         "Object Overrides": [(_source_name(item), item.source_id, ref_text(item.parent), ref_text(item.target),
             item.address_type, item.value, item.domain_id, item.source_plane, item.raw_extra)
@@ -167,7 +203,7 @@ def export_ftd_excel(result: Any, output: Any, *, profile: ExcelExportProfile | 
                 ("AUTO", "auto", policy.auto_rules), ("AFTER_AUTO", "manual", policy.manual_rules_after_auto),
                 (None, "manual", policy.unclassified_manual_rules), (None, "manual", policy.rules))
             for rule in (rules or [])],
-        "Inspection Policies": _inspection_rows(config),
+        "Inspection Policies": _inspection_rows(config, getattr(derived, "source_plane_completeness", None)),
         "RA VPN Policies": [(_source_name(x), x.source_id, _refs(x.target_devices), _refs(x.access_interfaces),
             _refs(x.certificates), _refs(x.certificate_maps), x.certificate_map_settings, _refs(x.connection_profiles),
             _refs(x.group_policies), _refs(x.address_pools), _refs(x.realms), x.ssl_tls_settings,
