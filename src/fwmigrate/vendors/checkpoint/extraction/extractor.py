@@ -76,6 +76,27 @@ def extract_checkpoint_config(
             else:
                 reconcile_append(destination, item)
 
+    represented = {(item.command, item.domain, item.package, item.layer, item.gateway) for item in collection}
+    for item in bundle.collection_completeness.values():
+        command = item.command
+        identity = (command, item.domain_name or item.domain, item.package_name or item.package,
+                    item.layer_name or item.layer, item.gateway)
+        if identity not in represented:
+            collection.append(CheckPointCollectionDiagnostic(
+                command=command, source_plane="management", domain=item.domain_name or item.domain,
+                domain_uid=item.domain_uid, domain_name=item.domain_name,
+                package=item.package_name or item.package, package_uid=item.package_uid,
+                package_name=item.package_name, layer=item.layer_name or item.layer,
+                layer_uid=item.layer_uid, layer_name=item.layer_name, gateway=item.gateway,
+                status=item.status, complete=item.complete, error=item.error_message,
+                error_code=item.error_code,
+            ))
+    if not bundle.collection_completeness:
+        collection.append(CheckPointCollectionDiagnostic(
+            command="collection-coverage", source_plane="management", status=CollectionStatus.UNKNOWN,
+            complete=False, error="Offline collection coverage manifest is unavailable.",
+        ))
+
     return ExtractionResult(
         config=config,
         collection=tuple(collection),
@@ -87,6 +108,8 @@ def extract_checkpoint_config(
 
 
 def _merge_pages(pages: list[CheckPointResponse]) -> CheckPointResponse:
+    if all(page.from_index is not None and page.to_index is not None for page in pages):
+        pages = sorted(pages, key=lambda page: page.from_index or 0)
     merged = pages[0].model_copy(deep=True)
     data = dict(merged.data)
     for key in ("objects", "rulebase", "rules", "items", "interfaces", "routes"):

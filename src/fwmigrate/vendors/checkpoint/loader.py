@@ -335,6 +335,9 @@ def validate_pagination(pages: List[CheckPointResponse]) -> Tuple[bool, Optional
     if len(totals) > 1:
         return False, f"Inconsistent total counts across pages: {totals}"
 
+    if all(page.from_index is not None and page.to_index is not None for page in pages):
+        pages = sorted(pages, key=lambda page: page.from_index or 0)
+
     total = next(iter(totals)) if totals else None
     if total is not None and total < 0:
         return False, f"Invalid negative pagination total: {total}"

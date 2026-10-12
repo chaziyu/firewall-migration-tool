@@ -137,6 +137,7 @@ def transform_nat(config: CheckPointConfig, references: CPReferenceIndex) -> CPN
         if not isinstance(settings, dict) or settings.get("auto-rule") is not True:
             continue
         method = settings.get("method")
+        hide_behind = settings.get("hide-behind")
         translated_value = settings.get("ipv4-address") or settings.get("ipv6-address")
         owner_ref = CPNATReference(owner.uid or owner.name or "", owner.uid, owner.name, owner.uid, owner.name, "source_owner")
         owner_issues = []
@@ -146,9 +147,10 @@ def transform_nat(config: CheckPointConfig, references: CPReferenceIndex) -> CPN
                 owner.uid, owner.name, owner.domain_uid or owner.domain,
                 "nat_settings.method",
             ))
-        if not translated_value:
+        gateway_hide = str(method or "").lower() == "hide" and str(hide_behind or "").lower() == "gateway"
+        if not translated_value and not gateway_hide:
             issue = CPNATTransformIssue(
-                "Automatic NAT translation address is not explicit in the source settings.",
+                "Automatic NAT hide target or translation address is not explicit in the source settings.",
                 owner.uid, owner.name, owner.domain_uid or owner.domain, "nat_settings.ipv4-address/ipv6-address",
             )
             owner_issues.append(issue)

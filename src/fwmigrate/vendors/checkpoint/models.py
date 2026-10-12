@@ -19,6 +19,8 @@ class CollectionStatus(str, Enum):
     # Backward-compatible values used by historical/offline bundles.
     OK = "OK"
     ERROR = "ERROR"
+    NOT_ATTEMPTED = "NOT_ATTEMPTED"
+    UNKNOWN = "UNKNOWN"
 
 
 SUCCESS_COLLECTION_STATUSES = {
@@ -66,8 +68,14 @@ class CheckPointCollectionDiagnostic(BaseModel):
     command: str
     source_plane: str
     domain: str | None = None
+    domain_uid: str | None = None
+    domain_name: str | None = None
     package: str | None = None
+    package_uid: str | None = None
+    package_name: str | None = None
     layer: str | None = None
+    layer_uid: str | None = None
+    layer_name: str | None = None
     gateway: str | None = None
     status: CollectionStatus
     complete: bool = False

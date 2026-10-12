@@ -26,7 +26,7 @@ def test_excel_formula_like_source_text_is_safe():
     workbook = load_workbook(io.BytesIO(output.getvalue()), read_only=True)
     sheet = workbook["Hosts"]
     headers = [cell.value for cell in next(sheet.iter_rows())]
-    name_col = headers.index("name")
+    name_col = headers.index("Name")
     assert list(sheet.iter_rows(min_row=2, values_only=True))[0][name_col] == "'=1+1"
 
 def test_web_report_has_typed_source_derived_validation_and_traceability():
@@ -67,6 +67,34 @@ def test_nat_transform_is_exposed_in_preview_and_excel():
     row = next(sheet.iter_rows(min_row=2, values_only=True))
     assert row[headers.index("Source Kind")] == "automatic_object_settings"
     assert row[headers.index("Resolved Translation")] in (None, "")
+
+
+def test_dual_stack_preview_keeps_both_explicit_families_and_excel_labels_are_readable():
+    result = extract_checkpoint_source('{"responses":[{"command":"show-hosts","data":{"objects":[{"uid":"dual","name":"dual","type":"host","ipv4-address":"192.0.2.4","ipv6-address":"2001:db8::4"}]}}]}')
+    address = next(row for row in build_checkpoint_preview(result)["sections"]["addresses"] if row["name"] == "dual")
+    assert address["ipv4_value"] == "192.0.2.4"
+    assert address["ipv6_value"] == "2001:db8::4"
+    assert address["address_family"] == "Dual Stack"
+
+    output = io.BytesIO()
+    export_checkpoint_excel(result, output)
+    headers = next(load_workbook(io.BytesIO(output.getvalue()), read_only=True)["Hosts"].iter_rows(values_only=True))
+    assert {"Name", "Domain", "UID", "IPv4 Address", "IPv6 Address", "Additional Settings"} <= set(headers)
+
+
+def test_fast_and_full_exports_keep_the_same_checkpoint_source_rows():
+    result = extract_checkpoint_source('{"responses":[{"command":"show-hosts","collection_status":"SUCCESS_WITH_DATA","data":{"objects":[{"uid":"h","name":"web","type":"host","ipv4-address":"192.0.2.8"}]}}],"collection_completeness":{"show-hosts":{"command":"show-hosts","status":"SUCCESS_WITH_DATA","complete":true}}}')
+    books = []
+    for profile in ("fast", "full"):
+        output = io.BytesIO()
+        export_checkpoint_excel(result, output, profile=profile)
+        books.append(load_workbook(io.BytesIO(output.getvalue()), read_only=True))
+    fast, full = books
+    assert next(fast["Hosts"].iter_rows(values_only=True)) == next(full["Hosts"].iter_rows(values_only=True))
+    width = len(next(fast["Hosts"].iter_rows(values_only=True)))
+    fast_rows = [row + (None,) * (width - len(row)) for row in fast["Hosts"].iter_rows(min_row=2, values_only=True)]
+    full_rows = [row + (None,) * (width - len(row)) for row in full["Hosts"].iter_rows(min_row=2, values_only=True)]
+    assert fast_rows == full_rows
 
 
 

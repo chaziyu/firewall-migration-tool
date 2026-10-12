@@ -29,6 +29,7 @@ def validate_checkpoint_config(
     for check in (
         _validate_collection(collection or derived.collection_incomplete),
         _validate_scope(scope),
+        _validate_source_domain_scopes(config),
         _validate_duplicates(config),
         _validate_references(derived),
         _validate_policy_structure(config, derived),
@@ -81,6 +82,11 @@ def _validate_collection(items):
     for item in items:
         if item.complete and item.status != CollectionStatus.UNSUPPORTED_COMMAND:
             continue
+        if item.status == CollectionStatus.UNKNOWN:
+            result.append(_issue("collection_coverage_unknown", "collection", item.error or
+                "Collection coverage is unknown because no completeness manifest was supplied.",
+                severity="warning", command=item.command, field="collection"))
+            continue
         error = item.status in {CollectionStatus.API_ERROR, CollectionStatus.TRANSPORT_ERROR,
                                 CollectionStatus.PERMISSION_DENIED, CollectionStatus.ERROR}
         code = "selected_area_unsupported" if item.status == CollectionStatus.UNSUPPORTED_COMMAND else "collection_incomplete"
@@ -98,6 +104,22 @@ def _validate_scope(scope):
         return []
     return [_issue("scope_ambiguous", "scope", f"Source scope is ambiguous: {reason}.", field="scope")
             for reason in (scope.reasons or ["unspecified"])]
+
+
+def _validate_source_domain_scopes(config):
+    result = []
+    for field in type(config).model_fields:
+        for item in getattr(config, field):
+            conflict = item.raw_extra.get("domain_scope_conflict")
+            if conflict:
+                result.append(_issue("domain_scope_conflict", "scope",
+                    "Object domain metadata conflicts with the response domain; object scope was retained.",
+                    source=item, field="domain", reference=str(conflict.get("response_domain"))))
+            elif item.raw_extra.get("domain_scope_unresolved"):
+                result.append(_issue("domain_scope_unresolved", "scope",
+                    "Object domain metadata has no usable UID or name; response scope was retained.",
+                    source=item, field="domain"))
+    return result
 
 
 def _domain(item):

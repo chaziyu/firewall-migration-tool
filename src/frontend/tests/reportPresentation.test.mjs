@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { activeSubsection, interfaceTopologyRows, matchingSourceRows, reportSections, reportSectionRowCount, reportCounts, reportSearchText, compactValue, rowColumns, safeValue, defaultColumns, cellSummary, detailGroups, findingGroups, findingGroupKey } from '../src/features/report/reportPresentation.ts'
+import { activeSubsection, interfaceTopologyRows, matchingSourceRows, reportSections, reportSectionRowCount, reportCounts, reportSearchText, compactValue, rowColumns, safeValue, defaultColumns, cellSummary, detailGroups, findingGroups, findingGroupKey, fieldLabel } from '../src/features/report/reportPresentation.ts'
 
 test('each section is reachable once; inventory, topology, plural policies, and VPN retain their boundaries', () => {
   const sections = { policies: [{ policy_id: 1 }, { policy_id: 1 }], security_policies: [], interfaces: [{ name: 'same', vdom: 'a' }, { name: 'same', vdom: 'b' }], interface_topology: [{ name: 'same' }], policy_vpn_phase1: [{}], unknown_section: [null, 'unsupported', { unknown: [] }], metadata: { complete: false }, validation: [] }
@@ -213,4 +213,14 @@ test('finding navigation prefers stable Cisco FTD source IDs over duplicate name
   assert.deepEqual(matchingSourceRows(rows, {
     source_id: 'rule-b', object_name: 'Same', scope: 'fmc:Global',
   }), [rows[1]])
+})
+
+test('Check Point addresses show explicit IPv4 and IPv6 definitions', () => {
+  const row = { name: 'Dual', scope: 'Domain A', type: 'hosts', address_family: 'Dual Stack',
+    ipv4_value: '192.0.2.4', ipv6_value: '2001:db8::4', value: '192.0.2.4' }
+  assert.deepEqual(defaultColumns([row], 'addresses', 'checkpoint'), [
+    'name', 'scope', 'type', 'address_family', 'ipv4_value', 'ipv6_value', 'value',
+  ])
+  assert.equal(fieldLabel('ipv4_value'), 'IPv4 definition')
+  assert.equal(fieldLabel('ipv6_value'), 'IPv6 definition')
 })
