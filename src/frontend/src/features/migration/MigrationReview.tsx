@@ -12,7 +12,7 @@ import type { Decision, DecisionDocument, ReviewData, ReviewGroup } from './revi
 import { download } from './download'
 import { MigrationReviewQueues } from './components/MigrationReviewQueues'
 import { MigrationDecisionTable } from './components/MigrationDecisionTable'
-import { reconcileReviewDrafts } from './reviewDrafts'
+import { orderReviewGroups, reconcileReviewDrafts, reviewGroupActionable } from './reviewDrafts'
 import { MigrationInterfaceMappings } from './components/MigrationInterfaceMappings'
 import { useMigrationReviewActivity } from './hooks/useMigrationReviewActivity'
 import {
@@ -23,6 +23,17 @@ import {
   visibleReviewDecisions,
   visibleReviewGroups,
 } from './reviewPresentation'
+
+function focusMappingInput(key: string) {
+  requestAnimationFrame(() => {
+    const input = document.getElementById(`decision-${key}`)
+    if (!input) return
+    const details = input.closest('details')
+    if (details) details.open = true
+    input.scrollIntoView({ block: 'center' })
+    input.focus()
+  })
+}
 
 export function MigrationReview({ preview, vendor, onDecisionDocument, onContextChange, requestedDecision }: {
   preview: SourcePreviewData
@@ -76,6 +87,8 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
     invalidateActions,
   } = useMigrationReviewActivity({ source, targetSource, targetDevice })
   const manualToolsRef = useRef<HTMLDetailsElement>(null)
+  const bulkMappingsRef = useRef<HTMLDetailsElement>(null)
+  const focusNextGroupKey = useRef('')
 
   function setDrafts(value: SetStateAction<Record<string, string>>) {
     updateDrafts(value)
@@ -86,13 +99,13 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
 
   async function prepareValues(values: Map<string, string>, serviceNames = deterministicDraft?.context.service_names) {
     const overrides = { ...deterministicDraft?.context.overrides, ...Object.fromEntries(values) }
-    await loadReview(currentDocument(), targetSource, targetDevice, referenceRole, overrides, serviceNames)
+    return loadReview(currentDocument(), targetSource, targetDevice, referenceRole, overrides, serviceNames)
   }
 
   async function loadReview(document?: DecisionDocument, targetId = targetSource, device = targetDevice,
                             role = referenceRole, overrides = deterministicDraft?.context.overrides,
                             serviceNames = deterministicDraft?.context.service_names) {
-    if (!previewId) return
+    if (!previewId) return null
     const request = beginReviewRequest()
     try {
       onDecisionDocument?.(null)
@@ -107,24 +120,24 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
         ...(targetId ? { target_source: targetId } : {}),
         ...(device ? { target_device: device } : {}),
       })
-      if (!reviewRequestIsCurrent(request)) return
+      if (!reviewRequestIsCurrent(request)) return null
       setReview(result)
       setDeterministicDraft(result.draft)
       await saveWorkspace({ targetSource: targetId, targetDevice: result.target_device || device || '',
         referenceRole: role, decisionDocument: result.decision_document as unknown as MigrationDecisionDocument,
         deterministicDraft: result.draft })
-      if (!reviewRequestIsCurrent(request)) return
-      const currentGroupKey = selectedGroupKey || review?.review_groups.find((group) => group.queue === activeQueue)?.decision_keys[0]
+      if (!reviewRequestIsCurrent(request)) return null
+      const orderedGroups = orderReviewGroups(result.review_groups, [...result.draft.decisions, ...result.draft.configuration], result.decision_context ?? {})
+      const currentGroupKey = selectedGroupKey || orderedGroups.find((group) => group.queue !== 'COMPLETE')?.decision_keys[0]
       if (!selectedGroupKey) {
-        const first = result.review_groups.find((group) => group.source_kind === 'vdom' && group.queue !== 'COMPLETE')
-          ?? result.review_groups.find((group) => group.queue !== 'COMPLETE')
+        const first = orderedGroups.find((group) => group.queue !== 'COMPLETE')
         if (first) { setActiveQueue(first.queue); setSelectedGroupKey(first.decision_keys[0]) }
       }
-      const selected = result.review_groups.find((group) => group.decision_keys[0] === currentGroupKey)
+      const selected = orderedGroups.find((group) => group.decision_keys[0] === currentGroupKey)
       const previousSelected = review?.review_groups.find((group) => group.decision_keys[0] === currentGroupKey)
       if (selected?.queue === 'COMPLETE' && previousSelected?.queue !== 'COMPLETE') {
-        const next = result.review_groups.find((group) => group.queue === activeQueue && group.queue !== 'COMPLETE')
-          ?? result.review_groups.find((group) => group.queue !== 'COMPLETE')
+        const next = orderedGroups.find((group) => group.queue === activeQueue && group.queue !== 'COMPLETE')
+          ?? orderedGroups.find((group) => group.queue !== 'COMPLETE')
         if (next) { setActiveQueue(next.queue); setSelectedGroupKey(next.decision_keys[0]) }
         else { setActiveQueue('COMPLETE'); setSelectedGroupKey(selected.decision_keys[0]) }
       }
@@ -138,8 +151,9 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
       updateDrafts((current) => reconcileReviewDrafts(current, review?.decisions.decisions ?? [], result.decisions.decisions, Boolean(contextChanged), result.decision_candidates, proposals, previousProposals))
       setBulkPreview([])
       setSelectedKeys([])
+      return result
     } catch (cause) {
-      if (!reviewRequestIsCurrent(request)) return
+      if (!reviewRequestIsCurrent(request)) return null
       setError(cause instanceof Error ? cause.message : 'Could not load migration review')
       throw cause
     } finally {
@@ -181,12 +195,26 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
   }, [requestedDecision, review, setStatus])
 
   useEffect(() => {
-    if (!requestedDecision) return
-    const input = document.getElementById(`decision-${requestedDecision.key}`)
-    const destination = input ?? document.getElementById('migration-review-title')
-    destination?.scrollIntoView({ block: 'center' })
-    destination?.focus()
+    const key = requestedDecision?.key
+    if (!key || !review) return
+    const input = document.getElementById(`decision-${key}`)
+    if (input) {
+      const details = input.closest('details')
+      if (details) details.open = true
+      input.scrollIntoView({ block: 'center' })
+      input.focus()
+    } else if (requestedDecision) {
+      const title = document.getElementById('migration-review-title')
+      title?.scrollIntoView({ block: 'center' })
+      title?.focus()
+    }
   }, [requestedDecision, activeQueue, selectedGroupKey, review])
+
+  useEffect(() => {
+    if (!focusNextGroupKey.current || !review) return
+    const heading = document.getElementById(`review-group-heading-${focusNextGroupKey.current}`)
+    if (heading) { heading.scrollIntoView({ block: 'center' }); heading.focus(); focusNextGroupKey.current = '' }
+  }, [selectedGroupKey, review])
 
   if (vendor !== 'fortigate' || !previewId) return null
 
@@ -321,10 +349,38 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
   async function updateGroup(group: ReviewGroup) {
     const keys = new Set(group.decision_keys)
     const values = new Map(decisions.filter((item) => keys.has(item.key) && item.mode !== 'UNSUPPORTED')
-      .map((item) => [item.key, (drafts[item.key] ?? item.value ?? item.suggested_value ?? '').trim()] as const).filter(([, value]) => value))
-    await prepareValues(values)
-    const unfilled = group.decisions.filter((item) => item.mode !== 'UNSUPPORTED' && item.mode !== 'AUTO' && !(drafts[item.key] ?? item.value ?? item.suggested_value ?? '').trim()).length
-    setStatus(unfilled ? 'Draft updated. This group still needs additional values.' : 'Draft updated. Review and approve the proposed configuration.')
+      .map((item) => [item.key, (drafts[item.key] ?? item.value ?? item.suggested_value ?? '').trim()] as const))
+    const result = await prepareValues(values)
+    if (!result) return
+    const freshGroup = result.review_groups.find((item) => item.decision_keys.some((key) => group.decision_keys.includes(key)))
+    if (!freshGroup) {
+      setStatus('Proposal saved, but the current mapping is no longer present. Review the refreshed task list.')
+      return
+    }
+    const editable = freshGroup?.decisions.filter((item) => item.mode !== 'UNSUPPORTED' && item.mode !== 'AUTO') ?? []
+    const rows = [...result.draft.decisions, ...result.draft.configuration]
+    const unfilled = editable.some((item) => !(rows.find((row) => row.decision_key === item.key)?.proposed_value ?? item.value ?? item.suggested_value ?? '').trim())
+    const conflicts = Boolean(freshGroup?.conflicts?.length)
+    const validated = editable.every((item) => {
+      const row = rows.find((candidate) => candidate.decision_key === item.key)
+      return row && (row.status === 'READY' || row.approved)
+    })
+    if (unfilled || conflicts || !validated) {
+      setStatus(unfilled ? 'Proposal saved, but required fields remain.' : conflicts ? 'Proposal saved, but this mapping still has conflicts.' : 'Proposal saved, but server validation still has unresolved prerequisites.')
+      return
+    }
+    setStatus('Proposal saved — awaiting approval.')
+    const ordered = orderReviewGroups(result.review_groups, rows, result.decision_context ?? {})
+    const next = ordered.find((candidate) => reviewGroupActionable(candidate, rows) && !candidate.decision_keys.some((key) => group.decision_keys.includes(key)))
+    if (next) {
+      focusNextGroupKey.current = next.decision_keys[0]
+      setActiveQueue(next.queue)
+      setSelectedGroupKey(next.decision_keys[0])
+      setSearch('')
+      setVdomFilter('all')
+    } else if (!ordered.some((candidate) => candidate.queue !== 'COMPLETE')) {
+      setStatus('Proposal saved — awaiting approval.')
+    }
   }
 
   async function applyGroupAction(action: NonNullable<ReviewGroup['actions']>[number]) {
@@ -339,7 +395,9 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
   const decisions = review?.decisions.decisions ?? []
   const suggestions = reviewSuggestions(decisions)
   const devices = targetDevices
-  const reviewGroups = review?.review_groups ?? []
+  const reviewGroups = review ? orderReviewGroups(review.review_groups, [...(deterministicDraft?.decisions ?? []), ...(deterministicDraft?.configuration ?? [])], review.decision_context ?? {}) : []
+  const proposalRows = [...(deterministicDraft?.decisions ?? []), ...(deterministicDraft?.configuration ?? [])]
+  const actionableGroups = reviewGroups.filter((group) => reviewGroupActionable(group, proposalRows))
   const vdoms = reviewVdoms(reviewGroups)
   const queueNames = [...reviewQueueNames]
   const visibleGroups = visibleReviewGroups(reviewGroups, activeQueue, vdomFilter, search)
@@ -356,12 +414,12 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
   function clearSelected() {
     const selected = new Set(selectedKeys)
     const overrides = Object.fromEntries(Object.entries(deterministicDraft?.context.overrides ?? {}).filter(([key]) => !selected.has(key)))
-    void run(() => loadReview(currentDocument(decisions.map((item) => selected.has(item.key) ? {
+    void run(async () => { await loadReview(currentDocument(decisions.map((item) => selected.has(item.key) ? {
       ...item, value: null, mode: item.mode === 'AUTO' ? 'REQUIRED' : item.mode, review_state: 'PENDING',
       evidence_source: null, evidence_type: null, evidence_value: null, target_object: null,
       evidence_target_digest: null, evidence_target_device: null,
       approved_operation: null, approval_context: null,
-    } : item)), targetSource, targetDevice, referenceRole, overrides), 'Selected allocations cleared. Derived proposals may be suggested again.')
+    } : item)), targetSource, targetDevice, referenceRole, overrides) }, 'Selected allocations cleared. Derived proposals may be suggested again.')
   }
 
   return (
@@ -391,7 +449,7 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
           </select>
         </label>}
         {targetSource && <label className="field">Reference role<select value={referenceRole} disabled={busy}
-          onChange={(event) => { const role = event.target.value as ReferenceRole; setReferenceRole(role); void run(() => loadReview(currentDocument(), targetSource, targetDevice, role)) }}>
+          onChange={(event) => { const role = event.target.value as ReferenceRole; setReferenceRole(role); void run(async () => { await loadReview(currentDocument(), targetSource, targetDevice, role) }) }}>
           <option value="DESTINATION">Destination configuration</option><option value="TEMPLATE">Architecture template</option>
         </select></label>}
       </div>
@@ -404,23 +462,23 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
         <nav className="migration-view-nav" aria-label="Design review stages">
           <button type="button" aria-pressed={reviewSection === 'mappings'} onClick={() => setReviewSection('mappings')}>1 Resolve mappings</button>
           <button type="button" aria-pressed={reviewSection === 'configuration'} onClick={() => setReviewSection('configuration')}>2 Review configuration</button>
-          <button type="button" disabled={busy || !!changedMappings.length} onClick={() => void run(() => loadReview(currentDocument()), 'Design revalidated.')}>Revalidate design</button>
+          <button type="button" disabled={busy || !!changedMappings.length} onClick={() => void run(async () => { await loadReview(currentDocument()) }, 'Design revalidated.')}>Revalidate design</button>
         </nav>
         {!!changedMappings.length && <div className="review-work-card" role="status"><p>{changedMappings.length} staged mapping edits. Update the draft before approving configuration.</p><button type="button" className="primary-button" disabled={busy} onClick={() => reviewProposals(changedMappings.map((row) => row.decision_key!), (decision) => drafts[decision.key])}>Review staged mappings</button></div>}
         {reviewSection === 'configuration' && deterministicDraft && <MigrationDesignReview key={deterministicDraft.digest} draft={deterministicDraft} busy={busy || !!changedMappings.length}
           approvedItems={Object.keys((review.decision_document.design_approval as { configuration?: Record<string, unknown> } | undefined)?.configuration || {})}
-          onPrepare={(overrides) => void run(() => loadReview(currentDocument(), targetSource, targetDevice, referenceRole, overrides), 'Draft updated. Review the changed configuration.')}
+          onPrepare={(overrides) => void run(async () => { await loadReview(currentDocument(), targetSource, targetDevice, referenceRole, overrides) }, 'Draft updated. Review the changed configuration.')}
           onApprove={(groups) => void run(() => approveDesign(groups), 'Selected design groups approved.')}
-          onRenameService={(row, name) => { const names = deterministicDraft.context.service_names ?? {}; void run(() => loadReview(currentDocument(), targetSource, targetDevice, referenceRole, deterministicDraft.context.overrides, { ...names, [row.source_vdom]: { ...names[row.source_vdom], [row.source_name]: name } }), 'Service name proposed. Review and approve the rebuilt configuration.') }} />}
+          onRenameService={(row, name) => { const names = deterministicDraft.context.service_names ?? {}; void run(async () => { await loadReview(currentDocument(), targetSource, targetDevice, referenceRole, deterministicDraft.context.overrides, { ...names, [row.source_vdom]: { ...names[row.source_vdom], [row.source_name]: name } }) }, 'Service name proposed. Review and approve the rebuilt configuration.') }} />}
         <section hidden={reviewSection !== 'mappings'} aria-label="Resolve mappings">
         <p>Choose VSYS and virtual-router ownership, then allocate parent ports. Changes remain proposals until design approval.</p>
-        <p className="migration-counts"><strong>{reviewGroups.filter((item) => item.queue !== 'COMPLETE').length} mapping groups remaining · {reviewGroups.filter((item) => item.queue === 'CONFLICT').length} conflict groups</strong></p>
-        {review.architecture_questions?.[0] && <button className="secondary-button" type="button" onClick={() => {
-          const question = review.architecture_questions![0]
-          const group = reviewGroups.find((item) => item.source_vdom === question.source_vdom && item.source_name === question.source_name)
-          if (group) { setActiveQueue(group.queue); setSearch(''); setVdomFilter('all'); setSelectedGroupKey(group.decision_keys[0]) }
-        }}>Recommended next mapping: {review.architecture_questions[0].source_vdom} · {review.architecture_questions[0].source_name}</button>}
-        <details className="migration-review-tools"><summary>Decision counts and impact</summary><p className="migration-counts">{decisions.filter((item) => item.mode !== 'AUTO' && item.mode !== 'UNSUPPORTED' && item.review_state !== 'CONFIRMED').length} remaining decisions · {reviewGroups.filter((item) => item.queue !== 'COMPLETE').length} remaining groups. Affected-object counts are per group and may overlap.</p></details>
+         <p className="migration-counts"><strong>{reviewGroups.filter((item) => item.queue !== 'COMPLETE').length} mapping groups remaining · {reviewGroups.filter((item) => item.queue === 'CONFLICT').length} conflict groups</strong> Task order follows returned prerequisites. Affected-object counts are labelled estimates.</p>
+         {actionableGroups[0] && <button className="secondary-button" type="button" onClick={() => {
+           const group = actionableGroups[0]
+           setActiveQueue(group.queue); setSearch(''); setVdomFilter('all'); setSelectedGroupKey(group.decision_keys[0])
+         }}>Recommended next mapping: {actionableGroups[0].source_vdom} · {actionableGroups[0].source_name}</button>}
+         {!actionableGroups.length && <button className="primary-button" type="button" onClick={() => setReviewSection('configuration')}>Review proposed configuration</button>}
+         <details className="migration-review-tools"><summary>Decision counts and impact</summary><p className="migration-counts">{decisions.filter((item) => item.mode !== 'AUTO' && item.mode !== 'UNSUPPORTED' && item.review_state !== 'CONFIRMED').length} decision fields remaining · {reviewGroups.filter((item) => item.queue !== 'COMPLETE').length} mapping groups remaining. Affected-object counts are per group and may overlap.</p></details>
         <details ref={manualToolsRef} className="migration-review-tools" open><summary>Ownership, zones and selected mapping</summary>
         <MigrationReviewQueues
           review={review}
@@ -440,6 +498,7 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
           drafts={drafts}
           setDrafts={setDrafts}
           decisions={decisions}
+           proposals={proposalRows}
           busy={busy}
           run={run}
           applyRuleSuggestion={applyRuleSuggestion}
@@ -447,10 +506,10 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
           updateGroup={updateGroup}
         />
         </details>
-        <MigrationInterfaceMappings review={review} drafts={drafts} setDraft={(key, value) => setDrafts((current) => ({ ...current, [key]: value }))}
+        <details ref={bulkMappingsRef} className="migration-review-tools"><summary>Bulk edit interfaces</summary><MigrationInterfaceMappings review={review} drafts={drafts} setDraft={(key, value) => setDrafts((current) => ({ ...current, [key]: value }))}
           proposals={deterministicDraft?.decisions}
           selectedKeys={selectedKeys} setSelectedKeys={(keys) => { setSelectedKeys(keys); setBulkPreview([]) }} busy={busy} reviewSelected={reviewProposals}
-          openDetails={(key) => { const group = reviewGroups.find((item) => item.decision_keys.includes(key)); if (group) { if (manualToolsRef.current) manualToolsRef.current.open = true; setActiveQueue(group.queue); setSelectedGroupKey(group.decision_keys[0]); setSearch(''); setVdomFilter('all'); manualToolsRef.current?.scrollIntoView({ block: 'start' }) } }} />
+          openDetails={(key) => { const group = reviewGroups.find((item) => item.decision_keys.includes(key)); if (group) { if (manualToolsRef.current) manualToolsRef.current.open = true; if (bulkMappingsRef.current) bulkMappingsRef.current.open = true; setActiveQueue(group.queue); setSelectedGroupKey(group.decision_keys[0]); setSearch(''); setVdomFilter('all'); manualToolsRef.current?.scrollIntoView({ block: 'start' }); focusMappingInput(key) } }} /></details>
         </section>
         <details className="migration-review-tools"><summary>Advanced tools and mapping files</summary>
         <details className="migration-review-tools"><summary>Import / export target intent</summary><div className="migration-toolbar">

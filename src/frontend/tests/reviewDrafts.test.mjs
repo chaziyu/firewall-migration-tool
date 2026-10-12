@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { candidateLabel, confirmationEvidenceType, decisionLabel, interfaceMappingRows, reconcileReviewDrafts, draftDependencies, portExceptionGroups } from '../src/features/migration/reviewDrafts.ts'
+import { candidateLabel, confirmationEvidenceType, decisionLabel, interfaceMappingRows, reconcileReviewDrafts, draftDependencies, orderReviewGroups, portExceptionGroups, reviewGroupActionable } from '../src/features/migration/reviewDrafts.ts'
 
 test('proposal edits refresh every editor while unrelated unsaved inputs survive', () => {
   const decisions = [{ key: 'port', value: null, suggested_value: null, review_state: 'PENDING' },
@@ -96,7 +96,49 @@ test('interface selection excludes draft collisions, reserved and competing sugg
   assert.equal(candidateLabel(candidates.branch[0]), 'Already assigned to root / port2')
   candidates.root[0].contested = true
   assert.equal(interfaceMappingRows(decisions, {}, candidates)[0].ready, false)
-  assert.equal(candidateLabel({ value: 'ethernet1/4', supporting_evidence: ['INTERFACE_FAMILY_MATCH', 'physical interface family'] }), 'Available interface')
+  assert.equal(candidateLabel({ value: 'ethernet1/4', supporting_evidence: ['INTERFACE_FAMILY_MATCH', 'physical interface family'] }), 'Available interface — no match evidence')
+  assert.equal(candidateLabel({ value: 'trust' }, 'target_zone'), 'Available zone — no match evidence')
+  assert.equal(candidateLabel({ value: 'vr1' }, 'target_virtual_router'), 'Available virtual router — no match evidence')
+})
+
+test('mapping task order follows prerequisites before category and impact preferences', () => {
+  const groups = [
+    { decision_keys: ['route'], source_vdom: 'root', source_kind: 'static_route', source_name: 'default', queue: 'NEEDS_INPUT', affected_count: 500 },
+    { decision_keys: ['child'], source_vdom: 'root', source_kind: 'interface', source_name: 'vlan10', queue: 'NEEDS_INPUT', affected_count: 30 },
+    { decision_keys: ['zone'], source_vdom: 'root', source_kind: 'zone', source_name: 'dmz', queue: 'NEEDS_INPUT', affected_count: 100 },
+    { decision_keys: ['parent'], source_vdom: 'root', source_kind: 'interface', source_name: 'port8', queue: 'NEEDS_INPUT', affected_count: 2 },
+    { decision_keys: ['root-vdom'], source_vdom: 'root', source_kind: 'vdom', source_name: 'root', queue: 'NEEDS_INPUT', affected_count: 0 },
+    { decision_keys: ['branch-parent'], source_vdom: 'branch', source_kind: 'interface', source_name: 'port8', queue: 'NEEDS_INPUT', affected_count: 2 },
+  ]
+  const rows = [
+    { decision_key: 'root-vdom', status: 'NEEDS_INPUT', dependencies: [] },
+    { decision_key: 'parent', status: 'NEEDS_INPUT', dependencies: ['root-vdom'] },
+    { decision_key: 'child', status: 'NEEDS_INPUT', dependencies: ['parent'] },
+    { decision_key: 'zone', status: 'NEEDS_INPUT', dependencies: ['child'] },
+    { decision_key: 'route', status: 'NEEDS_INPUT', dependencies: ['zone'] },
+    { decision_key: 'branch-parent', status: 'NEEDS_INPUT', dependencies: [] },
+  ]
+  const original = structuredClone(groups)
+  const ordered = orderReviewGroups(groups, rows, { parent: { source_type: 'physical' }, child: { source_parent: 'port8', source_type: 'vlan' } })
+  const keys = ordered.map((group) => group.decision_keys[0])
+  assert.ok(keys.indexOf('root-vdom') < keys.indexOf('parent'))
+  assert.ok(keys.indexOf('parent') < keys.indexOf('child'))
+  assert.ok(keys.indexOf('child') < keys.indexOf('zone'))
+  assert.ok(keys.indexOf('zone') < keys.indexOf('route'))
+  assert.deepEqual(groups, original)
+  assert.equal(new Set(ordered.map((group) => group.source_vdom + group.source_name)).size, groups.length)
+})
+
+test('missing prerequisite rows stay visible and are not classified actionable', () => {
+  const group = { decision_keys: ['child'], queue: 'NEEDS_INPUT' }
+  const rows = [{ decision_key: 'child', status: 'NEEDS_INPUT', dependencies: ['missing-parent'] }]
+  assert.equal(reviewGroupActionable(group, rows), false)
+  assert.equal(reviewGroupActionable(group, [{ ...rows[0], dependencies: [] }]), true)
+  assert.equal(reviewGroupActionable({ ...group, queue: 'COMPLETE' }, rows), false)
+  assert.equal(reviewGroupActionable({ decision_keys: ['parent', 'child'], queue: 'NEEDS_INPUT' }, [
+    { decision_key: 'parent', status: 'NEEDS_INPUT', dependencies: [] },
+    { decision_key: 'child', status: 'NEEDS_INPUT', dependencies: ['parent'] },
+  ]), true)
 })
 
 test('prefill preserves engineer edits across impact refreshes and resets stale evidence', () => {

@@ -27,6 +27,7 @@ export type Candidate = {
   available?: boolean
   contested?: boolean
   assigned_to?: Array<{ source_vdom: string; source_name: string }>
+  reason?: string
 }
 
 

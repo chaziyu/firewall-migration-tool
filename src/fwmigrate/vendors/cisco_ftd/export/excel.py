@@ -5,7 +5,7 @@ import json
 from typing import Any
 
 from ....source_reporting.options import ExcelExportProfile
-from ....source_reporting.excel_style import append_report_row, finish_report_workbook
+from ....source_reporting.excel_style import append_report_row, append_report_title, finish_report_workbook
 from .excel_schema import SHEET_HEADERS, SHEET_ORDER
 
 
@@ -218,6 +218,8 @@ def export_ftd_excel(result: Any, output: Any, *, profile: ExcelExportProfile | 
     for name in SHEET_ORDER:
         sheet = workbook.create_sheet(name)
         if name == "Summary":
+            if profile is ExcelExportProfile.FAST:
+                append_report_title(sheet, "Cisco FTD Configuration Report")
             append_report_row(sheet, ("Field", "Value"))
             collection_provided = config.collection_metadata.provided
             for key, value in {"Vendor": "Cisco FTD", "Input Source": config.input_source_type,
@@ -274,7 +276,7 @@ def export_ftd_excel(result: Any, output: Any, *, profile: ExcelExportProfile | 
             append_report_row(sheet, SHEET_HEADERS[name])
             for row in rows[name]:
                 append_report_row(sheet, tuple(_text(value) for value in row))
-    finish_report_workbook(workbook)
+    finish_report_workbook(workbook, summary_title="Cisco FTD Configuration Report")
     if hasattr(output, "write"):
         workbook.save(output)
         return output

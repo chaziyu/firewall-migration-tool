@@ -37,6 +37,7 @@ export function MigrationDesignReview({ draft, busy, approvedItems, onPrepare, o
   const approvalBlocked = approvalPreview.some((key) => !byKey.has(key) || (byKey.get(key)?.status !== 'READY' && !isApproved(byKey.get(key)!)))
   return <section aria-label="Deterministic design review" className="review-work-card">
     <h3>Proposed configuration</h3>
+    <p>Saved proposals are validated draft values. Only the groups you explicitly approve enter the deterministic design.</p>
     <p>{draft.destination_verified ? 'Checked against the uploaded destination configuration.' : 'Destination unverified. Hardware capacity, licensing and collisions need destination evidence.'}</p>
     <div className="migration-summary">
       <p><strong>Mappings</strong><br />{mappingCounts.READY || 0} ready · {mappingCounts.NEEDS_INPUT || 0} need input · {mappingCounts.CONFLICT || 0} conflicts</p>

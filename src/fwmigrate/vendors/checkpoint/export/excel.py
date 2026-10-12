@@ -10,7 +10,7 @@ from openpyxl.utils import get_column_letter
 
 from fwmigrate.extraction.sanitize import sanitize_source_attributes
 from ....source_reporting.options import ExcelExportProfile
-from ....source_reporting.excel_style import append_report_row, finish_report_workbook
+from ....source_reporting.excel_style import append_report_row, append_report_title, finish_report_workbook
 from ..validation.index import CheckPointValidationIndex
 from .excel_schema import DERIVED_SHEETS, SHEET_HEADERS, SHEET_ORDER, SOURCE_SHEETS
 
@@ -121,6 +121,8 @@ def export_checkpoint_excel(result: Any, output: Any, *, profile: ExcelExportPro
     for name in SHEET_ORDER:
         sheet = workbook.create_sheet(name)
         if name == "Summary":
+            if profile is ExcelExportProfile.FAST:
+                append_report_title(sheet, "Check Point Configuration Report")
             append_report_row(sheet, ("Metric", "Count / Value"))
             append_report_row(sheet, ("Source Objects", sum(len(getattr(result.config, f)) for f in SOURCE_SHEETS.values())))
             append_report_row(sheet, ("Derived Views", sum(len(_derived_rows(result, s)) for s in DERIVED_SHEETS)))
@@ -180,7 +182,7 @@ def export_checkpoint_excel(result: Any, output: Any, *, profile: ExcelExportPro
                     groups[key] = groups.get(key, 0) + 1
             for (command, scope, status, reason), count in groups.items(): append_report_row(sheet, tuple(_excel_safe(v) for v in (command, scope, count, reason or status, command)))
         else: append_report_row(sheet, SHEET_HEADERS[name])
-    finish_report_workbook(workbook)
+    finish_report_workbook(workbook, summary_title="Check Point Configuration Report")
     if hasattr(output, "write"):
         workbook.save(output); return output
     path = Path(output); workbook.save(path); return path

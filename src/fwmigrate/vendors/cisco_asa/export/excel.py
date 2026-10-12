@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any
 
 from ....source_reporting.options import ExcelExportProfile
-from ....source_reporting.excel_style import append_report_row, finish_report_workbook
+from ....source_reporting.excel_style import append_report_row, append_report_title, finish_report_workbook
 from .excel_schema import SHEET_HEADERS, SHEET_ORDER
 from ..presentation_schema import DERIVED_SECTIONS, SOURCE_SECTIONS
 from ..presentation import excel_value, has_source_evidence, source_value
@@ -83,6 +83,8 @@ def export_asa_excel(result: Any, output: Any, *, profile: ExcelExportProfile | 
             continue
         sheet = workbook.create_sheet(name)
         if name == "Summary":
+            if profile is ExcelExportProfile.FAST:
+                append_report_title(sheet, "Cisco ASA Configuration Report")
             append_report_row(sheet, ("Field", "Value"))
             for key, value in {
                 "Vendor": "Cisco ASA", "Hostname": config.hostname,
@@ -274,7 +276,7 @@ def export_asa_excel(result: Any, output: Any, *, profile: ExcelExportProfile | 
             for item in values:
                 append_report_row(sheet, tuple(excel_value(value) for value in _derived_row(name, item)))
             continue
-    finish_report_workbook(workbook)
+    finish_report_workbook(workbook, summary_title="Cisco ASA Configuration Report")
     if hasattr(output, "write"):
         workbook.save(output)
         return output
