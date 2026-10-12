@@ -4,7 +4,7 @@ from __future__ import annotations
 
 
 SHEET_ORDER: tuple[str, ...] = (
-    "Summary", "Review Required",
+    "Summary", "Review Required", "Review Summary",
     "DNS Settings", "NTP Settings", "NTP Servers",
     "Interfaces", "Interface Secondary IPs", "Zones",
     "Addresses", "Wildcard FQDN", "Address Groups", "Services", "Service Groups",
@@ -24,6 +24,7 @@ SHEET_ORDER: tuple[str, ...] = (
 SHEET_HEADERS: dict[str, tuple[str, ...]] = {
     "Summary": (),
     "Review Required": ("Severity", "Category", "Object", "VDOM", "Field", "Issue / Review Reason", "Source Sheet"),
+    "Review Summary": ("Issue Group", "Severity", "Category", "VDOM", "Field", "Issue / Review Reason", "Occurrences", "Affected Objects", "Object Sample", "First Detail"),
     "DNS Settings": ("Setting", "Value", "Source Path", "Analysis Status", "Review Reasons"),
     "NTP Settings": ("Setting", "Value", "Source Path", "Analysis Status", "Review Reasons"),
     "NTP Servers": ("Server ID", "Setting", "Value", "Source Path", "Analysis Status", "Review Reasons"),
@@ -33,7 +34,7 @@ SHEET_HEADERS: dict[str, tuple[str, ...]] = {
         "Zone", "Members", "Status", "Description", "VDOM", "Topology Issues", "Analysis Status", "Review Reasons",
         "Source Explicit Fields", "Additional Settings",
     ),
-    "Interface Secondary IPs": ("Interface", "ID", "IP / Prefix", "Management Access", "HA Priority", "Analysis Status", "Review Reasons", "Additional Settings"),
+    "Interface Secondary IPs": ("Interface", "ID", "IP / Prefix", "Management Access", "HA Priority", "VDOM", "Analysis Status", "Review Reasons", "Additional Settings"),
     "Zones": ("Name", "Members", "Intrazone", "Description", "VDOM", "Analysis Status", "Review Reasons", "Additional Settings"),
     "Addresses": ("Name", "Type", "Value", "Address Family", "Associated Interface", "Allow Routing", "Tags", "Description", "VDOM", "Analysis Status", "Review Reasons", "Additional Settings"),
     "Wildcard FQDN": ("Name", "Wildcard FQDN", "Description", "VDOM", "Analysis Status", "Review Reasons", "Additional Settings"),
@@ -41,7 +42,7 @@ SHEET_HEADERS: dict[str, tuple[str, ...]] = {
     "Services": ("Name", "Source Service", "Protocol", "Destination Port", "Source Port", "Protocol Number", "ICMP Type", "ICMP Code", "Generated", "Description", "VDOM", "Analysis Status", "Review Reasons"),
     "Service Groups": ("Name", "Members", "Generated", "Description", "VDOM", "Analysis Status", "Review Reasons"),
     "Policies": (
-        "Rule #", "Policy Name", "Source Name", "Source Interface", "Source Addresses", "Source Address Negate",
+        "Rule #", "Policy Order", "Action Origin", "Policy Name", "Source Name", "Source Interface", "Source Addresses", "Source Address Negate",
         "Source IPv6 Addresses", "Source IPv6 Address Negate", "Destination Interface", "Destination Addresses",
         "Destination Address Negate", "Destination IPv6 Addresses", "Destination IPv6 Address Negate", "Services", "Service Negate",
         "Action", "Schedule", "Status", "NAT Enabled", "SNAT Type", "SNAT Address", "IP Pool Name", "VPN Tunnel",
@@ -50,7 +51,7 @@ SHEET_HEADERS: dict[str, tuple[str, ...]] = {
         "Protocol Options", "Per-IP Shaper", "Review Reasons", "Source Explicit Fields", "Additional Settings",
     ),
     "Security Policies": ("Policy ID", "Action", "Application Categories", "VDOM", "Analysis Status", "Review Reasons", "Source Explicit Fields", "Additional Settings"),
-    "NAT Rules": ("Rule #", "Policy Name", "Source Interface", "Destination Interface", "Source Addresses", "Source IPv6 Addresses", "Destination Addresses", "Destination IPv6 Addresses", "Services", "NAT Enabled", "SNAT Type", "SNAT Address", "IP Pool Name", "Egress Interfaces", "VDOM", "Analysis Status", "Review Reasons"),
+    "NAT Rules": ("Rule #", "Policy Order", "Policy Name", "Source Interface", "Destination Interface", "Source Addresses", "Source IPv6 Addresses", "Destination Addresses", "Destination IPv6 Addresses", "Services", "NAT Enabled", "SNAT Type", "SNAT Address", "IP Pool Name", "Egress Interfaces", "VDOM", "Analysis Status", "Review Reasons"),
     "IP Pools": ("Name", "Address Family", "Type", "Start IP", "End IP", "Source Start IP", "Source End IP", "Start Port", "End Port", "Associated Interface", "ARP Reply", "ARP Interface", "Permit Any Host", "Excluded IPs", "NAT64", "Add NAT64 Route", "NAT46", "Add NAT46 Route", "Description", "VDOM", "Analysis Status", "Review Reasons", "Additional Settings"),
     "Virtual IPs": ("Name", "Address Family", "Type", "Status", "External IP", "External Address Objects", "External Interface", "Mapped IPs", "Real Servers", "Real Server Count", "Port Forward", "Protocol", "External Port", "Mapped Port", "ARP Reply", "NAT Source VIP", "NAT64", "NAT66", "NDP Reply", "Services", "Load Balance Method", "Server Type", "Monitors", "Description", "VDOM", "Analysis Status", "Review Reasons", "Additional Settings"),
     "VIP Real Servers": ("VIP Name", "Server ID", "IP", "Address", "Port", "Status", "Weight", "Monitors", "VDOM", "Analysis Status", "Review Reasons", "Additional Settings"),
@@ -73,7 +74,7 @@ SHEET_HEADERS: dict[str, tuple[str, ...]] = {
     "SSL VPN Realms": ("URL Path", "Login Page Configured", "Login Page Length", "Maximum Concurrent Users", "NAS IP", "RADIUS Port", "RADIUS Server", "Virtual Host", "Virtual Host Only", "Virtual Host Server Certificate", "VDOM", "Analysis Status", "Review Reasons", "Additional Settings"),
     "SSL VPN Clients": ("Name", "Certificate", "Class ID", "Comment", "Distance", "Interface", "IPv4 Subnets", "IPv6 Subnets", "Peer", "Port", "Priority", "PSK Configured", "Realm", "Server", "Source IP", "Status", "User", "VDOM", "Analysis Status", "Review Reasons", "Additional Settings"),
     "SSL VPN Portals": ("Name", "Tunnel Mode", "IPv6 Tunnel Mode", "IP Pools", "IPv6 Pools", "Split Tunneling", "Split Tunneling Routing Addresses", "Limit User Logins", "FortiClient Download", "VDOM", "Analysis Status", "Review Reasons", "Additional Settings"),
-    "SSL VPN Authentication Rules": ("ID", "Auth", "Cipher", "Client Certificate", "Realm", "Source Interfaces", "Source Addresses", "Source Address Negate", "Users", "User Peer", "Groups", "Portal", "Analysis Status", "Review Reasons", "Additional Settings"),
+    "SSL VPN Authentication Rules": ("ID", "Auth", "Cipher", "Client Certificate", "Realm", "Source Interfaces", "Source Addresses", "Source Address Negate", "Users", "User Peer", "Groups", "Portal", "VDOM", "Analysis Status", "Review Reasons", "Additional Settings"),
     "Local Users": ("Name", "ID", "Status", "Type", "Password Configured", "Password Time", "Two Factor", "Two Factor Authentication", "Two Factor Notification", "FortiToken", "Email", "LDAP Server", "RADIUS Server", "TACACS+ Server", "Authentication Timeout", "Password Policy", "Workstation", "Username Sensitivity", "PPK Identity", "PPK Secret Configured", "VDOM", "Analysis Status", "Review Reasons", "Additional Settings"),
     "User Groups": ("Name", "ID", "Group Type", "Members", "Match Count", "Authentication Timeout", "Auth Concurrent Override", "Auth Concurrent Value", "VDOM", "Analysis Status", "Review Reasons", "Additional Settings"),
     "User Group Matches": ("User Group", "Match ID", "Server Name", "Group Name", "VDOM", "Analysis Status", "Review Reasons", "Additional Settings"),
@@ -86,7 +87,7 @@ SHEET_HEADERS: dict[str, tuple[str, ...]] = {
     "Security Profiles": ("Name", "Antivirus", "IPS Sensor", "Application List", "Web Filter", "DNS Filter", "File Filter", "SSL/SSH Profile", "VDOM", "Analysis Status", "Review Reasons", "Additional Settings"),
     "External Resources": ("Name", "Resource", "Type", "Refresh Rate", "Comments", "VDOM", "Analysis Status", "Review Reasons", "Additional Settings"),
     "Unresolved References": ("Source VDOM", "Source Type", "Source Object", "Field", "Reference", "Expected Type", "Reason"),
-    "Unsupported": ("Section", "Source Records", "Primitive Registration", "Model Coverage", "Reason", "Raw Capture Location"),
+    "Unsupported": ("Section", "VDOMs", "Source Records", "Primitive Registration", "Model Coverage", "Reason", "Source Evidence", "Raw Capture Location"),
     "FortiGate Source Inventory": ("Domain", "VDOM", "Scope Type", "Source Path", "Object", "Parent / Subsection", "Operation", "Setting", "Value", "Primitive Registration", "Extraction Status", "Raw Extra Entries"),
     "Extraction Coverage": ("Source Section", "Found", "Source Records", "Primitive Registration", "Model Coverage", "Typed Objects", "Raw Extra Objects", "Raw Extra Entries", "Model Gaps", "Source-only Records", "Line Start", "Line End", "Notes"),
 }

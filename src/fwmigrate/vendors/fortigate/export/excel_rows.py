@@ -46,6 +46,7 @@ def rows_for_sheet(
 ) -> Iterable[Mapping[str, Any]]:
     builders = {
         "Review Required": _review_rows,
+        "Review Summary": _review_summary_rows,
         "Interfaces": _interface_rows,
         "Interface Secondary IPs": _interface_secondary_rows,
         "Zones": _zone_rows,
@@ -120,6 +121,25 @@ def _review_rows(context: _ExcelContext, headers: Sequence[str]) -> Iterator[dic
             "Source Sheet": _sheet_for_domain(issue.domain),
         }
         yield row
+
+
+def _review_summary_rows(context: _ExcelContext, headers: Sequence[str]) -> Iterator[dict[str, Any]]:
+    del headers
+    groups: dict[tuple[Any, ...], list[Any]] = {}
+    for detail_row, issue in enumerate(context.validation.issues, start=4):
+        key = (issue.severity.value, issue.domain, issue.vdom, issue.field, issue.message)
+        groups.setdefault(key, []).append((detail_row, issue.object_name))
+    for key in sorted(groups, key=lambda value: tuple("" if part is None else str(part) for part in value)):
+        details = groups[key]
+        objects = list(dict.fromkeys(name for _, name in details))
+        object_sample = ", ".join(map(str, [name for name in objects if name not in (None, "")][:5]))
+        yield {
+            "Issue Group": " | ".join(str(part) for part in key if part not in (None, "")),
+            "Severity": key[0], "Category": key[1], "VDOM": key[2], "Field": key[3],
+            "Issue / Review Reason": key[4], "Occurrences": len(details),
+            "Affected Objects": len(objects), "Object Sample": object_sample,
+            "First Detail": f"Review Required!A{details[0][0]}",
+        }
 
 
 def _interface_rows(context: _ExcelContext, headers: Sequence[str]) -> Iterator[dict[str, Any]]:
@@ -292,6 +312,7 @@ def _interface_secondary_rows(context: _ExcelContext, headers: Sequence[str]) ->
                 "IP / Prefix": item.ip,
                 "Management Access": item.allowaccess,
                 "HA Priority": item.ha_priority,
+                "VDOM": interface.vdom,
                 "Additional Settings": _additional_settings(item, sheet_name="Interface Secondary IPs"),
             }
             _add_analysis_status(
@@ -439,6 +460,7 @@ def _service_group_rows(context: _ExcelContext, headers: Sequence[str]) -> Itera
 
 
 def _policy_rows(context: _ExcelContext, headers: Sequence[str]) -> Iterator[dict[str, Any]]:
+    order_by_identity = _policy_orders(context)
     nat = {
         (item.vdom, item.policy_id): item
         for item in context.derived.nat
@@ -447,6 +469,8 @@ def _policy_rows(context: _ExcelContext, headers: Sequence[str]) -> Iterator[dic
         nat_item = nat.get((item.vdom, item.policy_id))
         row = {
             "Rule #": item.policy_id,
+            "Policy Order": order_by_identity.get((item.vdom, item.policy_id)),
+            "Action Origin": "EXPLICIT" if "action" in item.explicit_fields else "FORTIOS_DEFAULT",
             "Policy Name": item.name,
             "Source Name": item.name,
             "Source Interface": item.srcintf,
@@ -632,9 +656,11 @@ def _nat_rows(
     context: _ExcelContext,
     headers: Sequence[str],
 ) -> Iterator[dict[str, Any]]:
+    order_by_identity = _policy_orders(context)
     policies = {
         (policy.vdom, policy.policy_id): policy
         for policy in context.config.policies
+        if isinstance(order_by_identity.get((policy.vdom, policy.policy_id)), int)
     }
 
     for item in context.derived.nat:
@@ -644,6 +670,7 @@ def _nat_rows(
 
         row = {
             "Rule #": item.policy_id,
+            "Policy Order": order_by_identity.get((item.vdom, item.policy_id)),
             "Policy Name": item.policy_name,
             "Source Interface": (
                 policy.srcintf
@@ -698,10 +725,29 @@ def _nat_rows(
                 item.policy_name,
                 item.policy_id,
             ),
-            extra_reasons=item.issues,
+            extra_reasons=(
+                (*item.issues, "Ambiguous policy identity; source policy fields were not joined.")
+                if (item.vdom, item.policy_id) in order_by_identity and order_by_identity[(item.vdom, item.policy_id)] == "Ambiguous identity"
+                else item.issues
+            ),
             domains=('nat',),
         )
         yield row
+
+
+def _policy_orders(context: _ExcelContext) -> dict[tuple[str, int], int | str]:
+    counts: dict[tuple[str, int], int] = defaultdict(int)
+    orders: dict[tuple[str, int], int] = {}
+    vdom_positions: dict[str, int] = defaultdict(int)
+    for policy in context.config.policies:
+        identity = (policy.vdom, policy.policy_id)
+        counts[identity] += 1
+        vdom_positions[policy.vdom] += 1
+        orders[identity] = vdom_positions[policy.vdom]
+    return {
+        identity: order if counts[identity] == 1 else "Ambiguous identity"
+        for identity, order in orders.items()
+    }
 
 
 def _route_rows(
@@ -1026,7 +1072,7 @@ def _dhcp_child_rows(
 def _sdwan_rows(context: _ExcelContext, headers: Sequence[str]) -> Iterator[dict[str, Any]]:
     for item in context.config.sdwans:
         row = {
-            "Status": item.status,
+            "Status": item.status if "status" in item.explicit_fields and item.status is not None else "Not explicitly configured",
             "Load Balance Mode": item.load_balance_mode,
             "Extraction Status": "EXTRACTED",
             "Manual Review": "No",
@@ -1205,6 +1251,7 @@ def _ssl_auth_rule_rows(context: _ExcelContext, headers: Sequence[str]) -> Itera
                 "User Peer": item.user_peer,
                 "Groups": item.groups,
                 "Portal": item.portal,
+                "VDOM": settings.vdom,
                 "Extraction Status": "EXTRACTED",
                 "Manual Review": "No",
                 "Additional Settings": _additional_settings(item, sheet_name="SSL VPN Authentication Rules"),
@@ -1493,6 +1540,7 @@ def _unsupported_rows(context: _ExcelContext, headers: Sequence[str]) -> list[di
     return [
         {
             "Section": path,
+            "VDOMs": ", ".join(sorted({record.vdom for record in context.source_by_path.get(path, ())})),
             "Source Records": count,
             "Primitive Registration": "REGISTERED" if path in context.registered_sections else "GENERIC",
             "Model Coverage": "SOURCE_ONLY",
@@ -1506,6 +1554,7 @@ def _unsupported_rows(context: _ExcelContext, headers: Sequence[str]) -> list[di
                 if context.profile is ExcelExportProfile.FAST
                 else "FortiGate Source Inventory"
             ),
+            "Source Evidence": f"{path}: {count} source record(s)",
         }
         for path, count in sorted(context.source_only_counts.items())
     ]

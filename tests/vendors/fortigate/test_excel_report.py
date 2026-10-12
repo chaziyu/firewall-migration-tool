@@ -1515,6 +1515,44 @@ end
         workbook = self._workbook("# no config version\n")
         self.assertIsNone(workbook["Summary"]["B5"].value)
 
+    def test_policy_order_action_origin_and_review_summary_are_traceable(self):
+        workbook = self._workbook()
+        policies, policy_rows = self._rows(workbook["Policies"])
+        by_rule = {row[policies.index("Rule #")]: row for row in policy_rows}
+        self.assertEqual([1, 2, 3, 4], [by_rule[index][policies.index("Policy Order")] for index in (1, 2, 3, 4)])
+        self.assertEqual("EXPLICIT", by_rule[1][policies.index("Action Origin")])
+        self.assertEqual("FORTIOS_DEFAULT", by_rule[4][policies.index("Action Origin")])
+
+        nat_headers, nat_rows = self._rows(workbook["NAT Rules"])
+        self.assertEqual(1, next(row for row in nat_rows if row[nat_headers.index("Rule #")] == 1)[nat_headers.index("Policy Order")])
+        self.assertIn("Derived policy NAT view", workbook["NAT Rules"]["A2"].value)
+
+        detail_rows = list(workbook["Review Required"].iter_rows(min_row=4, values_only=True))
+        summary_rows = list(workbook["Review Summary"].iter_rows(min_row=4, values_only=False))
+        summary_headers = [cell.value for cell in workbook["Review Summary"][3]]
+        occurrence_index = summary_headers.index("Occurrences")
+        link_index = summary_headers.index("First Detail")
+        self.assertEqual(len(detail_rows), sum(row[occurrence_index].value for row in summary_rows))
+        self.assertTrue(all(row[link_index].hyperlink.target.startswith("#'Review Required'!A") for row in summary_rows))
+
+        secondary_headers, secondary_rows = self._rows(workbook["Interface Secondary IPs"])
+        self.assertEqual("root", secondary_rows[0][secondary_headers.index("VDOM")])
+
+    def test_policy_order_uses_source_sequence_not_rule_id(self):
+        workbook = self._workbook('''config firewall policy
+    edit 90
+        set action accept
+    next
+    edit 2
+        set action deny
+    next
+end
+''')
+        headers, rows = self._rows(workbook["Policies"])
+        by_rule = {row[headers.index("Rule #")]: row for row in rows}
+        self.assertEqual(1, by_rule[90][headers.index("Policy Order")])
+        self.assertEqual(2, by_rule[2][headers.index("Policy Order")])
+
 
 
 
