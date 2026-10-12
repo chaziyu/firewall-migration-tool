@@ -278,6 +278,12 @@ Only `AUTO` or `CONFIRMED` decisions may become planner input.
 
 A suggestion is not confirmation.
 
+Saving or updating a proposal is not engineer approval. Web and desktop
+executable artifacts require a current signed design approval bound to the
+selected mappings, configuration items, target scope, operations, and
+dependencies. CLI migration planning remains available without design approval;
+it does not enable web or desktop deployment.
+
 Do not guess target:
 
 ```text
@@ -301,7 +307,7 @@ REUSE       satisfy the item without rendering creation commands
 BLOCK       render nothing for the item
 ```
 
-`CONFIGURE` requires explicit engineer approval. `REUSE` is not equivalent to creation. Blocked dependencies must propagate through the plan before rendering.
+`CONFIGURE` requires explicit engineer approval. `REUSE` is not equivalent to creation. Render only approved items whose dependencies are satisfied; blocked dependencies must propagate through the plan before rendering. Unapproved or dependency-blocked items produce no commands, and unsupported migration coverage remains visible as manual work.
 
 Command preview, download, bundle, and deployment must use the same `RenderedMigration`.
 
@@ -314,6 +320,12 @@ command SHA-256
 ```
 
 Deployment accepts reviewed rendered artifacts, not arbitrary command lists.
+
+Candidate preparation must verify the target serial, the approved sanitized
+destination `baseline_sha256`, and a clean candidate before pushing. Candidate
+validation and explicit commit are separate operations. Do not imply exclusive
+device locking; application checks do not prevent another administrator from
+changing the candidate between checks.
 
 Default behavior:
 
@@ -403,6 +415,14 @@ source
 → preview / Excel
 ```
 
+Collection regression:
+
+```text
+collector
+→ sanitized source
+→ source reporting
+```
+
 Migration:
 
 ```text
@@ -434,6 +454,7 @@ Run applicable:
 ```text
 Python:
 python -m compileall -q src tests
+ruff check src tests
 python -m pytest -q
 
 Frontend:

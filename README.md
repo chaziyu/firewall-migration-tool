@@ -307,11 +307,15 @@ Authenticode remains a separate production hardening task.
 Keep `pyproject.toml`, desktop `Cargo.toml` and `tauri.conf.json` versions equal.
 The frontend package version is not authoritative. Run
 `python scripts/check_desktop_release_version.py --tag desktop-v0.2.1`
-using the intended version, then push the matching `desktop-v<version>` tag.
-The release workflow builds both MSI and NSIS, signs updater artifacts and creates
-a **draft** release. NSIS is the canonical in-app updater; MSI remains available
-for manual enterprise deployment. Review installers, `.sig` files, `latest.json`
-and release notes, then manually publish. Drafts never reach the latest endpoint.
+using the intended version. A successful CI run for a push to `main` automatically
+creates and pushes the matching `desktop-v<version>` tag if it does not already
+exist, then triggers the release workflow. Pushing a matching
+`desktop-v<version>` tag manually also triggers that workflow. The protected
+`desktop-release` environment may require reviewer approval before the release
+job runs. The workflow builds both MSI and NSIS, signs updater artifacts, and
+publishes the release (`releaseDraft: false`). NSIS is the canonical in-app
+updater; MSI remains available for manual enterprise deployment. Review the
+installers, `.sig` files, `latest.json` and release notes after the release.
 Normal builds use no signing secrets; only the release configuration enables
 `createUpdaterArtifacts`.
 
@@ -352,6 +356,12 @@ Equivalent module invocation:
 ```bash
 python -m fwmigrate.main serve --port 5000
 ```
+
+For Windows development, run [`Start Local.bat`](./Start%20Local.bat). It needs
+Python 3.11 or newer, Node.js, and npm. The script starts the local backend at
+`http://127.0.0.1:5000` and the Vite development frontend at
+`http://127.0.0.1:5173`. This local workflow needs no Docker and is separate
+from the packaged Tauri desktop application.
 
 ### Docker / Render Web Deployment
 
@@ -453,6 +463,22 @@ fwmigrate migrate \
 
 Use `--zone-map mapping.yaml` when target VSYS, virtual-router, interface, or zone mappings are required.
 
+For destination evidence and intent, the CLI also accepts:
+
+```bash
+fwmigrate migrate --input fortigate.conf --output output --format set \
+  --target-config target-pan-os.xml --target-device 012345678901 \
+  --target-intent target-intent.yaml --automation-mode REVIEW_ONLY
+```
+
+`--target-config` supplies PAN-OS XML evidence. If the XML contains multiple
+devices, select one with `--target-device`; that option requires
+`--target-config`. `--target-intent` supplies engineer target-intent YAML.
+`--automation-mode` accepts `REVIEW_ONLY`, `STRICT_VERIFIED`,
+`VERIFIED_AND_DERIVED`, or `ENGINEER_INTENT`. Only `--format set` is currently
+implemented; `xml` and `cli` are rejected. CLI planning and file export do not
+provide web or desktop deployment approval.
+
 Migration planning is directional and pair-specific:
 
 ```text
@@ -474,6 +500,14 @@ The migration report keeps supported, partial, manual-review, blocked, and unsup
 Target-specific information that cannot be derived safely requires an explicit mapping or decision.
 
 Suggestions are not treated as confirmed engineer decisions.
+
+Guided review queues surface actionable mappings, unresolved prerequisites,
+conflicts, and unsupported work. Updating a proposal saves a draft; it is not
+engineer approval, even after validation. Approval binds the selected mappings
+and configuration items, their target scope and operations, and their
+dependencies to the reviewed design. Unapproved items and items blocked by
+unresolved dependencies produce no commands. Unsupported coverage remains
+visible as manual work, so partial approval is not a complete migration.
 
 Unimplemented migration pairs fail closed.
 
@@ -499,11 +533,11 @@ command SHA-256
 
 CLI `deploy` and `commit` are disabled because they do not carry signed design approval and artifact-bound candidate sessions. Use the web or desktop workflow for live deployment. CLI migration planning and file export remain available.
 
-Web artifact generation requires a signed approval from `/api/migration/design/prepare` → `/api/migration/design/approve`. Raw mappings and unsigned decision documents are proposal inputs: they cannot issue executable artifacts. The compatibility interface-confirmation, decision-approval, automation, and rule APIs preserve editable proposals and imports; their outputs still require deterministic design approval. Approvals expire after 24 hours, matching the browser workspace lifetime, and require renewed engineer review. Partial approvals render only approved groups with satisfied dependencies. IPv6 and mixed-family policy matches remain visible as unsupported evidence and render no security rules.
+Web and desktop executable artifact generation requires a current signed approval from `/api/migration/design/prepare` → `/api/migration/design/approve`. Raw mappings and unsigned decision documents are proposal inputs: they cannot issue executable artifacts. The compatibility interface-confirmation, decision-approval, automation, and rule APIs preserve editable proposals and imports; their outputs still require deterministic design approval. Approvals expire after 24 hours, matching the browser workspace lifetime, and require renewed engineer review. Partial approvals render only approved groups with satisfied dependencies; unapproved or dependency-blocked items produce no commands. IPv6 and mixed-family policy matches remain visible as unsupported evidence and render no security rules.
 
-Web candidate preparation requires a signed `READY` artifact and an explicit serial in the approved destination XML evidence. A device name or hostname alone cannot establish serial identity. The SSH workflow checks `show system info`, requires `show config diff` to be empty, and hashes the complete XML candidate from `show config candidate` without exporting its contents. Revalidation and explicit commit check the same live serial and candidate fingerprint. Drift, validation failure, unknown commit state, session expiry, and server restart require another candidate preparation. `READY_NO_CHANGES` artifacts are downloadable but cannot deploy.
+Web and desktop candidate preparation requires a signed `READY` artifact and an explicit serial and baseline fingerprint in the approved destination XML evidence. A device name or hostname alone cannot establish serial identity. Before pushing, the SSH workflow checks the live serial, verifies the approved `baseline_sha256` against the live sanitized PAN-OS configuration, and requires `show config diff` to be empty. Destination drift requires refreshed evidence and renewed approval. After the push, the workflow fingerprints the complete XML candidate from `show config candidate` without exporting its contents. Revalidation and explicit commit check the same live serial and candidate fingerprint. Drift, validation failure, unknown commit state, session expiry, and server restart require another candidate preparation. `READY_NO_CHANGES` artifacts are downloadable but cannot deploy.
 
-These guards apply to the web and desktop workflow; CLI deployment and commit are disabled. Device-native configuration locking is not enforced: another administrator can still change the candidate between the final fingerprint check and commit. Coordinate administrator access during candidate preparation and commit. Command SHA-256 and candidate SHA-256 identify different artifacts and remain separate.
+These guards apply to the web and desktop workflow; CLI deployment and commit are disabled. Device-native configuration locking is not enforced: another administrator can still change the candidate between the final fingerprint check and commit. Coordinate administrator access during candidate preparation and commit. The baseline fingerprint identifies approved sanitized destination evidence; the rendered command SHA-256 identifies the commands to apply; the post-push candidate SHA-256 identifies the candidate configuration checked during validation and commit. They serve distinct purposes.
 
 This provides the intended flow:
 
