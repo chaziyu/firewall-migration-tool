@@ -81,5 +81,6 @@ class CiscoFTDDNSRule(CiscoFTDSourceRecord):
 class CiscoFTDDNSPolicy(CiscoFTDSourceRecord):
     description: Optional[str] = None
     rules: Optional[List[CiscoFTDDNSRule]] = None
+    block_rules: Optional[List[CiscoFTDDNSRule]] = None
     default_action: Optional[Any] = None
     umbrella_settings: Optional[Dict[str, Any]] = None

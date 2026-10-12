@@ -80,3 +80,38 @@ def test_duplicate_acp_positions_are_reported_without_reordering():
     policy = result.config.access_control_policies[0]
     assert [rule.name for rule in policy.rules] == ["First", "Second"]
     assert any(issue.category == "duplicate-acp-position" for issue in result.validation.issues)
+
+
+def test_acp_excel_appends_source_fields_for_full_and_fast_profiles():
+    result = extract_cisco_ftd_source(json.dumps({
+        "format": "cisco-fmc-rest-export-v1", "domain": {"id": "domain-1", "name": "Global"},
+        "access_policies": [{"id": "policy-1", "name": "Policy", "rules": [{
+            "id": "rule-1", "name": "Rule", "metadata": {"ruleIndex": 7},
+            "sourceDynamicObjects": [{"id": "dynamic-1", "name": "=Dynamic"}],
+            "destinationDynamicObjects": [], "vlanTags": [{"id": "vlan-1", "name": "VLAN 20"}],
+            "sourceSecurityGroupTags": [{"id": "sgt-1", "name": "Tag 10"}],
+            "destinationSecurityGroupTags": [], "realm": {"id": "realm-1", "name": "Realm"},
+            "logFiles": True, "enableSyslog": False, "customSetting": "=not-a-formula", "password": "secret-value",
+        }]}],
+    }))
+
+    for profile in ("full", "fast"):
+        output = BytesIO()
+        export_ftd_excel(result, output, profile=profile)
+        output.seek(0)
+        sheet = load_workbook(output, read_only=True)["ACP Rules"]
+        rows = list(sheet.values)
+        values = dict(zip(rows[0], rows[1]))
+        assert json.loads(values["Source Dynamic Objects"])[0]["source_id"] == "dynamic-1"
+        assert json.loads(values["Destination Dynamic Objects"]) == []
+        assert json.loads(values["VLAN Tags"])[0]["name"] == "VLAN 20"
+        assert json.loads(values["Source Security Group Tags"])[0]["source_id"] == "sgt-1"
+        assert json.loads(values["Destination Security Group Tags"]) == []
+        assert json.loads(values["Realm"])["source_id"] == "realm-1"
+        assert json.loads(values["Logging Settings"]) == {"logFiles": True, "enableSyslog": False}
+        assert values["Collection Order"] == 1 and values["Policy ID"] == "policy-1"
+        assert values["Domain ID"] == "domain-1" and values["Device ID"] is None
+        assert "customSetting" in values["Additional Settings"]
+        assert "secret-value" not in str(rows)
+        assert "=not-a-formula" in values["Additional Settings"]
+        assert not any(isinstance(value, str) and value.startswith("=") for value in rows[1])

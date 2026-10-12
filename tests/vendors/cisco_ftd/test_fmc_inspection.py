@@ -38,6 +38,8 @@ def test_inspection_policy_rules_are_typed_ordered_resolved_and_complete():
                     "decryptionCerts": {"objects": [{"id": "cert1", "name": "CA"}]},
                     "tlsVersions": {"tls13": True}, "certStatuses": {"revoked": False}, "privateKey": "must-not-leak"}]}],
             "dnspolicies": [{"id": "dns1", "name": "DNS", "umbrellaSettings": {"enabled": True},
+                "rules": [{"id": "dns_allow", "name": "Allow", "position": 1, "ruleAction": "ALLOW",
+                    "sourceNetworks": [{"id": "net1", "name": "Inside"}]}],
                 "block_rules": [{"id": "dnsr1", "name": "Block feed", "metadata": {"ruleIndex": 3}, "ruleAction": "BLOCK",
                     "sourceZones": [{"id": "zone1", "name": "Inside Zone"}],
                     "sourceNetworks": [{"id": "net1", "name": "Inside"}],
@@ -46,7 +48,10 @@ def test_inspection_policy_rules_are_typed_ordered_resolved_and_complete():
                     "dnsFeeds": {"objects": [{"id": "feed1", "name": "Live Feed"}]}}]}],
         },
         "collection": {"status": "PARTIAL", "parts": [
-            {"name": "filepolicies/f3/rules", "status": "FAILED", "complete": False}]},
+            {"name": "filepolicies/f2/rules", "status": "EMPTY", "complete": True, "count": 0},
+            {"name": "filepolicies/f3/rules", "status": "FAILED", "complete": False, "count": 0},
+            {"name": "dnspolicies/dns1/rules", "status": "SUCCESS", "complete": True, "count": 1},
+            {"name": "dnspolicies/dns1/block_rules", "status": "SUCCESS", "complete": True, "count": 1}]},
         "access_policies": [{"id": "acp1", "name": "ACP", "decryptionPolicy": {"id": "dec1", "name": "Decrypt"},
             "dnsPolicy": {"id": "dns1", "name": "DNS"}, "rules": [{"id": "acpr1", "name": "Rule",
                 "filePolicy": {"id": "f1", "name": "Files"}}]}]}
@@ -61,13 +66,17 @@ def test_inspection_policy_rules_are_typed_ordered_resolved_and_complete():
     assert decrypt.default_action == "Do Not Decrypt" and decrypt.undecryptable_action == {"decryptionErrors": "BLOCK"}
     assert decrypt.rules[0].action == "DECRYPT_RESIGN"
     dns = config.dns_policies[0]
-    assert dns.rules[0].action == "BLOCK" and dns.rules[0].position == 3 and dns.rules[0].collection_order == 1
+    assert dns.rules[0].action == "ALLOW" and dns.rules[0].position == 1
+    assert dns.block_rules[0].action == "BLOCK" and dns.block_rules[0].position == 3
+    assert dns.block_rules[0].collection_order == 1
+    assert dns.rules[0].source_attributes["rule_family"] == "allowdnsrules"
+    assert dns.block_rules[0].source_attributes["rule_family"] == "blockdnsrules"
     assert "must-not-leak" not in json.dumps(config.model_dump())
     assert "runtime.example" not in json.dumps(config.model_dump())
     kinds = {item["kind"] for item in result.derived.resolved_references}
     assert {"NETWORK_ADDRESS", "SERVICE_OBJECT", "CERTIFICATE", "SECURITY_ZONE", "VLAN_OBJECT",
             "SECURITY_INTELLIGENCE_SOURCE", "DECRYPTION_POLICY", "DNS_POLICY", "FILE_POLICY"} <= kinds
-    assert result.derived.source_plane_completeness["file_rules"] == "failed"
+    assert result.derived.source_plane_completeness["file_rules"] == "partial"
     assert not {"filepolicyrules", "decryptionpolicyrules", "block_rules"} & {
         item.source_attributes.get("resource_type") for item in config.native_resources}
     paths = {item.source_path for item in result.inventory_items}
@@ -75,7 +84,7 @@ def test_inspection_policy_rules_are_typed_ordered_resolved_and_complete():
             "fmc-rest-bundle/dns-policy-rules"} <= paths
     assert result.derived.inspection_relationships
     preview = CiscoFTDSourceReporter().build_preview(result)
-    assert preview["summary"]["dns_rules"] == 1
+    assert preview["summary"]["dns_rules"] == 2
     assert "must-not-leak" not in json.dumps(preview)
     workbook_bytes = BytesIO()
     export_ftd_excel(result, workbook_bytes)
@@ -85,8 +94,48 @@ def test_inspection_policy_rules_are_typed_ordered_resolved_and_complete():
                for sheet in exported.worksheets for row in sheet.iter_rows() for cell in row)
     inspection_rows = list(exported["Inspection Policies"].values)
     assert ("File", "Empty", "f2", None, None, "KNOWN EMPTY") == inspection_rows[3][:6]
-    assert ("File", "Unknown", "f3", None, None, "UNKNOWN") == inspection_rows[4][:6]
+    assert ("File", "Unknown", "f3", None, None, "FAILED") == inspection_rows[4][:6]
     assert any(row[0] == "Decryption" and row[9] == "DECRYPT_RESIGN" for row in inspection_rows[1:])
+    assert [(row[3], row[15]) for row in inspection_rows if row[0] == "DNS"] == [
+        ("Allow", "allowdnsrules"), ("Block feed", "blockdnsrules")]
+    assert result.derived.source_plane_completeness["dns_rules"] == "present"
+    dns_relationships = [item for item in result.derived.inspection_relationships
+                         if item.get("relationship_type") == "policy-rule" and item.get("policy_type") == "dns"]
+    assert {(item["rule_id"], item["rule_family"]) for item in dns_relationships} == {
+        ("dns_allow", "allowdnsrules"), ("dnsr1", "blockdnsrules")}
+    dns_inventory = [item for item in result.inventory_items if item.source_type == "policy-rule"
+                     and item.source_path.endswith("dns-policy-rules")]
+    assert {item.source_attributes["rule_family"] for item in dns_inventory} == {"allowdnsrules", "blockdnsrules"}
+
+
+def test_inspection_collection_states_distinguish_empty_failed_partial_and_missing():
+    cases = (
+        ("EMPTY", [],
+         [{"name": "filepolicies/p1/rules", "status": "EMPTY", "complete": True, "count": 0}],
+         0, "KNOWN EMPTY"),
+        ("SUCCESS", [],
+         [{"name": "filepolicies/p1/rules", "status": "SUCCESS", "complete": True, "count": 0}],
+         0, "KNOWN EMPTY"),
+        ("PARTIAL", [{"id": "r1", "name": "Partial rule"}],
+         [{"name": "filepolicies/p1/rules", "status": "PARTIAL", "complete": False, "count": 1}],
+         1, "PARTIAL"),
+        ("FAILED", [],
+         [{"name": "filepolicies/p1/rules", "status": "FAILED", "complete": False, "count": 0}],
+         None, "FAILED"),
+        ("PARTIAL", [], [], None, "UNKNOWN"),
+    )
+    for collection_status, rules, parts, expected_count, expected_excel_status in cases:
+        payload = {"format": "cisco-fmc-rest-export-v1", "domain": {"id": "d1"},
+            "objects": {"filepolicies": [{"id": "p1", "name": "Files", "rules": rules}]},
+            "collection": {"status": collection_status, "parts": parts}}
+        result = extract_cisco_ftd_source(json.dumps(payload))
+        actual_rules = result.config.file_policies[0].rules
+        assert (len(actual_rules) if actual_rules is not None else None) == expected_count
+        output = BytesIO()
+        export_ftd_excel(result, output)
+        output.seek(0)
+        rows = list(load_workbook(output, read_only=True)["Inspection Policies"].values)
+        assert rows[1][5] == expected_excel_status
 
 def test_intrusion_behavior_group_membership_conflicts_and_acp_references():
     payload = {

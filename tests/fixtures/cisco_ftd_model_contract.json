@@ -1277,10 +1277,11 @@
         "raw_extra",
         "description",
         "rules",
+        "block_rules",
         "default_action",
         "umbrella_settings"
       ],
-      "sha256": "5f547be7894e7f50786277aee9b116984fffcdf330bce838a878f6a79a60a83f"
+      "sha256": "fb0f978a2447e89a507802800b77aaaf0eb99390ae03125cdc65e8cfb0240394"
     },
     "CiscoFTDFMCUserRole": {
       "fields": [

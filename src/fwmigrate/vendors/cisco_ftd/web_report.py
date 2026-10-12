@@ -195,7 +195,7 @@ def build_ftd_preview(result: FTDSourceResult) -> dict[str, Any]:
             "decryption_policies": len(config.decryption_policies),
             "decryption_rules": sum(len(item.rules or []) for item in config.decryption_policies),
             "dns_policies": len(config.dns_policies),
-            "dns_rules": sum(len(item.rules or []) for item in config.dns_policies), "fmc_users": len(config.fmc_users),
+            "dns_rules": sum(len(item.rules or []) + len(item.block_rules or []) for item in config.dns_policies), "fmc_users": len(config.fmc_users),
             "fmc_user_roles": len(config.fmc_user_roles), "realms": len(config.realms),
             "realm_user_groups": len(config.realm_user_groups), "realm_users": len(config.realm_users),
             "local_realm_users": len(config.local_realm_users),

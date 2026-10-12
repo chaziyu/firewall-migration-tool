@@ -255,7 +255,8 @@ class CiscoFTDCollector:
                     if not re.fullmatch(r"[A-Za-z0-9_-]+", policy_id):
                         parts.append(CollectionPart(f"{family}_children/unknown", "FAILED", False))
                         continue
-                    path = f'/policy/{family}/{policy_id}/{endpoint}'
+                    path_family = "ftds2svpns" if family == "s2svpns" else family
+                    path = f'/policy/{path_family}/{policy_id}/{endpoint}'
                     self._collect_family(session, base, prefix + path, policy, key, parts,
                                          f"{family}/{policy_id}/{key}")
                     if family == "intrusionpolicies":

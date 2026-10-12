@@ -105,7 +105,7 @@ def build_ftd_source_inventory(config: CiscoFTDConfig) -> list[SourceInventoryIt
         rule
         for policies in (config.file_policies, config.decryption_policies, config.dns_policies)
         for policy in policies
-        for rule in (policy.rules or ())
+        for rule in (policy.rules or []) + (getattr(policy, "block_rules", None) or [])
     )
     review_records.extend(
         rule for policy in config.access_control_policies for rule in (policy.rules or ())
@@ -155,22 +155,25 @@ def build_ftd_source_inventory(config: CiscoFTDConfig) -> list[SourceInventoryIt
                 status=ExtractionStatus.SOURCE_ONLY if config.source_plane == "ftd-text-evidence" else ExtractionStatus.EXTRACTED,
                 requires_manual_review=any(evidence_matches(record, item) for item in config.unsupported_evidence),
             ))
-    for policies, path in ((config.file_policies, "file-policy-rules"),
-                           (config.decryption_policies, "decryption-policy-rules"),
-                           (config.dns_policies, "dns-policy-rules")):
+    for policies, path, fields in ((config.file_policies, "file-policy-rules", ("rules",)),
+                                   (config.decryption_policies, "decryption-policy-rules", ("rules",)),
+                                   (config.dns_policies, "dns-policy-rules", ("rules", "block_rules"))):
         for policy_index, policy in enumerate(policies, 1):
             parent_record_id = policy.source_id or record_id(path.removesuffix("-rules"), policy_index, policy)
-            for index, rule in enumerate(policy.rules or [], 1):
-                items.append(SourceInventoryItem(domain="cisco_ftd",
-                    source_path=f"{config.source_plane}/{path}",
-                    source_id=rule.source_id,
-                    source_record_id=record_id(path, index, rule, parent_record_id),
-                    name=source_name(rule), source_type="policy-rule",
-                    source_context=rule.source_context,
-                    source_attributes={"source_plane": rule.source_plane, "domain_id": rule.domain_id,
-                        "policy_id": rule.parent_policy_id, "policy_name": rule.parent_policy_name,
-                        "position": rule.position, "collection_order": rule.collection_order},
-                    requires_manual_review=any(evidence_matches(rule, item) for item in config.unsupported_evidence)))
+            for field in fields:
+                for index, rule in enumerate(getattr(policy, field) or [], 1):
+                    items.append(SourceInventoryItem(domain="cisco_ftd",
+                        source_path=f"{config.source_plane}/{path}",
+                        source_id=rule.source_id,
+                        source_record_id=record_id(path, index, rule, parent_record_id),
+                        name=source_name(rule), source_type="policy-rule",
+                        source_context=rule.source_context,
+                        source_attributes={"source_plane": rule.source_plane, "domain_id": rule.domain_id,
+                            "policy_id": rule.parent_policy_id, "policy_name": rule.parent_policy_name,
+                            "position": rule.position, "collection_order": rule.collection_order,
+                            **({"rule_family": rule.source_attributes["rule_family"]}
+                               if rule.source_attributes.get("rule_family") else {})},
+                        requires_manual_review=any(evidence_matches(rule, item) for item in config.unsupported_evidence)))
     if config.source_plane == "ftd-text-evidence":
         for path, records, kind in (("interfaces", config.interfaces, "interface"),
                                     ("routes", config.static_routes, "static-route")):
