@@ -18,7 +18,7 @@ def build_mapping_requirements(config, derived, *, include_configuration=False):
         required_vdom_fields[vdom] = list(dict.fromkeys([*values, *fields]))
 
     def need(vdom, name, kind, reason, consumer, *fields):
-        if not name:
+        if not name or (name == "any" and kind == "interface"):
             return
         if "target_interface" in fields:
             # Executable interface planning consumes explicit VSYS import and

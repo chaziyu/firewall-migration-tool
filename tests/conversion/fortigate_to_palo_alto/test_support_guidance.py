@@ -8,6 +8,22 @@ from fwmigrate.conversion.fortigate_to_palo_alto.recommendations.support_guidanc
 from fwmigrate.conversion.fortigate_to_palo_alto.validation import validate_plan
 
 
+def test_indexed_guidance_preserves_first_source_match_and_duplicate_message_handling():
+    from fwmigrate.conversion.fortigate_to_palo_alto.models import PlannedAddress, MigrationIssue, MigrationSourceRef
+    first = PlannedAddress(source_vdom='root', source_kind='address', source_name='same')
+    other = PlannedSecurityRule(source_vdom='root', source_kind='policy', source_name='same')
+    blue = PlannedAddress(source_vdom='blue', source_kind='address', source_name='same')
+    plan = PANMigrationPlan(addresses=(first, blue), security_rules=(other,))
+    message = "missing target interface mapping for 'wan'"
+    validation = SimpleNamespace(issues=(
+        MigrationIssue('missing_route_interface', message, source=MigrationSourceRef('root', 'policy', 'same')),
+        MigrationIssue('planned_item_warning', message, source=MigrationSourceRef('blue', 'address', 'same'))))
+    result = build_support_guidance(plan, validation, PANMigrationDecisionSet())
+    assert len(result) == 1
+    assert (result[0].source_vdom, result[0].source_kind, result[0].source_name) == ('root', 'address', 'same')
+    assert result[0].why == message
+
+
 def test_missing_zone_guidance_links_existing_decision():
     item = PlannedSecurityRule(source_vdom="root", source_kind="policy", source_name="42",
                                status=PANMigrationStatus.MANUAL_REVIEW,

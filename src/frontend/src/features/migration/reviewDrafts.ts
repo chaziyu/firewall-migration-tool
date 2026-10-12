@@ -106,3 +106,18 @@ export function interfaceMappingRows(decisions: Decision[], drafts: Record<strin
     return { ...row, conflict, ready }
   })
 }
+
+export function orderInterfaceMappings<T extends { decision: Decision }>(rows: T[], context: Record<string, Record<string, unknown>>, proposals: DraftRow[] = []) {
+  const byKey = new Map(proposals.map((row) => [draftRowKey(row), row]))
+  const rank = (row: T) => {
+    const facts = context[row.decision.key] ?? {}
+    const parents = byKey.get(row.decision.key)?.dependencies ?? []
+    const blocked = parents.some((key) => byKey.has(key) && byKey.get(key)?.status !== 'READY' && !byKey.get(key)?.approved)
+    return [Number(blocked), facts.source_parent ? 1 : ['physical', 'ethernet', 'aggregate'].includes(String(facts.source_type)) ? 0 : 2]
+  }
+  return [...rows].sort((a, b) => {
+    const ar = rank(a), br = rank(b)
+    return ar[0] - br[0] || ar[1] - br[1] || Number(b.decision.affected_count ?? 0) - Number(a.decision.affected_count ?? 0)
+      || `${a.decision.source_vdom}/${a.decision.source_name}`.localeCompare(`${b.decision.source_vdom}/${b.decision.source_name}`)
+  })
+}

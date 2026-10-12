@@ -33,10 +33,9 @@ class PANSupportGuidance:
         }
 
 
-def _decision_key(decisions, vdom, name, field, kinds=("interface", "zone")):
+def _decision_key(keys, vdom, name, field, kinds=("interface", "zone")):
     if not name:
         return None
-    keys = {item.key for item in decisions.decisions}
     return next((make_decision_key(vdom or "root", kind, name, field) for kind in kinds
                  if make_decision_key(vdom or "root", kind, name, field) in keys), None)
 
@@ -50,7 +49,7 @@ def _guidance(item, code, resolution_type, title, why, next_action, becomes, dec
     )
 
 
-def _warning_guidance(item, warning, decisions):
+def _warning_guidance(item, warning, decision_keys):
     lower = warning.lower()
     vdom = getattr(item, "source_vdom", None) or "root"
     match = re.search(r"for ['\"]([^'\"]+)", warning)
@@ -58,21 +57,21 @@ def _warning_guidance(item, warning, decisions):
     if "missing target zone mapping" in lower:
         return _guidance(item, "MISSING_TARGET_ZONE", "MISSING_MAPPING", "Missing target zone",
                          warning, f"Confirm a target zone for {name or 'the referenced interface'}.",
-                         "the target zone decision is confirmed", _decision_key(decisions, vdom, name, "target_zone"))
+                         "the target zone decision is confirmed", _decision_key(decision_keys, vdom, name, "target_zone"))
     if "missing target interface mapping" in lower:
         return _guidance(item, "MISSING_TARGET_INTERFACE", "MISSING_MAPPING", "Missing target interface",
                          warning, f"Confirm a target interface for {name or 'the referenced interface'}.",
-                         "the target interface decision is confirmed", _decision_key(decisions, vdom, name, "target_interface", ("interface",)))
+                         "the target interface decision is confirmed", _decision_key(decision_keys, vdom, name, "target_interface", ("interface",)))
     if "missing target virtual-router mapping" in lower or "missing palo alto virtual-router mapping" in lower:
         return _guidance(item, "MISSING_VIRTUAL_ROUTER", "MISSING_MAPPING", "Missing virtual router",
                          warning, f"Confirm a virtual router for VDOM {vdom}.",
                          "the VDOM virtual-router decision is confirmed",
-                         _decision_key(decisions, vdom, vdom, "virtual_router", ("vdom",)))
+                         _decision_key(decision_keys, vdom, vdom, "virtual_router", ("vdom",)))
     if "missing target vsys mapping" in lower or "missing palo alto vsys mapping" in lower:
         return _guidance(item, "MISSING_VSYS", "MISSING_MAPPING", "Missing target VSYS",
                          warning, f"Confirm a target VSYS for VDOM {vdom}.",
                          "the VDOM VSYS decision is confirmed",
-                         _decision_key(decisions, vdom, vdom, "vsys", ("vdom",)))
+                         _decision_key(decision_keys, vdom, vdom, "vsys", ("vdom",)))
     if "multiple possible egress interfaces" in lower:
         return _guidance(item, "AMBIGUOUS_NAT_EGRESS", "AMBIGUOUS_SOURCE", "Ambiguous NAT egress",
                          warning, "Determine the intended egress interface before rendering NAT.",
@@ -102,28 +101,33 @@ def _warning_guidance(item, warning, decisions):
 
 def build_support_guidance(plan, validation, decisions, target_findings=()):
     result = []
-    for item in _items(plan):
+    items = tuple(_items(plan))
+    by_source = {}
+    decision_keys = frozenset(item.key for item in decisions.decisions)
+    known_whys = set()
+    for item in items:
+        # Keep the existing first-match order when source identities overlap.
+        by_source.setdefault((item.source_vdom, item.source_name), item)
         for warning in getattr(item, "warnings", ()):
-            result.append(_warning_guidance(item, warning, decisions))
+            result.append(_warning_guidance(item, warning, decision_keys))
+            known_whys.add(warning)
     for issue in getattr(validation, "issues", ()) if validation else ():
         ref = issue.source
-        item = next((candidate for candidate in _items(plan)
-                     if getattr(candidate, "source_vdom", None) == ref.source_vdom
-                     and getattr(candidate, "source_name", None) == ref.source_name), None)
+        item = by_source.get((ref.source_vdom, ref.source_name))
         if item is None:
             continue
         if issue.code in {"missing_target_vsys", "missing_virtual_router", "missing_route_interface"}:
-            result.append(_warning_guidance(item, issue.message, decisions))
-        elif issue.message not in {entry.why for entry in result}:
-            result.append(_warning_guidance(item, issue.message, decisions))
+            result.append(_warning_guidance(item, issue.message, decision_keys))
+            known_whys.add(issue.message)
+        elif issue.message not in known_whys:
+            result.append(_warning_guidance(item, issue.message, decision_keys))
+            known_whys.add(issue.message)
     for finding in target_findings:
         try:
             source_vdom, source_kind, source_name, _ = json.loads(finding.decision_key)
         except (TypeError, ValueError, json.JSONDecodeError):
             source_vdom = source_kind = source_name = None
-        item = next((candidate for candidate in _items(plan)
-                     if getattr(candidate, "source_vdom", None) == source_vdom
-                     and getattr(candidate, "source_name", None) == source_name), None)
+        item = by_source.get((source_vdom, source_name))
         if item is None:
             continue
         result.append(_guidance(item, finding.code, "TARGET_CONFLICT", "Target evidence conflict", finding.message,

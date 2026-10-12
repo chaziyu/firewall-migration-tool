@@ -1,4 +1,42 @@
 import type { Decision, ReviewGroup } from './reviewTypes'
+import type { DraftRow } from './types'
+
+export function draftStatusCounts(rows: DraftRow[]) {
+  return rows.reduce((counts, row) => { counts[row.status] = (counts[row.status] ?? 0) + 1; return counts }, {} as Record<string, number>)
+}
+
+export function draftReviewRows(rows: DraftRow[], filter: string, family: string, search: string, grouped: Set<string>) {
+  const query = search.trim().toLowerCase()
+  return rows.filter((row) => (filter === 'all' || (filter === 'ACTIONABLE'
+    ? ['NEEDS_INPUT', 'CONFLICT'].includes(row.status) && !grouped.has(row.decision_key || row.group_key!)
+    : row.status === filter)) && (family === 'all' || (row.family || row.source_kind) === family)
+    && `${row.source_vdom} ${row.source_name} ${row.target_name || row.proposed_value || ''}`.toLowerCase().includes(query))
+}
+
+export function planFamilySummary(items: Array<Record<string, unknown>>) {
+  const summary: Record<string, { included: number; blocked: number }> = {}
+  for (const item of items) {
+    const family = String(item.source_object_type || item.source_kind || 'Other')
+    const row = summary[family] ??= { included: 0, blocked: 0 }
+    if (item.render_disposition === 'BLOCK') row.blocked++
+    else row.included++
+  }
+  return summary
+}
+
+export function groupPlanBlockers(rows: Array<Record<string, unknown>>) {
+  const groups = new Map<string, Record<string, unknown>>()
+  for (const row of rows) {
+    const keys = [...new Set([row.decision_key, ...(Array.isArray(row.decision_keys) ? row.decision_keys : [])].filter((key): key is string => typeof key === 'string' && !!key))].sort()
+    const key = JSON.stringify([row.code, keys, row.source_vdom, row.category ?? '', row.next_action ?? ''])
+    const group = groups.get(key)
+    if (group) {
+      group.count = Number(group.count) + 1
+      ;(group.affected as Array<Record<string, unknown>>).push(row)
+    } else groups.set(key, { ...row, decision_keys: keys, count: 1, affected: [row] })
+  }
+  return [...groups.values()]
+}
 
 export const reviewQueueNames = ['NEEDS_INPUT', 'CHOOSE_CANDIDATE', 'READY_TO_CONFIRM', 'CONFLICT', 'COMPLETE'] as const
 

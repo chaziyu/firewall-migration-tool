@@ -4,9 +4,14 @@ from typing import Any
 
 from fwmigrate.conversion.fortigate_to_palo_alto.models import PANMigrationStatus, PlannedNATRule
 from .policies import ipv6_match_warnings
+from .services import service_target
 
 
 def plan_nat(source: Any, derived: Any, options: Any):
+    service_names = {}
+    service_views = getattr(derived, "services", None)
+    for service in (*getattr(service_views, "services", ()), *getattr(service_views, "groups", ())):
+        service_names.setdefault(service.vdom, set()).add(service.name)
     policies = {(item.vdom or "root", item.policy_id): item for item in getattr(source, "policies", ())}
     zone_names = {(item.vdom or "root", item.name) for item in getattr(source, "zones", ())}
     result = []
@@ -58,7 +63,7 @@ def plan_nat(source: Any, derived: Any, options: Any):
             to_zones=_policy_zones(policy, item.egress_interfaces, options, zone_names),
             source_addresses=tuple(policy.srcaddr or ()) if policy else (),
             destination_addresses=tuple(policy.dstaddr or ()) if policy else (),
-            service=(policy.service[0] if policy and policy.service and len(policy.service) == 1 else None),
+            service=(service_target(policy.service[0], service_names.get(vdom, ()), getattr(options, "service_names", {}).get(vdom, {})) if policy and policy.service and len(policy.service) == 1 else None),
             to_interface=getattr(egress_mapping, "target_interface", None),
         ))
     for vip in getattr(source, "vips", ()):
@@ -117,5 +122,7 @@ def _target_zone(options, vdom, name, zone_names):
 def _policy_zones(policy, names, options, zone_names=()):
     if policy is None:
         return ()
+    if "any" in names:
+        return ("any",) if len(names) == 1 else ()
     vdom = getattr(policy, "vdom", None) or "root"
     return tuple(zone for name in names if (zone := _target_zone(options, vdom, name, zone_names)))

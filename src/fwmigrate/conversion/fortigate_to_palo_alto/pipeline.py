@@ -197,6 +197,9 @@ def run_migration_pipeline(
     # All target validation and planning use the same final decisions.
     target_findings = validate_against_target(source, current, target, target_device)
     final_options = current.to_options()
+    if options is not None:
+        final_options = replace(final_options, service_names=(options.service_names
+            if isinstance(options, PANMigrationOptions) else options.get("service_names", {})))
     actual_planner = planner or FortiGateToPaloAltoPlanner()
     plan = actual_planner.plan(source, derived, options=final_options,
                                **({"include_configuration": True} if approved_item_keys is not None else {}))

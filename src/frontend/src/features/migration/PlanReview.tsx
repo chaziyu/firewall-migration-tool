@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react'
 import type { PlanArtifact } from './migrationApi'
+import { groupPlanBlockers } from './reviewPresentation'
 import { asRecord, compactValue, safeValue } from '../report/reportPresentation'
 
-function PlanRows({ rows, kind, onReviewDecision }: { rows: Array<Record<string, unknown>>; kind: 'items' | 'blockers' | 'recommendations'; onReviewDecision: (key: string) => void }) {
+function PlanRows({ rows, kind, onReviewDecision }: { rows: Array<Record<string, unknown>>; kind: 'items' | 'blockers' | 'recommendations' | 'affected items'; onReviewDecision: (key: string) => void }) {
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState('')
   const [page, setPage] = useState(1)
@@ -34,6 +35,8 @@ function PlanRows({ rows, kind, onReviewDecision }: { rows: Array<Record<string,
           <p>{String(row.why ?? row.message ?? row.reason ?? '')}</p>
           <p>{String(row.next_action ?? row.becomes_supported_when ?? '')}</p>
           {row.source_vdom != null && <p>{String(row.source_vdom)} · {String(row.source_kind ?? '')} · {String(row.source_name ?? row.source_policy_id ?? '')}</p>}
+          {Array.isArray(row.affected) && <details><summary>Affected items ({row.affected.length})</summary><PlanRows rows={row.affected as Array<Record<string, unknown>>} kind="affected items" onReviewDecision={onReviewDecision} /></details>}
+          {!keys.length && <p>Manual action: {String(row.next_action ?? 'Review the source evidence and support guidance. Mapping approval alone cannot resolve this finding.')}</p>}
         </>}
         {keys.map((key) => <button type="button" className="finding-inline-link" key={key} onClick={() => onReviewDecision(key)}>Review mapping: {key}</button>)}
       </article>
@@ -43,17 +46,7 @@ function PlanRows({ rows, kind, onReviewDecision }: { rows: Array<Record<string,
 }
 
 export function PlanReview({ artifact, onReviewDecision }: { artifact: PlanArtifact; onReviewDecision: (key: string) => void }) {
-  const blockers = useMemo(() => {
-    const groups = new Map<string, Record<string, unknown>>()
-    for (const row of [...artifact.blocking_reasons, ...(artifact.support_guidance ?? [])]) {
-      const key = JSON.stringify([row.code, row.decision_key, row.decision_keys, row.title ?? row.message, row.next_action,
-        row.source_vdom, row.source_kind, row.source_name, row.source_policy_id, row.target_name])
-      const group = groups.get(key)
-      if (group) group.count = Number(group.count) + 1
-      else groups.set(key, { ...row, count: 1 })
-    }
-    return [...groups.values()]
-  }, [artifact])
+  const blockers = useMemo(() => groupPlanBlockers([...artifact.blocking_reasons, ...(artifact.support_guidance ?? [])]), [artifact])
   return <div className="plan-review">
     <details><summary>Blockers and support guidance ({blockers.length} groups)</summary><PlanRows rows={blockers} kind="blockers" onReviewDecision={onReviewDecision} /></details>
     <details><summary>Recommendations ({artifact.recommendations.length})</summary><PlanRows rows={artifact.recommendations} kind="recommendations" onReviewDecision={onReviewDecision} /></details>

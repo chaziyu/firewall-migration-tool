@@ -1,5 +1,6 @@
 import { candidateLabel, decisionLabel } from '../reviewDrafts'
 import type { Dispatch, SetStateAction } from 'react'
+import { useState } from 'react'
 import { tabKeyboard } from '../../../components/common/tabKeyboard'
 import type { Decision, ReviewData, ReviewGroup, RuleSuggestion } from '../reviewTypes'
 
@@ -52,18 +53,25 @@ export function MigrationReviewQueues({
   applyGroupAction: (action: NonNullable<ReviewGroup['actions']>[number]) => Promise<void>
   updateGroup: (group: ReviewGroup) => Promise<void>
 }) {
+  const [groupPage, setGroupPage] = useState(1)
+  const pages = Math.max(1, Math.ceil(visibleGroups.length / 20))
+  const currentPage = Math.min(groupPage, pages)
+  const changePage = (page: number) => {
+    setGroupPage(page)
+    setSelectedGroupKey(visibleGroups[(page - 1) * 20]?.decision_keys[0] ?? '')
+  }
   return (
     <>
         <section className="review-workflow" aria-label="Migration review queues">
           <nav className="review-queues" role="tablist" aria-label="Migration review work queues" onKeyDown={tabKeyboard}>
-            {queueNames.map((queue) => <button type="button" role="tab" key={queue} id={`queue-tab-${queue}`} aria-controls={`queue-panel-${queue}`} tabIndex={activeQueue === queue ? 0 : -1} aria-selected={activeQueue === queue} onClick={() => { setActiveQueue(queue); setSelectedGroupKey('') }}>
+            {queueNames.map((queue) => <button type="button" role="tab" key={queue} id={`queue-tab-${queue}`} aria-controls={`queue-panel-${queue}`} tabIndex={activeQueue === queue ? 0 : -1} aria-selected={activeQueue === queue} onClick={() => { setActiveQueue(queue); setSelectedGroupKey(''); setGroupPage(1) }}>
               {({ READY_TO_CONFIRM: 'Review suggestions', CHOOSE_CANDIDATE: 'Choose a match', NEEDS_INPUT: 'Needs input', CONFLICT: 'Conflicts', COMPLETE: 'Completed' } as Record<string, string>)[queue]} <span>{reviewGroups.filter((group) => group.queue === queue).length} groups</span>
             </button>)}
           </nav>
           {queueNames.filter((queue) => queue !== activeQueue).map((queue) => <div key={queue} hidden role="tabpanel" id={`queue-panel-${queue}`} aria-labelledby={`queue-tab-${queue}`} />)}
           <div role="tabpanel" id={`queue-panel-${activeQueue}`} aria-labelledby={`queue-tab-${activeQueue}`} tabIndex={0}>
           <div className="migration-toolbar">
-            <label className="field">Search review groups<input value={search} onChange={(event) => { setSearch(event.target.value); setSelectedGroupKey('') }} placeholder="Search source mappings" /></label>
+            <label className="field">Search review groups<input value={search} onChange={(event) => { setSearch(event.target.value); setSelectedGroupKey(''); setGroupPage(1) }} placeholder="Search source mappings" /></label>
             <label className="field">VDOM<select value={vdomFilter} onChange={(event) => { setVdomFilter(event.target.value); setSelectedGroupKey(''); setDecisionPage(1) }}><option value="all">All VDOMs</option>{vdoms.map((item) => <option key={item}>{item}</option>)}</select></label>
           </div>
           {!visibleGroups.length && <p>{reviewGroups.length ? 'Nothing in this queue.' : 'No migration decisions are required.'}</p>}
@@ -75,9 +83,10 @@ export function MigrationReviewQueues({
           </article>)}
           <div className="mapping-workspace">
             <nav className="mapping-list" aria-label="Source mappings">
-              {visibleGroups.map((group) => <button type="button" key={group.decision_keys[0]} aria-current={selectedGroupKey === group.decision_keys[0] || (!visibleGroups.some((item) => item.decision_keys[0] === selectedGroupKey) && group === visibleGroups[0]) ? 'true' : undefined} onClick={() => setSelectedGroupKey(group.decision_keys[0])}>
+              {visibleGroups.slice((currentPage - 1) * 20, currentPage * 20).map((group) => <button type="button" key={group.decision_keys[0]} aria-current={selectedGroupKey === group.decision_keys[0] || (!visibleGroups.some((item) => item.decision_keys[0] === selectedGroupKey) && group === visibleGroups[0]) ? 'true' : undefined} onClick={() => setSelectedGroupKey(group.decision_keys[0])}>
                 <strong>{group.source_name}</strong><span>{group.source_vdom} · {group.source_kind}</span><span>{({ READY_TO_CONFIRM: 'Review suggestion', CHOOSE_CANDIDATE: 'Choose a match', NEEDS_INPUT: 'Needs input', CONFLICT: 'Conflict', COMPLETE: 'Completed' } as Record<string, string>)[group.queue]}</span>
               </button>)}
+              {pages > 1 && <div className="report-pager"><button type="button" disabled={currentPage <= 1} onClick={() => changePage(currentPage - 1)}>Previous mappings</button><span>{currentPage} / {pages}</span><button type="button" disabled={currentPage >= pages} onClick={() => changePage(currentPage + 1)}>Next mappings</button></div>}
             </nav>
             <div className="mapping-editor">
           {visibleGroups.filter((group) => group === (visibleGroups.find((item) => item.decision_keys[0] === selectedGroupKey) ?? visibleGroups[0])).map((group) => <article className={`review-work-card queue-${group.queue.toLowerCase()}`} key={`${group.source_vdom}:${group.source_kind}:${group.source_name}`}>

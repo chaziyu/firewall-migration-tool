@@ -84,6 +84,15 @@
 .text-button { border: 0; padding: 0; background: none; color: var(--color-primary); font: inherit; cursor: pointer; }
 .file-upload { display: grid; gap: 12px; }
 .migration-view-nav { display: flex; gap: 8px; }
+.migration-view-nav button[aria-pressed="true"] { border-color: var(--color-primary); background: var(--surface); font-weight: 700; }
+.migration-proposal-row { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(150px, 1fr) auto; gap: 12px; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.migration-proposal-row p { margin: 0; color: var(--text-muted); }
+.migration-proposal-detail { grid-column: 1 / -1; display: grid; gap: 12px; padding: 12px; background: var(--surface); }
+.migration-approval-preview { padding: 16px; border: 2px solid var(--color-primary); border-radius: 10px; }
+.migration-approval-preview li { overflow-wrap: anywhere; }
+.mapping-topology { display: block; color: var(--text-muted); margin-top: 6px; }
+.migration-decision-table select { max-width: 260px; }
+@media (max-width: 700px) { .migration-proposal-row { grid-template-columns: 1fr; } .migration-proposal-detail { grid-column: 1; } .migration-view-nav { flex-wrap: wrap; } }
 .migration-view-nav button { padding: 10px 16px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface); color: var(--text-main); font-weight: 600; }
 .migration-view-nav button.active { border-color: var(--color-primary); background: var(--color-primary-subtle); }
 .migration-target-evidence { margin: 16px 0; padding: 12px; border: 1px solid var(--line); border-radius: var(--radius-sm); }

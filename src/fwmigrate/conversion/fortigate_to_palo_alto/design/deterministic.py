@@ -10,6 +10,7 @@ from ..planner import FortiGateToPaloAltoPlanner
 from ..target.target_intent import parse_target_intent
 from ..target.target_suggestions import discover_target_candidates, _device
 from ..target.target_validation import validate_against_target
+from ..target.name_validation import zone_name_issue
 from ..target.target_object_reuse import classify_target_object_reuse
 from ..target.target_plan_validation import assess_target_plan, _items, item_key
 from ..plan_dependencies import build_plan_dependency_index
@@ -17,6 +18,7 @@ from ..validation import validate_plan
 from ..requirements import build_mapping_requirements
 from ..coverage import build_migration_coverage
 from ..recommendations.recommendation_engine import build_recommendations
+from ..options import PANMigrationOptions
 
 
 def draft_context(source_digest, reference=None, reference_role=None, target_device=None, intent=None):
@@ -51,7 +53,7 @@ def _intent_values(context, decisions):
 
 def build_deterministic_draft(config, derived, decisions, *, source_digest, target=None,
                               target_device=None, reference=None, reference_role=None,
-                              intent=None, overrides=None):
+                              intent=None, overrides=None, service_names=None):
     context = draft_context(source_digest, reference, reference_role, target_device, intent)
     overrides = overrides or {}
     by_key = {item.key: item for item in decisions.decisions}
@@ -60,6 +62,8 @@ def build_deterministic_draft(config, derived, decisions, *, source_digest, targ
     if any(not isinstance(value, str) or not value.strip() for value in overrides.values()):
         raise ValueError("draft overrides must be non-empty strings")
     context["overrides"] = {key: value.strip() for key, value in overrides.items()}
+    service_names = PANMigrationOptions(service_names={} if service_names is None else service_names).service_names
+    context["service_names"] = service_names
     graph = build_decision_graph(config, derived, decisions,
                                 build_mapping_requirements(config, derived, include_configuration=True))
     dependencies = {row.decision_key: set(row.depends_on) for row in graph.dependencies}
@@ -140,6 +144,12 @@ def build_deterministic_draft(config, derived, decisions, *, source_digest, targ
             review_state=PANDecisionReviewState.CONFIRMED if values.get(item.key) else PANDecisionReviewState.PENDING,
             approved_operation="CREATE") for item in decisions.decisions))
     plan = FortiGateToPaloAltoPlanner().plan(config, derived, provisional.to_options(), include_configuration=True)
+    if service_names:
+        eligible = {(item.source_vdom or "root", item.source_name) for item in plan.services if item.status.value == "SUPPORTED"}
+        if any((vdom, name) not in eligible for vdom, names in service_names.items() for name in names):
+            raise ValueError("Service name overrides must select current supported services")
+        plan = FortiGateToPaloAltoPlanner().plan(config, derived,
+            replace(provisional.to_options(), service_names=service_names), include_configuration=True)
     # Discover additive deltas using proposed values, never the executable pipeline.
     classifications = classify_target_object_reuse(plan, destination, target_device, allow_additive=True)
     operations = {}
@@ -168,7 +178,10 @@ def build_deterministic_draft(config, derived, decisions, *, source_digest, targ
             decision_blockers[finding.decision_key].append(finding.message)
     for key, item in by_key.items():
         value = values.get(key)
-        if value and (len(value) > 63 or not re.fullmatch(r"[A-Za-z0-9_.:/-]+", value)):
+        if value and item.target_field == "target_zone":
+            if issue := zone_name_issue(value):
+                decision_blockers[key].append(issue)
+        elif value and (len(value) > 63 or not re.fullmatch(r"[A-Za-z0-9_.:/-]+", value)):
             decision_blockers[key].append("Target name is invalid or exceeds 63 characters")
         classification = classification_by_source.get((item.source_vdom, item.source_kind, item.source_name,
                     "interface" if item.target_field == "target_interface" else "zone"))
@@ -236,6 +249,9 @@ def build_deterministic_draft(config, derived, decisions, *, source_digest, targ
                 "CONFLICT" if any(code.startswith("TARGET_") for code in blockers.get(key, ())) else "NEEDS_INPUT",
             "dependencies": list(required) + item_dependencies, "blocking_reasons": reasons,
             "configuration": asdict(item)})
+        comparison = classification_by_source.get((item.source_vdom or "root", item.source_kind, item.source_name, item.source_object_type))
+        if comparison and comparison['status'] != 'NO_MATCH':
+            configuration[-1]['target_comparison'] = comparison
     coverage = build_migration_coverage(config,
         build_recommendations(config, derived, provisional, destination, target_device))
     for number, gap in enumerate(coverage["unplanned"]):
