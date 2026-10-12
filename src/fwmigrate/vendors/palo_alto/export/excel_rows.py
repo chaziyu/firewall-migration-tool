@@ -374,6 +374,10 @@ def _interface_rows(context: _PANExcelContext) -> list[dict[str, Any]]:
     for item in context.config.interfaces:
         view = topology.get((_scope_id(item.scope), item.name or ""))
         row = _base(context, item, "interface")
+        row.update({"Device": item.scope.device_name if item.scope else None,
+                    "Device Serial": item.scope.device_serial if item.scope else None,
+                    "Device Group": item.scope.device_group if item.scope else None,
+                    "Template Stack": item.scope.template_stack if item.scope else None})
         row.update({"Kind": view.kind if view else item.interface_family, "Aggregate Interface": view.aggregate if view else item.aggregate_group,
                     "Topology Path": _text(view.path if view else (item.name,)), "Physical Interfaces": _text(view.physical_interfaces if view else ()),
                     "Attached Tunnels": _text(view.attached_tunnels if view else ()),
@@ -385,9 +389,13 @@ def _interface_rows(context: _PANExcelContext) -> list[dict[str, Any]]:
                     "SD-WAN Interface Profile": item.sdwan_interface_profile, "Upstream NAT": item.upstream_nat})
         rows.append(row)
         for unit in context.config.interface_units:
-            if unit.parent == item.name:
+            if unit.parent == item.name and _scope_key(unit.scope) == _scope_key(item.scope):
                 unit_view = topology.get((_scope_id(unit.scope), unit.name or ""))
                 unit_row = _base(context, unit, "interface")
+                unit_row.update({"Device": unit.scope.device_name if unit.scope else None,
+                                 "Device Serial": unit.scope.device_serial if unit.scope else None,
+                                 "Device Group": unit.scope.device_group if unit.scope else None,
+                                 "Template Stack": unit.scope.template_stack if unit.scope else None})
                 unit_row.update({"Kind": unit_view.kind if unit_view else unit.interface_family or item.interface_family, "Parent Interface": unit.parent,
                                  "Aggregate Interface": unit_view.aggregate if unit_view else None, "Topology Path": _text(unit_view.path if unit_view else (unit.name,)),
                                  "Physical Interfaces": _text(unit_view.physical_interfaces if unit_view else ()), "Attached Tunnels": _text(unit_view.attached_tunnels if unit_view else ()), "Layer": _text(item.mode),
@@ -398,10 +406,14 @@ def _interface_rows(context: _PANExcelContext) -> list[dict[str, Any]]:
                                  "SD-WAN Interface Profile": unit.sdwan_interface_profile, "Upstream NAT": unit.upstream_nat})
                 rows.append(unit_row)
     for unit in context.config.interface_units:
-        if unit.parent and any(item.name == unit.parent for item in context.config.interfaces):
+        if unit.parent and any(item.name == unit.parent and _scope_key(item.scope) == _scope_key(unit.scope) for item in context.config.interfaces):
             continue
         unit_view = topology.get((_scope_id(unit.scope), unit.name or ""))
         row = _base(context, unit, "interface")
+        row.update({"Device": unit.scope.device_name if unit.scope else None,
+                    "Device Serial": unit.scope.device_serial if unit.scope else None,
+                    "Device Group": unit.scope.device_group if unit.scope else None,
+                    "Template Stack": unit.scope.template_stack if unit.scope else None})
         row.update({"Kind": unit_view.kind if unit_view else unit.interface_family, "Parent Interface": unit.parent,
                     "Aggregate Interface": unit_view.aggregate if unit_view else None, "Topology Path": _text(unit_view.path if unit_view else (unit.name,)),
                     "Physical Interfaces": _text(unit_view.physical_interfaces if unit_view else ()), "Attached Tunnels": _text(unit_view.attached_tunnels if unit_view else ()), "IPv4 Addresses": _text(unit.ipv4_addresses),
@@ -566,6 +578,10 @@ def _source_appendix_rows(context: _PANExcelContext) -> Iterator[dict[str, Any]]
             if not len(node) and not text:
                 yield emit(path, "presence", "yes")
             for child in node:
+                # Every <entry> has its own inventory record and appendix traversal.
+                # Stop here so nested records are not repeated under their parent.
+                if child.tag == "entry":
+                    continue
                 yield from visit(child, f"{path}/{child.tag}")
 
         yield from visit(root, root.tag)

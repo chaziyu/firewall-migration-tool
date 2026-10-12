@@ -37,3 +37,16 @@ def test_unsupported_source_remains_in_inventory():
     record = next(item for item in config.source_inventory if item.name == "unknown")
     assert record.source_path.endswith("future-domain/entry")
     assert record.values["future-leaf"] == "keep"
+
+
+def test_unsupported_non_entry_branch_is_preserved_and_sanitized():
+    config = build_panos_config("""<config><shared><future-settings>
+      <mode>custom</mode><api-key>do-not-export</api-key>
+    </future-settings></shared></config>""")
+
+    record = next(item for item in config.source_inventory if item.kind == "future-settings")
+    assert record.source_path.endswith("shared/future-settings")
+    assert record.scope.kind == "shared"
+    assert record.values["mode"] == "custom"
+    assert "do-not-export" not in record.raw_xml
+    assert "[REDACTED]" in record.raw_xml
