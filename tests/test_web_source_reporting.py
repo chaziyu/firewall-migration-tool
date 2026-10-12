@@ -437,8 +437,7 @@ def test_excel_selector_reaches_real_vendor_profiles(vendor, fixture, excluded, 
         for column, dimension in full_sheet.column_dimensions.items():
             if dimension.hidden:
                 assert fast_sheet.column_dimensions[column].hidden, (vendor, name, column)
-    if vendor != "fortigate":
-        assert all(cell.hyperlink is None for row in fast["Summary"] for cell in row)
+    assert any(cell.hyperlink is not None for row in fast["Summary"] for cell in row)
     assert any(cell.hyperlink is not None for row in full["Summary"] for cell in row)
 
 

@@ -1281,7 +1281,7 @@
         "default_action",
         "umbrella_settings"
       ],
-      "sha256": "fb0f978a2447e89a507802800b77aaaf0eb99390ae03125cdc65e8cfb0240394"
+      "sha256": "ae3c1c30667616a4ab07ebdbd9fa88e2b7cc828f77ff0e12e1f5620f094ecc94"
     },
     "CiscoFTDFMCUserRole": {
       "fields": [

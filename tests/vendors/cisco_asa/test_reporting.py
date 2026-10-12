@@ -51,7 +51,10 @@ def test_selected_asa_domains_have_stable_report_sheets_and_headers():
     workbook = load_workbook(BytesIO(output.getvalue()), read_only=True)
     assert tuple(workbook.sheetnames) == SHEET_ORDER
     for name, headers in SHEET_HEADERS.items():
-        assert tuple(workbook[name].iter_rows(min_row=1, max_row=1, values_only=True))[0] == headers
+        header_row = 2 if name == "Summary" else 1
+        row = tuple(workbook[name].iter_rows(min_row=header_row, max_row=header_row, values_only=True))[0]
+        assert row[:len(headers)] == headers
+    assert workbook["Summary"]["A1"].value == "Cisco ASA Configuration Report"
 
 def test_nat_workbook_keeps_source_and_derived_order_columns_distinct():
     result = extract_cisco_asa_source("nat (inside,outside) source static any any\n")
@@ -79,6 +82,8 @@ def test_every_workbook_row_matches_its_header_and_acl_binding_cells_keep_their_
     workbook = load_workbook(BytesIO(output.getvalue()), read_only=True)
 
     for name, headers in SHEET_HEADERS.items():
+        if name == "Summary":
+            continue
         for row in workbook[name].iter_rows(min_row=2, values_only=True):
             assert len(row) == len(headers), (name, row)
     binding = next(workbook["ACL Bindings"].iter_rows(min_row=2, values_only=True))
@@ -125,7 +130,7 @@ def test_excel_formula_like_source_text_is_literal():
     export_asa_excel(result, output)
     workbook = load_workbook(BytesIO(output.getvalue()), read_only=True, data_only=False)
 
-    cell = workbook["Summary"]["B3"]
+    cell = workbook["Summary"]["B4"]
     assert cell.value == "'=1+1"
     assert cell.data_type != "f"
 
@@ -286,7 +291,7 @@ def test_excel_keeps_missing_hostname_and_labels_nat_source_order():
     output = BytesIO()
     export_asa_excel(result, output)
     workbook = load_workbook(BytesIO(output.getvalue()), read_only=True)
-    summary = dict(workbook["Summary"].iter_rows(min_row=2, values_only=True))
+    summary = dict((row[0], row[1]) for row in workbook["Summary"].iter_rows(min_row=3, values_only=True) if row[0] is not None)
     nat_rows = list(workbook["NAT Rules"].iter_rows(values_only=True))
     assert summary["Hostname"] is None
     assert nat_rows[0][1] == "Source Order"
