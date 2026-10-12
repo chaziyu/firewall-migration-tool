@@ -21,11 +21,12 @@ export type DraftRow = {
   blocking_reasons: string[]
   approved?: boolean
   configuration?: Record<string, unknown>
+  target_comparison?: { status: string; target_scope?: string; evidence?: string[] }
 }
 export type MigrationDraft = {
   digest: string
   signature: string
-  context: { reference_role: ReferenceRole | null; overrides: Record<string, string> }
+  context: { reference_role: ReferenceRole | null; overrides: Record<string, string>; service_names?: Record<string, Record<string, string>> }
   destination_verified: boolean
   decisions: DraftRow[]
   configuration: DraftRow[]

@@ -48,6 +48,8 @@ def options_mapping(options):
         mapping["zones"] = {vdom: {name: {"target_zone": item.target_zone} for name, item in mappings.items()
                                     if item.target_zone is not None}
                             for vdom, mappings in options.zones.items()}
+    if options.service_names:
+        mapping['service_names'] = {vdom: dict(names) for vdom, names in options.service_names.items()}
     return mapping
 
 

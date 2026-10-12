@@ -67,6 +67,7 @@ export type ArchitectureQuestion = {
 }
 
 export type ReviewData = {
+  decision_context?: Record<string, Record<string, unknown>>
   decisions: { decisions: Decision[] }
   decision_document: DecisionDocument
   target_devices: string[]

@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { postJson as requestJson, RequestError } from '../../../api/client'
 import type { SourceEvidence } from '../../../storage/workspaceTypes'
 
@@ -17,6 +17,14 @@ export function useMigrationReviewActivity({
   const [reviewLoading, setReviewLoading] = useState(false)
   const [error, setError] = useState('')
   const [status, setStatus] = useState('')
+  const [elapsedSeconds, setElapsedSeconds] = useState(0)
+  const busy = actionBusy || reviewLoading
+  useEffect(() => {
+    if (!busy) return
+    const started = Date.now()
+    const timer = setInterval(() => setElapsedSeconds(Math.floor((Date.now() - started) / 1000)), 1000)
+    return () => clearInterval(timer)
+  }, [busy])
 
   async function postJson<T>(path: string, payload: Record<string, unknown>): Promise<T> {
     const version = requestVersion.current
@@ -36,6 +44,7 @@ export function useMigrationReviewActivity({
   async function run(action: () => Promise<void>, done?: string) {
     const version = ++actionVersion.current
     setActionBusy(true)
+    setElapsedSeconds(0)
     setError('')
     setStatus('')
     try {
@@ -57,6 +66,7 @@ export function useMigrationReviewActivity({
   function beginReviewRequest() {
     const version = ++requestVersion.current
     setReviewLoading(true)
+    setElapsedSeconds(0)
     setError('')
     return version
   }
@@ -82,6 +92,7 @@ export function useMigrationReviewActivity({
     setActionBusy(true)
     setError('')
     setStatus(statusText)
+    setElapsedSeconds(0)
     return version
   }
 
@@ -100,7 +111,8 @@ export function useMigrationReviewActivity({
   return {
     postJson,
     run,
-    busy: actionBusy || reviewLoading,
+    busy,
+    elapsedSeconds,
     setReviewLoading,
     error,
     setError,

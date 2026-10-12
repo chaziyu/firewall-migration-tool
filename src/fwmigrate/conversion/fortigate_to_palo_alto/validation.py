@@ -5,6 +5,7 @@ from ipaddress import IPv4Address, IPv4Network
 
 from .models import MigrationIssue, MigrationSourceRef, PANMigrationPlan, PANMigrationStatus
 from .planning.services import PAN_BUILTIN_SERVICES
+from .target.name_validation import zone_name_issue
 
 
 ItemKey = tuple[str | None, str | None, str | None]
@@ -64,6 +65,9 @@ def validate_plan(plan: PANMigrationPlan) -> MigrationValidationResult:
 
     for item in _items(plan):
         key = _key(item)
+        if item.source_object_type == "zone":
+            if issue := zone_name_issue(item.target_name or item.source_name):
+                add("invalid_zone_name", issue, item)
         for warning in item.warnings:
             issues.append(MigrationIssue("planned_item_warning", warning, PANMigrationStatus.MANUAL_REVIEW, _ref(item)))
         if item.source_object_type == "security_rule" and item.status is PANMigrationStatus.UNSUPPORTED:

@@ -172,6 +172,8 @@ def register_migration_routes(
             target_context.selected_device if target_context else None,
             payload.get('target_intent', bound['intent']))
         context['overrides'] = payload.get('draft_overrides', bound.get('overrides', {}))
+        if 'service_names' in bound or 'service_name_overrides' in payload:
+            context['service_names'] = payload.get('service_name_overrides', bound.get('service_names', {}))
         current = _decision_approval_snapshot(decisions)
         stale = not approval_is_current(approval) or context != bound or current != approval.get('decisions')
         if stale:
@@ -199,7 +201,8 @@ def register_migration_routes(
             reference=target_context.metadata if target_context else None,
             reference_role=payload.get('reference_role'),
             intent=payload.get('target_intent', bound.get('intent')),
-            overrides=payload.get('draft_overrides', bound.get('overrides')))
+            overrides=payload.get('draft_overrides', bound.get('overrides')),
+            service_names=payload.get('service_name_overrides', bound.get('service_names')))
         return state, draft, approval
 
     @app.route('/api/migration/design/prepare', methods=['POST'])
@@ -629,6 +632,7 @@ def register_migration_routes(
                 analysis.extracted.config,
                 analysis.derived,
                 decisions=decision_set,
+                options=PANMigrationOptions(service_names=design_approval['context'].get('service_names', {})),
                 target=target,
                 target_device=target_device,
                 target_evidence=target_context.metadata if target_context else None,

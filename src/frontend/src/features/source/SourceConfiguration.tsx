@@ -220,9 +220,10 @@ export function SourceConfiguration({ view, onViewChange }: {
           <span>{String(preview.acquisition ?? 'Uploaded configuration')}</span>
           {preview.collection != null && <span>Collection: {String(asRecord(preview.collection).status ?? 'Unknown')}</span>}
         </div>}
+        {view === 'migration' && <div className="report-source-context"><strong>FortiGate → PAN-OS</strong><span>{preview.source_evidence?.source_name || file?.name || 'Loaded source configuration'}</span><span>Destination: {targetDevice || 'Not selected'}</span></div>}
         {view === 'migration' && <nav className="migration-view-nav" aria-label="Migration workspace">
-          <button className={migrationView === 'mappings' ? 'active' : ''} type="button" onClick={() => setMigrationView('mappings')}>Design review</button>
-          <button className={migrationView === 'plan' ? 'active' : ''} type="button" disabled={!decisionDocument} onClick={() => setMigrationView('plan')}>Review plan</button>
+          <button className={migrationView === 'mappings' ? 'active' : ''} type="button" onClick={() => setMigrationView('mappings')}>Evidence &amp; design</button>
+          <button className={migrationView === 'plan' ? 'active' : ''} type="button" disabled={!decisionDocument} onClick={() => setMigrationView('plan')}>Build &amp; export</button>
         </nav>}
         <section hidden={view !== 'migration' || migrationView !== 'mappings'}>
         <MigrationReview key={previewId} preview={preview} vendor={vendor} requestedDecision={requestedDecision}
@@ -237,7 +238,7 @@ export function SourceConfiguration({ view, onViewChange }: {
            onViewChange={onViewChange} />
         </div>
         {!decisionDocument && view === 'live' && <section className="panel"><h2>Migration plan required</h2><p>Review source mappings and generate a plan before preparing a target candidate.</p><Button onClick={() => onViewChange('migration')}>Open plan migration</Button></section>}
-      </> : <section className="panel"><h2>Migration source required</h2><p>Load a FortiGate source configuration in Configuration report before planning migration.</p><Button onClick={() => onViewChange('report')}>Open configuration report</Button></section>}
+      </> : !loading && <section className="panel"><h2>Migration source required</h2><p>Upload a FortiGate configuration above to start planning. Configuration report also accepts the same source.</p><Button onClick={() => onViewChange('report')}>Open configuration report</Button></section>}
     </div>
     {error && !(file && !preview && ingestMode === 'config' && view !== 'collect') && <ErrorBanner message={error} />}
   </main>

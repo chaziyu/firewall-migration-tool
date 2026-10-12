@@ -8,10 +8,9 @@ from fwmigrate.conversion.fortigate_to_palo_alto.models import PANMigrationStatu
 PAN_BUILTIN_SERVICES = frozenset({"any", "service-https"})
 
 
-def service_target(name, explicit_names):
-    if name in explicit_names:
-        return name
-    return {"ALL": "any", "HTTPS": "service-https"}.get(name, name)
+def service_target(name, explicit_names, names=None):
+    target = name if name in explicit_names else {"ALL": "any", "HTTPS": "service-https"}.get(name, name)
+    return (names or {}).get(target, target)
 
 
 def plan_services(derived: Any, options: Any = None, source: Any = None):
@@ -25,7 +24,7 @@ def plan_services(derived: Any, options: Any = None, source: Any = None):
         services.append(PlannedService(
             source_vdom=item.vdom, source_kind="service", source_object_type="service",
             source_name=item.name,
-            target_vsys=getattr(getattr(options, "vdoms", {}).get(item.vdom), "vsys", None) if options else getattr(item, "vsys", None), target_name=item.name,
+            target_vsys=getattr(getattr(options, "vdoms", {}).get(item.vdom), "vsys", None) if options else getattr(item, "vsys", None), target_name=getattr(options, "service_names", {}).get(item.vdom, {}).get(item.name, item.name),
             status=PANMigrationStatus.SUPPORTED if supported else PANMigrationStatus.UNSUPPORTED,
             warnings=warnings, protocol=item.protocol, destination_port=item.port,
             source_port=item.source_port,
@@ -39,13 +38,13 @@ def plan_services(derived: Any, options: Any = None, source: Any = None):
         vsys = getattr(getattr(options, "vdoms", {}).get(vdom), "vsys", None) if options else None
         if name == "HTTP":
             services.append(PlannedService(source_vdom=vdom, source_kind="predefined_service",
-                source_object_type="service", source_name=name, target_vsys=vsys, target_name=name,
+                source_object_type="service", source_name=name, target_vsys=vsys, target_name=getattr(options, "service_names", {}).get(vdom, {}).get(name, name),
                 status=PANMigrationStatus.SUPPORTED, protocol="tcp", destination_port="80"))
         else:
             for protocol in ("tcp", "udp"):
                 target = f"FG-DNS-{protocol.upper()}"
                 services.append(PlannedService(source_vdom=vdom, source_kind="predefined_service",
-                    source_object_type="service", source_name=target, target_vsys=vsys, target_name=target,
+                    source_object_type="service", source_name=target, target_vsys=vsys, target_name=getattr(options, "service_names", {}).get(vdom, {}).get(target, target),
                     status=PANMigrationStatus.SUPPORTED if (vdom, target) not in explicit_names else PANMigrationStatus.MANUAL_REVIEW,
                     warnings=() if (vdom, target) not in explicit_names else ("generated DNS service name conflicts with source",),
                     protocol=protocol, destination_port="53"))
@@ -60,7 +59,7 @@ def plan_services(derived: Any, options: Any = None, source: Any = None):
                 name in {"PING", "ALL"} and (item.vdom, name) not in explicit_names for name in item.members or ()
             ) else (),
         target_vsys=getattr(getattr(options, "vdoms", {}).get(item.vdom), "vsys", None) if options else getattr(item, "vsys", None), target_name=item.name,
-        members=tuple(service_target(name, {n for v, n in explicit_names if v == item.vdom}) for name in item.members or ()),
+        members=tuple(service_target(name, {n for v, n in explicit_names if v == item.vdom}, getattr(options, "service_names", {}).get(item.vdom, {})) for name in item.members or ()),
     ) for item in result.groups)
     for vdom, name in sorted(references):
         if name == "DNS" and (vdom, name) not in explicit_names:
@@ -68,5 +67,5 @@ def plan_services(derived: Any, options: Any = None, source: Any = None):
                 source_object_type="service_group", source_name=name,
                 target_vsys=getattr(getattr(options, "vdoms", {}).get(vdom), "vsys", None) if options else None,
                 target_name=name, status=PANMigrationStatus.SUPPORTED,
-                members=("FG-DNS-TCP", "FG-DNS-UDP")),)
+                members=tuple(getattr(options, "service_names", {}).get(vdom, {}).get(n, n) for n in ("FG-DNS-TCP", "FG-DNS-UDP"))),)
     return tuple(services), groups

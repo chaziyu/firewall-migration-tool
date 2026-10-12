@@ -12,6 +12,7 @@ import {
 } from './migrationApi'
 import type { PlanArtifact } from './migrationApi'
 import { PlanReview } from './PlanReview'
+import { planFamilySummary } from './reviewPresentation'
 
 type Props = { preview: SourcePreviewData; decisionDocument: MigrationDecisionDocument | null; targetSource: SourceEvidence | null; targetDevice: string; activeSection: 'plan' | 'live'; onViewChange: (view: 'live') => void; onReviewDecision: (key: string) => void }
 
@@ -66,9 +67,8 @@ export function MigrationWorkflow({ preview, decisionDocument, targetSource, tar
     setArtifact(null); setCommandText(''); setSessionId(''); setCandidateValidated(false)
     setBusy(false)
     setError(null)
-    setStatus(decisionDocument ? 'Approve the proposed design before building an artifact.' : 'Migration review is updating. Previous candidate eligibility has been revoked.')
+    setStatus(decisionDocument?.design_approval ? 'Design approved. Build the artifact explicitly.' : decisionDocument ? 'Approve the proposed design before building an artifact.' : 'Migration review is updating. Previous candidate eligibility has been revoked.')
     void saveWorkspace({ artifact: null })
-    if (decisionDocument && decisionDocument.design_approval) void generatePlan()
   }, [decisionDocument, targetSource, targetDevice, preview.source_digest, generatePlan])
 
   useEffect(() => {
@@ -76,6 +76,10 @@ export function MigrationWorkflow({ preview, decisionDocument, targetSource, tar
   }, [activityLog, autoScroll])
 
   if (preview.vendor !== 'fortigate') return null
+  const partial = artifact ? !['READY', 'READY_NO_CHANGES'].includes(artifact.plan_status)
+    : Boolean(decisionDocument?.decisions?.some((row) => row.mode !== 'AUTO' && row.review_state !== 'CONFIRMED'))
+  const families = planFamilySummary(artifact?.report.items ?? [])
+  const noTrafficRules = artifact && !['security_rule', 'nat_rule', 'static_route'].some((family) => (families[family]?.included ?? 0) > 0)
 
   function log(line: string) { setActivityLog((lines) => [...lines, line]) }
 
@@ -141,32 +145,38 @@ export function MigrationWorkflow({ preview, decisionDocument, targetSource, tar
 
   async function saveArtifact(kind: 'bundle' | 'commands') {
     if (!artifact || !decisionDocument?.design_approval) return
+    const request = buildRequest.current
     setBusy(true); setError(null)
     try {
       const blob = await (kind === 'bundle' ? downloadBundle(artifact, preview.source_evidence!) : downloadCommands(artifact))
-      downloadFile(blob, kind === 'bundle' ? 'migration_fortigate_to_palo_alto.zip' : 'palo_alto_config.set')
-    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Download failed') }
-    finally { setBusy(false) }
+      if (request !== buildRequest.current) return
+      downloadFile(blob, kind === 'bundle' ? `migration_fortigate_to_palo_alto${partial ? '_PARTIAL' : ''}.zip` : `palo_alto_config${partial ? '_PARTIAL' : ''}.set`)
+      setStatus(`${partial ? 'Partial' : 'Migration'} ${kind === 'bundle' ? 'bundle' : 'commands'} downloaded. ${partial ? 'Blocked items are excluded; deployment is not ready.' : 'Review the artifact before deployment.'}`)
+    } catch (cause) { if (request === buildRequest.current) setError(cause instanceof Error ? cause.message : 'Download failed') }
+    finally { if (request === buildRequest.current) setBusy(false) }
   }
 
   return activeSection === 'plan' ? <section className="panel migration-workflow" aria-labelledby="migration-title">
     <h2 id="migration-title"><span className="step-num">03</span> Migration plan</h2>
-    <p>The plan updates as source, target evidence, or confirmed decisions change.</p>
-    <Button disabled={busy || !decisionDocument || !decisionDocument.design_approval} onClick={() => void generatePlan()}>Build approved artifact</Button>
+    <p>Build explicitly after design approval. Source, target evidence or mapping edits revoke the previous artifact.</p>
+    <Button disabled={busy || !decisionDocument || !decisionDocument.design_approval} onClick={() => void generatePlan()}>{partial ? 'Build approved partial plan' : 'Build approved artifact'}</Button>
     {(!decisionDocument?.design_approval || (!artifact && error)) && <Button onClick={() => onReviewDecision('')}>Review and approve design</Button>}
     {status && <p role="status" aria-live="polite">{status}</p>}
     {artifact && <div className="artifact-summary">
       <h3>04 Review migration plan</h3>
       <p><strong>Plan status: {artifact.plan_status}</strong></p>
       <p>{artifact.render_summary.create || 0} to create · {artifact.render_summary.configure || 0} to configure · {artifact.render_summary.reuse || 0} to reuse · {artifact.render_summary.blocked || 0} blocked · {artifact.artifact.command_count} commands</p>
-      <p className="artifact-identity">Artifact: {artifact.artifact_id} · SHA-256: {artifact.report.command_sha256 ?? 'Not reported'}</p>
+      {partial && <p className="error-banner" role="status">Partial export: blocked and unsupported work is excluded. This artifact is not deployment-ready.</p>}
+      {noTrafficRules && <p role="status">No security policies, NAT rules or static routes are included. This export contains supporting configuration only.</p>}
+      <div className="report-table-wrap"><table className="report-table"><caption>Included and blocked configuration</caption><thead><tr><th>Family</th><th>Included</th><th>Blocked</th></tr></thead><tbody>{Object.entries(families).map(([family, counts]) => <tr key={family}><td>{family.replaceAll('_', ' ')}</td><td>{counts.included}</td><td>{counts.blocked}</td></tr>)}</tbody></table></div>
+      <details><summary>Artifact identity</summary><p className="artifact-identity">Artifact: {artifact.artifact_id} · SHA-256: {artifact.report.command_sha256 ?? 'Not reported'}</p></details>
       <PlanReview key={artifact.artifact_id} artifact={artifact} onReviewDecision={onReviewDecision} />
       <h3>Generated commands</h3>
-      {artifact.artifact.command_count > 0 ? <label className="field">Command preview<textarea readOnly value={commandText} rows={10} /></label> : <div className="review-work-card">
+      {artifact.artifact.command_count > 0 ? <details><summary>Command preview ({artifact.artifact.command_count})</summary><label className="field">Command preview<textarea readOnly value={commandText} rows={10} /></label></details> : <div className="review-work-card">
         <p>{artifact.plan_status === 'READY_NO_CHANGES' ? 'The reviewed plan requires no changes.' : artifact.plan_status === 'NEEDS_MAPPING' ? 'Complete required target mappings to render commands.' : 'Review blockers and support guidance before commands can be rendered.'}</p>
         {artifact.plan_status === 'NEEDS_MAPPING' && <Button onClick={() => onReviewDecision(String(decisionDocument?.decisions.find((item) => item.mode !== 'AUTO' && item.mode !== 'UNSUPPORTED' && item.review_state !== 'CONFIRMED')?.key ?? artifact.support_guidance?.find((item) => item.decision_key)?.decision_key ?? ''))}>Review required mappings</Button>}
       </div>}
-      <div className="action-row"><Button disabled={busy || (!artifact.artifact.command_count && artifact.plan_status !== 'READY_NO_CHANGES')} onClick={() => void saveArtifact('bundle')}>Download migration bundle</Button><Button disabled={busy || !artifact.artifact.command_count} onClick={() => void saveArtifact('commands')}>Download .set</Button></div>
+      <div className="action-row"><Button disabled={busy || (!artifact.artifact.command_count && artifact.plan_status !== 'READY_NO_CHANGES')} onClick={() => void saveArtifact('bundle')}>{partial ? 'Download partial bundle' : 'Download migration bundle'}</Button><Button disabled={busy || !artifact.artifact.command_count} onClick={() => void saveArtifact('commands')}>{partial ? 'Download partial .set' : 'Download .set'}</Button></div>
       <Button className="text-button" onClick={() => onViewChange('live')}>Open live migration</Button>
     </div>}
     {error && <ErrorBanner message={error} />}
