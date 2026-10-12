@@ -108,7 +108,7 @@ _SOURCE_INVENTORY_WIDTHS = {
     "Raw Extra Entries": 18,
 }
 
-_FAST_REQUIRED_SHEETS = frozenset({"Review Required"})
+_FAST_REQUIRED_SHEETS = frozenset({"Review Required", "Review Summary"})
 _FAST_EXCLUDED_SHEETS = frozenset({"FortiGate Source Inventory", "Extraction Coverage"})
 
 
@@ -414,17 +414,17 @@ def _write_fast_summary(workbook: Workbook, context: _ExcelContext) -> None:
         ("Validation Warnings", len(context.validation.warnings)),
         (
             "Export Profile",
-            "FAST export omits command-level Source Inventory and Extraction Coverage. "
-            "Use FULL export for complete source traceability.",
+            "FAST export omits command-level Source Inventory and Extraction Coverage. It is not a complete command-level source audit. Use FULL for traceability.",
         ),
     ]
+    metadata.append(("Source Sections Found", len(context.source_paths)))
     metadata.extend(collection_summary(context.collection_status))
     counts = _inventory_counts(context)
-    navigation = [
+    navigation = list(dict.fromkeys(
         target
         for _, count, target in counts
         if count and target not in _FAST_EXCLUDED_SHEETS
-    ]
+    ))
     nav_index = 0
 
     def append_row(values: list[Any], *, navigation_header: bool = False) -> None:
@@ -608,7 +608,19 @@ def _write_table_sheet(
     row_count = 0
     for row in rows:
         row_count += 1
-        sheet.append([_excel_safe(row.get(header)) for header in headers])
+        values = [_excel_safe(row.get(header)) for header in headers]
+        sheet.append(values)
+        if sheet_name == "Review Summary" and row.get("First Detail"):
+            column = headers.index("First Detail") + 1
+            cell = sheet.cell(row_count + 3, column)
+            target_sheet, target_cell = row["First Detail"].split("!", 1)
+            cell.value = "Open detail"
+            cell.hyperlink = f"#'{target_sheet}'!{target_cell}"
+            cell.font = _LINK_FONT
+        elif sheet_name == "Unsupported" and context.profile is ExcelExportProfile.FULL and row.get("Raw Capture Location") == "FortiGate Source Inventory":
+            cell = sheet.cell(row_count + 3, headers.index("Raw Capture Location") + 1)
+            cell.hyperlink = "#'FortiGate Source Inventory'!A1"
+            cell.font = _LINK_FONT
         outline = row.get("__outline_level__")
         if isinstance(outline, int) and outline > 0:
             sheet.row_dimensions[row_count + 3].outlineLevel = min(outline, 7)
@@ -664,7 +676,14 @@ def _write_table_sheet_fast(
     row_count = 0
     for row in rows:
         row_count += 1
-        sheet.append([_excel_safe(row.get(header)) for header in headers])
+        values = [_excel_safe(row.get(header)) for header in headers]
+        if sheet_name == "Review Summary" and row.get("First Detail"):
+            column = headers.index("First Detail")
+            target_sheet, target_cell = row["First Detail"].split("!", 1)
+            cell = _fast_cell(sheet, "Open detail")
+            cell.hyperlink = f"#'{target_sheet}'!{target_cell}"
+            values[column] = cell
+        sheet.append(values)
 
     if row_count:
         sheet.auto_filter.ref = f"A3:{get_column_letter(max_col)}{row_count + 3}"
@@ -819,8 +838,17 @@ def _sheet_note(
     if sheet_name == "Policies" and row_count:
         return (
             f"{row_count} record(s). {_POLICY_ACTION_NOTE} "
+            "Policy Order is source sequence within the VDOM; Action Origin distinguishes explicit actions from the FortiOS default. "
             "Other values are explicit source data unless identified as derived or analysis output."
         )
+
+    if sheet_name == "Services":
+        return "Generated identifies report rows derived by FortiGate service transformation; Summary separates explicit source objects from generated rows."
+    if sheet_name == "Service Groups":
+        return "Generated identifies report rows derived by FortiGate service transformation; Summary separates explicit source groups from generated rows."
+
+    if sheet_name == "NAT Rules" and row_count:
+        return f"{row_count} record(s). Derived policy NAT view, not a separate FortiGate source rulebase. SNAT Type, SNAT Address, and Egress Interfaces are derived reporting values."
 
     if row_count:
         return (
@@ -840,8 +868,10 @@ def _inventory_counts(context: _ExcelContext) -> list[tuple[str, int, str]]:
         ("Zones", len(config.zones), "Zones"),
         ("Addresses", len(config.addresses), "Addresses"),
         ("Address Groups", len(config.address_groups), "Address Groups"),
-        ("Services", len(context.derived.services.services), "Services"),
-        ("Service Groups", len(context.derived.services.groups), "Service Groups"),
+        ("Explicit Service Objects", len(config.services), "Services"),
+        ("Generated Service Rows", sum(bool(item.generated) for item in context.derived.services.services), "Services"),
+        ("Explicit Service Groups", len(config.service_groups), "Service Groups"),
+        ("Generated Service Group Rows", sum(bool(item.generated) for item in context.derived.services.groups), "Service Groups"),
         ("Policies", len(config.policies), "Policies"),
         ("Security Policies", len(config.security_policies), "Security Policies"),
         ("NAT Rules", len(context.derived.nat), "NAT Rules"),
@@ -895,7 +925,9 @@ def _migration_indicators(context: _ExcelContext) -> list[tuple[str, Any]]:
     return [
         ("IPv6 Explicit Configuration Present", "Yes" if context.ipv6_explicit else "No"),
         ("Dynamic WAN Addressing Present", "Yes" if dynamic_wan else "No"),
-        ("SD-WAN Present", "Yes" if config.sdwans else "No"),
+        ("SD-WAN Configuration Present", "Yes" if config.sdwans else "No"),
+        ("SD-WAN Members", sum(len(item.members) for item in config.sdwans)),
+        ("SD-WAN Explicit Status by VDOM", "\n".join(f"{item.vdom}: {item.status if 'status' in item.explicit_fields and item.status is not None else 'Not explicitly configured'}" for item in config.sdwans) or "Not configured"),
         ("NAT Review Items", nat_review_items),
         ("Broken References", len(context.derived.broken_references)),
         ("Topology Issues", topology_issues),
