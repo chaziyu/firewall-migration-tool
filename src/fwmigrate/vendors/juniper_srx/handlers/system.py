@@ -51,9 +51,9 @@ def classify_system_branch(cmd: JunosCommand, context_type: str) -> str:
 
 
 def preserve_context_system_command(cmd: JunosCommand, context: JuniperContextConfig) -> bool:
-    context.source_attributes.setdefault("unsupported_system", []).append(
-        sanitize_source_attributes({"tokens": cmd.tokens[1:], "raw": cmd.raw_sanitized})
-    )
+    source = sanitize_source_attributes({"tokens": cmd.tokens, "raw": cmd.raw_sanitized})
+    source["tokens"] = source["tokens"][1:]
+    context.source_attributes.setdefault("unsupported_system", []).append(source)
     cmd.consumed = True
     cmd.handler = "system"
     cmd.extraction_status = ExtractionStatus.SOURCE_ONLY

@@ -45,6 +45,7 @@ def test_excel_policy_projection_keeps_zone_and_global_orders_separate():
     result = extract_juniper_source("\n".join([
         "set security policies from-zone a to-zone b policy P1 then permit",
         "set security policies from-zone a to-zone b policy P2 then deny",
+        "set security policies from-zone c to-zone d policy P1 then permit",
         "set security policies from-zone c to-zone d policy P3 then permit",
         "set security policies global policy G1 then permit",
         "set security policies global policy G2 then deny",
@@ -56,8 +57,17 @@ def test_excel_policy_projection_keeps_zone_and_global_orders_separate():
     assert rows[0] == ("Context", "Policy Scope", "From Zone", "To Zone", "Name", "Order")
     assert [row[1:] for row in rows[1:]] == [
         ("zone", "a", "b", "P1", 0), ("zone", "a", "b", "P2", 1),
-        ("zone", "c", "d", "P3", 0), ("global", None, None, "G1", 0), ("global", None, None, "G2", 1),
+        ("zone", "c", "d", "P1", 0), ("zone", "c", "d", "P3", 1),
+        ("global", None, None, "G1", 0), ("global", None, None, "G2", 1),
     ]
+    details = list(load_workbook(output, read_only=True)["Policy Details"].values)
+    detail_headers = details[0]
+    details_by_key = {(row[detail_headers.index("Policy Scope")], row[detail_headers.index("Name")],
+                       row[detail_headers.index("From Zones")]): row[detail_headers.index("Order")]
+                      for row in details[1:]}
+    assert details_by_key[("zone", "P1", "['a']")] == 0
+    assert details_by_key[("zone", "P1", "['c']")] == 0
+    assert details_by_key[("global", "G2", "[]")] == 1
 
 
 def test_global_policy_zone_matches_survive_derived_view_and_excel():

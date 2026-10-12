@@ -37,3 +37,30 @@ def test_access_firewall_users_are_separate_from_admin_and_secrets_are_redacted(
     assert all(secret not in output for output in outputs)
     assert "radius-secret-value" not in " ".join(outputs)
     assert all(value not in " ".join(outputs) for value in other_secrets)
+
+
+def test_unsupported_logical_system_login_tokens_are_redacted_everywhere():
+    secret = "UNSUPPORTED_LOGIN_SECRET_MUST_NOT_ESCAPE"
+    result = extract_juniper_source(
+        f"set logical-systems TENANT system login user alice authentication encrypted-password {secret}"
+    )
+    logical_system = result.config.get_context("TENANT", "logical-system")
+    unsupported = logical_system.source_attributes["unsupported_system"][0]
+    assert "[REDACTED]" in unsupported["tokens"]
+
+    from fwmigrate.vendors.juniper_srx.web_report import build_juniper_preview
+    preview = json.dumps(build_juniper_preview(result))
+    assert secret not in result.config.model_dump_json()
+    assert secret not in preview
+
+    from fwmigrate.source_reporting.options import ExcelExportProfile
+    from fwmigrate.vendors.juniper_srx.export.excel import export_juniper_excel
+    for profile in (ExcelExportProfile.FULL, ExcelExportProfile.FAST):
+        workbook = BytesIO()
+        export_juniper_excel(result, workbook, profile=profile)
+        workbook.seek(0)
+        sheets = load_workbook(workbook, read_only=True, data_only=True)
+        for sheet_name in ("Source Inventory", "Additional Settings"):
+            if sheet_name in sheets.sheetnames:
+                text = " ".join(str(cell.value) for row in sheets[sheet_name].iter_rows() for cell in row)
+                assert secret not in text
