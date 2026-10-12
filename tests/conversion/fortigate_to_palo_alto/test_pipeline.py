@@ -415,3 +415,24 @@ def test_pipeline_target_intent_remains_durable_after_target_evidence_changes():
     assert len(second.invalidated_target_decisions) == 3
     assert all(item.evidence_type == "TARGET_INTENT" for item in second.decisions.decisions)
     assert all(item.evidence_target_digest is None for item in second.decisions.decisions)
+
+
+def test_populated_target_rulebase_blocks_new_security_rule_and_reports_placement():
+    from fwmigrate.vendors.fortigate.model.policy import FGPolicy
+    from fwmigrate.vendors.palo_alto.model.policy import PANSecurityRule
+
+    source = FGConfig(policies=[FGPolicy(policy_id=7, name="new-rule", srcintf=["lan"], dstintf=["wan"],
+        srcaddr=["all"], dstaddr=["all"], service=["ALL"], schedule="always", action="accept")])
+    target = _target_interface("ethernet1/1", "192.0.2.1/24")
+    target.config.security_rules = [PANSecurityRule(name="existing-rule", source_path="/rule",
+        scope=PANScope(kind="vsys", name="vsys1", vsys="vsys1", device_name="dev"), source_order=1)]
+    result = run_migration_pipeline(source, _empty_derived(), target=target, target_device="dev",
+        target_evidence={"vendor": "palo_alto", "config_digest": "digest-a", "device": "dev"},
+        options=PANMigrationOptions(vdoms={"root": {"vsys": "vsys1", "virtual_router": "vr-main"}},
+            interfaces={"root": {"lan": {"target_zone": "trust"}, "wan": {"target_zone": "untrust"}}}))
+
+    assert any(item.code == "TARGET_RULE_PLACEMENT_UNVERIFIED" for item in result.target_plan_findings)
+    rule = next(item for item in result.rendered.report["items"] if item["source_object_type"] == "security_rule")
+    assert rule["render_disposition"] == "BLOCK"
+    assert "TARGET_RULE_PLACEMENT_UNVERIFIED" in rule["render_blockers"]
+    assert not any("rulebase security rules new-rule" in command for command in result.rendered.commands)

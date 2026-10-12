@@ -95,7 +95,8 @@ def test_service_rename_keeps_vdom_group_policy_and_nat_references_consistent():
         srcaddr=['all'], dstaddr=['all'], service=['web'], schedule='always', action='accept') for vdom in ('root', 'blue')])
     derived = SimpleNamespace(services=SimpleNamespace(services=services, groups=groups), nat=[SimpleNamespace(
         vdom='root', policy_id=1, policy_name='allow', issues=[], translation_type='ip_pool',
-        translated_addresses=['203.0.113.10'], egress_interfaces=['wan'])])
+        pool_names=['POOL'], pool_types=['overload'], translated_addresses=['203.0.113.10'],
+        egress_interfaces=['wan'])])
     options = PANMigrationOptions(service_names={'root': {'web': 'FG-web'}},
         vdoms={'root': {'vsys': 'vsys1'}, 'blue': {'vsys': 'vsys2'}},
         interfaces={vdom: {'wan': {'target_interface': 'ethernet1/1', 'target_zone': 'outside'}} for vdom in ('root', 'blue')})

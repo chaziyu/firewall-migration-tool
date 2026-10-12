@@ -1,5 +1,6 @@
 from copy import deepcopy
 from types import SimpleNamespace
+from types import SimpleNamespace
 from dataclasses import replace
 import pytest
 
@@ -147,3 +148,24 @@ def test_dependency_index_preserves_backward_edges_cycles_order_and_vdom_isolati
     assert index.decision_keys_by_item[item_key(branch)] == ()
     assert all(index.decision_keys_by_item[key] == (decision.key,) for key in expected)
     assert index.dependents_by_item[item_key(grandchild)] == (item_key(parent), item_key(zone))
+
+
+def test_populated_target_rulebase_placement_blocker_is_visible_in_draft():
+    from fwmigrate.vendors.fortigate.model.policy import FGPolicy
+    from fwmigrate.vendors.palo_alto.native import build_derived_views
+    from fwmigrate.vendors.palo_alto.source_builder import build_panos_config
+
+    config = FGConfig(policies=[FGPolicy(policy_id=1, name="new", srcintf=["lan"], dstintf=["wan"],
+        srcaddr=["all"], dstaddr=["all"], service=["ALL"], schedule="always", action="accept")])
+    pan_config = build_panos_config("""<config><devices><entry name='dev'><vsys><entry name='vsys1'>
+      <rulebase><security><rules><entry name='existing'/></rules></security></rulebase>
+    </entry></vsys></entry></devices></config>""")
+    target = SimpleNamespace(config=pan_config, derived=build_derived_views(pan_config))
+    views = derived()
+    state = build_review_state(config, views, "source", include_configuration=True)
+    result = build_deterministic_draft(config, views, state["decisions"], source_digest="source",
+        target=target, target_device="dev", reference_role="DESTINATION")
+
+    assert any(item["code"] == "TARGET_RULE_PLACEMENT_UNVERIFIED" for item in result.findings)
+    planned = next(item for item in result.configuration if item["family"] == "security_rule")
+    assert "TARGET_RULE_PLACEMENT_UNVERIFIED" in planned["blocking_reasons"]

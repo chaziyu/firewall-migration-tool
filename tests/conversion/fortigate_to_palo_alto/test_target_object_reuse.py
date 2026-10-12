@@ -23,6 +23,7 @@ from fwmigrate.vendors.palo_alto.model.service import PANService, PANServiceProt
 from fwmigrate.vendors.palo_alto.source_model import PANScope
 from fwmigrate.vendors.palo_alto.model.routing import PANStaticRoute, PANVirtualRouter
 from fwmigrate.vendors.palo_alto.model.nat import PANNATRule
+from fwmigrate.vendors.palo_alto.model.policy import PANSecurityRule
 from fwmigrate.vendors.palo_alto.model.interface import PANInterface
 from fwmigrate.vendors.palo_alto.model.zone import PANZone
 from fwmigrate.vendors.palo_alto.relationships.topology import PANInterfaceTopologyEntry
@@ -90,6 +91,14 @@ def test_address_reuse_rejects_alternate_form_and_unknown_semantics():
     unknown = PANAddress(source_path="/address", ip_netmask="192.0.2.1/32",
                          explicit_fields={"ip_netmask"}, raw_extra={"future": "value"})
     assert _address(source, unknown)[1]
+
+
+def test_address_tags_prevent_unverified_exact_reuse():
+    source = PlannedAddress(address_type="ip-netmask", value="192.0.2.1/32")
+    target = PANAddress(source_path="/address", ip_netmask="192.0.2.1/32", tags=["dynamic-membership"],
+                        explicit_fields={"ip_netmask", "tags"})
+    assert _address(source, target)[0] == ()
+    assert any("tags" in warning for warning in _address(source, target)[1])
 
 
 def test_address_group_reuse_rejects_dynamic_or_unknown_semantics():
@@ -438,3 +447,54 @@ def test_exact_interface_reuse_skips_creation_and_conflicts_block_dependents():
     assert conflict_dispositions[item_key(interface)] is PANRenderDisposition.BLOCK
     assert conflict_dispositions[item_key(zone)] is PANRenderDisposition.BLOCK
     assert conflict_dispositions[item_key(rule)] is PANRenderDisposition.BLOCK
+
+
+def test_populated_target_rulebase_blocks_unverified_placement():
+    scope = PANScope(kind="vsys", name="vsys1", vsys="vsys1", device_name="dev")
+    planned = PlannedSecurityRule(source_vdom="root", source_kind="policy", source_object_type="security_rule",
+        source_name="new-policy", target_name="new-policy", target_vsys="vsys1", status=PANMigrationStatus.SUPPORTED,
+        from_zones=("trust",), to_zones=("untrust",), sources=("any",), destinations=("any",), services=("any",), action="allow")
+    plan = PANMigrationPlan(security_rules=(planned,))
+    empty = SimpleNamespace(config=SimpleNamespace(security_rules=[], nat_rules=[]))
+    assert classify_target_object_reuse(plan, empty, "dev") == ()
+
+    unrelated = PANSecurityRule(name="unrelated", source_path="/rule", scope=PANScope(
+        kind="vsys", name="vsys2", vsys="vsys2", device_name="dev"))
+    target = SimpleNamespace(config=SimpleNamespace(security_rules=[unrelated], nat_rules=[]))
+    assert classify_target_object_reuse(plan, target, "dev") == ()
+
+    existing = PANSecurityRule(name="existing", source_path="/rule", scope=scope, source_order=1)
+    target.config.security_rules = [existing]
+    classification = classify_target_object_reuse(plan, target, "dev")
+    assert len(classification) == 1
+    assert classification[0]["status"] == "ORDER_UNVERIFIED"
+
+    decisions = PANMigrationDecisionSet()
+    dependencies = build_plan_dependency_index(plan, decisions)
+    findings = validate_target_plan(plan, classification, (), decisions, dependencies)
+    assert findings[0].code == "TARGET_RULE_PLACEMENT_UNVERIFIED"
+    dispositions, blockers = assess_target_plan(plan, classification, (), decisions, dependencies)
+    assert dispositions[item_key(planned)] is PANRenderDisposition.BLOCK
+    assert "TARGET_RULE_PLACEMENT_UNVERIFIED" in blockers[item_key(planned)]
+
+
+def test_target_rule_name_conflict_is_preserved_with_populated_rulebase():
+    scope = PANScope(kind="vsys", name="vsys1", vsys="vsys1", device_name="dev")
+    planned = PlannedSecurityRule(source_vdom="root", source_kind="policy", source_object_type="security_rule",
+        source_name="same", target_name="same", target_vsys="vsys1", status=PANMigrationStatus.SUPPORTED)
+    existing = PANSecurityRule(name="same", source_path="/rule", scope=scope, source_order=1)
+    target = SimpleNamespace(config=SimpleNamespace(security_rules=[existing], nat_rules=[]))
+    statuses = [item["status"] for item in classify_target_object_reuse(PANMigrationPlan(security_rules=(planned,)), target, "dev")]
+    assert "ORDER_UNVERIFIED" not in statuses
+    assert statuses == ["AMBIGUOUS"]
+
+
+def test_populated_target_nat_rulebase_blocks_unverified_placement():
+    scope = PANScope(kind="vsys", name="vsys1", vsys="vsys1", device_name="dev")
+    planned = PlannedNATRule(source_vdom="root", source_kind="source_nat", source_object_type="nat_rule",
+        source_name="new-nat", target_name="new-nat", target_vsys="vsys1", status=PANMigrationStatus.SUPPORTED)
+    existing = PANNATRule(name="existing-nat", source_path="/nat", scope=scope, source_order=1)
+    target = SimpleNamespace(config=SimpleNamespace(nat_rules=[existing], security_rules=[]))
+    result = classify_target_object_reuse(PANMigrationPlan(nat_rules=(planned,)), target, "dev")
+    assert result[0]["family"] == "nat_rule"
+    assert result[0]["status"] == "ORDER_UNVERIFIED"

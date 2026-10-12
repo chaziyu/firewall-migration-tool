@@ -33,6 +33,11 @@ def plan_routes(source: Any, options: Any, derived: Any = None):
                 warnings.append(f"missing target interface mapping for {route.device!r}")
         if not virtual_router:
             warnings.append("missing target virtual-router mapping")
+        if str(getattr(route, "status", "")).strip().lower() in {"disable", "disabled"}:
+            warnings.append("disabled FortiGate static route cannot be safely represented as active PAN-OS routing")
+        explicit_fields = getattr(route, "explicit_fields", set()) or set()
+        if "priority" in explicit_fields or route.priority is not None:
+            warnings.append("FortiGate route priority has no verified PAN-OS metric mapping")
         if not destination and not any("destination reference" in warning for warning in warnings):
             warnings.append("route has no explicit destination")
         if route.dynamic_gateway or route.sdwan_zone or route.src or route.vrf is not None:
@@ -46,8 +51,8 @@ def plan_routes(source: Any, options: Any, derived: Any = None):
             source_policy_id=route.seq_num, status=status, warnings=tuple(warnings),
             target_vsys=getattr(mapping, "vsys", None), target_name=str(route.seq_num) if route.seq_num is not None else destination,
             destination=destination, nexthop_type="discard" if blackhole else ("ip-address" if nexthop else None),
-            nexthop=nexthop, admin_distance=getattr(route, "distance", None), interface=interface,
-            virtual_router=virtual_router, disabled=getattr(route, "status", None) in {"disable", "disabled"},
+            nexthop=nexthop, admin_distance=getattr(route, "distance", None), priority=route.priority, interface=interface,
+            virtual_router=virtual_router, disabled=str(getattr(route, "status", "")).strip().lower() in {"disable", "disabled"},
             description=getattr(route, "comment", None),
         ))
     return tuple(result)

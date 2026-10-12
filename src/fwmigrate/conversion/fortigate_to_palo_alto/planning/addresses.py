@@ -89,8 +89,14 @@ def _plan_address(source: Any, options: Any):
 
 def _plan_group(source: Any, options: Any):
     status, warnings, issue = _scope(source, options)
-    excluded = bool(getattr(source, "exclude", None) or getattr(source, "exclude_members", ()))
-    if excluded:
+    exclude = getattr(source, "exclude", None)
+    exclude_value = str(exclude).strip().lower() if exclude is not None else None
+    excluded_members = getattr(source, "exclude_members", None)
+    active_exclusion = exclude_value in {"enable", "enabled", "yes", "true", "1"}
+    ambiguous_exclusion = (exclude is not None and exclude_value not in {
+        "enable", "enabled", "yes", "true", "1", "disable", "disabled", "no", "false", "0"
+    }) or (exclude is None and bool(excluded_members))
+    if active_exclusion or ambiguous_exclusion or bool(excluded_members) and exclude_value not in {"disable", "disabled", "no", "false", "0"}:
         status = PANMigrationStatus.MANUAL_REVIEW
         warnings = (*warnings, "address-group exclusions are not represented by a static PAN group")
     if source.members is None:

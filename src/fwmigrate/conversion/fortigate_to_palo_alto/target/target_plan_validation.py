@@ -43,10 +43,14 @@ def _items(plan):
 
 
 def _reuse_code(status):
+    if status == "ORDER_UNVERIFIED":
+        return "TARGET_RULE_PLACEMENT_UNVERIFIED"
     return "TARGET_NAME_CONFLICT" if status == "NAME_CONFLICT" else "TARGET_OBJECT_AMBIGUOUS"
 
 
 def _reuse_message(status, family, target_name):
+    if status == "ORDER_UNVERIFIED":
+        return f"Target {family.replace('_', ' ')} placement for '{target_name}' is unverified because the applicable rulebase is populated."
     if status == "NAME_CONFLICT":
         return f"Target {family.replace('_', ' ')} '{target_name}' has explicit semantics that differ from the planned object."
     return f"Target {family.replace('_', ' ')} '{target_name}' cannot be confirmed as an exact match."
@@ -58,7 +62,7 @@ def validate_target_plan(plan: PANMigrationPlan, classifications, target_finding
     result = []
     for item in classifications:
         status = item.get("status")
-        if status not in {"NAME_CONFLICT", "AMBIGUOUS", "EXACT_MATCH"}:
+        if status not in {"NAME_CONFLICT", "AMBIGUOUS", "EXACT_MATCH", "ORDER_UNVERIFIED"}:
             continue
         if status == "EXACT_MATCH" and item.get("family") in _REUSABLE:
             continue
@@ -118,7 +122,7 @@ def assess_target_plan(plan: PANMigrationPlan, classifications, target_findings,
                 dispositions[item_key(item)] = PANRenderDisposition.CONFIGURE if approved else PANRenderDisposition.BLOCK
                 if not approved:
                     blockers[item_key(item)].append("ADDITIVE_CONFIGURATION_REQUIRES_APPROVAL")
-            elif status in {"NAME_CONFLICT", "AMBIGUOUS", "EXACT_MATCH"}:
+            elif status in {"NAME_CONFLICT", "AMBIGUOUS", "EXACT_MATCH", "ORDER_UNVERIFIED"}:
                 dispositions[item_key(item)] = PANRenderDisposition.BLOCK
                 blockers[item_key(item)].append(_reuse_code(status))
     for item in items:

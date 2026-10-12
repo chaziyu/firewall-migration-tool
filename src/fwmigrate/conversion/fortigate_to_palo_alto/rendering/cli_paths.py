@@ -95,6 +95,8 @@ def dhcp_server(item):
 
 
 def static_route(item):
+    if item.disabled or item.priority is not None:
+        return []
     base = ("network", "virtual-router", item.virtual_router, "routing-table", "ip", "static-route", item.target_name or item.source_name)
     commands = [("device", *base, "destination", item.destination)]
     if item.interface:

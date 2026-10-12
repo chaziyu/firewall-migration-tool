@@ -125,7 +125,7 @@ def test_nat_planner_does_not_truncate_multiple_policy_services():
     policy = SimpleNamespace(vdom="root", policy_id=10, name="outbound", srcintf=["lan"],
                              srcaddr=["clients"], dstaddr=["any"], service=["http", "https"])
     nat = SimpleNamespace(vdom="root", policy_id=10, policy_name="outbound", egress_interfaces=["wan"],
-                          translated_addresses=["203.0.113.8"], translation_type="ip_pool", issues=())
+                          translated_addresses=["203.0.113.8"], translation_type="ip_pool", pool_types=("overload",), issues=())
     options = PANMigrationOptions(vdoms={"root": {"vsys": "vsys1"}}, interfaces={"root": {
         "lan": {"target_zone": "trust"}, "wan": {"target_zone": "untrust", "target_interface": "ethernet1/1"}}})
     planned = plan_nat(SimpleNamespace(policies=(policy,), vips=()), SimpleNamespace(nat=(nat,)), options)[0]
@@ -138,7 +138,7 @@ def test_nat_planner_marks_missing_zone_mapping_for_review():
     policy = SimpleNamespace(vdom="root", policy_id=10, name="outbound", srcintf=["unmapped"],
                              srcaddr=["clients"], dstaddr=["any"], service=["https"])
     nat = SimpleNamespace(vdom="root", policy_id=10, policy_name="outbound", egress_interfaces=["wan"],
-                          translated_addresses=["203.0.113.8"], translation_type="ip_pool", issues=())
+                          translated_addresses=["203.0.113.8"], translation_type="ip_pool", pool_types=("overload",), issues=())
     options = PANMigrationOptions(vdoms={"root": {"vsys": "vsys1"}}, interfaces={"root": {
         "wan": {"target_zone": "untrust", "target_interface": "ethernet1/1"}}})
     planned = plan_nat(SimpleNamespace(policies=(policy,), vips=()), SimpleNamespace(nat=(nat,)), options)[0]
@@ -183,3 +183,134 @@ def test_route_dstaddr_resolves_only_direct_subnet_address():
     assert routes[1].destination is None and routes[1].status is PANMigrationStatus.MANUAL_REVIEW
     assert routes[2].destination is None and routes[2].status is PANMigrationStatus.MANUAL_REVIEW
     assert routes[3].destination is None and routes[3].status is PANMigrationStatus.MANUAL_REVIEW
+
+
+def test_static_route_disabled_and_any_explicit_priority_require_review():
+    from fwmigrate.conversion.fortigate_to_palo_alto.options import VDOMMapping
+    from fwmigrate.conversion.fortigate_to_palo_alto.models import PANMigrationStatus
+    from fwmigrate.vendors.fortigate.model.route_static import FGStaticRoute
+
+    options = PANMigrationOptions(vdoms={"root": VDOMMapping(virtual_router="vr1")})
+    routes = plan_routes(FGConfig(static_routes=[
+        FGStaticRoute(seq_num=1, dst="192.0.2.0/24", status="disable"),
+        FGStaticRoute(seq_num=2, dst="198.51.100.0/24", priority=0, explicit_fields={"priority"}),
+        FGStaticRoute(seq_num=3, dst="203.0.113.0/24", priority=10, explicit_fields={"priority"}),
+        FGStaticRoute(seq_num=4, dst="10.0.0.0/24"),
+    ]), options)
+    assert [route.status for route in routes] == [PANMigrationStatus.MANUAL_REVIEW] * 3 + [PANMigrationStatus.SUPPORTED]
+    assert routes[1].priority == 0
+    assert any("priority" in warning for warning in routes[1].warnings)
+
+
+def test_address_group_exclusion_uses_explicit_fortigate_values():
+    from fwmigrate.conversion.fortigate_to_palo_alto.planning.addresses import _plan_group
+    from fwmigrate.conversion.fortigate_to_palo_alto.options import VDOMMapping
+    from fwmigrate.vendors.fortigate.model.address import FGAddressGroup
+
+    options = PANMigrationOptions(vdoms={"root": VDOMMapping(vsys="vsys1")})
+    disabled, _ = _plan_group(FGAddressGroup(name="g", members=["a"], exclude="disable"), options)
+    enabled, _ = _plan_group(FGAddressGroup(name="g", members=["a"], exclude="enable"), options)
+    missing, _ = _plan_group(FGAddressGroup(name="g", members=["a"], exclude_members=["b"]), options)
+    assert disabled.status is PANMigrationStatus.SUPPORTED
+    assert enabled.status is PANMigrationStatus.MANUAL_REVIEW
+    assert missing.status is PANMigrationStatus.MANUAL_REVIEW
+
+
+def test_fortigate_source_nat_transform_to_renderer_is_fail_closed():
+    from fwmigrate.conversion.fortigate_to_palo_alto.rendering.renderer import PANSetRenderer
+    from fwmigrate.vendors.fortigate.model.interface import FGInterface
+    from fwmigrate.vendors.fortigate.model.ippool import FGIPPool
+    from fwmigrate.vendors.fortigate.model.policy import FGPolicy
+    from fwmigrate.vendors.fortigate.transform.nat import transform_nat
+
+    options = PANMigrationOptions(vdoms={"root": {"vsys": "vsys1"}}, interfaces={"root": {
+        "lan": {"target_zone": "trust"},
+        "wan": {"target_zone": "untrust", "target_interface": "ethernet1/1"},
+    }})
+    base_policy = dict(policy_id=90, name="outbound", nat="enable", srcintf=["lan"], dstintf=["wan"],
+                       srcaddr=["any"], dstaddr=["any"], service=["any"], status="enable")
+    interface_source = FGConfig(interfaces=[FGInterface(name="wan", ip="203.0.113.1/24")],
+        policies=[FGPolicy(**base_policy)])
+    interface_derived = SimpleNamespace(nat=tuple(transform_nat(interface_source)))
+    interface_rule = plan_nat(interface_source, interface_derived, options)[0]
+    zones = tuple(PlannedZone(source_object_type="zone", source_name=name, target_name=target,
+                              target_vsys="vsys1", status=PANMigrationStatus.SUPPORTED)
+                  for name, target in (("lan", "trust"), ("wan", "untrust")))
+    rendered = PANSetRenderer().render(PANMigrationPlan(zones=zones, nat_rules=(interface_rule,)))
+    assert interface_rule.status is PANMigrationStatus.SUPPORTED
+    assert "set vsys vsys1 rulebase nat rules outbound source-translation dynamic-ip-and-port interface-address" in rendered.commands
+
+    pool_source = FGConfig(interfaces=[FGInterface(name="wan", ip="203.0.113.1/24")],
+        ip_pools=[FGIPPool(name="PAT", type="overload", startip="203.0.113.8", endip="203.0.113.8",
+                           explicit_fields={"type"})],
+        policies=[FGPolicy(**{**base_policy, "ippool": "enable", "poolname": ["PAT"]})])
+    pool_derived = SimpleNamespace(nat=tuple(transform_nat(pool_source)))
+    pool_rule = plan_nat(pool_source, pool_derived, options)[0]
+    pool_rendered = PANSetRenderer().render(PANMigrationPlan(zones=zones, nat_rules=(pool_rule,)))
+    assert pool_rule.status is PANMigrationStatus.SUPPORTED
+    assert any("translated-address [ 203.0.113.8 ]" in command for command in pool_rendered.commands)
+
+    unsupported_source = FGConfig(interfaces=[FGInterface(name="wan", ip="203.0.113.1/24")],
+        ip_pools=[FGIPPool(name="ONE-TO-ONE", type="one-to-one", startip="203.0.113.8",
+                           endip="203.0.113.8", explicit_fields={"type"})],
+        policies=[FGPolicy(**{**base_policy, "ippool": "enable", "poolname": ["ONE-TO-ONE"]})])
+    unsupported_rule = plan_nat(unsupported_source,
+        SimpleNamespace(nat=tuple(transform_nat(unsupported_source))), options)[0]
+    unsupported_rendered = PANSetRenderer().render(PANMigrationPlan(zones=zones, nat_rules=(unsupported_rule,)))
+    assert unsupported_rule.status is PANMigrationStatus.MANUAL_REVIEW
+    assert unsupported_rule.translated_addresses == ("203.0.113.8",)
+    assert not unsupported_rendered.commands
+
+    disabled_source = FGConfig(interfaces=[FGInterface(name="wan", ip="203.0.113.1/24")],
+        policies=[FGPolicy(**{**base_policy, "status": "disable"})])
+    disabled_rule = plan_nat(disabled_source, SimpleNamespace(nat=tuple(transform_nat(disabled_source))), options)[0]
+    disabled_rendered = PANSetRenderer().render(PANMigrationPlan(zones=zones, nat_rules=(disabled_rule,)))
+    assert disabled_rule.status is PANMigrationStatus.MANUAL_REVIEW
+    assert not disabled_rendered.commands
+
+
+def test_parsed_fortigate_cli_pool_nat_reaches_palo_alto_renderer():
+    from fwmigrate.conversion.fortigate_to_palo_alto.rendering.renderer import PANSetRenderer
+    from fwmigrate.vendors.fortigate.source_report import FortiGateSourceReporter
+
+    analysis = FortiGateSourceReporter().analyze_source('''config system interface
+    edit "lan"
+        set ip 10.0.0.1 255.255.255.0
+    next
+    edit "wan"
+        set ip 203.0.113.1 255.255.255.0
+    next
+end
+config firewall ippool
+    edit "PAT"
+        set type overload
+        set startip 203.0.113.8
+        set endip 203.0.113.8
+    next
+end
+config firewall policy
+    edit 90
+        set name "outbound"
+        set srcintf "lan"
+        set dstintf "wan"
+        set srcaddr "any"
+        set dstaddr "any"
+        set service "any"
+        set nat enable
+        set ippool enable
+        set poolname "PAT"
+    next
+end
+''')
+    options = PANMigrationOptions(vdoms={"root": {"vsys": "vsys1"}}, interfaces={"root": {
+        "lan": {"target_zone": "trust"},
+        "wan": {"target_zone": "untrust", "target_interface": "ethernet1/1"},
+    }})
+    rule = plan_nat(analysis.extracted.config, analysis.derived, options)[0]
+    zones = tuple(PlannedZone(source_object_type="zone", source_name=name, target_name=target,
+                              target_vsys="vsys1", status=PANMigrationStatus.SUPPORTED)
+                  for name, target in (("lan", "trust"), ("wan", "untrust")))
+    rendered = PANSetRenderer().render(PANMigrationPlan(zones=zones, nat_rules=(rule,)))
+    assert rule.status is PANMigrationStatus.SUPPORTED
+    assert any("source-translation dynamic-ip-and-port translated-address [ 203.0.113.8 ]" in command
+               for command in rendered.commands)

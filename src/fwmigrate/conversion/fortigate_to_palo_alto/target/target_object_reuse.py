@@ -20,6 +20,9 @@ def _address(source, target):
     forms = {"ip_netmask", "ip_range", "ip_wildcard", "fqdn"}
     configured = {name for name in forms if name in _fields(target) and getattr(target, name, None) is not None}
     supporting = ["target has unknown address semantics"] if target.raw_extra else []
+    tagged = any(getattr(target, name, None) for name in ("tag", "tags"))
+    if tagged:
+        supporting.append("target address has explicit tags that may affect dynamic-group membership")
     contradictions = [f"target {name} is also configured" for name in configured - {field}]
     if field not in configured:
         supporting.append(f"target {field} is not explicitly configured")
@@ -27,7 +30,7 @@ def _address(source, target):
         supporting.append("target address does not have exactly one explicit address form")
     if field in configured and getattr(target, field, None) != source.value:
         contradictions.append(f"target {field} differs")
-    strong = (f"same explicit {field}",) if field in configured and not contradictions else ()
+    strong = (f"same explicit {field}",) if field in configured and not contradictions and not tagged else ()
     return strong, tuple(supporting), tuple(contradictions)
 
 
@@ -472,6 +475,25 @@ def _rule_collisions(planned, target, device, family, attribute, fields):
     return result
 
 
+def _placement_classifications(planned, target, device, family, attribute):
+    records = [item for item in getattr(target.config, attribute, ()) if item.name and _device(item) == device]
+    result = []
+    for rule in planned:
+        if not rule.target_name or rule.status.value != "SUPPORTED":
+            continue
+        applicable = [item for item in records if
+            (getattr(item, "scope", None) is None
+             or getattr(item.scope, "vsys", None) in {None, rule.target_vsys})]
+        if not applicable:
+            continue
+        result.append({"status": "ORDER_UNVERIFIED", "family": family,
+            "source_name": rule.source_name, "source_vdom": rule.source_vdom or "root",
+            "source_kind": rule.source_kind, "target_vsys": rule.target_vsys,
+            "target_name": rule.target_name,
+            "evidence": ["Applicable target rulebase is populated; reviewed before/after placement is absent"]})
+    return result
+
+
 def _zone_collisions(planned, target, device, *, allow_additive=False):
     result = []
     for source in planned:
@@ -521,10 +543,11 @@ def classify_target_object_reuse(plan: PANMigrationPlan, target, device: str | N
                       if (found := _classify(target, family, attribute, item, device, compare)) is not None)
     result.extend(_route_collisions(plan.static_routes, target, device))
     result.extend(_dhcp_collisions(plan.dhcp_servers, target, device))
-    result.extend(_rule_collisions(plan.nat_rules, target, device, "nat_rule", "nat_rules", lambda rule: (
+    nat_collision_results = _rule_collisions(plan.nat_rules, target, device, "nat_rule", "nat_rules", lambda rule: (
         ("from_zones", "from_zones", rule.from_zones), ("to_zones", "to_zones", rule.to_zones),
         ("source", "source", rule.source_addresses), ("destination", "destination", rule.destination_addresses),
-        ("service", "service", rule.service), ("to_interface", "to_interface", rule.to_interface))))
+        ("service", "service", rule.service), ("to_interface", "to_interface", rule.to_interface)))
+    result.extend(nat_collision_results)
     nat_records = [item for item in getattr(target.config, "nat_rules", ()) if item.name and _device(item) == device]
     for rule in plan.nat_rules:
         if not rule.target_name:
@@ -539,9 +562,16 @@ def classify_target_object_reuse(plan: PANMigrationPlan, target, device: str | N
         if overlaps:
             result.append({"status": "AMBIGUOUS", "family": "nat_rule", "source_name": rule.source_name,
                            "source_vdom": rule.source_vdom or "root", "target_name": overlaps[0].name})
-    result.extend(_rule_collisions(plan.security_rules, target, device, "security_rule", "security_rules", lambda rule: (
+    security_collision_results = _rule_collisions(plan.security_rules, target, device, "security_rule", "security_rules", lambda rule: (
         ("from_zones", "from_zones", rule.from_zones), ("to_zones", "to_zones", rule.to_zones),
         ("source", "source", rule.sources), ("destination", "destination", rule.destinations),
         ("service", "service", rule.services), ("schedule", "schedule", rule.schedule), ("action", "action", rule.action),
-        ("log_start", "log_start", rule.log_start), ("log_end", "log_end", rule.log_end))))
+        ("log_start", "log_start", rule.log_start), ("log_end", "log_end", rule.log_end)))
+    result.extend(security_collision_results)
+    conflicted = {(item["family"], item["source_vdom"], item["source_name"])
+                  for item in result if item.get("status") in {"NAME_CONFLICT", "AMBIGUOUS", "EXACT_MATCH"}}
+    for family, attribute, items in (("nat_rule", "nat_rules", plan.nat_rules),
+                                     ("security_rule", "security_rules", plan.security_rules)):
+        result.extend(item for item in _placement_classifications(items, target, device, family, attribute)
+                      if (family, item["source_vdom"], item["source_name"]) not in conflicted)
     return tuple(sorted(result, key=lambda item: (item["family"], item["source_vdom"], item["source_name"])))

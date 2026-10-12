@@ -56,7 +56,7 @@ def test_source_nat_item_with_transform_issue_is_not_renderable():
 def test_source_nat_to_interface_uses_confirmed_target_interface_mapping():
     source = FGConfig(policies=[FGPolicy(policy_id=1, name="nat", nat="enable", dstintf=["wan"])])
     derived = SimpleNamespace(nat=(NormalizedSourceNAT(
-        vdom="root", policy_id=1, policy_name="nat", translation_type="interface",
+        vdom="root", policy_id=1, policy_name="nat", translation_type="interface_address",
         pool_names=(), translated_addresses=(), egress_interfaces=("wan",), issues=(),
     ),))
     options = PANMigrationOptions(interfaces={"root": {"wan": {
