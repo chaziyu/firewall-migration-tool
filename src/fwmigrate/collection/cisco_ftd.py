@@ -66,6 +66,10 @@ class CiscoFTDCollector:
     _detail_fields = {
         "networkaddresses": (("value",), ("type",)),
         "networkaddressoverrides": (("overrides",), ("value",), ("type",)),
+        "networkgroups": (("objects", "members"),),
+        "portobjectgroups": (("objects", "members"),),
+        "securityzones": (("interfaces",),),
+        "interfacegroups": (("interfaces", "members"),),
         "policyassignments": (("policy",), ("targets",)),
         "accesspolicies": (("defaultAction",),),
         "devicerecords": (("type",),),
@@ -122,22 +126,30 @@ class CiscoFTDCollector:
     def _pages(self, session, base, path):
         url = base + path
         items = []
+        visited = set()
+        expected_total = None
         for _ in range(100):
+            if url in visited:
+                return items, False, "PAGINATION_LOOP"
+            visited.add(url)
             try:
                 response = session.get(url, timeout=(15, 60), allow_redirects=False)
                 response.raise_for_status()
                 if len(response.content) > 10_000_000:
-                    raise CollectionError("FMC response exceeds the size limit.")
+                    return items, False, "MALFORMED_RESPONSE"
                 data = response.json()
+                if not isinstance(data, dict):
+                    return items, False, "MALFORMED_RESPONSE"
                 page = data.get("items")
                 if not isinstance(page, list):
-                    # Some FMC resources, including DHCP server settings, return one object.
-                    if "items" not in data and isinstance(data, dict) and data:
-                        return [data], True
-                    raise CollectionError("FMC returned an unexpected item list.")
+                    # FMC DHCP server and relay settings are singleton resources.
+                    singleton = urlparse(path).path.rstrip("/").rsplit("/", 1)[-1] in {"dhcpserver", "dhcprelaysettings"}
+                    if "items" not in data and singleton and data:
+                        return [data], True, None
+                    return items, False, "MALFORMED_RESPONSE"
                 for item in page:
                     if not isinstance(item, dict):
-                        raise CollectionError("FMC returned an unexpected item.")
+                        return items, False, "MALFORMED_RESPONSE"
                     items.append(item)
                     if self._needs_detail(path, item):
                         parsed = urlparse(url)
@@ -146,19 +158,33 @@ class CiscoFTDCollector:
                         detail.raise_for_status()
                         detail_data = detail.json()
                         if len(detail.content) > 10_000_000 or not self._detail_is_complete(path, detail_data):
-                            raise CollectionError("FMC returned an invalid object detail.")
+                            return items, False, "MALFORMED_RESPONSE"
                         items[-1] = detail_data
-                paging = data.get("paging") or {}
-                next_url = (paging.get("next") or {}).get("href")
-                if not next_url:
-                    return items, len(items) >= paging.get("total", len(items))
+                paging = data.get("paging")
+                if not isinstance(paging, dict):
+                    return items, False, "MALFORMED_RESPONSE"
+                total = paging.get("total")
+                if isinstance(total, bool) or not isinstance(total, int) or total < 0:
+                    return items, False, "INCOMPLETE_PAGINATION"
+                if expected_total is None:
+                    expected_total = total
+                elif total != expected_total:
+                    return items, False, "INCOMPLETE_PAGINATION"
+                next_value = paging.get("next")
+                if next_value is None:
+                    return items, len(items) == expected_total, None if len(items) == expected_total else "INCOMPLETE_PAGINATION"
+                if not isinstance(next_value, dict) or not isinstance(next_value.get("href"), str) or not next_value["href"].strip():
+                    return items, False, "INCOMPLETE_PAGINATION"
+                next_url = next_value["href"]
                 parsed = urlparse(next_url)
                 if (parsed.scheme and parsed.scheme != "https") or (parsed.netloc and parsed.netloc != urlparse(base).netloc):
-                    raise CollectionError("FMC pagination returned an unexpected host.")
+                    return items, False, "MALFORMED_RESPONSE"
                 url = urljoin(base, next_url)
-            except Exception:
-                return items, False
-        return items, False
+            except Exception as exc:
+                name = type(exc).__name__.lower()
+                reason = "TIMEOUT" if "timeout" in name else "HTTP_API_ERROR" if "http" in name or hasattr(exc, "response") else "MALFORMED_RESPONSE" if "json" in name or "decode" in name else "API_ERROR"
+                return items, False, reason
+        return items, False, "PAGINATION_LIMIT"
 
     @classmethod
     def _detail_fields_for(cls, path):
@@ -297,9 +323,12 @@ class CiscoFTDCollector:
                 self._collect_family(session, base, prefix + f'/policy/ftdnatpolicies/{policy["id"]}/manualnatrules?expanded=true', policy, "manual_rules", parts,
                                      f'manual_rules/{policy["id"]}')
                 manual = policy.pop("manual_rules")
-                policy["manual_rules_before_auto"] = [rule for rule in manual if rule.get("section") == "BEFORE_AUTO"]
-                policy["manual_rules_after_auto"] = [rule for rule in manual if rule.get("section") == "AFTER_AUTO"]
-                policy["manual_rules"] = [rule for rule in manual if rule.get("section") != "BEFORE_AUTO" and rule.get("section") != "AFTER_AUTO"]
+                def section_name(rule):
+                    value = rule.get("section")
+                    return value.casefold().replace("_", "") if isinstance(value, str) else None
+                policy["manual_rules_before_auto"] = [rule for rule in manual if section_name(rule) == "beforeauto"]
+                policy["manual_rules_after_auto"] = [rule for rule in manual if section_name(rule) == "afterauto"]
+                policy["manual_rules"] = [rule for rule in manual if section_name(rule) not in {"beforeauto", "afterauto"}]
                 self._collect_family(session, base, prefix + f'/policy/ftdnatpolicies/{policy["id"]}/autonatrules?expanded=true', policy, "auto_rules", parts,
                                      f'auto_rules/{policy["id"]}')
             bundle["coverage"] = {
@@ -346,7 +375,7 @@ class CiscoFTDCollector:
                 session.close()
 
     def _collect_family(self, session, base, path, target, name, parts, part_name=None):
-        items, complete = self._pages(session, base, path)
+        items, complete, failure_reason = self._pages(session, base, path)
         target[name] = items
         status = "SUCCESS" if complete and items else "EMPTY" if complete else "PARTIAL" if items else "FAILED"
-        parts.append(CollectionPart(part_name or name, status, complete, len(items)))
+        parts.append(CollectionPart(part_name or name, status, complete, len(items), failure_reason))

@@ -37,6 +37,16 @@ def test_typed_source_fields_keep_reference_identity_and_missing_state():
     assert (reference.source_id, reference.name, reference.source_type) == ("host-1", "server", "Host")
 
 
+def test_malformed_group_references_remain_raw_and_do_not_become_empty_members():
+    config = CiscoFMCBundleParser(json.dumps({"source": "fmc-rest-api", "objects": {"networkgroups": [
+        {"id": "scalar", "name": "Scalar", "objects": "host-1"},
+        {"id": "shape", "name": "Shape", "objects": {"unexpected": ["host-1"]}},
+    ]}})).parse_source()
+    scalar, shape = config.network_groups
+    assert scalar.members is None and scalar.raw_extra["objects"] == "host-1"
+    assert shape.members is None and shape.raw_extra["objects"] == {"unexpected": ["host-1"]}
+
+
 def test_preview_keeps_object_and_literal_network_group_members():
     result = extract_cisco_ftd_source(json.dumps({
         "source": "fmc-rest-api",

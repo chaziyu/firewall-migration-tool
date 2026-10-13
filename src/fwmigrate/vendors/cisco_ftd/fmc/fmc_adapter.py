@@ -104,6 +104,7 @@ class CiscoFMCBundleParser:
             parts=[CiscoFTDCollectionPart(
                 name=str(part.get("name", "unknown")), status=str(part.get("status", "UNKNOWN")),
                 complete=part.get("complete", False), count=part.get("count"),
+                failure_reason=part.get("failure_reason"),
             ) for part in _items(collection.get("parts"))],
         )
 
@@ -112,21 +113,34 @@ class CiscoFMCBundleParser:
             configured_name = item.get("name")
             return str(configured_name) if configured_name is not None else None
 
-        def reference(value: Any) -> CiscoFTDReference:
+        def reference(value: Any) -> CiscoFTDReference | None:
             if isinstance(value, dict):
+                recognized = {"id", "name", "type", "objectType", "value"}
+                if not recognized.intersection(value):
+                    return None
                 return CiscoFTDReference(source_id=str(value["id"]) if value.get("id") is not None else None,
                     name=str(value["name"]) if value.get("name") is not None else None,
                     source_type=value.get("type") or value.get("objectType"), value=value.get("value"),
                     source_attributes=sanitize_source_attributes({key: item for key, item in value.items()
                                                                   if key not in {"id", "name", "type", "objectType", "value"}}))
-            return CiscoFTDReference(name=str(value))
+            if isinstance(value, str) and value:
+                return CiscoFTDReference(name=value)
+            return None
 
-        def refs(value: Any) -> list[CiscoFTDReference]:
+        def refs(value: Any) -> list[CiscoFTDReference] | None:
             if isinstance(value, dict) and ("objects" in value or "literals" in value):
-                value = [*_items(value.get("objects")), *_items(value.get("literals"))]
-            if isinstance(value, dict):
+                objects, literals = value.get("objects", []), value.get("literals", [])
+                if not isinstance(objects, list) or not isinstance(literals, list):
+                    return None
+                value = [*objects, *literals]
+            elif isinstance(value, dict) and {"id", "name", "type", "objectType", "value"}.intersection(value):
                 value = [value]
-            return [reference(item) for item in (value or [])]
+            elif not isinstance(value, list):
+                return None
+            if any(not isinstance(item, (dict, str)) or (isinstance(item, dict) and not {"id", "name", "type", "objectType", "value"}.intersection(item)) for item in value):
+                return None
+            parsed = [reference(item) for item in value]
+            return parsed if all(item is not None for item in parsed) else None
 
         def refs_field(item: dict, *keys: str) -> list[CiscoFTDReference] | None:
             key = next((key for key in keys if key in item), None)
@@ -135,16 +149,18 @@ class CiscoFMCBundleParser:
         def ref_field(item: dict, *keys: str) -> CiscoFTDReference | None:
             key = next((key for key in keys if key in item), None)
             value = item.get(key) if key is not None else None
-            return reference(value) if value is not None else None
+            if value is None:
+                return None
+            return reference(value)
 
         def acp_refs(item: dict, key: str) -> list[CiscoFTDReference] | None:
             if key not in item:
                 return None
             value = item[key]
             if isinstance(value, dict) and ("objects" in value or "literals" in value):
-                return refs([*_items(value.get("objects")), *_items(value.get("literals"))])
-            if isinstance(value, dict) and not any(value.get(field) for field in ("id", "name", "value")):
-                return []
+                return refs(value)
+            if isinstance(value, dict) and not {"id", "name", "type", "objectType", "value"}.intersection(value):
+                return None
             return refs(value)
 
         def record(item: dict, index: int, cls, **values):
@@ -225,7 +241,10 @@ class CiscoFMCBundleParser:
                 if key is None:
                     continue
                 value = item[key]
-                values[target] = (refs(value) if value is not None else None) if kind == "refs" else (
+                parsed = refs(value) if kind == "refs" and value is not None else None
+                if kind == "refs" and value is not None and parsed is None:
+                    continue
+                values[target] = parsed if kind == "refs" else (
                                   reference(value) if kind == "ref" and value is not None else
                                   sanitize_source_attributes(value))
                 explicit.append(target)
@@ -240,19 +259,24 @@ class CiscoFMCBundleParser:
                       "position": position, "collection_order": index}
             explicit = ["position"] if "position" in item or "order" in item or "ruleIndex" in metadata else []
             explicit.append("collection_order")
+            invalid_reference_keys = set()
             for target, keys in fields.items():
                 matched = [key for key in keys if key in item]
                 if not matched:
                     continue
                 raw_values = [item[key] for key in matched]
-                values[target] = [ref for value in raw_values for ref in refs(value)] if target in {
+                parsed_refs = [refs(value) for value in raw_values] if target in {
                     "source_networks", "destination_networks", "source_ports", "destination_ports",
                     "certificates", "source_zones", "destination_zones", "vlan_tags", "lists_feeds", "networks",
-                } else raw_values[0] if len(raw_values) == 1 else raw_values
+                } else None
+                if parsed_refs is not None and any(value is None for value in parsed_refs):
+                    invalid_reference_keys.update(matched)
+                    continue
+                values[target] = [ref for value in parsed_refs for ref in value] if parsed_refs is not None else raw_values[0] if len(raw_values) == 1 else raw_values
                 explicit.append(target)
             used = {key for keys in fields.values() for key in keys}
             used.update(("id", "name", "position", "order"))
-            raw_extra = {key: value for key, value in item.items() if key not in used}
+            raw_extra = {key: value for key, value in item.items() if key not in used or key in invalid_reference_keys}
             if "ruleIndex" in metadata:
                 raw_extra["metadata"] = {key: value for key, value in metadata.items() if key != "ruleIndex"}
                 if not raw_extra["metadata"]:
@@ -772,6 +796,13 @@ class CiscoFMCBundleParser:
             before = manual_rules("manual_rules_before_auto", "BEFORE_AUTO")
             unclassified = manual_rules("manual_rules")
             after = manual_rules("manual_rules_after_auto", "AFTER_AUTO")
+            if unclassified is not None:
+                def normalized_section(rule):
+                    value = rule.section
+                    return value.casefold().replace("_", "") if isinstance(value, str) else None
+                before = (before or []) + [rule for rule in unclassified if normalized_section(rule) == "beforeauto"]
+                after = (after or []) + [rule for rule in unclassified if normalized_section(rule) == "afterauto"]
+                unclassified = [rule for rule in unclassified if normalized_section(rule) not in {"beforeauto", "afterauto"}]
             nat_policies.append(record(policy, policy_index, CiscoFTDNATPolicy,
                 manual_rules_before_auto=before, auto_rules=auto_rules if "auto_rules" in policy else None,
                 manual_rules_after_auto=after, unclassified_manual_rules=unclassified))
@@ -1098,11 +1129,11 @@ class CiscoFMCBundleParser:
                 nested("wins_servers", wins)
             if "defaultDomainName" in assignment:
                 nested("domain_name", assignment["defaultDomainName"])
-            pools = [ref for key in ("ipv4LocalAddressPool", "ipv6LocalAddressPool")
-                     if key in assignment for ref in refs(assignment[key])]
+            pool_values = [refs(assignment[key]) for key in ("ipv4LocalAddressPool", "ipv6LocalAddressPool") if key in assignment]
+            pools = [ref for value in pool_values if value is not None for ref in value]
             if pools or any(key in assignment for key in ("ipv4LocalAddressPool", "ipv6LocalAddressPool")):
                 if "address_pools" not in result.explicit_fields:
-                    result.address_pools = pools
+                    result.address_pools = pools if all(value is not None for value in pool_values) else None
                     result.explicit_fields.append("address_pools")
             policies = {key: split_settings[key] for key in ("ipv4SplitTunnelPolicy", "ipv6SplitTunnelPolicy")
                         if key in split_settings}
@@ -1159,8 +1190,9 @@ class CiscoFMCBundleParser:
             pools = [key for key in ("ipv4AddressPool", "ipv6AddressPool", "ipv4AddressPools", "ipv6AddressPools")
                      if key in item]
             if pools:
-                profile.address_pools = ([ref for key in pools for ref in refs(item[key])]
-                    if any(item[key] is not None for key in pools) else None)
+                parsed = [refs(item[key]) for key in pools if item[key] is not None]
+                profile.address_pools = ([ref for value in parsed for ref in value]
+                    if all(value is not None for value in parsed) else None)
                 if "address_pools" not in profile.explicit_fields:
                     profile.explicit_fields.append("address_pools")
             return profile

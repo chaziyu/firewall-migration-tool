@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from fwmigrate.collection.contracts import CollectedSource
+from fwmigrate.collection.contracts import CollectedSource, CollectionPart, CollectionStatus
 from fwmigrate.collection.snapshot import make_snapshot, parse_snapshot
 
 
@@ -27,6 +27,21 @@ def test_structured_snapshot_redacts_auth_headers_and_session_cookies():
     assert "secret-token" not in json.dumps(snapshot)
     assert "secret-session" not in json.dumps(snapshot)
     assert "deep-secret" not in json.dumps(snapshot)
+
+
+def test_partial_fmc_snapshot_round_trips_part_statuses_and_safe_failure_codes():
+    source = CollectedSource("cisco_ftd", json.dumps({"format": "cisco-fmc-rest-export-v1", "objects": {"hosts": [{"id": "h1"}]}}),
+        "live-cisco-fmc.json", "https", status=CollectionStatus.PARTIAL,
+        parts=(
+            CollectionPart("success", "SUCCESS", True, 2), CollectionPart("empty", "EMPTY", True, 0),
+            CollectionPart("partial", "PARTIAL", False, 1, "TIMEOUT"),
+            CollectionPart("failed", "FAILED", False, 0, "HTTP_API_ERROR"),
+        ))
+    restored = parse_snapshot(json.dumps(make_snapshot(source)).encode())
+    assert restored.status.value == "PARTIAL"
+    assert [(part.status, part.complete, part.count, part.failure_reason) for part in restored.parts] == [
+        ("SUCCESS", True, 2, None), ("EMPTY", True, 0, None),
+        ("PARTIAL", False, 1, "TIMEOUT"), ("FAILED", False, 0, "HTTP_API_ERROR")]
 
 
 @pytest.mark.parametrize("change", [

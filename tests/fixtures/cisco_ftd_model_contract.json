@@ -1609,9 +1609,10 @@
         "name",
         "status",
         "complete",
-        "count"
+        "count",
+        "failure_reason"
       ],
-      "sha256": "362f3e6d1d1fa1a39cae342f9fb445db79630a9712fd0827c669643586dda4b7"
+      "sha256": "3523d012239c785f7af2962c59131d3d19b9e3844b55662e430f7d45ca4d5580"
     },
     "CiscoFTDCollectionMetadata": {
       "fields": [

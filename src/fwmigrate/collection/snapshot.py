@@ -76,7 +76,7 @@ def parse_snapshot(raw: bytes) -> CollectedSource:
         if not isinstance(parts, list) or len(parts) > 500 or not isinstance(warnings, list) or len(warnings) > 100:
             raise ValueError("Snapshot parts or warnings are invalid.")
         parsed_parts = tuple(CollectionPart(**part) for part in parts)
-        if any(not isinstance(part.name, str) or not re.fullmatch(r"[A-Za-z0-9_./-]{1,100}", part.name) or part.status not in {"SUCCESS", "EMPTY", "FAILED", "SUCCESS_WITH_DATA", "SUCCESS_EMPTY", "UNSUPPORTED_COMMAND", "PERMISSION_DENIED", "API_ERROR", "TRANSPORT_ERROR"} or not isinstance(part.complete, bool) or (part.count is not None and (not isinstance(part.count, int) or part.count < 0)) for part in parsed_parts):
+        if any(not isinstance(part.name, str) or not re.fullmatch(r"[A-Za-z0-9_./-]{1,100}", part.name) or part.status not in {"SUCCESS", "EMPTY", "PARTIAL", "FAILED", "SUCCESS_WITH_DATA", "SUCCESS_EMPTY", "UNSUPPORTED_COMMAND", "PERMISSION_DENIED", "API_ERROR", "TRANSPORT_ERROR"} or not isinstance(part.complete, bool) or (part.count is not None and (not isinstance(part.count, int) or part.count < 0)) or (part.failure_reason is not None and (not isinstance(part.failure_reason, str) or not re.fullmatch(r"[A-Z_]{1,40}", part.failure_reason))) for part in parsed_parts):
             raise ValueError("Snapshot parts are invalid.")
         if any(not isinstance(warning, str) or len(warning) > 200 for warning in warnings):
             raise ValueError("Snapshot warnings are invalid.")
