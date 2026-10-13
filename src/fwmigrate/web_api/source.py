@@ -176,7 +176,8 @@ def register_source_routes(app) -> None:
                 else None
             )
             total_started = perf_counter()
-            profile_value = request.form.get('excel_profile') or payload.get('excel_profile') or ExcelExportProfile.FAST.value
+            default_profile = ExcelExportProfile.FULL if source_vendor == 'palo_alto' else ExcelExportProfile.FAST
+            profile_value = request.form.get('excel_profile') or payload.get('excel_profile') or default_profile.value
             try:
                 profile = ExcelExportProfile(profile_value)
             except (TypeError, ValueError):

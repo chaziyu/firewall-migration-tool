@@ -190,6 +190,31 @@ def test_panos_fast_does_not_build_source_appendix(monkeypatch):
         workbook.close()
 
 
+def test_panos_excel_defaults_to_full_and_explicit_fast_is_preserved():
+    client = create_app({"TESTING": True}).test_client()
+    full = client.post("/api/extract/excel", data={
+        "source_vendor": "palo_alto", "file": (io.BytesIO(PALO_SOURCE.encode()), "pan.xml"),
+    })
+    fast = client.post("/api/extract/excel", data={
+        "source_vendor": "palo_alto", "excel_profile": "fast",
+        "file": (io.BytesIO(PALO_SOURCE.encode()), "pan.xml"),
+    })
+    other = client.post("/api/extract/excel", data={
+        "source_vendor": "cisco_asa", "file": (io.BytesIO(ASA_SOURCE.encode()), "asa.cfg"),
+    })
+    assert full.status_code == fast.status_code == other.status_code == 200
+    full_book, fast_book, other_book = [load_workbook(io.BytesIO(item.data), read_only=True) for item in (full, fast, other)]
+    try:
+        evidence_sheets = {"PAN-OS Source Inventory", "Extraction Coverage", "PAN-OS Source Appendix"}
+        assert evidence_sheets <= set(full_book.sheetnames)
+        assert evidence_sheets.isdisjoint(fast_book.sheetnames)
+        assert other_book["Summary"]["B3"].value == "Cisco ASA"
+    finally:
+        full_book.close()
+        fast_book.close()
+        other_book.close()
+
+
 def _post(client, path, **fields):
     data = {"source_vendor": "cisco_asa", **fields}
     if path == "/api/preview" or "file" not in data:

@@ -71,7 +71,7 @@ def test_source_and_derived_policy_order_are_separate():
     headers = {cell.value: cell.column for cell in sheet[3]}
     assert sheet.cell(4, headers["Source Order"]).value == 14
     assert sheet.cell(4, headers["Rulebase Position"]).value == "pre"
-    assert sheet.cell(4, headers["Effective Order"]).value.endswith(": 1")
+    assert sheet.cell(4, headers["Effective Order"]).value is None
 
 
 def test_interface_sheet_contains_topology_relationships():
