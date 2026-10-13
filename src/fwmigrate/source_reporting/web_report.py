@@ -12,10 +12,6 @@ REPORT_SECTIONS = (
 )
 
 
-def empty_report_sections() -> dict[str, list[Any]]:
-    return {name: [] for name in REPORT_SECTIONS}
-
-
 def _nested(report: dict[str, Any], *path: str) -> Any:
     value: Any = report
     for key in path:
@@ -96,11 +92,3 @@ def normalize_web_report(report: dict[str, Any], vendor_id: str, *, copy: bool =
     summary.setdefault("scopes", result.get("scopes", result.get("contexts", [])))
     summary.setdefault("vendor", vendor_id)
     return result
-
-
-def validate_web_report_payload(report: dict[str, Any]) -> None:
-    if not isinstance(report, dict) or not isinstance(report.get("summary"), dict):
-        raise TypeError("Web report requires a summary object")
-    sections = report.get("sections")
-    if not isinstance(sections, dict) or any(name not in sections for name in REPORT_SECTIONS):
-        raise TypeError("Web report is missing required sections")

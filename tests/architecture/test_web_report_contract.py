@@ -6,7 +6,6 @@ import pytest
 from fwmigrate.source_reporting.web_report import (
     REPORT_SECTIONS,
     normalize_web_report,
-    validate_web_report_payload,
 )
 
 
@@ -16,15 +15,18 @@ def test_normalize_web_report_adds_empty_sections_without_mutating_input():
 
     assert report == {"vendor": "example", "summary": {"interfaces": 1}, "interface_topology": [{"name": "wan"}]}
     assert normalized["sections"]["interfaces"] == [{"name": "wan"}]
+    assert isinstance(normalized["summary"], dict)
+    assert isinstance(normalized["sections"], dict)
     assert all(name in normalized["sections"] for name in REPORT_SECTIONS)
-    validate_web_report_payload(normalized)
     json.dumps(normalized)
 
 
-def test_empty_report_sections_are_valid():
+def test_normalize_empty_report_adds_required_sections():
     report = normalize_web_report({"summary": {}}, "example")
-    validate_web_report_payload(report)
-    assert report["sections"]["vpn_phase2"] == []
+    assert isinstance(report["summary"], dict)
+    assert isinstance(report["sections"], dict)
+    assert all(name in report["sections"] for name in REPORT_SECTIONS)
+    assert all(report["sections"][name] == [] for name in REPORT_SECTIONS)
 
 
 def test_default_copy_isolates_nested_rows_and_preserves_report_fields():
@@ -48,4 +50,6 @@ def test_owned_report_matches_copy_and_detaches_all_modified_maps():
     assert owned == expected
     assert shared == before
     assert owned["sections"]["addresses"][0] is shared["sections"]["addresses"][0]
-    validate_web_report_payload(owned)
+    assert isinstance(owned["summary"], dict)
+    assert isinstance(owned["sections"], dict)
+    assert all(name in owned["sections"] for name in REPORT_SECTIONS)
