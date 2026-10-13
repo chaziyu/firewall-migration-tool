@@ -302,6 +302,8 @@ Run Gunicorn from the repository root with `src` on `PYTHONPATH`:
 PYTHONPATH=src gunicorn --bind=0.0.0.0:5000 --workers=1 --threads=4 --timeout=120 "fwmigrate.web:create_app()"
 ```
 
+API POST requests default to 30 requests per 60-second window per IP and at most 2 active processing requests. Configure positive integers with `FWMIGRATE_API_RATE_LIMIT_PER_MINUTE=30` and `FWMIGRATE_MAX_CONCURRENT_REQUESTS=2`. Keep the one-worker, four-thread Gunicorn baseline above: both controls are process-local. Multiple workers or instances require a different coordination design.
+
 Set `FWMIGRATE_FRONTEND_DIST_DIR` to `src/frontend/dist` if the host does not use the default frontend build path. Configure `FWMIGRATE_WEB_USERNAME` and a strong `FWMIGRATE_WEB_PASSWORD`, and set `FWMIGRATE_REQUIRE_WEB_AUTH=1` for hosted use. Remote live collection and deployment are disabled by default. Enable `FWMIGRATE_ALLOW_REMOTE_COLLECTION=1` or `FWMIGRATE_ALLOW_REMOTE_DEPLOYMENT=1` only on an authenticated service with an appropriate network perimeter. Terminate HTTPS before Flask.
 
 Set `FWMIGRATE_WORKSPACE_SIGNING_KEY` to a stable random secret of at least 32 bytes. Keep credentials and signing keys in the host's secret manager. SSH collection and deployment use operating-system known-hosts configuration and strict host-key checking.
@@ -641,6 +643,12 @@ Firewall configurations may contain sensitive authentication material.
 
 For customer configuration handling, the web application applies a bounded request-size limit, keeps multipart upload streams in memory, sanitizes vendor-native evidence before parsing/reporting, marks API responses `no-store`, and adds restrictive browser security headers. PAN-OS XML containing DTD or entity declarations is rejected before parsing. Sanitized configuration still contains sensitive operational topology and must be handled as customer-confidential data.
 
+
+All API POST endpoints share one IP rate bucket and a non-blocking processing semaphore, acquired before body parsing and released during teardown, including failures. Rejected requests return HTTP 429 with `rate_limit_exceeded` or `server_busy` and `Retry-After`; retry manually, especially for deployment operations. Frontend and API GET requests are unaffected. IP tracking expires after 60 seconds and is capped at 4096 entries; while full, new IPs are rejected until an entry expires rather than evicting active limits.
+
+Controls use `request.remote_addr` and ignore forwarded headers. Behind a proxy, clients may share a bucket. Verify Render's trusted proxy chain before adding forwarded-IP handling; do not change the address used by remote collection/deployment restrictions. Unexpected errors return fixed messages without exception tracebacks; only explicitly safe validation messages are public. Deployment failure responses retain status, identity, counts, and validation classifications while replacing untrusted transport/device failure text.
+
+Application upload streams stay in memory, but upstream request buffering, temporary storage, request/proxy logging, and log retention must be verified separately on the host. Before hosted rollout, use synthetic configurations to check 3–6 concurrent preview, Excel, and migration requests, peak RAM, latency, 429 responses, recovery, and absence of secrets in application and proxy logs. Local tests do not establish these hosting guarantees.
 
 The application must not expose actual:
 
