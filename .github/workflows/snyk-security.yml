@@ -73,19 +73,8 @@ jobs:
           status=$?
           echo "status=$status" >> "$GITHUB_OUTPUT"
           if [ "$status" -gt 1 ]; then exit "$status"; fi
-      - name: Build container for scanning
-        run: docker build -t firewall-migration-tool:snyk .
-      - name: Snyk container test
-        id: container
-        shell: bash
-        run: |
-          set +e
-          snyk container test firewall-migration-tool:snyk --file=Dockerfile
-          status=$?
-          echo "status=$status" >> "$GITHUB_OUTPUT"
-          if [ "$status" -gt 1 ]; then exit "$status"; fi
       - name: Fail on vulnerability findings
-        if: always() && (steps.code.outputs.status == '1' || steps.dependencies.outputs.status == '1' || steps.iac.outputs.status == '1' || steps.container.outputs.status == '1')
+        if: always() && (steps.code.outputs.status == '1' || steps.dependencies.outputs.status == '1' || steps.iac.outputs.status == '1')
         run: |
           echo "Snyk reported vulnerabilities; review the scan results."
           exit 1

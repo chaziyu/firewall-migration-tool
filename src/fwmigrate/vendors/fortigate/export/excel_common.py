@@ -364,15 +364,6 @@ def _nat_type(value: str | None) -> str | None:
     }.get(value, value)
 
 
-def _disabled_text(value: Any) -> str | None:
-    enabled = _enabled_text(value)
-    if enabled == "Yes":
-        return "No"
-    if enabled == "No":
-        return "Yes"
-    return None
-
-
 def _interface_source_values(
     context: _ExcelContext,
     *,
@@ -417,27 +408,7 @@ def _interface_source_values(
 
     safe_values = sanitize_source_attributes(values)
     context._interface_safe_source_cache[cache_key] = deepcopy(safe_values)
-    context._interface_source_key_cache[cache_key] = frozenset(
-        _normalize_key(key) for key in safe_values
-    )
     return deepcopy(safe_values)
-
-
-def _source_secret_configured(
-    context: _ExcelContext,
-    *,
-    vdom: str,
-    name: str,
-    keys: Iterable[str],
-) -> str | None:
-    wanted = {
-        _normalize_key(key)
-        for key in keys
-    }
-
-    _interface_source_values(context, vdom=vdom, name=name)
-    present = context._interface_source_key_cache.get((vdom, name), frozenset())
-    return "Yes" if present & wanted else None
 
 
 def _additional_source_settings(

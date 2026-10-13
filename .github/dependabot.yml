@@ -24,24 +24,11 @@ updates:
       # typescript-eslint 8.x supports TypeScript <6.1; permit 6.0.x fixes.
       - dependency-name: "typescript"
         versions: [">=6.1.0"]
-      # CI and desktop frontend use Node.js 24; permit @types/node 24.x.
+      # Frontend CI uses Node.js 24; permit @types/node 24.x.
       - dependency-name: "@types/node"
         versions: [">=25.0.0"]
     groups:
       npm-minor-patch:
-        patterns:
-          - "*"
-        update-types:
-          - "minor"
-          - "patch"
-
-  - package-ecosystem: "cargo"
-    directory: "/src/frontend/src-tauri"
-    schedule:
-      interval: "weekly"
-    open-pull-requests-limit: 5
-    groups:
-      cargo-minor-patch:
         patterns:
           - "*"
         update-types:
@@ -53,10 +40,6 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
-    # The Rust compiler is pinned across rust-toolchain.toml and workflows.
-    # Update all pins together after validating the Windows Tauri build.
-    ignore:
-      - dependency-name: "dtolnay/rust-toolchain"
     groups:
       actions-minor-patch:
         patterns:

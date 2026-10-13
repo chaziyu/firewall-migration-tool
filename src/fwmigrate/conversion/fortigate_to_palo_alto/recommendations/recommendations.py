@@ -154,9 +154,5 @@ def decision_value(decisions: PANMigrationDecisionSet | None, key: str | None) -
     return None
 
 
-def method_for_candidates(candidates: Iterable[str]) -> PANRecommendationMethod:
-    return PANRecommendationMethod.TARGET_EVIDENCE if tuple(candidates) else PANRecommendationMethod.DETERMINISTIC
-
-
 def unique(values: Iterable[str]) -> tuple[str, ...]:
     return tuple(dict.fromkeys(value for value in values if value))

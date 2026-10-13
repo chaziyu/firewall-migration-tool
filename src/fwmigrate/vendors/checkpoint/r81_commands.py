@@ -117,8 +117,3 @@ LEGACY_COMMAND_ALIASES: Mapping[str, str] = {
 def canonical_r81_command(command: str) -> str:
     """Return the canonical live R81 command for a normalized command name."""
     return LEGACY_COMMAND_ALIASES.get(command, command)
-
-
-def is_live_r81_command(command: str) -> bool:
-    """True only for commands the live R81 collector is allowed to emit."""
-    return command in R81_COMMAND_REGISTRY

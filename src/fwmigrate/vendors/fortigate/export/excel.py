@@ -229,7 +229,6 @@ class _ExcelContext:
             tuple[ValidationIssue, ...],
         ] = {}
         self._interface_safe_source_cache: dict[tuple[str, str], dict[str, Any]] = {}
-        self._interface_source_key_cache: dict[tuple[str, str], frozenset[str]] = {}
 
     @property
     def typed_source_inventory(self):

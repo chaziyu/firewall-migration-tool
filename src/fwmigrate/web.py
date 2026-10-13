@@ -1,5 +1,4 @@
 import os
-import sys
 import io
 import secrets
 import uuid
@@ -42,12 +41,8 @@ class _MemoryOnlyUploadRequest(FlaskRequest):
 
 def create_app(test_config=None):
     register_builtin_collectors()
-    if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
-        base_dir = os.path.join(sys._MEIPASS, 'fwmigrate')
-        frontend_dist = os.path.join(sys._MEIPASS, 'frontend', 'dist')
-    else:
-        base_dir = os.path.dirname(os.path.abspath(__file__))
-        frontend_dist = os.path.join(os.path.dirname(base_dir), 'frontend', 'dist')
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    frontend_dist = os.path.join(os.path.dirname(base_dir), 'frontend', 'dist')
 
     app = Flask(__name__, static_folder=None)
     app.request_class = _MemoryOnlyUploadRequest

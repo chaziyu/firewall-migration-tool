@@ -113,12 +113,6 @@ def get_section_spec(
     return SECTION_REGISTRY.get(source_path)
 
 
-def is_registered_section(
-    source_path: str,
-) -> bool:
-    return source_path in SECTION_REGISTRY
-
-
 def registered_sections() -> tuple[str, ...]:
     return tuple(sorted(SECTION_REGISTRY))
 

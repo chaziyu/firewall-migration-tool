@@ -5,18 +5,6 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional, Tuple
 
 
-def parse_required_bool(
-    value: Any,
-    field_name: str,
-) -> Tuple[Optional[bool], Optional[str]]:
-    """Accept only actual JSON booleans for required Check Point fields."""
-    if isinstance(value, bool):
-        return value, None
-    if value is None:
-        return None, f"missing-{field_name}"
-    return None, f"invalid-{field_name}-value"
-
-
 def flatten_rulebase(
     rulebase_entries: List[Any],
     current_section: str = "",
