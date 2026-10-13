@@ -30,7 +30,3 @@ def match_gaia_family(arguments: tuple[str, ...]) -> tuple[GaiaCommandFamily | N
 
 
 SUPPORTED_GAIA_SECTIONS = frozenset(family.name for family in GAIA_COMMAND_FAMILIES)
-
-
-def is_supported_gaia_section(name: str) -> bool:
-    return name in SUPPORTED_GAIA_SECTIONS

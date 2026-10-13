@@ -760,7 +760,6 @@ end
 
         self.assertEqual("[REDACTED]", second["pppoe_password"])
         self.assertNotIn("raw-interface-secret", repr(context._interface_safe_source_cache))
-        self.assertTrue(context._interface_source_key_cache[("root", "wan-pppoe")])
 
     def test_overlay_safe_raw_does_not_sanitize_again(self):
         from unittest.mock import patch

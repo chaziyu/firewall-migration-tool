@@ -133,10 +133,6 @@ def build_plan_dependency_index(plan: PANMigrationPlan, decisions) -> PANPlanDep
     )
 
 
-def affected_items_for_decision(index: PANPlanDependencyIndex, decision) -> tuple[str, ...]:
-    return index.item_keys_by_decision.get(decision.key, ())
-
-
 def expand_plan_dependents(index: PANPlanDependencyIndex, initial_item_keys) -> tuple[str, ...]:
     result = list(dict.fromkeys(initial_item_keys))
     seen = set(result)

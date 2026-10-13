@@ -2,6 +2,17 @@
 
 This repository uses **vendor-native extraction/reporting** plus **pair-specific migration planning**.
 
+## Runtime and packaging
+
+- The application uses a React/Vite browser frontend and Flask backend, plus the `fwmigrate` CLI.
+- `src/fwmigrate/main.py` defines CLI commands. `src/fwmigrate/web.py` composes the Flask application.
+- `src/fwmigrate/web_api/` owns HTTP routes. `src/fwmigrate/web_support/` owns transport, artifact, and frontend-serving helpers.
+- Flask serves `src/frontend/dist/`. Build it with `npm ci` and `npm run build` from `src/frontend` before using the Flask browser URL. Without the build, `/` returns HTTP 503.
+- `Start Local.bat` runs Flask on `127.0.0.1:5000` and Vite on `127.0.0.1:5173`. Vite proxies API requests to Flask.
+- Hosted web execution uses Gunicorn. Collection and deployment run on the backend machine and need network access from that machine.
+- Tauri desktop packaging and Docker deployment files have been removed. Do not assume Rust/Cargo, desktop sidecars, container builds, or desktop installers are available.
+- Frontend CI uses Node.js 24. Python compatibility CI covers 3.11–3.14. The constrained dependency job uses Python 3.12 and `requirements/constraints-python312.txt`.
+
 ## Pipelines
 
 Source reporting:
@@ -374,6 +385,11 @@ Apply redaction everywhere, including raw evidence, collection, reports, migrati
 
 ## Before editing
 
+When `.codegraph/` exists, use `codegraph_explore` (or `codegraph explore`)
+before repository searches or broad source reads to locate symbols and trace
+callers. Use direct reads for configuration, documentation, tests, and context
+the graph does not provide. Do not create or regenerate the index unless asked.
+
 Inspect:
 
 ```text
@@ -457,6 +473,7 @@ python -m pytest -q
 
 Frontend:
 cd src/frontend
+npm ci
 npm test
 npm run lint
 npm run build

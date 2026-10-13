@@ -99,13 +99,17 @@ Unsupported or partially understood source configuration is preserved where prac
 
 ## Runtime Targets
 
-The repository provides a web runtime with a React frontend, Flask API contract, and `fwmigrate` application logic:
+The repository provides a browser application with a React frontend and Flask API, plus the `fwmigrate` CLI:
 
 | Runtime | Backend | Where operations run |
 |---|---|---|
-| Web | Gunicorn → Flask | Hosted web server |
+| Local web | Flask + Vite during development, or Flask serving the built frontend | Local machine |
+| Hosted web | Gunicorn → Flask serving the built frontend | Hosted web server |
+| CLI | Python `fwmigrate` entry point | Machine running the command |
 
-Web collection and PAN-OS deployment originate from the hosted web server and require network reachability from that environment.
+Tauri desktop packaging and Docker deployment files have been removed. The Windows launcher starts the browser development workflow; it does not build a desktop executable.
+
+Web collection and PAN-OS deployment originate from the backend machine and require network reachability from that environment.
 
 ## Supported Source Vendors
 
@@ -206,13 +210,13 @@ pyproject.toml
 → compatible source dependency ranges
 
 requirements/constraints-python312.txt
-→ resolved Python 3.12 versions for release and hosted deployment builds
+→ resolved Python 3.12 versions for hosted installs and constrained dependency tests
 
 src/frontend/package-lock.json
 → resolved frontend dependency graph
 ```
 
-The Python constraints file is used only by artifact-producing Python 3.12 paths. The Python 3.11/3.12/3.13/3.14 compatibility test matrix continues to install from the declared ranges so supported-version compatibility is still exercised.
+The Python constraints file is used for reproducible Python 3.12 installs and the CI `release-dependencies` job. The Python 3.11/3.12/3.13/3.14 compatibility test matrix installs from the declared ranges so supported-version compatibility is still exercised.
 
 For a reproducible production-style install:
 
@@ -240,6 +244,17 @@ python -m fwmigrate.main vendors
 
 ### Start the Web Application
 
+Build the frontend first. Use Node.js 24, matching frontend CI, and npm:
+
+```bash
+cd src/frontend
+npm ci
+npm run build
+cd ../..
+```
+
+Start Flask from the repository root with the Python environment activated:
+
 ```bash
 fwmigrate serve --port 5000
 ```
@@ -259,11 +274,19 @@ python -m fwmigrate.main serve --port 5000
 For Windows development, run [`Start Local.bat`](./Start%20Local.bat). It needs
 Python 3.11 or newer, Node.js, and npm. The script starts the local backend at
 `http://127.0.0.1:5000` and the Vite development frontend at
-`http://127.0.0.1:5173`.
+`http://127.0.0.1:5173` and opens the frontend in the browser. It creates `.venv`
+and installs collection/deployment dependencies when that environment is absent.
+It also runs `npm ci` when Vite is absent. An existing Python environment must
+already have the application dependencies installed.
+
+For manual frontend development, keep Flask running on port 5000 and run
+`npm run dev` from `src/frontend`. Vite proxies API requests to Flask. Without
+`src/frontend/dist/index.html`, Flask's `/` route returns HTTP 503; use the Vite
+URL during development or build the frontend before opening Flask's URL.
 
 ### Hosted Web Deployment
 
-Build the frontend and install the Python application on the web host:
+Build the frontend with Node.js 24 and install the Python application using Python 3.12 on the web host:
 
 ```bash
 cd src/frontend
@@ -682,9 +705,11 @@ src/
 │
 └── frontend/
     ├── src/               React presentation and workflow client
+    └── dist/              Generated frontend build served by Flask
 
 requirements/              Reproducible Python build constraints
-scripts/                   Release and repository checks
+scripts/                   FortiGate FAST Excel benchmark
+Start Local.bat            Windows browser development launcher
 ```
 
 The React frontend is a presentation and workflow client. It must not become a vendor-semantics or migration-planning layer.
@@ -747,6 +772,12 @@ Run the Python test suite:
 
 ```bash
 python -m pytest -q
+```
+
+Run Python linting:
+
+```bash
+ruff check src tests
 ```
 
 For frontend changes:

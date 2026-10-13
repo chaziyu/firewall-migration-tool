@@ -29,7 +29,6 @@ jobs:
       scan-args: |-
         --lockfile=requirements.txt:./requirements/constraints-python312.txt
         --lockfile=./src/frontend/package-lock.json
-        --lockfile=./src/frontend/src-tauri/Cargo.lock
 
   scan-resolved-pr:
     if: ${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' }}
@@ -38,7 +37,6 @@ jobs:
       scan-args: |-
         --lockfile=requirements.txt:./requirements/constraints-python312.txt
         --lockfile=./src/frontend/package-lock.json
-        --lockfile=./src/frontend/src-tauri/Cargo.lock
 
   scan-pr:
     if: ${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' }}

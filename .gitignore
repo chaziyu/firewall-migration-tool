@@ -103,9 +103,3 @@ dist-ssr
 *.ntvs*
 *.njsproj
 *.sln
-
-# Tauri desktop build output
-/src/frontend/src-tauri/target/
-/src/frontend/src-tauri/gen/
-/src/frontend/src-tauri/binaries/*
-!/src/frontend/src-tauri/binaries/.gitkeep
