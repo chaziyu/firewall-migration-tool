@@ -1557,3 +1557,115 @@ end
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_multiple_nat_modes_keep_preview_and_excel_details():
+    from fwmigrate.vendors.fortigate.source_report import FortiGateSourceReporter
+    reporter = FortiGateSourceReporter()
+    analysis = reporter.analyze_source('''config firewall policy
+edit 1
+set nat enable
+set nat64 enable
+next
+end
+''')
+    before = deepcopy(analysis.extracted.config)
+    preview = reporter.build_preview(analysis)['sections']
+    assert len(preview['nat']) == 2
+    assert 'Multiple NAT modes' in preview['policies'][0]['review']
+    assert all(entry.translation_type in preview['policies'][0]['review'] for entry in analysis.derived.nat)
+    for profile in (ExcelExportProfile.FULL, ExcelExportProfile.FAST):
+        output = io.BytesIO()
+        reporter.export_excel(analysis, output, profile=profile)
+        workbook = load_workbook(output)
+        sheet = workbook['Policies']
+        headers = [cell.value for cell in sheet[3]]
+        row = dict(zip(headers, next(sheet.iter_rows(min_row=4, values_only=True))))
+        assert 'Interface Address' in row['SNAT Type']
+        assert 'NAT64 IP Pool' in row['SNAT Type']
+        assert 'Multiple NAT modes' in row['Review Reasons']
+        assert workbook['NAT Rules'].max_row == 5
+    assert analysis.extracted.config == before
+
+
+def test_address_values_match_preview_and_excel_without_mutation():
+    from fwmigrate.vendors.fortigate.source_report import FortiGateSourceReporter
+    reporter = FortiGateSourceReporter()
+    analysis = reporter.analyze_source('''config firewall address
+edit subnet
+set subnet 192.0.2.0 255.255.255.0
+next
+edit range
+set type iprange
+set subnet 192.0.2.0 255.255.255.0
+set start-ip 198.51.100.1
+set end-ip 198.51.100.2
+next
+edit dns
+set type fqdn
+set fqdn example.com
+next
+edit wildcard
+set type wildcard
+set wildcard 192.0.2.0 0.0.0.255
+next
+edit wildcard-dns
+set wildcard-fqdn *.example.com
+next
+edit ambiguous
+set subnet 192.0.2.0 255.255.255.0
+set fqdn example.com
+next
+end
+config firewall address6
+edit v6
+set ip6 2001:db8::/64
+next
+end
+''')
+    before = deepcopy(analysis.extracted.config)
+    preview = {item['name']: item['value'] for item in reporter.build_preview(analysis)['sections']['addresses']}
+    assert preview['range'] == '198.51.100.1-198.51.100.2'
+    assert preview['ambiguous'].startswith('Ambiguous:')
+    assert 'example.com' in preview['ambiguous']
+    assert preview['v6'] == '2001:db8::/64'
+    for profile in (ExcelExportProfile.FULL, ExcelExportProfile.FAST):
+        output = io.BytesIO()
+        reporter.export_excel(analysis, output, profile=profile)
+        workbook = load_workbook(output)
+        sheet = workbook['Addresses']
+        headers = [cell.value for cell in sheet[3]]
+        values = {row[headers.index('Name')]: row[headers.index('Value')]
+                  for row in sheet.iter_rows(min_row=4, values_only=True)}
+        assert values == preview
+    assert analysis.extracted.config == before
+
+
+def test_duplicate_policy_identity_does_not_guess_nat_associations():
+    from fwmigrate.vendors.fortigate.source_report import FortiGateSourceReporter
+    reporter = FortiGateSourceReporter()
+    analysis = reporter.analyze_source('''config firewall policy
+edit 0
+set name ordinary
+set nat enable
+next
+edit 0
+set name translated
+set nat64 enable
+next
+end
+''')
+    preview = reporter.build_preview(analysis)['sections']
+    assert len(preview['nat']) == 2
+    assert all('Ambiguous policy identity' in row['review'] for row in preview['policies'])
+    for profile in (ExcelExportProfile.FULL, ExcelExportProfile.FAST):
+        output = io.BytesIO()
+        reporter.export_excel(analysis, output, profile=profile)
+        workbook = load_workbook(output)
+        sheet = workbook['Policies']
+        headers = [cell.value for cell in sheet[3]]
+        for values in sheet.iter_rows(min_row=4, values_only=True):
+            row = dict(zip(headers, values))
+            assert row['SNAT Type'] is None
+            assert 'Ambiguous policy identity' in row['Review Reasons']
+        assert workbook['NAT Rules'].max_row == 5

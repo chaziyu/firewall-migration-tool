@@ -84,6 +84,17 @@ def test_static_route_duplicate_identity_includes_source_scope():
     assert any("duplicate static route name 'default'" in issue.message for issue in duplicate_validation.issues)
 
 
+def test_security_rule_duplicate_identity_includes_native_rulebase_and_scope():
+    xml = """<config><devices><entry name='fw'><vsys><entry name='vsys1'>
+      <pre-rulebase><security><rules><entry name='reused'/><entry name='same-scope-duplicate'/><entry name='same-scope-duplicate'/></rules></security></pre-rulebase>
+      <post-rulebase><security><rules><entry name='reused'/></rules></security></post-rulebase>
+    </entry><entry name='vsys2'><rulebase><security><rules><entry name='reused'/></rules></security></rulebase></entry></vsys></entry></devices></config>"""
+    _, _, validation = _analyze(xml)
+    duplicates = [issue for issue in validation.issues if "duplicate security rule name" in issue.message]
+    assert len(duplicates) == 1
+    assert "same-scope-duplicate" in duplicates[0].message
+
+
 def test_unknown_route_nexthop_subtree_is_preserved():
     config = build_panos_config("""<config><devices><entry name='fw'><network>
       <virtual-router><entry name='vr-main'><routing-table><ip><static-route>

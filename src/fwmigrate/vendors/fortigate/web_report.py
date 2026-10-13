@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Any, Iterable
 
+from .report_values import address_value, policy_nat_entries, policy_nat_review
 from .derived import DerivedViews
 from .model.source import FGConfig
 from .validation.index import ValidationIssueIndex
@@ -26,11 +27,6 @@ def _review(*groups: Iterable[str]) -> str | None:
     messages = list(dict.fromkeys(message for group in groups for message in group))
     return "; ".join(messages) or None
 
-
-def _address_value(item: Any) -> str | None:
-    if item.start_ip and item.end_ip:
-        return f"{item.start_ip}-{item.end_ip}"
-    return item.subnet or item.ip6 or item.fqdn or item.wildcard or item.wildcard_fqdn
 
 
 def _object_counts(config: FGConfig) -> dict[str, int]:
@@ -187,7 +183,7 @@ def build_web_report(
     issue_index = ValidationIssueIndex(validation)
     topology = {(item.vdom, item.name): item for item in derived.topology.interfaces}
     vpn_topology = {(item.vdom, item.name): item for item in derived.topology.vpns}
-    nat = {(item.vdom, item.policy_id): item for item in derived.nat}
+    nat_counts, nat = policy_nat_entries(config, derived)
     vpn_phase2 = {(item.vpn_type, item.vdom, item.name): item for item in derived.vpn.phase2}
     vpn_issues: dict[tuple[str, str, str], list[str]] = defaultdict(list)
     for issue in derived.vpn.issues:
@@ -244,7 +240,7 @@ def build_web_report(
             "vdom": item.vdom,
             "address_family": item.address_family,
             "type": item.type,
-            "value": _address_value(item),
+            "value": address_value(item),
             "associated_interface": item.associated_interface,
             "comment": item.comment,
             "review": _review(
@@ -362,7 +358,7 @@ def build_web_report(
     policies = []
     for item in config.policies:
         key = (item.vdom, item.policy_id)
-        nat_item = nat.get(key)
+        nat_items = nat.get(key, ())
         policies.append(
             {
                 "policy_id": item.policy_id,
@@ -385,7 +381,7 @@ def build_web_report(
                 "nat": item.nat,
                 "status": item.status,
                 "review": _review(
-                    nat_item.issues if nat_item else (),
+                    policy_nat_review(key, nat_counts, nat_items),
                     _messages(
                         issue_index,
                         vdom=item.vdom,
@@ -423,7 +419,7 @@ def build_web_report(
             "pool_names": list(item.pool_names),
             "translated_addresses": list(item.translated_addresses),
             "egress_interfaces": list(item.egress_interfaces),
-            "review": _review(item.issues),
+            "review": _review(item.issues, policy_nat_review((item.vdom, item.policy_id), nat_counts, ()) if item.policy_id is None or nat_counts[(item.vdom, item.policy_id)] != 1 else ()),
         }
         for item in derived.nat
     ]

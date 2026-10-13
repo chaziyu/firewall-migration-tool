@@ -190,6 +190,31 @@ def test_panos_fast_does_not_build_source_appendix(monkeypatch):
         workbook.close()
 
 
+def test_panos_excel_defaults_to_full_and_explicit_fast_is_preserved():
+    client = create_app({"TESTING": True}).test_client()
+    full = client.post("/api/extract/excel", data={
+        "source_vendor": "palo_alto", "file": (io.BytesIO(PALO_SOURCE.encode()), "pan.xml"),
+    })
+    fast = client.post("/api/extract/excel", data={
+        "source_vendor": "palo_alto", "excel_profile": "fast",
+        "file": (io.BytesIO(PALO_SOURCE.encode()), "pan.xml"),
+    })
+    other = client.post("/api/extract/excel", data={
+        "source_vendor": "cisco_asa", "file": (io.BytesIO(ASA_SOURCE.encode()), "asa.cfg"),
+    })
+    assert full.status_code == fast.status_code == other.status_code == 200
+    full_book, fast_book, other_book = [load_workbook(io.BytesIO(item.data), read_only=True) for item in (full, fast, other)]
+    try:
+        evidence_sheets = {"PAN-OS Source Inventory", "Extraction Coverage", "PAN-OS Source Appendix"}
+        assert evidence_sheets <= set(full_book.sheetnames)
+        assert evidence_sheets.isdisjoint(fast_book.sheetnames)
+        assert other_book["Summary"]["B3"].value == "Cisco ASA"
+    finally:
+        full_book.close()
+        fast_book.close()
+        other_book.close()
+
+
 def _post(client, path, **fields):
     data = {"source_vendor": "cisco_asa", **fields}
     if path == "/api/preview" or "file" not in data:
@@ -515,3 +540,44 @@ def test_source_reporting_rejects_oversized_upload_and_inline_evidence(monkeypat
         },
     )
     assert inline.status_code == 400
+
+
+@pytest.mark.parametrize('route', ['/api/preview', '/api/extract/excel'])
+@pytest.mark.parametrize('exception_type', [ValueError, KeyError, RuntimeError])
+def test_source_failures_keep_synthetic_secrets_private(monkeypatch, caplog, route, exception_type):
+    import fwmigrate.web_api.source as source_routes
+
+    def fail(*args, **kwargs):
+        raise exception_type('SYNTHETIC_SOURCE_SECRET')
+
+    monkeypatch.setattr(source_routes, 'analyze_request_source', fail)
+    response = create_app({'TESTING': True}).test_client().post(route, data={
+        'file': (io.BytesIO(b'password SYNTHETIC_SOURCE_SECRET'), 'source.conf'),
+    })
+    assert response.status_code in {400, 422, 500}
+    assert 'SYNTHETIC_SOURCE_SECRET' not in response.get_data(as_text=True) + caplog.text
+
+
+def test_fortigate_mixed_case_secrets_are_safe_in_snapshot_preview_excel_and_logs(caplog):
+    from fwmigrate.collection.contracts import CollectedSource, CollectionStatus
+    from fwmigrate.collection.snapshot import make_snapshot, parse_snapshot
+    source = ('config system admin\nedit admin\nSET password ENC UPPER_SECRET_SENTINEL\n'
+              'ApPeNd private-key "MULTILINE_SECRET_SENTINEL\nTAIL_SECRET_SENTINEL"\n'
+              'unset password\nnext\nend\n')
+    secrets = ('UPPER_SECRET_SENTINEL', 'MULTILINE_SECRET_SENTINEL', 'TAIL_SECRET_SENTINEL')
+    snapshot = make_snapshot(CollectedSource('fortigate', source, 'safe.conf', 'test', CollectionStatus.SUCCESS))
+    assert all(secret not in json.dumps(snapshot) for secret in secrets)
+    imported = parse_snapshot(json.dumps(snapshot).encode())
+    assert all(secret not in imported.source_text for secret in secrets)
+    client = create_app({'TESTING': True}).test_client()
+    for route in ('/api/preview', '/api/extract/excel'):
+        response = client.post(route, data={'source_vendor': 'fortigate',
+            'file': (io.BytesIO(json.dumps(snapshot).encode()), 'safe.json')})
+        assert response.status_code == 200
+        if route.endswith('excel'):
+            workbook = load_workbook(io.BytesIO(response.data))
+            contents = repr([list(sheet.values) for sheet in workbook])
+        else:
+            contents = response.get_data(as_text=True)
+        assert all(secret not in contents for secret in secrets)
+    assert all(secret not in caplog.text for secret in secrets)

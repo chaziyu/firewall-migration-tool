@@ -91,3 +91,55 @@ def test_remote_deployment_is_disabled_by_default():
 def test_remote_deployment_requires_web_authentication():
     with pytest.raises(RuntimeError, match="Remote deployment requires configured web authentication"):
         create_app({"TESTING": True, "ALLOW_REMOTE_DEPLOYMENT": True})
+
+
+@pytest.mark.parametrize('exception_type,status', [(ValueError, 400), (RuntimeError, 500)])
+def test_global_failures_never_expose_exception_text(exception_type, status, caplog):
+    app = create_app({'TESTING': True})
+
+    @app.post('/api/synthetic-failure')
+    def fail():
+        raise exception_type('Approved design SYNTHETIC_SECRET_SENTINEL')
+
+    response = app.test_client().post('/api/synthetic-failure', json={'password': 'SYNTHETIC_SECRET_SENTINEL'})
+    assert response.status_code == status
+    assert 'SYNTHETIC_SECRET_SENTINEL' not in response.get_data(as_text=True) + caplog.text
+    assert all(record.exc_info is None for record in caplog.records)
+
+
+@pytest.mark.parametrize('route', [
+    '/api/migration/design/approve', '/api/migration/requirements',
+    '/api/migration/interfaces/confirm', '/api/migration/decisions/approve',
+    '/api/migration/automation/run', '/api/migration/target-intent/import',
+    '/api/migration/target-intent/export', '/api/migration/rules/apply',
+    '/api/migration/decisions/export', '/api/migrate',
+])
+def test_migration_source_failures_are_private(monkeypatch, caplog, route):
+    import fwmigrate.web_api.migration as migration
+
+    def fail(*args, **kwargs):
+        raise ValueError('Approved design SYNTHETIC_MIGRATION_SECRET')
+
+    monkeypatch.setattr(migration, 'analyze_request_source', fail)
+    monkeypatch.setattr(migration, 'verify_envelope', fail)
+    client = create_app({'TESTING': True}).test_client()
+    response = client.post(route, json={'source': {'password': 'SYNTHETIC_MIGRATION_SECRET'}, 'decision_keys': ['key']})
+    assert response.status_code in {400, 409}
+    assert 'SYNTHETIC_MIGRATION_SECRET' not in response.get_data(as_text=True) + caplog.text
+    assert all(record.exc_info is None for record in caplog.records)
+
+
+@pytest.mark.parametrize('route', ['/api/collection/test', '/api/collection/collect'])
+def test_collection_validation_does_not_log_credentials(monkeypatch, caplog, route):
+    import fwmigrate.web_api.source as source
+
+    def fail(*args, **kwargs):
+        raise ValueError('SYNTHETIC_COLLECTION_SECRET')
+
+    monkeypatch.setattr(source.source_collectors, 'get', fail)
+    response = create_app({'TESTING': True}).test_client().post(route, json={
+        'vendor': 'fortigate', 'connection': {'password': 'SYNTHETIC_COLLECTION_SECRET'},
+    })
+    assert response.status_code == 400
+    assert 'SYNTHETIC_COLLECTION_SECRET' not in response.get_data(as_text=True) + caplog.text
+    assert all(record.exc_info is None for record in caplog.records)
