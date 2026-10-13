@@ -6,6 +6,10 @@ import logging
 
 from pydantic import ValidationError
 from flask import Flask, Request as FlaskRequest, jsonify, request
+from werkzeug.exceptions import HTTPException
+
+from fwmigrate.web_support.request_controls import register_request_controls
+from fwmigrate.web_support.public_errors import safe_validation_message
 
 from fwmigrate.collection.builtin import register_builtin_collectors
 from fwmigrate.collection.snapshot import MAX_BYTES
@@ -60,6 +64,8 @@ def create_app(test_config=None):
         'ALLOW_REMOTE_DEPLOYMENT',
         os.environ.get('FWMIGRATE_ALLOW_REMOTE_DEPLOYMENT', '').strip().casefold() in {'1', 'true', 'yes', 'on'},
     )
+    app.config.setdefault('API_RATE_LIMIT_PER_MINUTE', int(os.environ.get('FWMIGRATE_API_RATE_LIMIT_PER_MINUTE', '30')))
+    app.config.setdefault('MAX_CONCURRENT_REQUESTS', int(os.environ.get('FWMIGRATE_MAX_CONCURRENT_REQUESTS', '2')))
     app.config.setdefault('MAX_CONTENT_LENGTH', 2 * MAX_BYTES + 5_000_000)
 
     require_web_auth = app.config.get('REQUIRE_WEB_AUTH')
@@ -104,6 +110,8 @@ def create_app(test_config=None):
             response.headers['WWW-Authenticate'] = 'Basic realm="Firewall Migration Tool"'
             return response
 
+    register_request_controls(app)
+
     @app.after_request
     def _security_headers(response):
         response.headers.setdefault('Content-Security-Policy',
@@ -131,11 +139,18 @@ def create_app(test_config=None):
 
     @app.errorhandler(ValueError)
     def _invalid_request(error):
-        return jsonify({'success': False, 'error': str(error)}), 400
+        return jsonify({'success': False, 'error': safe_validation_message(error, 'Invalid request')}), 400
 
     @app.errorhandler(ValidationError)
     def _invalid_model(_error):
         return jsonify({'success': False, 'error': 'Invalid configuration fields'}), 400
+
+    @app.errorhandler(Exception)
+    def _unexpected_error(error):
+        if isinstance(error, HTTPException):
+            return error
+        _LOGGER.error('Request processing failed')
+        return jsonify({'success': False, 'error': 'Request processing failed', 'error_code': 'internal_error'}), 500
 
     register_frontend_routes(app)
     register_source_routes(app)

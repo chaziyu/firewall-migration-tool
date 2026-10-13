@@ -20,9 +20,10 @@ from ..nodes import (
 
 from .common import (
     evaluate_config,
-    evaluate_edit,
     get_child_config,
-    iter_section_edits,
+    iter_grouped_section_edits,
+    evaluate_edit_sequence,
+    combine_source_edits,
     source_model_kwargs,
 )
 from .section_index import SectionIndex
@@ -49,14 +50,12 @@ def _extract_administrators(
 ) -> None:
     section_path = "system admin"
 
-    for source in iter_section_edits(
+    for source, edits in iter_grouped_section_edits(
         tree,
         section_path,
     ):
-        evaluation = evaluate_edit(
-            section_path,
-            source.edit,
-        )
+        edit = combine_source_edits(edits)
+        evaluation = evaluate_edit_sequence(section_path, edits)
 
         attributes = source_model_kwargs(
             evaluation,
@@ -69,19 +68,19 @@ def _extract_administrators(
 
         attributes["cli_vdom"] = source.vdom
         attributes["trusthosts"] = _numbered_values(
-            source.edit.commands,
+            edit.commands,
             prefix="trusthost",
             count=10,
         )
 
         attributes["ip6_trusthosts"] = _numbered_values(
-            source.edit.commands,
+            edit.commands,
             prefix="ip6-trusthost",
             count=10,
         )
 
         secret_state = _secret_presence(
-            source.edit.commands,
+            edit.commands,
             {
                 "password",
                 "ssh-public-key1",
@@ -124,14 +123,12 @@ def _extract_admin_profiles(
 ) -> None:
     section_path = "system accprofile"
 
-    for source in iter_section_edits(
+    for source, edits in iter_grouped_section_edits(
         tree,
         section_path,
     ):
-        evaluation = evaluate_edit(
-            section_path,
-            source.edit,
-        )
+        edit = combine_source_edits(edits)
+        evaluation = evaluate_edit_sequence(section_path, edits)
 
         attributes = source_model_kwargs(
             evaluation,
@@ -142,7 +139,7 @@ def _extract_admin_profiles(
         attributes["cli_vdom"] = source.vdom
         _add_permission_block(
             attributes,
-            source.edit,
+            edit,
             child_name="fwgrp-permission",
             section_path=(
                 "system accprofile fwgrp-permission"
@@ -153,7 +150,7 @@ def _extract_admin_profiles(
 
         _add_permission_block(
             attributes,
-            source.edit,
+            edit,
             child_name="loggrp-permission",
             section_path=(
                 "system accprofile loggrp-permission"
@@ -164,7 +161,7 @@ def _extract_admin_profiles(
 
         _add_permission_block(
             attributes,
-            source.edit,
+            edit,
             child_name="netgrp-permission",
             section_path=(
                 "system accprofile netgrp-permission"
@@ -175,7 +172,7 @@ def _extract_admin_profiles(
 
         _add_permission_block(
             attributes,
-            source.edit,
+            edit,
             child_name="sysgrp-permission",
             section_path=(
                 "system accprofile sysgrp-permission"
@@ -186,7 +183,7 @@ def _extract_admin_profiles(
 
         _add_permission_block(
             attributes,
-            source.edit,
+            edit,
             child_name="utmgrp-permission",
             section_path=(
                 "system accprofile utmgrp-permission"

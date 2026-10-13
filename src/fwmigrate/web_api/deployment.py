@@ -19,6 +19,41 @@ from fwmigrate.web_support.reporting import _parse_bool
 _LOGGER = logging.getLogger(__name__)
 _DEPLOYMENT_SESSION_TTL_SECONDS = 30 * 60
 
+# Fixed application integrity checks are safe; transport/device exception text is not.
+_SAFE_DEPLOYMENT_ERRORS = frozenset({
+    'Destination changed since review; refresh evidence and approve the design again',
+    'Live PAN-OS serial is missing or differs from the approved destination',
+    'Cannot read complete PAN-OS candidate state',
+    'Approved destination baseline evidence is required before preparation',
+    'Cannot verify live PAN-OS identity and candidate state',
+    'Candidate changed after validation; prepare the candidate again',
+    'Cannot verify whether the candidate has existing changes',
+    'Candidate has existing or unknown unreviewed changes; resolve them before preparation',
+    'A validated candidate fingerprint is required',
+})
+
+
+def _public_deployment_error(message, fallback):
+    return message if message in _SAFE_DEPLOYMENT_ERRORS else fallback
+
+
+def _public_deployment_result(result):
+    """Keep status/identity/counts while excluding untrusted failure diagnostics."""
+    public = asdict(result)
+    if 'failure_message' in public:
+        if public['failure_message'] is not None:
+            public['failure_message'] = _public_deployment_error(public['failure_message'], 'Candidate preparation failed')
+        for command in public.get('command_results', ()):
+            if not command['accepted']:
+                command['response'] = 'Candidate command failed'
+        for name in ('validation', 'commit'):
+            nested = public.get(name)
+            if nested and nested['status'] not in {'SUCCESS', 'NOT_RUN'}:
+                nested['response'] = _public_deployment_error(nested['response'], 'Candidate operation failed')
+    elif public['status'] not in {'SUCCESS', 'NOT_RUN'}:
+        public['response'] = _public_deployment_error(public['response'], 'Candidate operation failed')
+    return public
+
 
 class _CandidateSessionError(ValueError):
     """Expected session failures with a fixed, approved public contract."""
@@ -185,6 +220,8 @@ def register_deployment_routes(
             result = deployer_factory(options).deploy(rendered)
             decision_document = payload['artifact']['decision_document']
             validation_feedback = deployment_validation_feedback(rendered, decision_document, result.validation)
+            if validation_feedback and validation_feedback.get('message'):
+                validation_feedback['message'] = _public_deployment_error(validation_feedback['message'], 'Candidate validation failed')
             succeeded = (
                 result.failure_message is None
                 and result.failed_command_index is None
@@ -209,8 +246,8 @@ def register_deployment_routes(
                 )
             return jsonify({
                 'success': succeeded,
-                'error': None if succeeded else result.failure_message or result.validation.response or 'Candidate preparation failed',
-                'result': asdict(result),
+                'error': None if succeeded else _public_deployment_error(result.failure_message, 'Candidate preparation failed'),
+                'result': _public_deployment_result(result),
                 'validation_feedback': validation_feedback,
                 'deployment_session_id': deployment_session_id,
                 'candidate_validated': succeeded,
@@ -228,6 +265,8 @@ def register_deployment_routes(
             result = deployer_factory(replace(options, validate=True)).validate()
             decision_document = payload['artifact']['decision_document']
             validation_feedback = deployment_validation_feedback(rendered, decision_document, result)
+            if validation_feedback and validation_feedback.get('message'):
+                validation_feedback['message'] = _public_deployment_error(validation_feedback['message'], 'Candidate validation failed')
             valid = (result.status == 'SUCCESS' and result.device_serial == session.device_serial
                      and result.candidate_sha256 == session.candidate_sha256)
             if valid:
@@ -240,8 +279,8 @@ def register_deployment_routes(
                 deployment_sessions.pop(session.session_id, None)
             return jsonify({
                 'success': valid,
-                'error': None if valid else result.response or 'Candidate identity or state verification failed',
-                'result': asdict(result),
+                'error': None if valid else 'Candidate identity or state verification failed',
+                'result': _public_deployment_result(result),
                 'deployment_session_id': session.session_id if valid else None,
                 'validation_feedback': validation_feedback,
             }), (200 if valid else 502)
@@ -269,8 +308,8 @@ def register_deployment_routes(
             deployment_sessions.pop(session.session_id, None)
             return jsonify({
                 'success': result.status == 'SUCCESS',
-                'error': None if result.status == 'SUCCESS' else result.response or 'Candidate commit failed',
-                'result': asdict(result),
+                'error': None if result.status == 'SUCCESS' else 'Candidate commit failed',
+                'result': _public_deployment_result(result),
                 'deployment_session_id': None,
             }), (200 if result.status == 'SUCCESS' else 502)
         except ArtifactEligibilityError as exc:

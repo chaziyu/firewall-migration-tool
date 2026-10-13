@@ -159,3 +159,16 @@ def test_source_model_kwargs_resolves_each_source_key_once(monkeypatch):
     assert resolved.count("interface") == 1
     assert zone.members == ["port1"]
     assert zone.explicit_fields == {"members"}
+
+
+def test_user_group_membership_preserves_missing_empty_and_command_state():
+    for commands, expected in (
+        ('', None), ('set member', []), ('set member alice', ['alice']),
+        ('set member alice\nappend member bob', ['alice', 'bob']),
+        ('set member alice\nunset member', None),
+    ):
+        analysis = FortiGateSourceReporter().analyze_source(
+            f'config user group\nedit users\n{commands}\nnext\nend\n')
+        group = analysis.extracted.config.user_groups[0]
+        assert group.members == expected
+        assert ('members' in group.explicit_fields) == (expected is not None)

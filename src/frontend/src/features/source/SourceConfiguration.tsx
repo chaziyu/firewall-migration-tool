@@ -62,7 +62,7 @@ export function SourceConfiguration({ view, onViewChange }: {
     let active = true
     restoreWorkspace().then((saved) => {
       if (!active) return
-      if (saved.preview) { setPreview(saved.preview); setVendor(saved.preview.vendor || ''); setDecisionDocument(saved.decisionDocument); setTargetSource(saved.targetSource); setTargetDevice(saved.targetDevice) }
+      if (saved.preview) { setPreview(saved.preview); setVendor(saved.preview.vendor || ''); setExcelProfile(saved.preview.vendor === 'palo_alto' ? 'full' : 'fast'); setDecisionDocument(saved.decisionDocument); setTargetSource(saved.targetSource); setTargetDevice(saved.targetDevice) }
     }).catch((cause) => { if (active) setError(`Workspace restore failed: ${String(cause)}`) })
       .finally(() => { if (active) setWorkspaceReady(true) })
     return () => { active = false }
@@ -116,6 +116,7 @@ export function SourceConfiguration({ view, onViewChange }: {
   function changeVendor(nextVendor: SourceVendor) {
     if (nextVendor === vendor) return
     setVendor(nextVendor)
+    setExcelProfile(nextVendor === 'palo_alto' ? 'full' : 'fast')
     setFile(null)
     clearAnalysis()
     setError(null)
@@ -209,7 +210,7 @@ export function SourceConfiguration({ view, onViewChange }: {
 
     <div className="workflow-panel" hidden={view !== 'collect'}>
       <p className="preview-status" role="status" aria-live="polite">{exportStatus}</p>
-      {preview && <div className="report-actions"><p className="report-source-context">{selectedVendor?.display_name ?? vendor} · Live collection</p><label className="excel-profile">Excel profile<select value={excelProfile} onChange={(event) => setExcelProfile(event.target.value as 'fast' | 'full')}><option value="fast">FAST</option><option value="full">FULL</option></select></label><Button disabled={exporting || !previewId} onClick={() => void exportWorkbook()}>{exporting ? 'Preparing workbook…' : 'Export to Excel'}</Button></div>}
+      {preview && <div className="report-actions"><p className="report-source-context">{selectedVendor?.display_name ?? vendor} · Live collection</p><label className="excel-profile">Excel profile<select value={excelProfile} onChange={(event) => setExcelProfile(event.target.value as 'fast' | 'full')}><option value="fast">FAST (omits technical evidence sheets)</option><option value="full">FULL</option></select></label><Button disabled={exporting || !previewId} onClick={() => void exportWorkbook()}>{exporting ? 'Preparing workbook…' : 'Export to Excel'}</Button></div>}
     </div>
 
     <div className="workflow-panel" hidden={view !== 'migration' && view !== 'live'}>

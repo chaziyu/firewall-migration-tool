@@ -88,11 +88,11 @@ def register_source_routes(app) -> None:
             return jsonify(response)
         except ConfigurationDecodeError as e:
             return jsonify({'success': False, 'error': str(e), 'stage': 'decode'}), 400
-        except KeyError as e:
-            return jsonify({'success': False, 'error': str(e)}), 400
+        except KeyError:
+            return jsonify({'success': False, 'error': 'Unsupported source vendor'}), 400
         except ValueError:
             return jsonify({'success': False, 'error': 'Invalid source configuration'}), 400
-        except Exception as e:
+        except Exception:
             return jsonify({'success': False, 'error': 'Source preview failed'}), 500
 
     def collection_options():
@@ -108,11 +108,11 @@ def register_source_routes(app) -> None:
     def test_collection_connection():
         try:
             collector, options = collection_options()
-        except PermissionError as exc:
-            _LOGGER.warning('Collection test denied by policy.', exc_info=exc)
+        except PermissionError:
+            _LOGGER.warning('Collection test denied by policy.')
             return jsonify({'success': False, 'error': 'Remote live collection is disabled on this server.'}), 403
-        except ValueError as exc:
-            _LOGGER.info('Invalid collection test request.', exc_info=exc)
+        except ValueError:
+            _LOGGER.info('Invalid collection test request.')
             return jsonify({'success': False, 'error': 'Invalid collection request.'}), 400
         try:
             collector.test_connection(options)
@@ -124,11 +124,11 @@ def register_source_routes(app) -> None:
     def collect_configuration():
         try:
             collector, options = collection_options()
-        except PermissionError as exc:
-            _LOGGER.warning("Collection request forbidden: %s", exc)
+        except PermissionError:
+            _LOGGER.warning('Collection request denied by policy')
             return jsonify({'success': False, 'error': 'Remote live collection is disabled on this server.'}), 403
-        except ValueError as exc:
-            return jsonify({'success': False, 'error': str(exc)}), 400
+        except ValueError:
+            return jsonify({'success': False, 'error': 'Invalid collection request.'}), 400
         try:
             source = collector.collect(options)
             if source.status == CollectionStatus.FAILED or not source.source_text.strip():
@@ -176,7 +176,8 @@ def register_source_routes(app) -> None:
                 else None
             )
             total_started = perf_counter()
-            profile_value = request.form.get('excel_profile') or payload.get('excel_profile') or ExcelExportProfile.FAST.value
+            default_profile = ExcelExportProfile.FULL if source_vendor == 'palo_alto' else ExcelExportProfile.FAST
+            profile_value = request.form.get('excel_profile') or payload.get('excel_profile') or default_profile.value
             try:
                 profile = ExcelExportProfile(profile_value)
             except (TypeError, ValueError):
@@ -229,10 +230,10 @@ def register_source_routes(app) -> None:
             return jsonify({'error': str(e)}), 503
         except ConfigurationDecodeError as e:
             return jsonify({'error': str(e), 'stage': 'decode'}), 400
-        except KeyError as e:
-            return jsonify({'error': f'Vendor-native Excel is not available: {e}'}), 422
+        except KeyError:
+            return jsonify({'error': 'Vendor-native Excel is not available'}), 422
         except ValueError:
             return jsonify({'success': False, 'error': 'Invalid source configuration'}), 400
-        except Exception as e:
+        except Exception:
             return jsonify({'error': 'Source Excel export failed'}), 500
 
