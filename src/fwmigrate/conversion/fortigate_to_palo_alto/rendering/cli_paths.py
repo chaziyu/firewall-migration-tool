@@ -127,12 +127,13 @@ def security_rule(item):
 
 def nat_rule(item):
     base = ("rulebase", "nat", "rules", item.target_name or item.source_name)
-    commands = [("vsys", *base, key, "[", *values, "]") for key, values in (("from", item.from_zones), ("to", item.to_zones), ("source", item.source_addresses), ("destination", item.destination_addresses)) if values]
+    commands = [("vsys", *base, "nat-type", "ipv4")]
+    commands += [("vsys", *base, key, "[", *values, "]") for key, values in (("from", item.from_zones), ("to", item.to_zones), ("source", item.source_addresses), ("destination", item.destination_addresses)) if values]
     if item.service: commands.append(("vsys", *base, "service", item.service))
     if item.to_interface: commands.append(("vsys", *base, "to-interface", item.to_interface))
     if item.source_translation_type:
         path = (*base, "source-translation", item.source_translation_type)
-        if item.source_interface_address: commands.append(("vsys", *path, "interface-address"))
+        if item.source_interface_address: commands.append(("vsys", *path, "interface-address", "interface", item.to_interface))
         if item.translated_addresses:
             commands.append(("vsys", *path, "translated-address", "[", *item.translated_addresses, "]"))
     if item.destination_translated_address:

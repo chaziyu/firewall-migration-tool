@@ -43,7 +43,7 @@ class FGDHCPReservedAddress(BaseModel):
 
 class FGDHCPServer(BaseModel):
     id: int | None = None
-    vdom: str = "root"
+    vdom: str | None = "root"
 
     # Direct interface relationship.
     interface: str | None = None

@@ -79,7 +79,7 @@ def build_interface_topology(
         tuple[tuple[str, ...], tuple[str, ...]],
     ] = {}
     for aggregate in config.interfaces:
-        if not _is_aggregate(aggregate):
+        if aggregate.vdom is None or not _is_aggregate(aggregate):
             continue
         for member_name in _deduplicate(aggregate.members):
             owners = aggregate_owners.setdefault(

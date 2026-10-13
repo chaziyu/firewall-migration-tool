@@ -123,8 +123,8 @@ def migrate(input, output, source_vendor, target_vendor, zone_map, target_config
 @click.option('--username', required=True)
 @click.option('--password', hide_input=True, help='Ignored; CLI deployment is disabled.')
 def deploy(commands_file, host, port, username, password):
-    """Disabled: use the reviewed web or desktop candidate workflow."""
-    raise click.ClickException('CLI deployment is disabled. Use the web or desktop workflow to approve the design, prepare and validate the candidate, then explicitly commit.')
+    """Disabled: use the reviewed web candidate workflow."""
+    raise click.ClickException('CLI deployment is disabled. Use the web workflow to approve the design, prepare and validate the candidate, then explicitly commit.')
 
 @cli.command()
 @click.option('--host', required=True)
@@ -132,8 +132,8 @@ def deploy(commands_file, host, port, username, password):
 @click.option('--username', required=True)
 @click.option('--password', hide_input=True, help='Ignored; CLI commit is disabled.')
 def commit(host, port, username, password):
-    """Disabled: use the reviewed web or desktop candidate workflow."""
-    raise click.ClickException('CLI commit is disabled. Use the web or desktop workflow to commit an artifact-bound validated candidate.')
+    """Disabled: use the reviewed web candidate workflow."""
+    raise click.ClickException('CLI commit is disabled. Use the web workflow to commit an artifact-bound validated candidate.')
 
 @cli.command()
 @click.option('--port', default=5000, help='Port to run the web server on')

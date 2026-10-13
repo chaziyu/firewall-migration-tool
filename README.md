@@ -99,16 +99,13 @@ Unsupported or partially understood source configuration is preserved where prac
 
 ## Runtime Targets
 
-The repository supports two independent runtime targets that share the same React frontend, Flask API contract, and `fwmigrate` application logic:
+The repository provides a web runtime with a React frontend, Flask API contract, and `fwmigrate` application logic:
 
 | Target | Runtime | Docker required? | Where backend operations run |
 |---|---|---|---|
 | Web / Render | Browser → Gunicorn → Flask | Yes for the current production container deployment | Render/container host |
-| Windows desktop | React → Tauri → local PyInstaller Flask sidecar | **No** | User workstation |
 
-The Tauri desktop application does **not** start Docker, require Docker Desktop, or communicate through a Docker container. Its Python backend is packaged as a sidecar executable and binds only to `127.0.0.1` using a per-launch authentication token.
-
-This distinction matters for network access: desktop collection and PAN-OS deployment originate from the user's workstation, while web/Render collection and deployment originate from the hosted container and therefore require network reachability from that environment.
+Web collection and PAN-OS deployment originate from the hosted container and require network reachability from that environment.
 
 ## Supported Source Vendors
 
@@ -209,16 +206,10 @@ pyproject.toml
 → compatible source dependency ranges
 
 requirements/constraints-python312.txt
-→ resolved Python 3.12 versions for Docker/Render and Tauri/PyInstaller builds
+→ resolved Python 3.12 versions for Docker/Render builds
 
 src/frontend/package-lock.json
 → resolved frontend dependency graph
-
-src/frontend/src-tauri/Cargo.lock
-→ resolved Rust/Tauri dependency graph
-
-rust-toolchain.toml
-→ pinned Rust compiler toolchain for CI and desktop builds
 ```
 
 The Python constraints file is used only by artifact-producing Python 3.12 paths. The Python 3.11/3.12/3.13/3.14 compatibility test matrix continues to install from the declared ranges so supported-version compatibility is still exercised.
@@ -232,98 +223,6 @@ python -m pip check
 
 Review and regenerate the constraints file when dependencies are intentionally updated; do not silently edit individual pins merely to suppress a vulnerability scanner.
 
-
-### Desktop Application
-
-The desktop build is a native Tauri application. Tauri owns the window and lifecycle, while the existing Flask application runs locally as a PyInstaller sidecar:
-
-```text
-React
-→ Tauri
-→ authenticated 127.0.0.1 Flask sidecar
-→ fwmigrate application / domain logic
-```
-
-**Docker is not part of the desktop runtime.** A user can run the packaged desktop application without Docker Desktop installed.
-
-Windows build prerequisites are Rust, Node.js, Python, PyInstaller, and the normal Tauri Windows system dependencies. The desktop build uses the reviewed Python 3.12 constraints file:
-
-```powershell
-python -m pip install --constraint requirements/constraints-python312.txt -e ".[collection,deployment]" "pyinstaller>=6.0"
-python -m pip check
-
-cd src/frontend
-npm ci
-npm run build
-cd ../..
-
-python desktop/build_tauri_sidecar.py
-
-cd src/frontend
-npm run tauri -- build -- --locked
-```
-
-Typical build outputs are under:
-
-```text
-src/frontend/src-tauri/target/release/
-src/frontend/src-tauri/target/release/bundle/nsis/
-src/frontend/src-tauri/target/release/bundle/msi/
-```
-
-### Desktop updates and releases
-
-Windows desktop users can use **Check for updates** in the sidebar. Updates show
-the version and release notes as text. **Download and install** is the explicit
-installation confirmation. Save work first: the passive Windows installer closes
-and restarts the application. Browser/Render builds have no updater controls.
-
-Only this repository's signed GitHub Releases are accepted. Invalid metadata,
-network errors and signature failures block installation. The endpoint is
-`https://github.com/chaziyu/firewall-migration-tool/releases/latest/download/latest.json`.
-An empty public key disables trusted installation until signing is configured.
-
-Generate the signing pair once **outside the repository**, from `src/frontend`:
-
-```powershell
-New-Item -ItemType Directory -Force "$env:USERPROFILE\.tauri" | Out-Null
-npm run tauri -- signer generate -w "$env:USERPROFILE\.tauri\fwmigrate.key"
-Get-Content "$env:USERPROFILE\.tauri\fwmigrate.key.pub"
-```
-
-In Command Prompt use `%USERPROFILE%` instead of `$env:USERPROFILE`.
-Copy only the `.pub` content to `plugins.updater.pubkey` in
-`src/frontend/src-tauri/tauri.conf.json`. Keep the private key and password in
-secure storage with a backup. Do not regenerate the key for subsequent releases:
-existing installations trust the original public key.
-
-Configure a protected GitHub environment named `desktop-release` with secrets
-`TAURI_SIGNING_PRIVATE_KEY` (private-key file contents) and
-`TAURI_SIGNING_PRIVATE_KEY_PASSWORD`. Restrict it to approved desktop tags and
-set required reviewers. Never put these secrets in ordinary CI or PR workflows.
-Updater signing is separate from Windows Authenticode publisher signing;
-Authenticode remains a separate production hardening task.
-
-Keep `pyproject.toml`, desktop `Cargo.toml` and `tauri.conf.json` versions equal.
-The frontend package version is not authoritative. Run
-`python scripts/check_desktop_release_version.py --tag desktop-v0.2.1`
-using the intended version. A successful CI run for a push to `main` automatically
-creates and pushes the matching `desktop-v<version>` tag if it does not already
-exist, then triggers the release workflow. Pushing a matching
-`desktop-v<version>` tag manually also triggers that workflow. The protected
-`desktop-release` environment may require reviewer approval before the release
-job runs. The workflow builds both MSI and NSIS, signs updater artifacts, and
-publishes the release (`releaseDraft: false`). NSIS is the canonical in-app
-updater; MSI remains available for manual enterprise deployment. Review the
-installers, `.sig` files, `latest.json` and release notes after the release.
-Normal builds use no signing secrets; only the release configuration enables
-`createUpdaterArtifacts`.
-
-Before publishing, test a signed update from an older installed build, a tampered
-artifact, malformed metadata, missing signatures and a network failure. Confirm
-the restarted app runs the new version and the old sidecar exits. An older build
-without updater support needs one manual installation of the updater-enabled
-baseline. The implementation does not change the current release version.
 
 ## Usage
 
@@ -360,12 +259,11 @@ python -m fwmigrate.main serve --port 5000
 For Windows development, run [`Start Local.bat`](./Start%20Local.bat). It needs
 Python 3.11 or newer, Node.js, and npm. The script starts the local backend at
 `http://127.0.0.1:5000` and the Vite development frontend at
-`http://127.0.0.1:5173`. This local workflow needs no Docker and is separate
-from the packaged Tauri desktop application.
+`http://127.0.0.1:5173`. This local workflow needs no Docker.
 
 ### Docker / Render Web Deployment
 
-Docker is used for the hosted web application, including the current Render deployment. It is separate from the Tauri desktop runtime; the Docker image does not host or launch the Tauri application.
+Docker is used for the hosted web application, including the current Render deployment.
 
 The Docker image installs Python dependencies through `requirements/constraints-python312.txt`, so the deployed Python dependency set matches the reviewed Python 3.12 build constraints.
 
@@ -477,7 +375,7 @@ devices, select one with `--target-device`; that option requires
 `--automation-mode` accepts `REVIEW_ONLY`, `STRICT_VERIFIED`,
 `VERIFIED_AND_DERIVED`, or `ENGINEER_INTENT`. Only `--format set` is currently
 implemented; `xml` and `cli` are rejected. CLI planning and file export do not
-provide web or desktop deployment approval.
+provide web deployment approval.
 
 Migration planning is directional and pair-specific:
 
@@ -531,13 +429,13 @@ command count
 command SHA-256
 ```
 
-CLI `deploy` and `commit` are disabled because they do not carry signed design approval and artifact-bound candidate sessions. Use the web or desktop workflow for live deployment. CLI migration planning and file export remain available.
+CLI `deploy` and `commit` are disabled because they do not carry signed design approval and artifact-bound candidate sessions. Use the web workflow for live deployment. CLI migration planning and file export remain available.
 
-Web and desktop executable artifact generation requires a current signed approval from `/api/migration/design/prepare` → `/api/migration/design/approve`. Raw mappings and unsigned decision documents are proposal inputs: they cannot issue executable artifacts. The compatibility interface-confirmation, decision-approval, automation, and rule APIs preserve editable proposals and imports; their outputs still require deterministic design approval. Approvals expire after 24 hours, matching the browser workspace lifetime, and require renewed engineer review. Partial approvals render only approved groups with satisfied dependencies; unapproved or dependency-blocked items produce no commands. IPv6 and mixed-family policy matches remain visible as unsupported evidence and render no security rules.
+Web executable artifact generation requires a current signed approval from `/api/migration/design/prepare` → `/api/migration/design/approve`. Raw mappings and unsigned decision documents are proposal inputs: they cannot issue executable artifacts. The compatibility interface-confirmation, decision-approval, automation, and rule APIs preserve editable proposals and imports; their outputs still require deterministic design approval. Approvals expire after 24 hours, matching the browser workspace lifetime, and require renewed engineer review. Partial approvals render only approved groups with satisfied dependencies; unapproved or dependency-blocked items produce no commands. IPv6 and mixed-family policy matches remain visible as unsupported evidence and render no security rules.
 
-Web and desktop candidate preparation requires a signed `READY` artifact and an explicit serial and baseline fingerprint in the approved destination XML evidence. A device name or hostname alone cannot establish serial identity. Before pushing, the SSH workflow checks the live serial, verifies the approved `baseline_sha256` against the live sanitized PAN-OS configuration, and requires `show config diff` to be empty. Destination drift requires refreshed evidence and renewed approval. After the push, the workflow fingerprints the complete XML candidate from `show config candidate` without exporting its contents. Revalidation and explicit commit check the same live serial and candidate fingerprint. Drift, validation failure, unknown commit state, session expiry, and server restart require another candidate preparation. `READY_NO_CHANGES` artifacts are downloadable but cannot deploy.
+Web candidate preparation requires a signed `READY` artifact and an explicit serial and baseline fingerprint in the approved destination XML evidence. A device name or hostname alone cannot establish serial identity. Before pushing, the SSH workflow checks the live serial, verifies the approved `baseline_sha256` against the live sanitized PAN-OS configuration, and requires `show config diff` to be empty. Destination drift requires refreshed evidence and renewed approval. After the push, the workflow fingerprints the complete XML candidate from `show config candidate` without exporting its contents. Revalidation and explicit commit check the same live serial and candidate fingerprint. Drift, validation failure, unknown commit state, session expiry, and server restart require another candidate preparation. `READY_NO_CHANGES` artifacts are downloadable but cannot deploy.
 
-These guards apply to the web and desktop workflow; CLI deployment and commit are disabled. Device-native configuration locking is not enforced: another administrator can still change the candidate between the final fingerprint check and commit. Coordinate administrator access during candidate preparation and commit. The baseline fingerprint identifies approved sanitized destination evidence; the rendered command SHA-256 identifies the commands to apply; the post-push candidate SHA-256 identifies the candidate configuration checked during validation and commit. They serve distinct purposes.
+These guards apply to the web workflow; CLI deployment and commit are disabled. Device-native configuration locking is not enforced: another administrator can still change the candidate between the final fingerprint check and commit. Coordinate administrator access during candidate preparation and commit. The baseline fingerprint identifies approved sanitized destination evidence; the rendered command SHA-256 identifies the commands to apply; the post-push candidate SHA-256 identifies the candidate configuration checked during validation and commit. They serve distinct purposes.
 
 This provides the intended flow:
 
@@ -556,7 +454,7 @@ PAN-OS SSH deployment uses the optional deployment dependency:
 python -m pip install -e ".[deployment]"
 ```
 
-Use Live migration in the web or desktop application after approving the design and reviewing the plan. The application shows candidate deployment eligibility and any missing destination evidence.
+Use Live migration in the web application after approving the design and reviewing the plan. The application shows candidate deployment eligibility and any missing destination evidence.
 
 ```text
 verify signed migration artifact
@@ -808,21 +706,16 @@ src/
 │   ├── web.py            Flask composition, auth, security, and route registration
 │   ├── web_api/          Source, migration, and deployment HTTP route modules
 │   ├── web_support/      Web transport, reporting, frontend, and artifact helpers
-│   ├── desktop_server.py Loopback-only Tauri sidecar entry point
 │   └── main.py           CLI entry point
 │
 └── frontend/
     ├── src/               React presentation and workflow client
-    └── src-tauri/         Tauri desktop shell and local sidecar lifecycle
 
-desktop/                   Desktop sidecar build support
 requirements/              Reproducible Python build constraints
 scripts/                   Release and repository checks
 ```
 
 The React frontend is a presentation and workflow client. It must not become a vendor-semantics or migration-planning layer.
-
-The Tauri desktop shell owns the native window, local sidecar lifecycle, and desktop transport controls. Vendor semantics remain in the Python application packages.
 
 Vendor-specific logic belongs inside the corresponding vendor package.
 
@@ -894,15 +787,7 @@ npm run lint
 npm run build
 ```
 
-For desktop-shell changes:
-
-```bash
-cargo check --locked --manifest-path src/frontend/src-tauri/Cargo.toml
-cargo test --locked --lib --manifest-path src/frontend/src-tauri/Cargo.toml
-python scripts/check_desktop_release_version.py
-```
-
-For deployment/release dependency changes, also validate the constrained Python 3.12 dependency set used by Docker and desktop builds.
+For deployment/release dependency changes, also validate the constrained Python 3.12 dependency set used by Docker builds.
 
 Run only the checks relevant to the affected area locally, while CI remains the authoritative full repository matrix.
 

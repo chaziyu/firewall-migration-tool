@@ -1,15 +1,15 @@
-# Resolved Python 3.12 constraints for production/deployment and desktop build paths.
+# Resolved Python 3.12 constraints for production and deployment paths.
 #
-# Source dependency ranges remain in pyproject.toml. Docker and Tauri/PyInstaller
-# builds install the project through this file so those artifacts use reviewed,
-# reproducible versions instead of the lowest version admitted by a range.
+# Source dependency ranges remain in pyproject.toml. Docker builds install the
+# project through this file so those artifacts use reviewed, reproducible versions
+# instead of the lowest version admitted by a range.
 #
 # Baseline: successful Python 3.12 CI resolutions on 2026-10-01.
 # Refresh in a clean Python 3.12 environment and review the diff before committing.
 #
 # Example refresh:
 #   python -m pip install --upgrade pip
-#   python -m pip install -e ".[collection,deployment]" "pyinstaller>=6.0"
+#   python -m pip install -e ".[collection,deployment]"
 #   python -m pip freeze --exclude-editable
 
 altgraph==0.17.5
@@ -42,8 +42,6 @@ pycparser==3.0
 pydantic==2.13.5
 pydantic-core==2.46.5
 pygments==2.21.0
-pyinstaller==6.22.3
-pyinstaller-hooks-contrib==2026.8
 pynacl==1.6.2
 pyserial==3.5
 pywin32-ctypes==0.2.3 ; sys_platform == "win32"

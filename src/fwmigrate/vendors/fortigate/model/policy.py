@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 class FGPolicy(BaseModel):
     # Identity / context
     policy_id: int | None = None
-    vdom: str = "root"
+    vdom: str | None = "root"
     name: str | None = None
 
     # Interfaces

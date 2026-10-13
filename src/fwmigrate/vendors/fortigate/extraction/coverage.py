@@ -22,11 +22,11 @@ class TypedSourceSpec:
 
 @dataclass(frozen=True, slots=True)
 class TypedSourceObject:
-    identity: tuple[str, str, str | None, tuple[str, ...]]
+    identity: tuple[str | None, str, str | None, tuple[str, ...]]
     model: BaseModel
 
 
-TypedSourceIdentity = tuple[str, str, str | None, tuple[str, ...]]
+TypedSourceIdentity = tuple[str | None, str, str | None, tuple[str, ...]]
 TypedSourceInventory = dict[str, tuple[TypedSourceObject, ...]]
 TypedSourceIdentityIndex = dict[TypedSourceIdentity, TypedSourceObject]
 
@@ -141,7 +141,7 @@ def build_typed_source_inventory(config: FGConfig) -> TypedSourceInventory:
         for root in roots:
             if spec.filter_field and getattr(root, spec.filter_field) != spec.filter_value:
                 continue
-            root_vdom = getattr(root, "vdom", "root")
+            root_vdom = getattr(root, "cli_vdom", getattr(root, "vdom", "root"))
             models = [(root, ())]
             for index, field in enumerate(spec.nested_fields):
                 children = []
@@ -157,7 +157,7 @@ def build_typed_source_inventory(config: FGConfig) -> TypedSourceInventory:
                 models = children
             for model, parents in models:
                 object_name = _source_id(model, spec.object_field) if spec.object_field else None
-                identity = (getattr(model, "vdom", root_vdom), spec.source_path, object_name, parents)
+                identity = (getattr(model, "cli_vdom", getattr(model, "vdom", root_vdom)), spec.source_path, object_name, parents)
                 found.append(TypedSourceObject(identity, model))
         inventory[spec.source_path] = tuple(found)
     return inventory
@@ -176,7 +176,12 @@ def find_typed_source_object(
     record: SourceObjectRecord,
 ) -> TypedSourceObject | None:
     identity = (record.vdom, record.source_path, record.object_name, record.parent_objects)
-    return identity_index.get(identity)
+    found = identity_index.get(identity)
+    if found is None and record.cli_scope == "global":
+        global_object = identity_index.get(("root", *identity[1:]))
+        if global_object is not None and not hasattr(global_object.model, "vdom") and not hasattr(global_object.model, "cli_vdom"):
+            return global_object
+    return found
 
 
 def build_typed_source_identity_index(
@@ -190,7 +195,12 @@ def build_typed_source_identity_index(
     return identity_index
 
 
-def extraction_status(typed_supported: bool, typed_object: TypedSourceObject | None) -> str:
+def extraction_status(
+    typed_supported: bool, typed_object: TypedSourceObject | None,
+    record: SourceObjectRecord | None = None,
+) -> str:
+    if record is not None and record.object_name is None and not record.commands:
+        return "EMPTY_SECTION"
     if typed_object is None:
         return "MODEL_GAP" if typed_supported else "SOURCE_ONLY"
     return "TYPED_WITH_RAW_EXTRA" if getattr(typed_object.model, "raw_extra", {}) else "TYPED"

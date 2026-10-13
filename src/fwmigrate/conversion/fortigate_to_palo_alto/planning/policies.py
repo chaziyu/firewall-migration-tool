@@ -5,6 +5,7 @@ from typing import Any
 from fwmigrate.conversion.fortigate_to_palo_alto.models import PANMigrationStatus, PlannedSecurityRule
 from fwmigrate.conversion.fortigate_to_palo_alto.planning.services import service_target
 from fwmigrate.vendors.fortigate.fortios.predefined_services import is_predefined_service_reference
+from .addresses import address_references
 
 
 def ipv6_match_warnings(policy):
@@ -21,7 +22,6 @@ def plan_policies(source: Any, options: Any, derived: Any = None):
         *getattr(getattr(derived, "services", None), "services", ()),
         *getattr(getattr(derived, "services", None), "groups", ()),
     )}
-    explicit_addresses = {(item.vdom, item.name) for item in getattr(source, "addresses", ())}
     zone_names = {(item.vdom or "root", item.name) for item in getattr(source, "zones", ())}
     for policy in getattr(source, "policies", ()):
         warnings = list(ipv6_match_warnings(policy))
@@ -49,6 +49,8 @@ def plan_policies(source: Any, options: Any, derived: Any = None):
         to_zones = _zones(policy.dstintf or (), policy.vdom, options, warnings, zone_names)
         if policy.service_negate in {"enable", "yes", "1"}:
             warnings.append("service negation is unsupported")
+        if policy.srcaddr_negate in {"enable", "yes", "1"} and policy.dstaddr_negate in {"enable", "yes", "1"}:
+            warnings.append("negating both IPv4 address selectors would permit IPv6 matching on PAN-OS")
         if policy.users or policy.groups:
             warnings.append("user and group matching requires manual review")
         if any(getattr(policy, field) not in {None, "disable"}
@@ -93,10 +95,8 @@ def plan_policies(source: Any, options: Any, derived: Any = None):
             target_vsys=getattr(getattr(options, "vdoms", {}).get(policy.vdom), "vsys", None),
             target_name=policy.name or str(policy.policy_id),
             status=status, warnings=tuple(warnings), from_zones=from_zones, to_zones=to_zones,
-            sources=tuple("any" if name == "all" and (policy.vdom, name) not in explicit_addresses else name
-                          for name in (policy.srcaddr if policy.srcaddr is not None else ())),
-            destinations=tuple("any" if name == "all" and (policy.vdom, name) not in explicit_addresses else name
-                               for name in (policy.dstaddr if policy.dstaddr is not None else ())),
+            sources=address_references(source, policy.vdom, policy.srcaddr or ()),
+            destinations=address_references(source, policy.vdom, policy.dstaddr or ()),
             services=services, applications=applications,
             schedule=None if policy.schedule == "always" else policy.schedule, action=action,
             negate_source=getattr(policy, "srcaddr_negate", None) in {"enable", "yes", "1"},

@@ -42,6 +42,12 @@ def plan_routes(source: Any, options: Any, derived: Any = None):
             warnings.append("route has no explicit destination")
         if route.dynamic_gateway or route.sdwan_zone or route.src or route.vrf is not None:
             warnings.append("route uses unsupported source or dynamic routing semantics")
+        if route.preferred_source is not None or route.address_family != "ipv4":
+            warnings.append("route uses unsupported preferred source or address family")
+        if route.distance is not None and not 10 <= route.distance <= 240:
+            warnings.append("route administrative distance is outside PAN-OS range 10-240")
+        for key in route.raw_extra:
+            warnings.append(f"unclassified route setting {key!r} requires manual review")
         status = PANMigrationStatus.SUPPORTED if not warnings else PANMigrationStatus.MANUAL_REVIEW
         blackhole = getattr(route, "blackhole", None) in {"enable", "yes", "1"}
         nexthop = None if blackhole else route.gateway

@@ -19,7 +19,7 @@ class FGIPSSensorEntry(BaseModel):
     id: int | None = None
 
     # Signature selection / filtering
-    rule: list[int] = Field(default_factory=list)
+    rule: list[int] | None = Field(default_factory=list)
     cve: list[str] = Field(default_factory=list)
 
     application: str | None = None
@@ -28,7 +28,7 @@ class FGIPSSensorEntry(BaseModel):
     severity: str | None = None
     location: str | None = None
 
-    vuln_type: list[int] = Field(default_factory=list)
+    vuln_type: list[int] | None = Field(default_factory=list)
 
     # Source/default matching
     default_action: str | None = None
@@ -65,7 +65,7 @@ class FGIPSSensorEntry(BaseModel):
 
 class FGIPSSensor(BaseModel):
     name: str
-    vdom: str = "root"
+    vdom: str | None = "root"
 
     # Main sensor settings
     comment: str | None = None

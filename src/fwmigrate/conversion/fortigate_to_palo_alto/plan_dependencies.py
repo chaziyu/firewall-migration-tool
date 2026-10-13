@@ -64,6 +64,11 @@ def build_plan_dependency_index(plan: PANMigrationPlan, decisions) -> PANPlanDep
                 refs.append((('interface',), item.to_interface))
             if kind == "security_rule" and item.schedule:
                 refs.append((('schedule',), item.schedule))
+            if kind == "security_rule":
+                for name in item.destinations:
+                    for address in resolve(item.target_vsys, ('address',), name):
+                        if address.source_kind == 'vip':
+                            refs.append((('nat_rule',), address.source_name))
         elif kind == "static_route" and item.interface:
             refs = [(('interface',), item.interface)]
         elif kind == "dhcp_server" and item.interface:

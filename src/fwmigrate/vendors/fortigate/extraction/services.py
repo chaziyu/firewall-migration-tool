@@ -9,8 +9,8 @@ from ..model.service import (
 )
 
 from .common import (
-    evaluate_edit,
-    iter_section_edits,
+    evaluate_edit_sequence,
+    iter_grouped_section_edits,
     source_model_kwargs,
 )
 from .section_index import SectionIndex
@@ -45,14 +45,8 @@ def _extract_categories(
 ) -> None:
     section_path = "firewall service category"
 
-    for source in iter_section_edits(
-        tree,
-        section_path,
-    ):
-        evaluation = evaluate_edit(
-            section_path,
-            source.edit,
-        )
+    for source, edits in iter_grouped_section_edits(tree, section_path):
+        evaluation = evaluate_edit_sequence(section_path, edits)
 
         attributes = source_model_kwargs(
             evaluation,
@@ -72,14 +66,8 @@ def _extract_custom_services(
 ) -> None:
     section_path = "firewall service custom"
 
-    for source in iter_section_edits(
-        tree,
-        section_path,
-    ):
-        evaluation = evaluate_edit(
-            section_path,
-            source.edit,
-        )
+    for source, edits in iter_grouped_section_edits(tree, section_path):
+        evaluation = evaluate_edit_sequence(section_path, edits)
 
         attributes = source_model_kwargs(
             evaluation,
@@ -99,14 +87,8 @@ def _extract_service_groups(
 ) -> None:
     section_path = "firewall service group"
 
-    for source in iter_section_edits(
-        tree,
-        section_path,
-    ):
-        evaluation = evaluate_edit(
-            section_path,
-            source.edit,
-        )
+    for source, edits in iter_grouped_section_edits(tree, section_path):
+        evaluation = evaluate_edit_sequence(section_path, edits)
 
         attributes = source_model_kwargs(
             evaluation,

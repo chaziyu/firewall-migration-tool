@@ -10,9 +10,11 @@ from ..nodes import ConfigNode, FortiGateConfigTree
 @dataclass(frozen=True, slots=True)
 class IndexedConfig:
     node: ConfigNode
-    vdom: str
+    vdom: str | None
     source_path: str
     parent_objects: tuple[str, ...]
+    cli_scope: str = "vdom"
+    cli_path: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -31,10 +33,19 @@ class SectionIndex:
         def walk_ordered(
             node: ConfigNode,
             *,
-            vdom: str,
+            vdom: str | None,
             parent_path: str | None,
             parent_objects: tuple[str, ...],
+            cli_scope: str = "vdom",
+            cli_path: tuple[str, ...] = (),
         ) -> None:
+            if node.name == "global":
+                for child in node.children:
+                    walk_ordered(
+                        child, vdom=None, parent_path=None, parent_objects=(),
+                        cli_scope="global", cli_path=(*cli_path, "global"),
+                    )
+                return
             if node.name == "vdom":
                 for edit in node.edits:
                     for child in edit.children:
@@ -43,6 +54,8 @@ class SectionIndex:
                             vdom=edit.name,
                             parent_path=None,
                             parent_objects=(),
+                            cli_scope="vdom",
+                            cli_path=(*cli_path, "vdom", edit.name),
                         )
                 return
 
@@ -56,6 +69,8 @@ class SectionIndex:
                 vdom=vdom,
                 source_path=source_path,
                 parent_objects=parent_objects,
+                cli_scope=cli_scope,
+                cli_path=(*cli_path, node.name),
             )
 
             ordered_entries.append(entry)
@@ -68,6 +83,8 @@ class SectionIndex:
                     vdom=vdom,
                     parent_path=source_path,
                     parent_objects=parent_objects,
+                    cli_scope=cli_scope,
+                    cli_path=entry.cli_path,
                 )
             for edit in node.edits:
                 for child in edit.children:
@@ -76,9 +93,15 @@ class SectionIndex:
                         vdom=vdom,
                         parent_path=source_path,
                         parent_objects=(*parent_objects, edit.name),
+                        cli_scope=cli_scope,
+                        cli_path=(*entry.cli_path, edit.name),
                     )
 
         def walk_source(node: ConfigNode) -> None:
+            if node.name == "global":
+                for child in node.children:
+                    walk_source(child)
+                return
             if node.name == "vdom":
                 for edit in node.edits:
                     for child in edit.children:
@@ -119,6 +142,8 @@ class SectionIndex:
                     section_path=section_path,
                     edit=edit,
                     vdom=entry.vdom,
+                    cli_scope=entry.cli_scope,
+                    cli_path=entry.cli_path,
                 )
 
     def iter_configs(self, section_path: str) -> Iterator[object]:
@@ -129,4 +154,6 @@ class SectionIndex:
                 section_path=section_path,
                 config=entry.node,
                 vdom=entry.vdom,
+                cli_scope=entry.cli_scope,
+                cli_path=entry.cli_path,
             )

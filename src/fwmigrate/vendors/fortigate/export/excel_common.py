@@ -394,9 +394,10 @@ def _interface_source_values(
         return deepcopy(cached)
 
     values: dict[str, Any] = {}
+    cli_vdom = context.interface_cli_vdom.get((vdom, name), vdom)
     records = [
-        *context.source_by_identity.get((vdom, "system interface", name), ()),
-        *context.nested_source_by_parent.get((vdom, "system interface", name), ()),
+        *context.source_by_identity.get((cli_vdom, "system interface", name), ()),
+        *context.nested_source_by_parent.get((cli_vdom, "system interface", name), ()),
     ]
 
     for record in records:

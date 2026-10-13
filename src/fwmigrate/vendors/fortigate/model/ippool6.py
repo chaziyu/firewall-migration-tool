@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 
 class FGIPPool6(BaseModel):
     name: str
-    vdom: str = "root"
+    vdom: str | None = "root"
     address_family: Literal["ipv6"] = "ipv6"
     add_nat46_route: str | None = None
     comments: str | None = None

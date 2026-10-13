@@ -21,7 +21,7 @@ class ValidationIssue:
     severity: ValidationSeverity
 
     domain: str
-    vdom: str
+    vdom: str | None
 
     object_name: str | None = None
     field: str | None = None

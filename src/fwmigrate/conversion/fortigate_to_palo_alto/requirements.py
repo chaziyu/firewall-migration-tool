@@ -8,6 +8,8 @@ def build_mapping_requirements(config, derived, *, include_configuration=False):
     requirements. A target decision becomes required when a planned item
     actually consumes that target field.
     """
+    if any(interface.vdom is None for interface in getattr(config, "interfaces", ())):
+        raise ValueError("FortiGate interface VDOM ownership is unresolved; resolve source ownership before migration planning.")
     required = {}
     required_vdom_fields = {}
     zone_names = {(item.vdom or "root", item.name) for item in getattr(config, "zones", ())}

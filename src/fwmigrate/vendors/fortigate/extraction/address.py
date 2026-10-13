@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from typing import Protocol
 
 from ..model.address import (
@@ -10,13 +11,12 @@ from ..model.address import (
     FGWildcardFQDN,
 )
 from ..nodes import (
-    ConfigNode,
+    EditNode,
 )
 
 from .common import (
-    evaluate_edit,
-    get_child_config,
-    iter_section_edits,
+    evaluate_edit_sequence,
+    iter_grouped_section_edits,
     source_model_kwargs,
 )
 from .section_index import SectionIndex
@@ -82,14 +82,8 @@ def _extract_address_family(
     section_path: str,
     address_family: str,
 ) -> None:
-    for source in iter_section_edits(
-        tree,
-        section_path,
-    ):
-        evaluation = evaluate_edit(
-            section_path,
-            source.edit,
-        )
+    for source, edits in iter_grouped_section_edits(tree, section_path):
+        evaluation = evaluate_edit_sequence(section_path, edits)
 
         attributes = source_model_kwargs(
             evaluation,
@@ -109,15 +103,9 @@ def _extract_address_family(
         # Do not invent equivalent address6 behavior unless it is
         # explicitly supported by the source registry/reference.
         if section_path == "firewall address":
-            tagging = get_child_config(
-                source.edit,
-                "tagging",
-            )
-
-            attributes["tagging"] = (
-                _extract_address_tagging(tagging)
-                if tagging is not None
-                else []
+            attributes["tagging"] = _extract_address_tagging(
+                child_edit for edit in edits for child in edit.children
+                if child.name == "tagging" for child_edit in child.edits
             )
 
         config.addresses.append(
@@ -126,22 +114,22 @@ def _extract_address_family(
 
 
 def _extract_address_tagging(
-    section: ConfigNode,
+    edits: Iterable[EditNode],
 ) -> list[FGAddressTaggingEntry]:
     result: list[FGAddressTaggingEntry] = []
 
     section_path = "firewall address tagging"
 
-    for edit in section.edits:
-        evaluation = evaluate_edit(
-            section_path,
-            edit,
-        )
+    grouped: dict[str, list[EditNode]] = {}
+    for edit in edits:
+        grouped.setdefault(edit.name, []).append(edit)
+    for name, matching_edits in grouped.items():
+        evaluation = evaluate_edit_sequence(section_path, matching_edits)
 
         attributes = source_model_kwargs(
             evaluation,
             model_type=FGAddressTaggingEntry,
-            name=edit.name,
+            name=name,
         )
 
         result.append(
@@ -160,14 +148,8 @@ def _extract_address_groups(
     section_path: str,
     address_family: str,
 ) -> None:
-    for source in iter_section_edits(
-        tree,
-        section_path,
-    ):
-        evaluation = evaluate_edit(
-            section_path,
-            source.edit,
-        )
+    for source, edits in iter_grouped_section_edits(tree, section_path):
+        evaluation = evaluate_edit_sequence(section_path, edits)
 
         attributes = source_model_kwargs(
             evaluation,
@@ -183,15 +165,9 @@ def _extract_address_groups(
 
         # Tagging is currently explicitly declared for firewall addrgrp.
         if section_path == "firewall addrgrp":
-            tagging = get_child_config(
-                source.edit,
-                "tagging",
-            )
-
-            attributes["tagging"] = (
-                _extract_group_tagging(tagging)
-                if tagging is not None
-                else []
+            attributes["tagging"] = _extract_group_tagging(
+                child_edit for edit in edits for child in edit.children
+                if child.name == "tagging" for child_edit in child.edits
             )
 
         config.address_groups.append(
@@ -200,22 +176,22 @@ def _extract_address_groups(
 
 
 def _extract_group_tagging(
-    section: ConfigNode,
+    edits: Iterable[EditNode],
 ) -> list[FGAddressGroupTaggingEntry]:
     result: list[FGAddressGroupTaggingEntry] = []
 
     section_path = "firewall addrgrp tagging"
 
-    for edit in section.edits:
-        evaluation = evaluate_edit(
-            section_path,
-            edit,
-        )
+    grouped: dict[str, list[EditNode]] = {}
+    for edit in edits:
+        grouped.setdefault(edit.name, []).append(edit)
+    for name, matching_edits in grouped.items():
+        evaluation = evaluate_edit_sequence(section_path, matching_edits)
 
         attributes = source_model_kwargs(
             evaluation,
             model_type=FGAddressGroupTaggingEntry,
-            name=edit.name,
+            name=name,
         )
 
         result.append(
@@ -233,14 +209,8 @@ def _extract_wildcard_fqdns(
 ) -> None:
     section_path = "firewall wildcard-fqdn custom"
 
-    for source in iter_section_edits(
-        tree,
-        section_path,
-    ):
-        evaluation = evaluate_edit(
-            section_path,
-            source.edit,
-        )
+    for source, edits in iter_grouped_section_edits(tree, section_path):
+        evaluation = evaluate_edit_sequence(section_path, edits)
 
         attributes = source_model_kwargs(
             evaluation,

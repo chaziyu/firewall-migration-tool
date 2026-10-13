@@ -23,7 +23,7 @@ class NormalizedVPNPhase2:
 
     proposal: tuple[str, ...]
     pfs: str | None
-    dhgrp: tuple[int, ...]
+    dhgrp: tuple[int, ...] | None
 
     keylifeseconds: int | None
     keylifekbs: int | None
@@ -106,9 +106,7 @@ def normalize_vpn_phase2(
                     phase2.proposal
                 ),
                 pfs=phase2.pfs,
-                dhgrp=tuple(
-                    phase2.dhgrp
-                ),
+                dhgrp=tuple(phase2.dhgrp) if phase2.dhgrp is not None else None,
                 keylifeseconds=(
                     phase2.keylifeseconds
                 ),

@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 
 class FGNACPolicy(BaseModel):
     name: str
-    vdom: str = "root"
+    vdom: str | None = "root"
     category: str | None = None
     description: str | None = None
     ems_tag: str | None = None
@@ -55,7 +55,7 @@ class FGAddress6TemplateSegment(BaseModel):
 
 class FGAddress6Template(BaseModel):
     name: str
-    vdom: str = "root"
+    vdom: str | None = "root"
     fabric_object: str | None = None
     ip6: str | None = None
     subnet_segment_count: int | None = None
@@ -65,7 +65,7 @@ class FGAddress6Template(BaseModel):
 
 
 class FGIPSSettings(BaseModel):
-    vdom: str = "root"
+    vdom: str | None = "root"
     ips_packet_quota: int | None = None
     packet_log_history: int | None = None
     raw_extra: dict[str, Any] = Field(default_factory=dict)
@@ -84,7 +84,7 @@ class FGKMIPServerEntry(BaseModel):
 
 class FGKMIPServer(BaseModel):
     name: str
-    vdom: str = "root"
+    vdom: str | None = "root"
     interface: str | None = None
     interface_select_method: str | None = None
     password_configured: bool = False
@@ -99,7 +99,7 @@ class FGKMIPServer(BaseModel):
 
 class FGKerberosKeytab(BaseModel):
     name: str
-    vdom: str = "root"
+    vdom: str | None = "root"
     keytab_configured: bool = False
     ldap_server: list[str] = Field(default_factory=list)
     pac_data: str | None = None
@@ -109,7 +109,7 @@ class FGKerberosKeytab(BaseModel):
 
 
 class FGRouterSettings(BaseModel):
-    vdom: str = "root"
+    vdom: str | None = "root"
     hostname: str | None = None
     show_filter: str | None = None
     raw_extra: dict[str, Any] = Field(default_factory=dict)
@@ -118,7 +118,7 @@ class FGRouterSettings(BaseModel):
 
 class FGSDNProxy(BaseModel):
     name: str
-    vdom: str = "root"
+    vdom: str | None = "root"
     password_configured: bool = False
     server: str | None = None
     server_port: int | None = None
@@ -130,7 +130,7 @@ class FGSDNProxy(BaseModel):
 
 class FGOnDemandSniffer(BaseModel):
     name: str
-    vdom: str = "root"
+    vdom: str | None = "root"
     advanced_filter: str | None = None
     hosts: str | None = None
     interface: str | None = None

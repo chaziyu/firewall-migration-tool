@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 
 class FGExternalResource(BaseModel):
     name: str
-    vdom: str = "root"
+    vdom: str | None = "root"
 
     resource: str | None = None
     type: str | None = None

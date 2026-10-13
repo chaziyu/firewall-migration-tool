@@ -67,6 +67,7 @@ def _extract_administrators(
             },
         )
 
+        attributes["cli_vdom"] = source.vdom
         attributes["trusthosts"] = _numbered_values(
             source.edit.commands,
             prefix="trusthost",
@@ -138,6 +139,7 @@ def _extract_admin_profiles(
             name=source.edit.name,
         )
 
+        attributes["cli_vdom"] = source.vdom
         _add_permission_block(
             attributes,
             source.edit,

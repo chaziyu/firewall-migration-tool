@@ -10,6 +10,14 @@ from fwmigrate.conversion.fortigate_to_palo_alto.models import (
     PlannedAddressGroup,
 )
 from fwmigrate.conversion.fortigate_to_palo_alto.planning.routing import _normalize_subnet
+from .vips import vip_translation
+
+
+def address_references(source, vdom, names):
+    """Map only the IPv4 built-in all; explicit objects keep their identity."""
+    explicit = {item.name for family in ("addresses", "address_groups", "vips", "vip_groups")
+                for item in getattr(source, family, ()) if (item.vdom or "root") == (vdom or "root")}
+    return tuple("0.0.0.0/0" if name == "all" and name not in explicit else name for name in names)
 
 
 def plan_addresses(source: Any, options: Any) -> tuple[tuple[PlannedAddress, ...], tuple[PlannedAddressGroup, ...], tuple[MigrationIssue, ...]]:
@@ -24,6 +32,18 @@ def plan_addresses(source: Any, options: Any) -> tuple[tuple[PlannedAddress, ...
     for group in getattr(source, "address_groups", ()):
         item, issue = _plan_group(group, options)
         groups.append(item)
+        if issue:
+            issues.append(issue)
+    for vip in getattr(source, "vips", ()):
+        ext, _, warnings = vip_translation(vip)
+        status, scope_warnings, issue = _scope(vip, options)
+        warnings = [*scope_warnings, *warnings]
+        if warnings:
+            status = PANMigrationStatus.MANUAL_REVIEW
+        addresses.append(PlannedAddress(
+            source_vdom=vip.vdom, source_kind="vip", source_object_type="address", source_name=vip.name,
+            target_vsys=_target_vsys(vip, options), target_name=vip.name, status=status,
+            warnings=tuple(warnings), address_type="ip-netmask", value=f"{ext}/32" if ext else None))
         if issue:
             issues.append(issue)
     return tuple(addresses), tuple(groups), tuple(issues)
@@ -71,6 +91,9 @@ def _plan_address(source: Any, options: Any):
     else:
         status = PANMigrationStatus.UNSUPPORTED
         warnings = (*warnings, "address has no supported explicit value")
+    if getattr(source, "address_family", None) == "ipv6" or getattr(source, "ip6", None) is not None:
+        status = PANMigrationStatus.UNSUPPORTED
+        warnings = (*warnings, "IPv6 address semantics require manual design")
     return (
         PlannedAddress(
             source_vdom=getattr(source, "vdom", None),
@@ -89,6 +112,9 @@ def _plan_address(source: Any, options: Any):
 
 def _plan_group(source: Any, options: Any):
     status, warnings, issue = _scope(source, options)
+    if getattr(source, "address_family", None) == "ipv6":
+        status = PANMigrationStatus.UNSUPPORTED
+        warnings = (*warnings, "IPv6 address-group semantics require manual design")
     exclude = getattr(source, "exclude", None)
     exclude_value = str(exclude).strip().lower() if exclude is not None else None
     excluded_members = getattr(source, "exclude_members", None)

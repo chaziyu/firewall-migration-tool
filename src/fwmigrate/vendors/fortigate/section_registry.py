@@ -154,6 +154,7 @@ register_section(
             "dhcp-renew-time",
         ),
         scalar_fields=_fields(
+            "vdom",
             "type",
             "mode",
             "ip",

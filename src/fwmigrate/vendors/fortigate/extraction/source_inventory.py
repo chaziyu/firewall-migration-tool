@@ -35,7 +35,7 @@ class SourceObjectRecord:
     resolution, canonical normalization, or target-vendor semantics.
     """
 
-    vdom: str
+    vdom: str | None
     source_path: str
     object_name: str | None
     parent_objects: tuple[str, ...]
@@ -48,6 +48,8 @@ class SourceObjectRecord:
 
     start_line_number: int | None
     end_line_number: int | None
+    cli_scope: str = "vdom"
+    cli_path: tuple[str, ...] = ()
 
 
 def capture_source_objects(
@@ -69,7 +71,7 @@ def capture_source_objects(
         source_path = entry.source_path
         vdom = entry.vdom
         parent_objects = entry.parent_objects
-        if node.commands:
+        if node.commands or (not node.edits and not node.children):
             evaluation = evaluate_config(
                 source_path,
                 node,
@@ -84,6 +86,8 @@ def capture_source_objects(
                     evaluation=evaluation,
                     start_line_number=node.start_line_number,
                     end_line_number=node.end_line_number,
+                    cli_scope=entry.cli_scope,
+                    cli_path=entry.cli_path,
                 )
             )
 
@@ -102,6 +106,8 @@ def capture_source_objects(
                     evaluation=evaluation,
                     start_line_number=edit.start_line_number,
                     end_line_number=edit.end_line_number,
+                    cli_scope=entry.cli_scope,
+                    cli_path=(*entry.cli_path, edit.name),
                 )
             )
 
@@ -110,7 +116,7 @@ def capture_source_objects(
 
 def _make_record(
     *,
-    vdom: str,
+    vdom: str | None,
     source_path: str,
     object_name: str | None,
     parent_objects: tuple[str, ...],
@@ -118,6 +124,8 @@ def _make_record(
     evaluation,
     start_line_number: int | None,
     end_line_number: int | None,
+    cli_scope: str = "vdom",
+    cli_path: tuple[str, ...] = (),
 ) -> SourceObjectRecord:
     settings = dict(evaluation.values)
 
@@ -151,6 +159,8 @@ def _make_record(
         ),
         start_line_number=start_line_number,
         end_line_number=end_line_number,
+        cli_scope=cli_scope,
+        cli_path=cli_path,
     )
 
 

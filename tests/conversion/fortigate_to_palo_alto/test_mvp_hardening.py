@@ -55,7 +55,7 @@ def test_structured_plan_renders_scoped_policy_and_nat_commands_in_order():
             destination_translated_port="8443"),
                    PlannedNATRule(source_object_type="nat_rule", source_name="if-snat", target_vsys="vsys1",
             target_name="if-snat", status=PANMigrationStatus.SUPPORTED, from_zones=("trust",),
-            to_zones=("untrust",), source_interface_address=True,
+            to_zones=("untrust",), source_interface_address=True, to_interface="ethernet1/2",
             source_translation_type="dynamic-ip-and-port")),
         static_routes=(PlannedStaticRoute(source_object_type="static_route", source_name="default",
             target_vsys="vsys1", target_name="default", status=PANMigrationStatus.SUPPORTED,
@@ -85,7 +85,7 @@ def test_structured_plan_renders_scoped_policy_and_nat_commands_in_order():
     assert [commands.index(command) for command in snat_match] == sorted(commands.index(command) for command in snat_match)
     assert "set vsys vsys1 rulebase nat rules dnat destination-translation translated-address 10.0.0.20" in commands
     assert "set vsys vsys1 rulebase nat rules dnat destination-translation translated-port 8443" in commands
-    assert "set vsys vsys1 rulebase nat rules if-snat source-translation dynamic-ip-and-port interface-address" in commands
+    assert "set vsys vsys1 rulebase nat rules if-snat source-translation dynamic-ip-and-port interface-address interface ethernet1/2" in commands
     assert all("pool" not in command for command in commands)
     security_commands = ["set vsys vsys1 rulebase security rules allow-web from [ trust ]",
                          "set vsys vsys1 rulebase security rules allow-web to [ untrust ]",

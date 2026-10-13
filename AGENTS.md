@@ -158,8 +158,6 @@ web orchestration
 
 The React frontend is a presentation and workflow client. Do not move vendor parsing, source semantics, migration planning, validation semantics, or target rendering into frontend code.
 
-The Tauri desktop shell owns native lifecycle, loopback-sidecar startup, and desktop transport controls. It must not duplicate Python domain logic.
-
 Vendor semantic models remain vendor-owned.
 
 Do not create shared semantic models for:
@@ -278,11 +276,11 @@ Only `AUTO` or `CONFIRMED` decisions may become planner input.
 
 A suggestion is not confirmation.
 
-Saving or updating a proposal is not engineer approval. Web and desktop
-executable artifacts require a current signed design approval bound to the
+Saving or updating a proposal is not engineer approval. Web executable
+artifacts require a current signed design approval bound to the
 selected mappings, configuration items, target scope, operations, and
 dependencies. CLI migration planning remains available without design approval;
-it does not enable web or desktop deployment.
+it does not enable web deployment.
 
 Do not guess target:
 
@@ -463,10 +461,6 @@ npm test
 npm run lint
 npm run build
 
-Desktop:
-cargo check --locked --manifest-path src/frontend/src-tauri/Cargo.toml
-cargo test --locked --lib --manifest-path src/frontend/src-tauri/Cargo.toml
-python scripts/check_desktop_release_version.py
 ```
 
 For Docker, release dependency, or packaging changes, run the corresponding build/smoke path or rely on CI when the local environment cannot reproduce it.
