@@ -82,7 +82,7 @@ def test_different_targets_can_deploy_concurrently(monkeypatch):
 
 def test_fortigate_workspace_evidence_redacts_multiline_secrets():
     client = web.create_app({'TESTING': True}).test_client()
-    source = b'config system admin\n edit admin\n set password ENC secret-one\n set authpasswd "secret-two"\n set private-key "secret-three\nsecret-four"\n next\nend\n'
+    source = b'config system admin\n edit admin\n SET password ENC secret-one\n ApPeNd authpasswd "secret-two"\n Set private-key "secret-three\nsecret-four"\n next\nend\n'
     response = client.post('/api/preview', data={'file': (io.BytesIO(source), 'secret.conf')})
     assert response.status_code == 200
     for secret in (b'secret-one', b'secret-two', b'secret-three', b'secret-four'):
@@ -94,3 +94,18 @@ def test_fortigate_sanitizer_preserves_object_names_and_unset():
     from fwmigrate.vendors.fortigate.collection_source import FortiGateCollectedSourceSanitizer
     source = 'config firewall address\n edit password\n unset password\n next\nend\n'
     assert FortiGateCollectedSourceSanitizer().sanitize(source) == source
+
+
+def test_fortigate_sanitizer_preserves_case_and_redacts_secret_operations():
+    from fwmigrate.vendors.fortigate.collection_source import FortiGateCollectedSourceSanitizer
+    source = ('config system admin\n edit password\n SET password ENC uppercase-secret\n'
+              ' ApPeNd private-key "first-secret\nsecond-secret"\n unset password\n'
+              ' Set comments "visible"\n next\nend\n')
+    sanitized = FortiGateCollectedSourceSanitizer().sanitize(source)
+    assert ' SET password "[REDACTED]"' in sanitized
+    assert ' ApPeNd private-key "[REDACTED]"' in sanitized
+    assert 'unset password' in sanitized
+    assert 'Set comments "visible"' in sanitized
+    assert 'edit password' in sanitized
+    for secret in ('uppercase-secret', 'first-secret', 'second-secret'):
+        assert secret not in sanitized

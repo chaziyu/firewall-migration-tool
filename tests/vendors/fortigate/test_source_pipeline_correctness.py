@@ -394,3 +394,109 @@ end
             workbook = load_workbook(io.BytesIO(response.data))
             assert "FortiGate Source Inventory" in workbook.sheetnames
             assert "Review Required" in workbook.sheetnames
+
+
+def test_repeated_native_edits_preserve_final_state_and_source_inventory():
+    source = '''config router static
+edit 1
+set dst 192.0.2.0 255.255.255.0
+next
+edit 1
+set gateway 192.0.2.1
+next
+end
+config system admin
+edit operator
+set password secret-sentinel
+set trusthost1 192.0.2.1 255.255.255.255
+next
+edit operator
+unset password
+unset trusthost1
+set accprofile reader
+next
+end
+config system accprofile
+edit reader
+config fwgrp-permission
+set policy read
+end
+next
+edit reader
+config fwgrp-permission
+unset policy
+set address read-write
+end
+next
+end
+config user local
+edit alice
+set passwd secret-sentinel
+next
+edit alice
+unset passwd
+set status enable
+next
+end
+config user group
+edit users
+set member alice
+config match
+edit 1
+set server-name old
+next
+end
+next
+edit users
+append member bob
+unset member
+set member alice
+config match
+edit 1
+set server-name new
+next
+end
+next
+end
+'''
+    analysis = FortiGateSourceReporter().analyze_source(source)
+    config = analysis.extracted.config
+    assert len(config.static_routes) == 1
+    assert config.static_routes[0].gateway == '192.0.2.1'
+    assert config.static_routes[0].dst == '192.0.2.0 255.255.255.0'
+    assert len(config.administrators) == 1
+    assert not config.administrators[0].password_configured
+    assert config.administrators[0].trusthosts == []
+    assert len(config.admin_profiles) == 1
+    permission = config.admin_profiles[0].firewall_permission
+    assert permission.policy is None
+    assert permission.address == 'read-write'
+    assert len(config.local_users) == 1
+    assert not config.local_users[0].password_configured
+    assert len(config.user_groups) == 1
+    assert config.user_groups[0].members == ['alice']
+    assert len(config.user_groups[0].matches) == 1
+    assert config.user_groups[0].matches[0].server_name == 'new'
+    assert len([r for r in analysis.extracted.source_objects if r.source_path == 'user group']) == 2
+    assert 'secret-sentinel' not in repr(analysis.extracted.source_objects)
+
+
+@pytest.mark.parametrize('section,collection,field', (
+    ('router static', 'static_routes', 'comment'),
+    ('system admin', 'administrators', 'accprofile'),
+    ('system accprofile', 'admin_profiles', 'comments'),
+    ('user local', 'local_users', 'status'),
+    ('user group', 'user_groups', 'group-type'),
+))
+def test_repeated_native_edits_are_isolated_by_vdom(section, collection, field):
+    values = ('enable', 'disable') if field == 'status' else ('one', 'two')
+    blocks = []
+    for vdom, value in zip(('tenant-a', 'tenant-b'), values):
+        blocks.append(f'edit {vdom}\nconfig {section}\nedit 1\nset {field} old\nnext\n'
+                      f'edit 1\nunset {field}\nset {field} {value}\nnext\nend\nnext\n')
+    analysis = FortiGateSourceReporter().analyze_source('config vdom\n' + ''.join(blocks) + 'end\n')
+    objects = getattr(analysis.extracted.config, collection)
+    assert len(objects) == 2
+    scope_field = 'cli_vdom' if collection in ('administrators', 'admin_profiles') else 'vdom'
+    assert [getattr(item, scope_field) for item in objects] == ['tenant-a', 'tenant-b']
+    assert [getattr(item, field.replace('-', '_')) for item in objects] == list(values)
