@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 from ..model.source import PANOSConfig
 from ..source_model import PANScope, pan_scope_identity
-from .scopes import PANDeviceGroupHierarchy
+from .scopes import PANDeviceGroupHierarchy, _assigned_device_group_identity
 
 
 @dataclass(frozen=True, slots=True)
@@ -16,6 +16,7 @@ class PANPolicyOrderEntry:
     target_scope: str
     effective_order: int
     rule_kind: str
+    complete: bool = True
 
 
 def _ordered(items):
@@ -55,10 +56,23 @@ def build_policy_order(
         {
             pan_scope_identity(rule.scope): rule.scope
             for _, rule in rules
-            if rule.scope is not None
+            if rule.scope is not None and rule.scope.kind != "vsys"
         }
     )
-
+    managed_vsys_scopes = {
+        pan_scope_identity(scope): scope
+        for scope in config.scopes
+        if scope.kind == "vsys" and scope.device_group
+    }
+    # Also retain any managed VSYS identity present on an extracted local rule.
+    managed_vsys_scopes.update({
+        pan_scope_identity(rule.scope): rule.scope
+        for _, rule in rules
+        if rule.scope is not None and rule.scope.kind == "vsys" and rule.scope.device_group
+    })
+    # Managed VSYS rule order is derived only when its explicit Panorama
+    # assignment resolves to exactly one extracted device group.
+    targets.update(managed_vsys_scopes)
     result: list[PANPolicyOrderEntry] = []
     for target_id, target in targets.items():
         selected: list[tuple[str, object]] = []
@@ -110,6 +124,40 @@ def build_policy_order(
             selected.extend(dg_rules("post", reversed(chain)))
             selected.extend(_ordered(shared_post))
             selected.extend(_ordered(target_defaults))
+        elif target.kind == "vsys":
+            assigned = _assigned_device_group_identity(target, hierarchy)
+            if assigned is None:
+                # Preserve source order as a source-only view when assignment
+                # is absent or ambiguous; do not imply effective ordering.
+                selected.extend(_ordered([
+                    item for item in security
+                    if item[1].scope and pan_scope_identity(item[1].scope) == target_id
+                ]))
+                selected.extend(_ordered([
+                    item for item in defaults
+                    if item[1].scope and pan_scope_identity(item[1].scope) == target_id
+                ]))
+            else:
+                ancestors = dict(hierarchy.ancestors).get(assigned, ())
+                chain = (*reversed(ancestors), assigned)
+
+                def dg_rules(position: str, identities) -> list[tuple[str, object]]:
+                    return [
+                        item for identity in identities
+                        for item in _ordered([
+                            (kind, rule) for kind, rule in security
+                            if rule.scope and rule.scope.kind == "device-group"
+                            and pan_scope_identity(rule.scope) == identity
+                            and rule.rulebase_position == position
+                        ])
+                    ]
+
+                selected.extend(_ordered([item for item in security if item[1].scope and item[1].scope.kind == "shared" and item[1].rulebase_position == "pre"]))
+                selected.extend(dg_rules("pre", chain))
+                selected.extend(_ordered([item for item in security if item[1].scope and pan_scope_identity(item[1].scope) == target_id and item[1].rulebase_position in {None, "local"}]))
+                selected.extend(dg_rules("post", reversed(chain)))
+                selected.extend(_ordered([item for item in security if item[1].scope and item[1].scope.kind == "shared" and item[1].rulebase_position == "post"]))
+                selected.extend(_ordered([item for item in defaults if item[1].scope and pan_scope_identity(item[1].scope) in {target_id, assigned}]))
         else:
             exact = [
                 item for item in security
@@ -130,9 +178,10 @@ def build_policy_order(
                 rule.scope,
                 rule.rulebase_position,
                 rule.source_order,
-                target_id,
-                offset,
+                target_id if target.kind != "vsys" or _assigned_device_group_identity(target, hierarchy) is not None else f"{target_id} (source-only)",
+                offset if target.kind != "vsys" or _assigned_device_group_identity(target, hierarchy) is not None else rule.source_order or offset,
                 kind,
+                target.kind != "vsys" or _assigned_device_group_identity(target, hierarchy) is not None,
             )
             for offset, (kind, rule) in enumerate(selected, 1)
         )

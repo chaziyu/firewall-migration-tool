@@ -152,10 +152,16 @@ def validate_panos_config(config: PANOSConfig, derived: PANOSDerivedViews) -> PA
             elif key[1]:
                 seen[key] = item
 
-    for name, rules in _by_name(config.security_rules).items():
-        scopes = {_scope_key(rule) for rule in rules}
-        if len(rules) > len(scopes):
-            _issue(issues, "error", "identity", f"duplicate security rule name {name!r} in the same scope", rules[-1], "name", object_type="policy")
+    seen_security_rules: dict[tuple[str, str | None, str | None], Any] = {}
+    for rule in config.security_rules:
+        name = getattr(rule, "name", None)
+        if not name:
+            continue
+        identity = (_scope_key(rule), rule.rulebase_position, name)
+        if identity in seen_security_rules:
+            _issue(issues, "error", "identity", f"duplicate security rule name {name!r} in the same scope and rulebase", rule, "name", object_type="policy")
+        else:
+            seen_security_rules[identity] = rule
 
     device_group_ancestors = dict(derived.scope_hierarchy.ancestors)
     for name, rules in _by_name(config.security_rules).items():
