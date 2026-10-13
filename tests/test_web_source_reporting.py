@@ -515,3 +515,19 @@ def test_source_reporting_rejects_oversized_upload_and_inline_evidence(monkeypat
         },
     )
     assert inline.status_code == 400
+
+
+@pytest.mark.parametrize('route', ['/api/preview', '/api/extract/excel'])
+@pytest.mark.parametrize('exception_type', [ValueError, KeyError, RuntimeError])
+def test_source_failures_keep_synthetic_secrets_private(monkeypatch, caplog, route, exception_type):
+    import fwmigrate.web_api.source as source_routes
+
+    def fail(*args, **kwargs):
+        raise exception_type('SYNTHETIC_SOURCE_SECRET')
+
+    monkeypatch.setattr(source_routes, 'analyze_request_source', fail)
+    response = create_app({'TESTING': True}).test_client().post(route, data={
+        'file': (io.BytesIO(b'password SYNTHETIC_SOURCE_SECRET'), 'source.conf'),
+    })
+    assert response.status_code in {400, 422, 500}
+    assert 'SYNTHETIC_SOURCE_SECRET' not in response.get_data(as_text=True) + caplog.text
