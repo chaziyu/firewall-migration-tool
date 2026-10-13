@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 
 class FGIPPool(BaseModel):
     name: str
-    vdom: str = "root"
+    vdom: str | None = "root"
     address_family: Literal["ipv4"] = "ipv4"
 
     # Pool identity / range

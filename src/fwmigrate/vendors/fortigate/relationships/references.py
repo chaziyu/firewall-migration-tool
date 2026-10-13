@@ -193,7 +193,7 @@ def build_reference_index(
     _add_named(
         index,
         ReferenceKind.INTERFACE,
-        config.interfaces,
+        (interface for interface in config.interfaces if interface.vdom is not None),
     )
 
     _add_named(

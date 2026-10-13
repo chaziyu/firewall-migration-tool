@@ -68,6 +68,7 @@ class FGAdminUTMPermission(BaseModel):
 
 class FGAdministrator(BaseModel):
     name: str
+    cli_vdom: str | None = "root"
 
     # Access control.
     accprofile: str | None = None
@@ -119,6 +120,7 @@ class FGAdministrator(BaseModel):
 
 class FGAdminProfile(BaseModel):
     name: str
+    cli_vdom: str | None = "root"
 
     # Main permission groups.
     authgrp: str | None = None

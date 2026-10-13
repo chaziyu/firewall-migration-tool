@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 # config firewall service category
 class FGServiceCategory(BaseModel):
     name: str
-    vdom: str = "root"
+    vdom: str | None = "root"
 
     comment: str | None = None
 
@@ -15,7 +15,7 @@ class FGServiceCategory(BaseModel):
 # config firewall service custom
 class FGService(BaseModel):
     name: str
-    vdom: str = "root"
+    vdom: str | None = "root"
 
     # Category reference
     category: str | None = None
@@ -48,7 +48,7 @@ class FGService(BaseModel):
 # config firewall service group
 class FGServiceGroup(BaseModel):
     name: str
-    vdom: str = "root"
+    vdom: str | None = "root"
 
     members: list[str] | None = None
 

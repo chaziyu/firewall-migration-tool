@@ -47,7 +47,7 @@ class FGSDWANHealthCheck(BaseModel):
     server: str | None = None
 
     # References SD-WAN member sequence numbers.
-    members: list[int] = Field(
+    members: list[int] | None = Field(
         default_factory=list
     )
 
@@ -78,7 +78,7 @@ class FGSDWANService(BaseModel):
     )
 
     # References SD-WAN member sequence numbers.
-    priority_members: list[int] = Field(
+    priority_members: list[int] | None = Field(
         default_factory=list
     )
 
@@ -101,7 +101,7 @@ class FGSDWANService(BaseModel):
 
 
 class FGSDWAN(BaseModel):
-    vdom: str = "root"
+    vdom: str | None = "root"
 
     status: str | None = None
     load_balance_mode: str | None = None

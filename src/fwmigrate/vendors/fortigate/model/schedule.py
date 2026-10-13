@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 
 class FGScheduleGroup(BaseModel):
     name: str
-    vdom: str = "root"
+    vdom: str | None = "root"
     members: list[str] = Field(default_factory=list)
     color: int | None = None
     fabric_object: str | None = None
@@ -17,7 +17,7 @@ class FGScheduleGroup(BaseModel):
 
 class FGOneTimeSchedule(BaseModel):
     name: str
-    vdom: str = "root"
+    vdom: str | None = "root"
     start: str | None = None
     end: str | None = None
     start_utc: str | None = None
@@ -31,7 +31,7 @@ class FGOneTimeSchedule(BaseModel):
 
 class FGRecurringSchedule(BaseModel):
     name: str
-    vdom: str = "root"
+    vdom: str | None = "root"
     days: list[str] = Field(default_factory=list)
     start: str | None = None
     end: str | None = None

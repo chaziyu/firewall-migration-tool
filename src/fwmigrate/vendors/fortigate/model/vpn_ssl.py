@@ -32,7 +32,7 @@ class FGSSLVPNAuthenticationRule(BaseModel):
 
 
 class FGSSLVPNSettings(BaseModel):
-    vdom: str = "root"
+    vdom: str | None = "root"
 
     status: str | None = None
 
@@ -74,7 +74,7 @@ class FGSSLVPNSettings(BaseModel):
 
 class FGSSLVPNPortal(BaseModel):
     name: str
-    vdom: str = "root"
+    vdom: str | None = "root"
 
     tunnel_mode: str | None = None
     ipv6_tunnel_mode: str | None = None
@@ -121,7 +121,7 @@ class FGSSLVPNHostCheckItem(BaseModel):
 
 class FGSSLVPNHostCheckSoftware(BaseModel):
     name: str
-    vdom: str = "root"
+    vdom: str | None = "root"
 
     guid: str | None = None
     type: str | None = None
@@ -138,7 +138,7 @@ class FGSSLVPNHostCheckSoftware(BaseModel):
 
 class FGSSLVPNRealm(BaseModel):
     url_path: str
-    vdom: str = "root"
+    vdom: str | None = "root"
     login_page: str | None = None
     max_concurrent_user: int | None = None
     nas_ip: str | None = None
@@ -153,7 +153,7 @@ class FGSSLVPNRealm(BaseModel):
 
 class FGSSLVPNClient(BaseModel):
     name: str
-    vdom: str = "root"
+    vdom: str | None = "root"
     certificate: str | None = None
     class_id: int | None = None
     comment: str | None = None
@@ -216,7 +216,7 @@ class FGSSLVPNBookmark(BaseModel):
 
 class FGSSLVPNUserBookmark(BaseModel):
     owner_name: str
-    vdom: str = "root"
+    vdom: str | None = "root"
     custom_lang: str | None = None
     bookmarks: list[FGSSLVPNBookmark] = Field(default_factory=list)
     raw_extra: dict[str, Any] = Field(default_factory=dict)
@@ -225,7 +225,7 @@ class FGSSLVPNUserBookmark(BaseModel):
 
 class FGSSLVPNUserGroupBookmark(BaseModel):
     owner_name: str
-    vdom: str = "root"
+    vdom: str | None = "root"
     custom_lang: str | None = None
     bookmarks: list[FGSSLVPNBookmark] = Field(default_factory=list)
     raw_extra: dict[str, Any] = Field(default_factory=dict)

@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 
 class FGProfileGroup(BaseModel):
     name: str
-    vdom: str = "root"
+    vdom: str | None = "root"
 
     # Core security profile references
     application_list: str | None = None

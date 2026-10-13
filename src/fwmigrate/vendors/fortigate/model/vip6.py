@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 
 class FGVIP6(BaseModel):
     name: str
-    vdom: str = "root"
+    vdom: str | None = "root"
     address_family: Literal["ipv6"] = "ipv6"
     extip: str | None = None
     mappedip: str | None = None
@@ -28,7 +28,7 @@ class FGVIP6(BaseModel):
 
 class FGVIPGroup6(BaseModel):
     name: str
-    vdom: str = "root"
+    vdom: str | None = "root"
     address_family: Literal["ipv6"] = "ipv6"
     uuid: str | None = None
     color: int | None = None

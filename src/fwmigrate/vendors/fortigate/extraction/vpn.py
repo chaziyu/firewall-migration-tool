@@ -13,8 +13,8 @@ from ..nodes import (
 )
 
 from .common import (
-    evaluate_edit,
-    iter_section_edits,
+    evaluate_edit_sequence,
+    iter_grouped_section_edits,
     source_model_kwargs,
 )
 from .section_index import SectionIndex
@@ -64,14 +64,8 @@ def _extract_phase1(
     model_type=FGIPsecPhase1,
     destination: str = "ipsec_phase1",
 ) -> None:
-    for source in iter_section_edits(
-        tree,
-        section_path,
-    ):
-        evaluation = evaluate_edit(
-            section_path,
-            source.edit,
-        )
+    for source, edits in iter_grouped_section_edits(tree, section_path):
+        evaluation = evaluate_edit_sequence(section_path, edits)
 
         attributes = source_model_kwargs(
             evaluation,
@@ -81,7 +75,7 @@ def _extract_phase1(
         )
 
         secret_state = _evaluate_secret_state(
-            source.edit.commands,
+            (command for edit in edits for command in edit.commands),
         )
 
         # Secret values must never be retained in raw_extra.
@@ -129,14 +123,8 @@ def _extract_phase2(
     model_type=FGIPsecPhase2,
     destination: str = "ipsec_phase2",
 ) -> None:
-    for source in iter_section_edits(
-        tree,
-        section_path,
-    ):
-        evaluation = evaluate_edit(
-            section_path,
-            source.edit,
-        )
+    for source, edits in iter_grouped_section_edits(tree, section_path):
+        evaluation = evaluate_edit_sequence(section_path, edits)
 
         attributes = source_model_kwargs(
             evaluation,

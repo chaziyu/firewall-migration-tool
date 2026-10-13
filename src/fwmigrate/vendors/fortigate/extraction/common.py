@@ -6,7 +6,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass, field
 from functools import cache
 from types import MappingProxyType
-from typing import Any
+from typing import Any, get_args
 
 from pydantic import BaseModel
 
@@ -25,6 +25,7 @@ from ..section_registry import get_section_spec
 
 
 _EMPTY_FIELD_MAP = MappingProxyType({})
+_UNSPECIFIED_VDOM = object()
 
 
 @cache
@@ -38,7 +39,9 @@ class SectionEdit:
 
     section_path: str
     edit: EditNode
-    vdom: str = "root"
+    vdom: str | None = "root"
+    cli_scope: str = "vdom"
+    cli_path: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,7 +50,9 @@ class SectionConfig:
 
     section_path: str
     config: ConfigNode
-    vdom: str = "root"
+    vdom: str | None = "root"
+    cli_scope: str = "vdom"
+    cli_path: tuple[str, ...] = ()
 
 
 @dataclass(slots=True)
@@ -242,10 +247,27 @@ def evaluate_edit_sequence(
 ) -> CommandEvaluation:
     """Evaluate repeated edits to one keyed source object in source order."""
 
+    edits = tuple(edits)
+    if len(edits) == 1:
+        return evaluate_edit(section_path, edits[0])
     return _evaluate_section_commands(
         section_path,
         (command for edit in edits for command in edit.commands),
     )
+
+
+def iter_grouped_section_edits(
+    tree: SectionIndex,
+    section_path: str,
+) -> Iterator[tuple[SectionEdit, list[EditNode]]]:
+    """Keep first occurrence order while collecting updates to native identities."""
+    grouped: dict[tuple[str, str | None, str, int | None], tuple[SectionEdit, list[EditNode]]] = {}
+    for source in tree.iter_edits(section_path):
+        # edit 0 allocates a new policy; it does not update a stable identity.
+        allocation = id(source.edit) if section_path == "firewall policy" and source.edit.name == "0" else None
+        key = (source.cli_scope, source.vdom, source.edit.name, allocation)
+        grouped.setdefault(key, (source, []))[1].append(source.edit)
+    yield from grouped.values()
 
 
 def evaluate_config(
@@ -290,7 +312,7 @@ def source_model_kwargs(
     *,
     model_type: type[BaseModel],
     name: str | None = None,
-    vdom: str | None = None,
+    vdom: str | None | object = _UNSPECIFIED_VDOM,
     field_map: Mapping[str, str] | None = None,
 ) -> dict[str, Any]:
     """
@@ -327,6 +349,12 @@ def source_model_kwargs(
 
     explicit_fields: set[str] = set()
     resolved_fields: dict[str, str] = {}
+
+    for key in evaluation.untyped_values:
+        if key.startswith("unparsed_"):
+            target_key = _model_field_name(key.removeprefix("unparsed_"), field_map)
+            if target_key in model_fields and type(None) in get_args(model_type.model_fields[target_key].annotation):
+                values[target_key] = None
 
     # --------------------------------------------------------------
     # Evaluated declared source fields
@@ -381,14 +409,14 @@ def source_model_kwargs(
 
         values["name"] = name
 
-    if vdom is not None:
+    if vdom is not _UNSPECIFIED_VDOM:
         if "vdom" not in model_fields:
-            raise ValueError(
-                f"{model_type.__name__} does not define "
-                f"a 'vdom' field"
-            )
-
-        values["vdom"] = vdom
+            if vdom is not None:
+                raise ValueError(
+                    f"{model_type.__name__} does not define a 'vdom' field"
+                )
+        else:
+            values.setdefault("vdom", vdom)
 
     # --------------------------------------------------------------
     # Source-preservation metadata

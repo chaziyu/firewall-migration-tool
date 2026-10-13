@@ -88,7 +88,7 @@ SHEET_HEADERS: dict[str, tuple[str, ...]] = {
     "External Resources": ("Name", "Resource", "Type", "Refresh Rate", "Comments", "VDOM", "Analysis Status", "Review Reasons", "Additional Settings"),
     "Unresolved References": ("Source VDOM", "Source Type", "Source Object", "Field", "Reference", "Expected Type", "Reason"),
     "Unsupported": ("Section", "VDOMs", "Source Records", "Primitive Registration", "Model Coverage", "Reason", "Source Evidence", "Raw Capture Location"),
-    "FortiGate Source Inventory": ("Domain", "VDOM", "Scope Type", "Source Path", "Object", "Parent / Subsection", "Operation", "Setting", "Value", "Primitive Registration", "Extraction Status", "Raw Extra Entries"),
+    "FortiGate Source Inventory": ("Domain", "VDOM", "Scope Type", "Source Path", "Object", "Parent / Subsection", "Operation", "Setting", "Value", "Primitive Registration", "Extraction Status", "Raw Extra Entries", "CLI Scope", "CLI Path", "Line Start", "Line End"),
     "Extraction Coverage": ("Source Section", "Found", "Source Records", "Primitive Registration", "Model Coverage", "Typed Objects", "Raw Extra Objects", "Raw Extra Entries", "Model Gaps", "Source-only Records", "Line Start", "Line End", "Notes"),
 }
 

@@ -118,7 +118,7 @@ end
         self.assertEqual("GENERIC", generic[inventory_headers.index("Primitive Registration")])
         self.assertEqual("SOURCE_ONLY", generic[inventory_headers.index("Extraction Status")])
         self.assertEqual(list(SHEET_HEADERS["FortiGate Source Inventory"]), inventory_headers)
-        self.assertEqual(f"A3:L{len(inventory_rows) + 3}", workbook["FortiGate Source Inventory"].auto_filter.ref)
+        self.assertEqual(f"A3:P{len(inventory_rows) + 3}", workbook["FortiGate Source Inventory"].auto_filter.ref)
 
         unsupported_headers, unsupported_rows = self._rows(workbook["Unsupported"])
         source_only = next(row for row in unsupported_rows if row[unsupported_headers.index("Section")] == "firewall unsupported-section")

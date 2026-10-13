@@ -1540,7 +1540,7 @@ def _unsupported_rows(context: _ExcelContext, headers: Sequence[str]) -> list[di
     return [
         {
             "Section": path,
-            "VDOMs": ", ".join(sorted({record.vdom for record in context.source_by_path.get(path, ())})),
+            "VDOMs": ", ".join(sorted({record.vdom for record in context.source_by_path.get(path, ()) if record.vdom is not None})),
             "Source Records": count,
             "Primitive Registration": "REGISTERED" if path in context.registered_sections else "GENERIC",
             "Model Coverage": "SOURCE_ONLY",
@@ -1566,7 +1566,7 @@ def _iter_fortigate_source_inventory_rows(
     for record in context.extracted.source_objects:
         typed = find_typed_source_object(context.typed_source_identity_index, record)
         raw_extra = getattr(typed.model, "raw_extra", {}) if typed else {}
-        status = extraction_status(supports_path(record.source_path), typed)
+        status = extraction_status(supports_path(record.source_path), typed, record)
         if context.profile is ExcelExportProfile.FAST and status == "TYPED":
             continue
         registration = "REGISTERED" if record.source_path in context.registered_sections else "GENERIC"
@@ -1579,8 +1579,12 @@ def _iter_fortigate_source_inventory_rows(
             _excel_safe("\n".join(record.parent_objects) or None),
         )
 
+        provenance = (
+            record.cli_scope, _excel_safe(" / ".join(record.cli_path)),
+            record.start_line_number, record.end_line_number,
+        )
         if not record.commands:
-            yield (*base, None, None, None, _excel_safe(registration), _excel_safe(status), len(raw_extra) if typed else None)
+            yield (*base, None, None, None, _excel_safe(registration), _excel_safe(status), len(raw_extra) if typed else None, *provenance)
             continue
 
         for command in record.commands:
@@ -1592,6 +1596,7 @@ def _iter_fortigate_source_inventory_rows(
                 _excel_safe(registration),
                 _excel_safe(status),
                 len(raw_extra) if typed else None,
+                *provenance,
             )
 
 
@@ -1610,12 +1615,11 @@ def _coverage_rows(
         records = context.source_by_path.get(path, [])
         typed_objects = context.typed_source_inventory.get(path, ())
         typed_support = supports_path(path)
-        matched = sum(
-            find_typed_source_object(context.typed_source_identity_index, record) is not None
+        source_only = 0 if typed_support else len(records)
+        model_gaps = sum(
+            extraction_status(typed_support, find_typed_source_object(context.typed_source_identity_index, record), record) == "MODEL_GAP"
             for record in records
         )
-        source_only = 0 if typed_support else len(records)
-        model_gaps = len(records) - matched if typed_support else 0
         raw_extra_objects = sum(bool(getattr(item.model, "raw_extra", {})) for item in typed_objects)
         raw_extra_entries = sum(len(getattr(item.model, "raw_extra", {})) for item in typed_objects)
 

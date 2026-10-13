@@ -5,6 +5,7 @@ from ..derived import (
     build_derived_views,
 )
 from ..model.source import FGConfig
+from ..extraction.coverage import build_typed_source_inventory
 from ..relationships.references import (
     BrokenReference,
     DuplicateObject,
@@ -48,6 +49,25 @@ def validate_config(
         )
 
     issues: list[ValidationIssue] = []
+
+    for interface in config.interfaces:
+        if interface.vdom is None:
+            issues.append(ValidationIssue(
+                severity=ValidationSeverity.WARNING, domain="interface",
+                vdom=None, object_name=interface.name, field="vdom",
+                message="Interface VDOM ownership is unresolved; source ownership is missing or explicitly unset.",
+            ))
+
+    for source_path, objects in build_typed_source_inventory(config).items():
+        for item in objects:
+            for key in getattr(item.model, "raw_extra", {}):
+                if key.startswith("unparsed_"):
+                    issues.append(ValidationIssue(
+                        severity=ValidationSeverity.WARNING, domain="source_value",
+                        vdom=getattr(item.model, "vdom", item.identity[0]),
+                        object_name=item.identity[2], field=key.removeprefix("unparsed_"),
+                        message=f"Malformed primitive source value in {source_path}; complete evidence is retained in Source Inventory and raw_extra.",
+                    ))
 
     # --------------------------------------------------------------
     # Reference index integrity

@@ -33,11 +33,11 @@ def extract_interfaces(
 
     section_path = "system interface"
 
-    grouped: dict[tuple[str, str], list[EditNode]] = {}
+    grouped: dict[tuple[str | None, str, str], list[EditNode]] = {}
     for source in iter_section_edits(tree, section_path):
-        grouped.setdefault((source.vdom, source.edit.name), []).append(source.edit)
+        grouped.setdefault((source.vdom, source.cli_scope, source.edit.name), []).append(source.edit)
 
-    for (vdom, name), edits in grouped.items():
+    for (vdom, cli_scope, name), edits in grouped.items():
         evaluation = evaluate_edit_sequence(
             section_path,
             edits,
@@ -52,6 +52,12 @@ def extract_interfaces(
                 "member": "members",
             },
         )
+
+        attributes["cli_vdom"] = vdom
+        attributes["cli_scope"] = cli_scope
+        attributes["unset_fields"] = evaluation.unset_fields
+        if "vdom" in evaluation.unset_fields or "unparsed_vdom" in evaluation.untyped_values:
+            attributes["vdom"] = None
 
         attributes["secondary_ips"] = (
             _extract_secondary_ips(

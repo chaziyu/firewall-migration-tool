@@ -25,7 +25,10 @@ class FGInterface(BaseModel):
     """
 
     name: str
-    vdom: str = "root"
+    vdom: str | None = "root"
+    cli_vdom: str | None = "root"
+    cli_scope: str = "vdom"
+    unset_fields: set[str] = Field(default_factory=set)
 
     # Source identity / presentation
     alias: str | None = None

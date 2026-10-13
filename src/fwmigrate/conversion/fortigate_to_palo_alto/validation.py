@@ -40,6 +40,7 @@ def validate_plan(plan: PANMigrationPlan) -> MigrationValidationResult:
         "schedules": _index(plan.schedules),
         "interfaces": _index(plan.interfaces),
         "zones": _index(plan.zones),
+        "nat_rules": _index(plan.nat_rules),
     }
     errors: set[ItemKey] = set()
     seen: set[ItemKey] = set()
@@ -53,6 +54,13 @@ def validate_plan(plan: PANMigrationPlan) -> MigrationValidationResult:
         errors.add(_key(item))
 
     interface_assignments = {}
+    address_assignments = {}
+    for item in (*plan.addresses, *plan.address_groups):
+        address_assignments.setdefault((item.target_vsys, item.target_name or item.source_name), []).append(item)
+    for owners in address_assignments.values():
+        if len(owners) > 1:
+            for item in owners:
+                add("duplicate_target_address_name", "address and address-group target names must be unique", item)
     for item in plan.interfaces:
         if item.target_name:
             interface_assignments.setdefault(item.target_name, []).append(item)
@@ -133,6 +141,10 @@ def validate_plan(plan: PANMigrationPlan) -> MigrationValidationResult:
                 if not _valid_pool(pool):
                     add("invalid_dhcp_pool", f"DHCP pool {pool!r} is invalid", item)
         elif item.source_object_type == "static_route":
+            if item.admin_distance is not None and (
+                type(item.admin_distance) is not int or not 10 <= item.admin_distance <= 240
+            ):
+                add("invalid_route_admin_distance", "route administrative distance is outside PAN-OS range 10-240", item)
             if not getattr(item, "virtual_router", None):
                 add("missing_virtual_router", "missing target virtual-router mapping", item)
             if not getattr(item, "destination", None):
@@ -142,6 +154,8 @@ def validate_plan(plan: PANMigrationPlan) -> MigrationValidationResult:
             if getattr(item, "interface", None) is None and any("interface mapping" in warning for warning in item.warnings):
                 add("missing_route_interface", "missing target interface mapping", item)
         elif item.source_object_type == "nat_rule":
+            if item.source_interface_address and not item.to_interface:
+                add("missing_nat_interface", "interface-address NAT requires an explicit mapped interface", item)
             if not item.target_vsys:
                 add("missing_target_vsys", "missing target VSYS mapping", item)
             if not item.from_zones or not item.to_zones:
@@ -177,6 +191,8 @@ def validate_plan(plan: PANMigrationPlan) -> MigrationValidationResult:
         if name == "any" or "services" in accepted_families and name in PAN_BUILTIN_SERVICES:
             return
         dependency = find(accepted_families, name, owner.target_vsys)
+        if dependency is None and "addresses" in accepted_families and _valid_ipv4_selector(name):
+            return
         if dependency is None:
             add(code, f"reference {name!r} is not in the target VSYS", owner)
         elif _key(dependency) not in renderable:
@@ -264,6 +280,14 @@ def validate_plan(plan: PANMigrationPlan) -> MigrationValidationResult:
                     require_reference(rule, value, accepted)
             if rule.schedule:
                 require_reference(rule, rule.schedule, ("schedules",), code="missing_schedule")
+            for name in rule.destinations:
+                address = find(("addresses",), name, rule.target_vsys)
+                if address is not None and address.source_kind == "vip":
+                    nat = find(("nat_rules",), address.source_name, rule.target_vsys)
+                    if nat is None or nat.source_kind != "vip" or nat.source_vdom != address.source_vdom:
+                        add("missing_vip_nat", "VIP security match has no corresponding scoped DNAT rule", rule)
+                    elif _key(nat) not in renderable:
+                        add("dependency_not_renderable", f"VIP DNAT {address.source_name!r} is not renderable", rule)
             if not rule.action:
                 add("missing_action", "security rule has no action", rule)
             if before and _key(rule) in errors:
@@ -293,6 +317,11 @@ def validate_plan(plan: PANMigrationPlan) -> MigrationValidationResult:
                     add("missing_nat_interface", "NAT rule has no mapped target interface", rule)
                 elif plan.interfaces:
                     require_reference(rule, rule.to_interface, ("interfaces",), code="missing_interface")
+            if rule.source_kind == "vip":
+                for value in (*rule.source_addresses, *rule.destination_addresses):
+                    require_reference(rule, value, ("addresses", "address_groups"))
+                if rule.service:
+                    require_reference(rule, rule.service, ("services", "service_groups"))
             if rule.source_kind != "source_nat" and rule.source_translation_type and not (rule.source_interface_address or rule.translated_addresses):
                 add("missing_snat_translation", "SNAT translation is missing", rule)
             if rule.source_kind != "source_nat" and not rule.source_translation_type and not rule.destination_translated_address:
@@ -308,6 +337,14 @@ def validate_plan(plan: PANMigrationPlan) -> MigrationValidationResult:
 def _valid_ipv4(value):
     try:
         IPv4Address(str(value))
+        return True
+    except (ValueError, TypeError):
+        return False
+
+
+def _valid_ipv4_selector(value):
+    try:
+        IPv4Network(str(value), strict=False)
         return True
     except (ValueError, TypeError):
         return False

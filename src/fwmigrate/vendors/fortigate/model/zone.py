@@ -17,7 +17,7 @@ class FGZoneTaggingEntry(BaseModel):
 
 class FGZone(BaseModel):
     name: str
-    vdom: str = "root"
+    vdom: str | None = "root"
 
     description: str | None = None
 

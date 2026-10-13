@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 class FGStaticRoute(BaseModel):
     # Identity / context
     seq_num: int | None = None
-    vdom: str = "root"
+    vdom: str | None = "root"
     address_family: Literal["ipv4", "ipv6"] = "ipv4"
 
     # Destination

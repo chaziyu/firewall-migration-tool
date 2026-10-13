@@ -1,3 +1,5 @@
+import pytest
+
 from fwmigrate.conversion.fortigate_to_palo_alto import FortiGateToPaloAltoPlanner, PANMigrationOptions
 from fwmigrate.conversion.fortigate_to_palo_alto.decisions import PANMigrationDecision, PANMigrationDecisionSet
 from fwmigrate.conversion.fortigate_to_palo_alto.rendering.renderer import PANSetRenderer
@@ -9,6 +11,7 @@ from fwmigrate.vendors.fortigate.model.policy import FGPolicy
 from fwmigrate.vendors.fortigate.model.route_static import FGStaticRoute
 from fwmigrate.vendors.fortigate.model.source import FGConfig
 from fwmigrate.vendors.fortigate.model.zone import FGZone
+from fwmigrate.vendors.fortigate.model.vip import FGVIP
 from fwmigrate.vendors.fortigate.derived import build_derived_views
 from fwmigrate.conversion.fortigate_to_palo_alto.planning.routing import _normalize_subnet
 
@@ -43,6 +46,102 @@ def _plan(source, options=OPTIONS):
     plan = FortiGateToPaloAltoPlanner().plan(analysis.extracted.config, analysis.derived, options)
     validation = validate_plan(plan)
     return analysis, plan, validation, PANSetRenderer().render(plan, validation)
+
+
+def _static_vip_config():
+    return FGConfig(
+        interfaces=[FGInterface(name="lan", ip="10.0.0.1/24"), FGInterface(name="wan", ip="198.51.100.1/24")],
+        zones=[FGZone(name="trust", interfaces=["lan"]), FGZone(name="untrust", interfaces=["wan"])],
+        vips=[FGVIP(name="web-vip", type="static-nat", extip="198.51.100.10", mappedip=["10.0.0.10"], extintf="wan")],
+        policies=[FGPolicy(policy_id=1, name="inbound", srcintf=["wan"], dstintf=["lan"],
+            srcaddr=["all"], dstaddr=["web-vip"], service=["ALL"], action="accept", schedule="always")])
+
+
+@pytest.mark.parametrize("updates", [
+    {"type": None}, {"type": "unknown"}, {"portforward": "enable", "extport": "80", "mappedport": "8080"},
+    {"extip": "0.0.0.0"}, {"extip": "198.51.100.10-198.51.100.20"}, {"mappedip": ["2001:db8::1"]},
+    {"mapped_addr": "server"}, {"nat_source_vip": "enable"}, {"raw_extra": {"src-filter": ["192.0.2.1"]}},
+    {"arp_reply": "disable"}, {"status": "disable"},
+])
+def test_uncertain_vip_blocks_dnat_and_dependent_security_without_mutating_source(updates):
+    source = _static_vip_config()
+    source.vips[0] = source.vips[0].model_copy(update=updates)
+    before = source.model_dump()
+    plan = FortiGateToPaloAltoPlanner().plan(source, build_derived_views(source), OPTIONS)
+    rendered = PANSetRenderer().render(plan)
+    assert not any("rulebase nat" in command or "rulebase security" in command for command in rendered.commands)
+    assert source.model_dump() == before
+    assert plan.nat_rules[0].warnings
+
+
+def test_conflicting_vip_post_nat_zones_and_address_names_block_security():
+    source = _static_vip_config()
+    source.policies.append(source.policies[0].model_copy(update={"policy_id": 2, "name": "conflict", "dstintf": ["wan"]}))
+    plan = FortiGateToPaloAltoPlanner().plan(source, build_derived_views(source), OPTIONS)
+    assert any("post-NAT destination zones" in warning for warning in plan.nat_rules[0].warnings)
+    assert not any("rulebase" in command for command in PANSetRenderer().render(plan).commands)
+
+    source = _static_vip_config()
+    source.addresses.append(FGAddress(name="web-vip", subnet="192.0.2.5/32"))
+    plan = FortiGateToPaloAltoPlanner().plan(source, build_derived_views(source), OPTIONS)
+    assert not any("rulebase security" in command for command in PANSetRenderer().render(plan).commands)
+    assert any(issue.code == "duplicate_target_address_name" for issue in validate_plan(plan).issues)
+
+
+def test_vip_requires_one_confirmed_post_nat_destination_zone():
+    source = _static_vip_config()
+    source.policies[0] = source.policies[0].model_copy(update={"dstintf": ["lan", "wan"]})
+    plan = FortiGateToPaloAltoPlanner().plan(source, build_derived_views(source), OPTIONS)
+    assert any("post-NAT destination zone" in warning for warning in plan.nat_rules[0].warnings)
+    assert not any("rulebase" in command for command in PANSetRenderer().render(plan).commands)
+
+
+def test_vip_service_group_match_does_not_reach_pan_nat_service_leaf():
+    from fwmigrate.vendors.fortigate.model.service import FGServiceGroup
+    source = _static_vip_config()
+    source.service_groups.append(FGServiceGroup(name="web-services", members=["HTTP", "HTTPS"]))
+    source.policies[0] = source.policies[0].model_copy(update={"service": ["web-services"]})
+    plan = FortiGateToPaloAltoPlanner().plan(source, build_derived_views(source), OPTIONS)
+    assert any("service-group" in warning for warning in plan.nat_rules[0].warnings)
+    assert not any("rulebase" in command for command in PANSetRenderer().render(plan).commands)
+
+
+def test_vip_nat_target_placement_block_propagates_through_existing_dependency_index():
+    from fwmigrate.conversion.fortigate_to_palo_alto.pipeline import run_migration_pipeline
+    from fwmigrate.conversion.fortigate_to_palo_alto.plan_dependencies import item_key
+    from fwmigrate.conversion.fortigate_to_palo_alto.target.target_plan_validation import PANRenderDisposition
+    source = _static_vip_config()
+
+    def classifier(plan, target, device):
+        nat = plan.nat_rules[0]
+        return ({"status": "ORDER_UNVERIFIED", "family": "nat_rule", "source_name": nat.source_name,
+                 "source_vdom": nat.source_vdom, "source_kind": nat.source_kind, "target_vsys": nat.target_vsys},)
+
+    result = run_migration_pipeline(source, build_derived_views(source), options=OPTIONS,
+                                   target_object_reuse_classifier=classifier)
+    nat_key = item_key(result.plan.nat_rules[0])
+    rule_key = item_key(result.plan.security_rules[0])
+    assert rule_key in result.dependency_index.dependents_by_item[nat_key]
+    assert result.dispositions[rule_key] is PANRenderDisposition.BLOCK
+    assert not any("rulebase" in command for command in result.rendered.commands)
+    assert result.artifact_status != "READY"
+
+
+def test_mixed_snat_dnat_and_overlapping_vips_require_precedence_review():
+    source = _static_vip_config()
+    source.policies.append(FGPolicy(policy_id=2, name="outbound", srcintf=["lan"], dstintf=["wan"],
+        srcaddr=["all"], dstaddr=["all"], service=["ALL"], action="accept", schedule="always", nat="enable"))
+    plan = FortiGateToPaloAltoPlanner().plan(source, build_derived_views(source), OPTIONS)
+    assert len(plan.nat_rules) == 2
+    assert all(any("precedence" in warning for warning in rule.warnings) for rule in plan.nat_rules)
+    assert not any("rulebase nat" in command for command in PANSetRenderer().render(plan).commands)
+
+    source = _static_vip_config()
+    source.vips.append(source.vips[0].model_copy(update={"name": "second-vip"}))
+    source.policies.append(source.policies[0].model_copy(update={"policy_id": 2, "name": "second", "dstaddr": ["second-vip"]}))
+    plan = FortiGateToPaloAltoPlanner().plan(source, build_derived_views(source), OPTIONS)
+    assert all(any("precedence" in warning for warning in rule.warnings) for rule in plan.nat_rules)
+    assert not any("rulebase" in command for command in PANSetRenderer().render(plan).commands)
 
 
 def test_predefined_services_and_subnets_reach_rendered_commands():
@@ -108,6 +207,7 @@ config firewall policy
 def test_vip_uses_original_packet_zone_and_conflicts_fail_closed():
     source = BASE + """config firewall vip
  edit "web-vip"
+  set type static-nat
   set extip 198.51.100.10
   set mappedip 10.0.0.10
   set extintf "wan"
@@ -117,20 +217,31 @@ config firewall policy
  edit 1
   set srcintf "wan"
   set dstintf "lan"
+  set srcaddr "all"
   set dstaddr "web-vip"
+  set service "ALL"
+  set action accept
+  set schedule always
  next
 end
 """
-    _, plan, validation, rendered = _plan(source)
+    analysis, plan, validation, rendered = _plan(source)
     vip = plan.nat_rules[0]
     assert vip.from_zones == ("untrust",)
     assert vip.to_zones == ("untrust",)
     assert ("nat_rule", "vsys1", "web-vip") in validation.renderable_item_keys
     assert any("set vsys vsys1 rulebase nat rules web-vip" in command for command in rendered.commands)
+    assert not analysis.extracted.config.addresses
+    assert plan.addresses[0].source_kind == "vip"
+    assert plan.addresses[0].value == "198.51.100.10/32"
+    assert plan.security_rules[0].destinations == ("web-vip",)
+    assert plan.security_rules[0].to_zones == ("trust",)
+    assert ("security_rule", "vsys1", "1") in validation.renderable_item_keys
+    assert "set vsys vsys1 address web-vip ip-netmask 198.51.100.10/32" in rendered.commands
 
     same_zone = source.replace(
         ' edit 1\n  set srcintf "wan"',
-        ' edit 2\n  set srcintf "wan"\n  set dstaddr "web-vip"\n next\n edit 1\n  set srcintf "wan"',
+        ' edit 2\n  set srcintf "wan"\n  set dstintf "lan"\n  set srcaddr "all"\n  set service "ALL"\n  set action accept\n  set schedule always\n  set dstaddr "web-vip"\n next\n edit 1\n  set srcintf "wan"',
     )
     _, plan, validation, _ = _plan(same_zone)
     assert plan.nat_rules[0].from_zones == ("untrust",)
@@ -143,6 +254,7 @@ end
     assert plan.nat_rules[0].from_zones == ()
     assert ("nat_rule", "vsys1", "web-vip") not in validation.renderable_item_keys
     assert not any("set vsys vsys1 rulebase nat rules web-vip" in command for command in rendered.commands)
+    assert not any("rulebase security" in command for command in rendered.commands)
 
     unreferenced = source.replace('  set dstaddr "web-vip"\n', '')
     _, plan, validation, _ = _plan(unreferenced)

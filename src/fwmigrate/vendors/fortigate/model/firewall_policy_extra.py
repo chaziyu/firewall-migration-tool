@@ -5,16 +5,16 @@ from pydantic import BaseModel, Field
 
 class FGSecurityPolicy(BaseModel):
     policy_id: int | None = None
-    vdom: str = "root"
+    vdom: str | None = "root"
     action: str | None = None
-    app_category: list[int] = Field(default_factory=list)
+    app_category: list[int] | None = Field(default_factory=list)
     raw_extra: dict[str, Any] = Field(default_factory=dict)
     explicit_fields: set[str] = Field(default_factory=set)
 
 
 class FGProtocolOptionsProfile(BaseModel):
     name: str
-    vdom: str = "root"
+    vdom: str | None = "root"
     comment: str | None = None
     raw_extra: dict[str, Any] = Field(default_factory=dict)
     explicit_fields: set[str] = Field(default_factory=set)
@@ -22,7 +22,7 @@ class FGProtocolOptionsProfile(BaseModel):
 
 class FGPerIPShaper(BaseModel):
     name: str
-    vdom: str = "root"
+    vdom: str | None = "root"
     max_bandwidth: int | None = None
     bandwidth_unit: str | None = None
     max_concurrent_session: int | None = None

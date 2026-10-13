@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 
 class FGIPsecPhase1(BaseModel):
     name: str
-    vdom: str = "root"
+    vdom: str | None = "root"
 
     # Tunnel / gateway type
     type: str | None = None
@@ -24,7 +24,7 @@ class FGIPsecPhase1(BaseModel):
     authmethod: str | None = None
     authmethod_remote: str | None = None
     proposal: list[str] = Field(default_factory=list)
-    dhgrp: list[int] = Field(default_factory=list)
+    dhgrp: list[int] | None = Field(default_factory=list)
 
     # Phase 1 lifetime
     keylife: int | None = None
@@ -56,7 +56,7 @@ class FGIPsecPhase1(BaseModel):
 
 class FGIPsecPhase2(BaseModel):
     name: str
-    vdom: str = "root"
+    vdom: str | None = "root"
 
     # Link to Phase 1
     phase1name: str | None = None
@@ -64,7 +64,7 @@ class FGIPsecPhase2(BaseModel):
     # Phase 2 crypto
     proposal: list[str] = Field(default_factory=list)
     pfs: str | None = None
-    dhgrp: list[int] = Field(default_factory=list)
+    dhgrp: list[int] | None = Field(default_factory=list)
 
     # Lifetime
     keylifeseconds: int | None = None

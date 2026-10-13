@@ -489,7 +489,7 @@ def build_web_report(
                 "phase1": item.phase1name,
                 "proposal": list(item.proposal),
                 "pfs": item.pfs,
-                "dh_groups": list(item.dhgrp),
+                "dh_groups": list(item.dhgrp) if item.dhgrp is not None else None,
                 "source_range": normalized.source_range if normalized else None,
                 "destination_range": (
                     normalized.destination_range if normalized else None
@@ -513,7 +513,7 @@ def build_web_report(
         normalized = vpn_phase2.get(("policy-based", item.vdom, item.name))
         policy_vpn_phase2_rows.append({
             "name": item.name, "vdom": item.vdom, "phase1": item.phase1name,
-            "proposal": list(item.proposal), "pfs": item.pfs, "dh_groups": list(item.dhgrp),
+            "proposal": list(item.proposal), "pfs": item.pfs, "dh_groups": list(item.dhgrp) if item.dhgrp is not None else None,
             "source_range": normalized.source_range if normalized else None,
             "destination_range": normalized.destination_range if normalized else None,
             "source_range6": normalized.source_range6 if normalized else None,

@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 
 class FGLocalUser(BaseModel):
     name: str
-    vdom: str = "root"
+    vdom: str | None = "root"
 
     # Explicit FortiOS field, not edit identity.
     id: int | None = None
@@ -88,7 +88,7 @@ class FGUserGroupGuest(BaseModel):
 
 class FGUserGroup(BaseModel):
     name: str
-    vdom: str = "root"
+    vdom: str | None = "root"
 
     # Explicit `set id`.
     id: int | None = None

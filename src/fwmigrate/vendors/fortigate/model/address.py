@@ -16,7 +16,7 @@ class FGAddressTaggingEntry(BaseModel):
 
 class FGAddress(BaseModel):
     name: str
-    vdom: str = "root"
+    vdom: str | None = "root"
 
     address_family: Literal["ipv4", "ipv6"] = "ipv4"
 
@@ -44,7 +44,7 @@ class FGAddress(BaseModel):
 
 class FGWildcardFQDN(BaseModel):
     name: str
-    vdom: str = "root"
+    vdom: str | None = "root"
 
     wildcard_fqdn: str | None = None
     comment: str | None = None
@@ -64,7 +64,7 @@ class FGAddressGroupTaggingEntry(BaseModel):
 
 class FGAddressGroup(BaseModel):
     name: str
-    vdom: str = "root"
+    vdom: str | None = "root"
 
     address_family: Literal["ipv4", "ipv6"] = "ipv4"
 

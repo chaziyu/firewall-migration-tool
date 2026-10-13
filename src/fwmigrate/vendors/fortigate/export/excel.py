@@ -106,6 +106,10 @@ _SOURCE_INVENTORY_WIDTHS = {
     "Primitive Registration": 20,
     "Extraction Status": 18,
     "Raw Extra Entries": 18,
+    "CLI Scope": 14,
+    "CLI Path": 50,
+    "Line Start": 12,
+    "Line End": 12,
 }
 
 _FAST_REQUIRED_SHEETS = frozenset({"Review Required", "Review Summary"})
@@ -180,6 +184,9 @@ class _ExcelContext:
     ) -> None:
         self.extracted = extracted
         self.config = extracted.config
+        self.interface_cli_vdom = {
+            (item.vdom, item.name): item.cli_vdom for item in self.config.interfaces
+        }
         self.derived = derived
         self.validation = validation
         self.profile = profile
@@ -193,7 +200,8 @@ class _ExcelContext:
 
         for record in extracted.source_objects:
             self.source_by_path[record.source_path].append(record)
-            vdoms.add(record.vdom)
+            if record.vdom is not None:
+                vdoms.add(record.vdom)
             self.source_by_identity[(record.vdom, record.source_path, record.object_name)].append(record)
             if record.source_path.startswith("system interface "):
                 parent = record.parent_objects[0] if record.parent_objects else None
@@ -948,4 +956,4 @@ def _vdoms(context: _ExcelContext) -> list[str]:
         )
         for item in getattr(context.config, collection_name, ())
     )
-    return sorted(values)
+    return sorted(value for value in values if value is not None)

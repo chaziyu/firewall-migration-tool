@@ -262,48 +262,28 @@ def evaluate_commands(
         # ----------------------------------------------------------
 
         if key in integer_list_fields:
-            parsed: list[int] = []
-            malformed: list[str] = []
+            unparsed_key = f"unparsed_{key}"
+            raw_state = list(command_values)
+            if operation == "append":
+                previous = untyped_values.get(unparsed_key, evaluated_values.get(key, []))
+                raw_state = [*(previous if isinstance(previous, list) else [previous]), *raw_state]
+            try:
+                parsed = [int(value) for value in raw_state]
+            except (TypeError, ValueError):
+                evaluated_values.pop(key, None)
+                explicit_fields.discard(key)
+                unset_fields.discard(key)
+                untyped_values[unparsed_key] = raw_state
+                continue
 
-            for value in command_values:
-                try:
-                    parsed.append(
-                        int(value)
-                    )
-                except (
-                    TypeError,
-                    ValueError,
-                ):
-                    malformed.append(
-                        str(value)
-                    )
-
-            if operation == "set":
-                evaluated_values[key] = (
-                    parsed
-                )
-            else:
-                evaluated_values[key] = (
-                    _append_values(
-                        evaluated_values.get(
-                            key
-                        ),
-                        parsed,
-                    )
-                )
+            untyped_values.pop(unparsed_key, None)
+            evaluated_values[key] = parsed
 
             _mark_explicit(
                 key,
                 explicit_fields=explicit_fields,
                 unset_fields=unset_fields,
             )
-
-            if malformed:
-                _record_untyped(
-                    untyped_values,
-                    f"unparsed_{key}",
-                    malformed,
-                )
 
             continue
 
@@ -380,6 +360,8 @@ def evaluate_commands(
                 explicit_fields=explicit_fields,
                 unset_fields=unset_fields,
             )
+
+            untyped_values.pop(f"unparsed_{key}", None)
 
             continue
 
