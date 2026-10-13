@@ -19,6 +19,28 @@ def test_legacy_rulebases_keep_missing_ownership_and_report_scope():
     assert any(issue.code == "scope_ambiguous" for issue in result.validation.issues)
 
 
+def test_access_rulebase_does_not_require_per_response_package_ownership():
+    source = json.dumps({"responses": [
+        {"command": "show-packages", "domain": "D", "data": {"objects": [
+            {"uid": "p1", "name": "Package A", "access-layers": [{"uid": "l1"}]},
+            {"uid": "p2", "name": "Package B", "access-layers": [{"uid": "l1"}]},
+        ]}},
+        {"command": "show-access-layers", "domain": "D", "data": {"objects": [{"uid": "l1", "name": "Shared"}]}},
+        {"command": "show-access-rulebase", "domain": "D", "data": {
+            "uid": "l1", "name": "Shared", "rulebase": [{"type": "access-rule", "uid": "r1"}],
+        }},
+    ]})
+    from fwmigrate.vendors.checkpoint.loader import load_checkpoint_input
+    bundle, scope = load_checkpoint_input(source)
+    result = extract_checkpoint_source(source)
+
+    assert not scope.ambiguous
+    assert result.config.access_rules[0].package is None
+    assert "package" not in result.config.access_rules[0].explicit_fields
+    assert len(result.derived.policy_structure.package_layers) == 2
+    assert not any(issue.code == "policy_layer_owner_invalid" for issue in result.validation.issues)
+
+
 def test_bundle_validation_errors_contain_only_safe_paths_and_codes():
     import pytest
     from fwmigrate.vendors.checkpoint.loader import load_checkpoint_input
