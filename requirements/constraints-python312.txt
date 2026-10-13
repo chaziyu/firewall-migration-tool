@@ -1,7 +1,7 @@
 # Resolved Python 3.12 constraints for production and deployment paths.
 #
-# Source dependency ranges remain in pyproject.toml. Docker builds install the
-# project through this file so those artifacts use reviewed, reproducible versions
+# Source dependency ranges remain in pyproject.toml. Release and deployment
+# builds install through this file to use reviewed, reproducible versions
 # instead of the lowest version admitted by a range.
 #
 # Baseline: successful Python 3.12 CI resolutions on 2026-10-01.

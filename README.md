@@ -101,11 +101,11 @@ Unsupported or partially understood source configuration is preserved where prac
 
 The repository provides a web runtime with a React frontend, Flask API contract, and `fwmigrate` application logic:
 
-| Target | Runtime | Docker required? | Where backend operations run |
-|---|---|---|---|
-| Web / Render | Browser → Gunicorn → Flask | Yes for the current production container deployment | Render/container host |
+| Runtime | Backend | Where operations run |
+|---|---|---|
+| Web | Gunicorn → Flask | Hosted web server |
 
-Web collection and PAN-OS deployment originate from the hosted container and require network reachability from that environment.
+Web collection and PAN-OS deployment originate from the hosted web server and require network reachability from that environment.
 
 ## Supported Source Vendors
 
@@ -206,7 +206,7 @@ pyproject.toml
 → compatible source dependency ranges
 
 requirements/constraints-python312.txt
-→ resolved Python 3.12 versions for Docker/Render builds
+→ resolved Python 3.12 versions for release and hosted deployment builds
 
 src/frontend/package-lock.json
 → resolved frontend dependency graph
@@ -259,57 +259,29 @@ python -m fwmigrate.main serve --port 5000
 For Windows development, run [`Start Local.bat`](./Start%20Local.bat). It needs
 Python 3.11 or newer, Node.js, and npm. The script starts the local backend at
 `http://127.0.0.1:5000` and the Vite development frontend at
-`http://127.0.0.1:5173`. This local workflow needs no Docker.
+`http://127.0.0.1:5173`.
 
-### Docker / Render Web Deployment
+### Hosted Web Deployment
 
-Docker is used for the hosted web application, including the current Render deployment.
-
-The Docker image installs Python dependencies through `requirements/constraints-python312.txt`, so the deployed Python dependency set matches the reviewed Python 3.12 build constraints.
-
-Build and run the production web image:
+Build the frontend and install the Python application on the web host:
 
 ```bash
-docker build -t firewall-migration-tool .
-docker run --detach --name fwmigrate --publish 5000:5000 --env-file /etc/fwmigrate/fwmigrate.env --mount type=bind,src=/etc/fwmigrate/known_hosts,dst=/home/fwmigrate/.ssh/known_hosts,readonly firewall-migration-tool
+cd src/frontend
+npm ci
+npm run build
+cd ../..
+python -m pip install --constraint requirements/constraints-python312.txt -e ".[collection,deployment]"
 ```
 
-On Windows, double-click [`Start Docker.bat`](./Start%20Docker.bat) to build the image, choose a local web password, start it on port `5000`, wait for its health check, and open the web application. Sign in as `fwmigrate` with that password. If that container is already running, the launcher reuses it; stop and remove it before rerunning to rebuild from current files.
+Run Gunicorn from the repository root with `src` on `PYTHONPATH`:
 
-The environment file supplies server settings and secrets at runtime. Hosted Docker/web deployments require HTTP Basic authentication. Set `FWMIGRATE_WEB_PASSWORD` to a strong runtime secret; `FWMIGRATE_WEB_USERNAME` defaults to `fwmigrate`. The unauthenticated `/healthz` endpoint is reserved for container health checks. Remote live collection and remote deployment are disabled by default even when the web application is reachable. Set `FWMIGRATE_ALLOW_REMOTE_COLLECTION=1` and/or `FWMIGRATE_ALLOW_REMOTE_DEPLOYMENT=1` only on an authenticated deployment with the required network perimeter. Hosted use must terminate HTTPS before Flask because HTTP Basic authentication and customer configuration traffic must not traverse an unencrypted network. The local Windows Docker launcher enables both network actions explicitly while publishing port 5000 on loopback only. Do not bake secrets into the image.
-
-The container listens on port `5000` and runs as the non-root `fwmigrate` user. SSH collection and deployment use strict host-key checking, so mount the company's trusted `known_hosts` file at `/home/fwmigrate/.ssh/known_hosts`. Allow outbound access from the container only to the firewall management interfaces and management APIs required for approved collection or deployment.
-
-Workflow state is memory-only in the browser. Sanitized vendor-native evidence, previews, decisions, and signed rendered artifacts are not persisted to IndexedDB. Startup clears legacy workspace data written by older releases. Connection usernames and passwords also stay in React memory. **New workspace** clears the current in-memory workflow and resets the UI.
-
-Set `FWMIGRATE_WORKSPACE_SIGNING_KEY` to a stable random secret of at least 32 bytes in the runtime environment file. Use the same key for every server handling the workspace. This keeps browser-held signed artifacts valid across restarts. Without this setting, a temporary key is generated and existing signed artifacts must be rebuilt after restart. Key rotation also requires rebuilding signed artifacts. Never bake the key into the image or expose it to the browser.
-
-Source preview, Excel, migration review, and planning reconstruct analysis from request-carried source evidence. Bounded multipart uploads use memory-only request streams before sanitization so raw customer uploads are not intentionally spooled to application temporary files. The backend retains no preview, source, or rendered artifact cache. API clients must send `source` (sanitized native evidence or collection snapshot), optional `target_source`, decisions, and target device; opaque preview IDs are no longer accepted. `/api/migrate` returns a signed `artifact` envelope. Export and deployment requests carry that envelope. Bundle export also carries the matching source.
-
-Gunicorn still uses one worker for candidate deployment coordination. Only transient target host/port, artifact identity/count/hash, validation job/time, and session nonce remain server-side. Same-target operations serialize; different targets can run concurrently. A restart invalidates candidate sessions and requires another prepare/validate step. Commit remains explicit. Multiple deployment workers or replicas require shared candidate coordination before they are supported.
-
-The source-reporting workflow is:
-
-```text
-upload source configuration
-→ select source vendor
-→ parse and analyze
-→ review preview and validation
-→ export vendor-native Excel report
+```bash
+PYTHONPATH=src gunicorn --bind=0.0.0.0:5000 --workers=1 --threads=4 --timeout=120 "fwmigrate.web:create_app()"
 ```
 
-For FortiGate input, the web application additionally supports:
+Set `FWMIGRATE_FRONTEND_DIST_DIR` to `src/frontend/dist` if the host does not use the default frontend build path. Configure `FWMIGRATE_WEB_USERNAME` and a strong `FWMIGRATE_WEB_PASSWORD`, and set `FWMIGRATE_REQUIRE_WEB_AUTH=1` for hosted use. Remote live collection and deployment are disabled by default. Enable `FWMIGRATE_ALLOW_REMOTE_COLLECTION=1` or `FWMIGRATE_ALLOW_REMOTE_DEPLOYMENT=1` only on an authenticated service with an appropriate network perimeter. Terminate HTTPS before Flask.
 
-```text
-analyze source
-→ plan migration
-→ review target mappings
-→ confirm decisions
-→ review migration plan
-→ generate PAN-OS commands
-→ download migration artifacts
-→ optionally push candidate configuration
-```
+Set `FWMIGRATE_WORKSPACE_SIGNING_KEY` to a stable random secret of at least 32 bytes. Keep credentials and signing keys in the host's secret manager. SSH collection and deployment use operating-system known-hosts configuration and strict host-key checking.
 
 ## Live Collection
 
@@ -787,7 +759,7 @@ npm run lint
 npm run build
 ```
 
-For deployment/release dependency changes, also validate the constrained Python 3.12 dependency set used by Docker builds.
+For deployment/release dependency changes, also validate the constrained Python 3.12 dependency set used by hosted deployment builds.
 
 Run only the checks relevant to the affected area locally, while CI remains the authoritative full repository matrix.
 

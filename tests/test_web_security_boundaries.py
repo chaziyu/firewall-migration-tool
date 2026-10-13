@@ -12,16 +12,13 @@ def _basic(username: str, password: str) -> dict[str, str]:
     return {"Authorization": f"Basic {token}"}
 
 
-def test_hosted_web_auth_protects_application_but_not_health_check():
+def test_hosted_web_auth_protects_application():
     client = create_app({
         "TESTING": True,
         "REQUIRE_WEB_AUTH": True,
         "WEB_AUTH_USERNAME": "engineer",
         "WEB_AUTH_PASSWORD": "strong-test-password",
     }).test_client()
-
-    health = client.get("/healthz")
-    assert health.status_code == 200
 
     unauthenticated = client.get("/api/vendors")
     assert unauthenticated.status_code == 401
