@@ -51,6 +51,7 @@ def test_collection_completeness_is_exported_separately_from_capability_coverage
             "status": "FAILED",
             "complete": False,
             "count": 0,
+            "failure_reason": None,
         }],
     }
     assert preview["source_plane_completeness"]["network_address_overrides"] == "failed"
@@ -66,6 +67,7 @@ def test_collection_completeness_is_exported_separately_from_capability_coverage
         "Status": "FAILED",
         "Complete": False,
         "Count": 0,
+        "Failure Reason": None,
     }
     semantic_headers = [cell.value for cell in workbook["Semantic Completeness"][1]]
     semantic_rows = [dict(zip(semantic_headers, row)) for row in
@@ -94,4 +96,4 @@ def test_missing_collection_metadata_is_reported_as_unknown_not_zero():
     assert summary["Collection Parts"] == "Not provided"
     assert summary["Incomplete Collection Parts"] == "Not provided"
     completeness = list(workbook["Collection Completeness"].iter_rows(min_row=2, values_only=True))
-    assert completeness == [("Collection metadata", "NOT_PROVIDED", None, None)]
+    assert completeness == [("Collection metadata", "NOT_PROVIDED", None, None, None)]

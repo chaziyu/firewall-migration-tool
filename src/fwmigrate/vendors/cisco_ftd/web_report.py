@@ -238,7 +238,8 @@ def build_ftd_preview(result: FTDSourceResult) -> dict[str, Any]:
             "provided": config.collection_metadata.provided,
             "status": config.collection_metadata.status if config.collection_metadata.provided else "NOT_PROVIDED",
             "parts": [
-                {"name": part.name, "status": part.status, "complete": part.complete, "count": part.count}
+                {"name": part.name, "status": part.status, "complete": part.complete,
+                 "count": part.count, "failure_reason": part.failure_reason}
                 for part in config.collection_metadata.parts
             ],
         },

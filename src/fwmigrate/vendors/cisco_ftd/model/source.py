@@ -19,6 +19,7 @@ class CiscoFTDCollectionPart(BaseModel):
     status: str
     complete: bool
     count: Optional[int] = None
+    failure_reason: Optional[str] = None
 
 
 class CiscoFTDCollectionMetadata(BaseModel):

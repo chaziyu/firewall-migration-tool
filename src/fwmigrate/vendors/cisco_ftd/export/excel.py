@@ -285,7 +285,7 @@ def export_ftd_excel(result: Any, output: Any, *, profile: ExcelExportProfile | 
             if not config.collection_metadata.provided:
                 append_report_row(sheet, ("Collection metadata", "NOT_PROVIDED", None, None))
             for part in config.collection_metadata.parts:
-                append_report_row(sheet, (part.name, part.status, part.complete, part.count))
+                append_report_row(sheet, (part.name, part.status, part.complete, part.count, part.failure_reason))
         elif name == "Semantic Completeness":
             append_report_row(sheet, SHEET_HEADERS[name])
             completeness = getattr(derived, "source_plane_completeness", {})

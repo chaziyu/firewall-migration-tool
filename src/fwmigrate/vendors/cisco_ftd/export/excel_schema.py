@@ -61,7 +61,7 @@ SHEET_HEADERS = {
     "Source Inventory": ("Source Path", "Name", "Source ID", "Record ID", "Type", "Source Context",
         "Domain", "Device", "Device Name", "Virtual Router ID", "Virtual Router", "Parent Policy ID",
         "Parent Policy", "Status", "Review Required", "Explicit Fields"),
-    "Collection Completeness": ("Collection Part", "Status", "Complete", "Count"),
+    "Collection Completeness": ("Collection Part", "Status", "Complete", "Count", "Failure Reason"),
     "Semantic Completeness": ("Source Family", "Derived Status"),
     "Source Evidence": ("Path", "Reason"),
     "Native Sources": ("Collection", "Name", "ID", "Source Context", "Source Attributes", "Raw Source"),

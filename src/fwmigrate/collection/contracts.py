@@ -19,6 +19,7 @@ class CollectionPart:
     status: str
     complete: bool = True
     count: int | None = None
+    failure_reason: str | None = None
 
 
 @dataclass(frozen=True)
