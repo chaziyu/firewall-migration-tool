@@ -70,6 +70,8 @@ def _extract_bgp(element: ET.Element) -> PANBGPConfig:
     extra, explicit = typed_fields(element, {"enable", "router-id", "local-as", "bfd", "redist-rules", "peer-group"}, {"router-id": "router_id", "local-as": "local_as", "bfd": "bfd_profile", "redist-rules": "redistribution_rules", "peer-group": "peer_groups"})
     redist = element.find("redist-rules")
     redistribution = [item.get("name") for item in redist if item.get("name") is not None] if redist is not None else None
+    if redist is not None:
+        extra["redist-rules"] = structured_xml_capture(redist)
     return PANBGPConfig(enable=value(element, "enable"), router_id=value(element, "router-id"), local_as=value(element, "local-as"), bfd_profile=value(element.find("bfd"), "profile"), redistribution_rules=redistribution, peer_groups=_extract_bgp_peer_groups(element), raw_extra=extra, explicit_fields=explicit)
 
 
@@ -87,6 +89,9 @@ def _extract_redistribution_profiles(element: ET.Element) -> list[PANRedistribut
     for profile in profile_node:
         extra, explicit = typed_fields(profile, {"priority", "action", "filter"})
         explicit.discard("filter")
+        filter_node = profile.find("filter")
+        if filter_node is not None:
+            extra["filter"] = structured_xml_capture(filter_node)
         profiles.append(PANRedistributionProfile(name=profile.get("name"), priority=value(profile, "priority"), action=value(profile, "action"), raw_extra=extra, explicit_fields=explicit))
     return profiles or None
 

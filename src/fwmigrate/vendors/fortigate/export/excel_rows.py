@@ -15,6 +15,7 @@ from fwmigrate.source_reporting import ExcelExportProfile
 from ..extraction.coverage import extraction_status, find_typed_source_object, supports_path
 from ..security.extraction import sanitize_source_attributes
 from ..transform.policies import effective_policy_action
+from ..report_values import address_value, policy_nat_entries, policy_nat_review
 from .excel_schema import SHEET_ORDER
 from .excel_common import (
     _POLICY_ACTION_NOTE,
@@ -342,9 +343,7 @@ def _zone_rows(context: _ExcelContext, headers: Sequence[str]) -> Iterator[dict[
 
 def _address_rows(context: _ExcelContext, headers: Sequence[str]) -> Iterator[dict[str, Any]]:
     for item in context.config.addresses:
-        value = item.subnet or item.ip6 or (
-            f"{item.start_ip}-{item.end_ip}" if item.start_ip and item.end_ip else None
-        ) or item.fqdn or item.wildcard or item.wildcard_fqdn
+        value = address_value(item)
         row = {
             "Name": item.name,
             "Type": item.type,
@@ -461,12 +460,12 @@ def _service_group_rows(context: _ExcelContext, headers: Sequence[str]) -> Itera
 
 def _policy_rows(context: _ExcelContext, headers: Sequence[str]) -> Iterator[dict[str, Any]]:
     order_by_identity = _policy_orders(context)
-    nat = {
-        (item.vdom, item.policy_id): item
-        for item in context.derived.nat
-    }
+    counts, nat = policy_nat_entries(context.config, context.derived)
     for item in context.config.policies:
-        nat_item = nat.get((item.vdom, item.policy_id))
+        key = (item.vdom, item.policy_id)
+        entries = nat.get(key, ())
+        reasons = policy_nat_review(key, counts, entries)
+        nat_items = entries if item.policy_id is not None and counts[key] == 1 else ()
         row = {
             "Rule #": item.policy_id,
             "Policy Order": order_by_identity.get((item.vdom, item.policy_id)),
@@ -504,9 +503,11 @@ def _policy_rows(context: _ExcelContext, headers: Sequence[str]) -> Iterator[dic
             "Log Setting": item.logtraffic,
             "Comments": item.comments,
             "Status": _enabled_text(item.status),
-            "SNAT Type": _nat_type(nat_item.translation_type) if nat_item else None,
-            "SNAT Address": list(nat_item.translated_addresses) if nat_item else [],
-            "IP Pool Name": list(nat_item.pool_names) if nat_item else [],
+            "SNAT Type": "; ".join(_nat_type(entry.translation_type) for entry in nat_items) or None,
+            "SNAT Address": (list(nat_items[0].translated_addresses) if len(nat_items) == 1 else
+                [f"{_nat_type(entry.translation_type)}: {', '.join(entry.translated_addresses) or 'Not specified'}" for entry in nat_items]),
+            "IP Pool Name": (list(nat_items[0].pool_names) if len(nat_items) == 1 else
+                [f"{_nat_type(entry.translation_type)}: {', '.join(entry.pool_names) or 'Not specified'}" for entry in nat_items]),
             "VDOM": item.vdom,
             "Source Explicit Fields": sorted(item.explicit_fields),
             "Additional Settings": _additional_settings(
@@ -520,6 +521,7 @@ def _policy_rows(context: _ExcelContext, headers: Sequence[str]) -> Iterator[dic
             vdom=item.vdom,
             names=(item.name, item.policy_id),
             domains=('policy', 'nat'),
+            extra_reasons=reasons,
         )
         _overlay_safe_raw(row, row["Additional Settings"], headers)
         yield row
@@ -660,7 +662,7 @@ def _nat_rows(
     policies = {
         (policy.vdom, policy.policy_id): policy
         for policy in context.config.policies
-        if isinstance(order_by_identity.get((policy.vdom, policy.policy_id)), int)
+        if policy.policy_id is not None and isinstance(order_by_identity.get((policy.vdom, policy.policy_id)), int)
     }
 
     for item in context.derived.nat:
@@ -727,7 +729,7 @@ def _nat_rows(
             ),
             extra_reasons=(
                 (*item.issues, "Ambiguous policy identity; source policy fields were not joined.")
-                if (item.vdom, item.policy_id) in order_by_identity and order_by_identity[(item.vdom, item.policy_id)] == "Ambiguous identity"
+                if policy is None
                 else item.issues
             ),
             domains=('nat',),
@@ -745,7 +747,7 @@ def _policy_orders(context: _ExcelContext) -> dict[tuple[str, int], int | str]:
         vdom_positions[policy.vdom] += 1
         orders[identity] = vdom_positions[policy.vdom]
     return {
-        identity: order if counts[identity] == 1 else "Ambiguous identity"
+        identity: order if identity[1] is not None and counts[identity] == 1 else "Ambiguous identity"
         for identity, order in orders.items()
     }
 

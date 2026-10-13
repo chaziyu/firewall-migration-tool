@@ -96,7 +96,7 @@ class FGUserGroup(BaseModel):
     group_type: str | None = None
 
     # Direct FortiGate references.
-    members: list[str] = Field(default_factory=list)
+    members: list[str] | None = None
 
     # Remote authentication matches.
     matches: list[FGUserGroupMatch] = Field(default_factory=list)

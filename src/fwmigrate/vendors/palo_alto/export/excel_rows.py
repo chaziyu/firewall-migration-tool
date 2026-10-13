@@ -316,7 +316,7 @@ def _reference_text(context: _PANExcelContext, item: Any, fields: set[str]) -> s
 
 
 def _effective_order(context: _PANExcelContext, item: Any) -> str:
-    return _text(f"{entry.target_scope}: {entry.effective_order}" for entry in context.derived.policy_order
+    return _text(f"{entry.target_scope}: {entry.effective_order}{'' if entry.complete else ' (incomplete; source-only; source order retained)'}" for entry in context.derived.policy_order
                  if entry.rule_name == item.name and _scope_id(entry.source_scope) == _scope_id(item.scope) and entry.source_order == item.source_order)
 
 

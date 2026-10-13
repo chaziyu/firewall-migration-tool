@@ -274,7 +274,7 @@ export function SourceReport({ data, excelProfile, onExcelProfileChange, exporti
       <div className="report-workspace-header">
         <div><h2 id="report-title">Source inventory</h2>{Array.isArray(summary.scopes) && summary.scopes.length > 0 && <p className="report-scope-summary">Scopes: {summary.scopes.join(', ')}</p>}</div>
         <div className="report-header-actions">
-          <div className="excel-actions"><label className="excel-profile-control">Excel<select aria-label="Excel export profile" value={excelProfile} onChange={(event) => onExcelProfileChange(event.target.value as 'fast' | 'full')}><option value="fast">FAST</option><option value="full">FULL</option></select></label>
+          <div className="excel-actions"><label className="excel-profile-control">Excel<select aria-label="Excel export profile" value={excelProfile} onChange={(event) => onExcelProfileChange(event.target.value as 'fast' | 'full')}><option value="fast">FAST (omits Source Inventory, Extraction Coverage, and Source Appendix)</option><option value="full">FULL</option></select></label>
             <button className="primary-button excel-export-button" type="button" disabled={exporting} aria-busy={exporting} onClick={onExport}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 3v12m-4-4 4 4 4-4M4 16v5h16v-5" /></svg>{exporting ? 'Preparing workbook…' : 'Export Excel'}</button>
           </div>
         </div>

@@ -290,3 +290,53 @@ def test_unexpected_commit_value_error_does_not_expose_device_details(monkeypatc
     assert response.get_json()["error"] == "Invalid candidate commit request"
     assert "synthetic-private-password-device-detail" not in response.get_data(as_text=True)
     assert "synthetic-private-password-device-detail" not in caplog.text
+
+
+@pytest.mark.parametrize('operation', ['deploy', 'validate-candidate', 'commit'])
+@pytest.mark.parametrize('exception_type', [ValueError, RuntimeError])
+def test_deployment_exceptions_keep_secrets_private(monkeypatch, caplog, operation, exception_type):
+    monkeypatch.setattr(web, 'PANSSHDeployer', _SuccessfulDeployer)
+    client = web.create_app({'TESTING': True}).test_client()
+    artifact = _ready_artifact(client)
+    session = client.post('/api/deploy', json={**CREDS, 'artifact': artifact}).get_json()['deployment_session_id']
+
+    class Failing(_SuccessfulDeployer):
+        def deploy(self, rendered):
+            raise exception_type('SYNTHETIC_DEPLOYMENT_SECRET')
+
+        def validate(self):
+            raise exception_type('SYNTHETIC_DEPLOYMENT_SECRET')
+
+        def commit(self):
+            raise exception_type('SYNTHETIC_DEPLOYMENT_SECRET')
+
+    monkeypatch.setattr(web, 'PANSSHDeployer', Failing)
+    response = client.post('/api/' + operation, json={**CREDS, 'artifact': artifact, 'deployment_session_id': session})
+    assert response.status_code in {400, 500}
+    assert 'SYNTHETIC_DEPLOYMENT_SECRET' not in response.get_data(as_text=True) + caplog.text
+    assert all(record.exc_info is None for record in caplog.records)
+
+
+@pytest.mark.parametrize('operation', ['deploy', 'validate-candidate', 'commit'])
+def test_failed_deployment_results_do_not_expose_transport_errors(monkeypatch, caplog, operation):
+    monkeypatch.setattr(web, 'PANSSHDeployer', _SuccessfulDeployer)
+    client = web.create_app({'TESTING': True}).test_client()
+    artifact = _ready_artifact(client)
+    session = client.post('/api/deploy', json={**CREDS, 'artifact': artifact}).get_json()['deployment_session_id']
+
+    class FailedTransport(_SuccessfulDeployer):
+        def deploy(self, rendered):
+            return PANDeploymentResult(False, failure_message='SYNTHETIC_TRANSPORT_SECRET',
+                validation=PANValidationResult('71', 'FAILED', 'SYNTHETIC_TRANSPORT_SECRET'))
+
+        def validate(self):
+            return PANValidationResult('72', 'FAILED', 'SYNTHETIC_TRANSPORT_SECRET')
+
+        def commit(self):
+            return PANCommitResult('73', 'FAILED', 'SYNTHETIC_TRANSPORT_SECRET')
+
+    monkeypatch.setattr(web, 'PANSSHDeployer', FailedTransport)
+    response = client.post('/api/' + operation, json={**CREDS, 'artifact': artifact, 'deployment_session_id': session})
+    assert response.status_code == 502
+    assert 'SYNTHETIC_TRANSPORT_SECRET' not in response.get_data(as_text=True) + caplog.text
+    assert response.json['deployment_session_id'] is None
