@@ -65,6 +65,8 @@ from fwmigrate.web_support.request_source import (
     analyze_request_source,
 )
 
+from fwmigrate.web_support.public_errors import safe_validation_message
+
 _LOGGER = logging.getLogger(__name__)
 _SAFE_COLLECTION_ERROR = 'Migration requires a complete live collection; this source is PARTIAL or FAILED.'
 _SAFE_TARGET_SOURCE_ERROR = 'Vendor-native source evidence is required'
@@ -251,7 +253,7 @@ def register_migration_routes(
             return jsonify({'success': True, 'approved_count': len(selected), 'decision_document': document,
                             'decisions': confirmed.to_dict()})
         except (ValueError, KeyError, TypeError) as exc:
-            _LOGGER.exception('Migration design approval failed: %s', exc)
+            _LOGGER.warning('Migration design approval failed')
             return jsonify({'success': False, 'error': 'Invalid request or stale draft'}), 409
 
 
@@ -297,7 +299,7 @@ def register_migration_routes(
                     message = _SAFE_TARGET_SOURCE_ERROR
             return jsonify({'success': False, 'error': message}), 400
         except Exception:
-            _LOGGER.exception('Migration requirements failed')
+            _LOGGER.error('Migration requirements failed')
             return jsonify({'success': False, 'error': 'Migration requirements failed'}), 500
 
     @app.route('/api/migration/interfaces/confirm', methods=['POST'])
@@ -342,7 +344,7 @@ def register_migration_routes(
         except InterfaceMappingConfirmationError as exc:
             return jsonify({'success': False, 'error': str(exc), 'errors': exc.errors}), 400
         except (ValueError, KeyError, TypeError) as exc:
-            return jsonify({'success': False, 'error': str(exc)}), 400
+            return jsonify({'success': False, 'error': safe_validation_message(exc, 'Invalid migration request')}), 400
 
     @app.route('/api/migration/decisions/approve', methods=['POST'])
     def approve_migration_decisions():
@@ -394,7 +396,7 @@ def register_migration_routes(
                     target_context.metadata if target_context else None), 'draft_required': True},
                 'invalidated_target_decisions': list(invalidated_target_decisions)})
         except (ValueError, KeyError, TypeError) as exc:
-            return jsonify({'success': False, 'error': str(exc)}), 400
+            return jsonify({'success': False, 'error': safe_validation_message(exc, 'Invalid migration request')}), 400
 
     @app.route('/api/migration/automation/run', methods=['POST'])
     def run_migration_automation():
@@ -430,7 +432,7 @@ def register_migration_routes(
                 'audit': list(result.audit), 'iterations': result.iterations, 'stable': result.stable,
                 'invalidated_target_decisions': list(invalidated_target_decisions)})
         except (ValueError, KeyError, TypeError) as exc:
-            return jsonify({'success': False, 'error': str(exc)}), 400
+            return jsonify({'success': False, 'error': safe_validation_message(exc, 'Invalid migration request')}), 400
 
     @app.route('/api/migration/target-intent/import', methods=['POST'])
     def import_target_intent():
@@ -464,7 +466,7 @@ def register_migration_routes(
                 'automation_stable': automation.stable,
                 'invalidated_target_decisions': list(invalidated_target_decisions)})
         except (ValueError, KeyError, TypeError) as exc:
-            return jsonify({'success': False, 'error': str(exc)}), 400
+            return jsonify({'success': False, 'error': safe_validation_message(exc, 'Invalid migration request')}), 400
 
     @app.route('/api/migration/target-intent/export', methods=['POST'])
     def export_target_intent_document():
@@ -476,7 +478,7 @@ def register_migration_routes(
             decisions = load_decision_document(payload.get('decision_document'), entry.source_digest)
             return jsonify({'success': True, 'yaml': export_target_intent(decisions)})
         except (ValueError, KeyError, TypeError) as exc:
-            return jsonify({'success': False, 'error': str(exc)}), 400
+            return jsonify({'success': False, 'error': safe_validation_message(exc, 'Invalid migration request')}), 400
 
     @app.route('/api/migration/rules/apply', methods=['POST'])
     def apply_migration_rule():
@@ -526,10 +528,10 @@ def register_migration_routes(
                 'decision_document': {**build_decision_document(entry.source_digest, previous,
                     target_context.metadata if target_context else document.get('target_evidence')), 'draft_required': True}})
         except (ValueError, KeyError, TypeError):
-            _LOGGER.exception('Invalid migration rule request')
+            _LOGGER.error('Invalid migration rule request')
             return jsonify({'success': False, 'error': 'Invalid migration rule request'}), 400
         except Exception:
-            _LOGGER.exception('Migration re-evaluation failed')
+            _LOGGER.error('Migration re-evaluation failed')
             return jsonify({'success': False, 'error': 'Migration re-evaluation failed'}), 500
 
     @app.route('/api/migration/mapping/import', methods=['POST'])
@@ -545,7 +547,7 @@ def register_migration_routes(
             _LOGGER.warning('Invalid migration mapping payload')
             return jsonify({'success': False, 'error': 'Invalid migration mapping payload'}), 400
         except Exception:
-            _LOGGER.exception('Migration mapping import failed')
+            _LOGGER.error('Migration mapping import failed')
             return jsonify({'success': False, 'error': 'Migration mapping import failed'}), 500
 
     @app.route('/api/migration/decisions/export', methods=['POST'])
@@ -572,7 +574,7 @@ def register_migration_routes(
                 document['draft_required'] = True
             return jsonify({'success': True, 'document': document})
         except (ValueError, KeyError, TypeError) as exc:
-            _LOGGER.warning("Failed to export migration decisions due to invalid input.", exc_info=True)
+            _LOGGER.warning("Failed to export migration decisions due to invalid input.")
             return jsonify({'success': False, 'error': 'Invalid decision document payload.'}), 400
 
     @app.route('/api/migration/decisions/import', methods=['POST'])
@@ -786,10 +788,7 @@ def register_migration_routes(
             return jsonify(response)
         except (ValueError, KeyError, TypeError) as exc:
             _LOGGER.warning('Migration request validation failed')
-            message = 'Invalid migration request'
-            if isinstance(exc, ValueError) and (str(exc) == _SAFE_COLLECTION_ERROR
-                    or str(exc).startswith(('Review and approve', 'Approved design', 'Approved configuration'))):
-                message = str(exc)
+            message = safe_validation_message(exc, 'Invalid migration request')
             return jsonify({'success': False, 'error': message}), 400
 
     @app.route('/api/migration/bundle', methods=['POST'])
@@ -821,7 +820,7 @@ def register_migration_routes(
             bundle.seek(0)
             return send_file(bundle, mimetype='application/zip', as_attachment=True, download_name='migration_fortigate_to_palo_alto.zip')
         except Exception:
-            _LOGGER.exception('Migration bundle export failed')
+            _LOGGER.error('Migration bundle export failed')
             return jsonify({'success': False, 'error': 'Migration bundle export failed'}), 500
 
     @app.route('/api/migration/command-preview', methods=['POST'])
