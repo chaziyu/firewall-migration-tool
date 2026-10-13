@@ -110,21 +110,6 @@ def source_facts(item: Any, fields: Iterable[str]) -> tuple[str, ...]:
     return tuple(facts)
 
 
-def target_device(item: Any) -> str | None:
-    scope = getattr(item, "scope", None)
-    return (scope.device_serial or scope.device_name) if scope else None
-
-
-def target_objects(target: Any, attribute: str, device: str | None = None) -> tuple[Any, ...]:
-    if target is None:
-        return ()
-    return tuple(item for item in getattr(target.config, attribute, ()) if device is None or target_device(item) == device)
-
-
-def target_names(target: Any, attribute: str, device: str | None = None) -> tuple[str, ...]:
-    return tuple(sorted({str(item.name) for item in target_objects(target, attribute, device) if getattr(item, "name", None)}))
-
-
 def scoped_target_candidates(target: Any, attribute: str, family: str, source_name: str,
                              source_vdom: str, decisions: PANMigrationDecisionSet | None,
                              device: str | None, comparator=None, source_object=None) -> tuple[PANTargetCandidate, ...]:
