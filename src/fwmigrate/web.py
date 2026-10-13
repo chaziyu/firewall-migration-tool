@@ -96,8 +96,6 @@ def create_app(test_config=None):
 
         @app.before_request
         def _authenticate_hosted_web():
-            if request.path == '/healthz':
-                return None
             authorization = request.authorization
             if (
                 authorization is not None
@@ -125,10 +123,6 @@ def create_app(test_config=None):
             response.headers['Cache-Control'] = 'no-store, private'
             response.headers['Pragma'] = 'no-cache'
         return response
-
-    @app.route('/healthz', methods=['GET'])
-    def healthz():
-        return jsonify({'status': 'ok'})
 
     signing_key = app.config.get('WORKSPACE_SIGNING_KEY') or os.environ.get('FWMIGRATE_WORKSPACE_SIGNING_KEY')
     if signing_key:

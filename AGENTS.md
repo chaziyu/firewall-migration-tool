@@ -463,7 +463,7 @@ npm run build
 
 ```
 
-For Docker, release dependency, or packaging changes, run the corresponding build/smoke path or rely on CI when the local environment cannot reproduce it.
+For release dependency or packaging changes, run the corresponding build/smoke path or rely on CI when the local environment cannot reproduce it.
 
 Do not claim tests or CI passed unless they actually ran.
 

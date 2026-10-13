@@ -22,14 +22,14 @@ def test_react_build_is_served(tmp_path: Path):
 
 
 def test_frontend_dist_environment_override(tmp_path: Path, monkeypatch):
-    dist = tmp_path / "container-frontend"
+    dist = tmp_path / "web-frontend"
     dist.mkdir()
-    (dist / "index.html").write_text("container frontend", encoding="utf-8")
+    (dist / "index.html").write_text("web frontend", encoding="utf-8")
     monkeypatch.setenv("FWMIGRATE_FRONTEND_DIST_DIR", str(dist))
 
     client = create_app({"TESTING": True}).test_client()
 
-    assert b"container frontend" in client.get("/").data
+    assert b"web frontend" in client.get("/").data
 
 
 def test_react_route_reports_missing_build(tmp_path: Path):
