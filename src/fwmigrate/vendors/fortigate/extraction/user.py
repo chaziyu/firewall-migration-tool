@@ -18,7 +18,9 @@ from ..nodes import (
 from .common import (
     evaluate_edit,
     get_child_config,
-    iter_section_edits,
+    iter_grouped_section_edits,
+    evaluate_edit_sequence,
+    combine_source_edits,
     source_model_kwargs,
 )
 from .section_index import SectionIndex
@@ -45,14 +47,12 @@ def _extract_local_users(
 ) -> None:
     section_path = "user local"
 
-    for source in iter_section_edits(
+    for source, edits in iter_grouped_section_edits(
         tree,
         section_path,
     ):
-        evaluation = evaluate_edit(
-            section_path,
-            source.edit,
-        )
+        edit = combine_source_edits(edits)
+        evaluation = evaluate_edit_sequence(section_path, edits)
 
         attributes = source_model_kwargs(
             evaluation,
@@ -65,7 +65,7 @@ def _extract_local_users(
         )
 
         secret_state = _secret_presence(
-            source.edit.commands,
+            edit.commands,
             {
                 "passwd",
                 "ppk-secret",
@@ -98,14 +98,12 @@ def _extract_user_groups(
 ) -> None:
     section_path = "user group"
 
-    for source in iter_section_edits(
+    for source, edits in iter_grouped_section_edits(
         tree,
         section_path,
     ):
-        evaluation = evaluate_edit(
-            section_path,
-            source.edit,
-        )
+        edit = combine_source_edits(edits)
+        evaluation = evaluate_edit_sequence(section_path, edits)
 
         attributes = source_model_kwargs(
             evaluation,
@@ -118,7 +116,7 @@ def _extract_user_groups(
         )
 
         match = get_child_config(
-            source.edit,
+            edit,
             "match",
         )
 
@@ -128,7 +126,7 @@ def _extract_user_groups(
             )
 
         guest = get_child_config(
-            source.edit,
+            edit,
             "guest",
         )
 
