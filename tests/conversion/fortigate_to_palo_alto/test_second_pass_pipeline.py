@@ -127,6 +127,74 @@ def test_vip_nat_target_placement_block_propagates_through_existing_dependency_i
     assert result.artifact_status != "READY"
 
 
+@pytest.mark.parametrize("configure", [False, True])
+def test_pipeline_preserves_selected_classifier_conflicts_and_source(configure):
+    from fwmigrate.conversion.fortigate_to_palo_alto.decisions import PANDecisionReviewState
+    from fwmigrate.conversion.fortigate_to_palo_alto.pipeline import run_migration_pipeline
+    from fwmigrate.conversion.fortigate_to_palo_alto.plan_dependencies import item_key
+    from fwmigrate.conversion.fortigate_to_palo_alto.target.target_plan_validation import PANRenderDisposition
+
+    source = _static_vip_config()
+    before = source.model_dump()
+    calls = []
+    classified = []
+    decisions = PANMigrationDecisionSet((PANMigrationDecision(
+        "root", "interface", "wan", "target_zone", value="untrust",
+        review_state=PANDecisionReviewState.CONFIRMED, approved_operation="CONFIGURE",
+    ),)) if configure else None
+
+    def classifier(plan, target, device):
+        calls.append((plan, target, device))
+        nat = plan.nat_rules[0]
+        rows = ({"status": "NAME_CONFLICT", "family": "nat_rule", "source_name": nat.source_name,
+                 "source_vdom": nat.source_vdom, "source_kind": nat.source_kind, "target_vsys": nat.target_vsys},)
+        classified.append(rows)
+        return rows
+
+    def additive_classifier(plan, target, device, *, allow_additive):
+        assert allow_additive is True
+        return classifier(plan, target, device)
+
+    result = run_migration_pipeline(
+        source, build_derived_views(source), options=OPTIONS, decisions=decisions,
+        target_object_reuse_classifier=additive_classifier if configure else classifier,
+    )
+    assert calls == [(result.plan, None, None)]
+    assert result.target_object_reuse is classified[0]
+    if configure:
+        assert any(item.approved_operation == "CONFIGURE" for item in result.decisions.decisions)
+    nat_key = item_key(result.plan.nat_rules[0])
+    rule_key = item_key(result.plan.security_rules[0])
+    assert rule_key in result.dependency_index.dependents_by_item[nat_key]
+    assert result.dispositions[nat_key] is PANRenderDisposition.BLOCK
+    assert result.dispositions[rule_key] is PANRenderDisposition.BLOCK
+    assert "TARGET_NAME_CONFLICT" in result.render_blockers[nat_key]
+    assert any(item.code == "TARGET_NAME_CONFLICT" for item in result.target_plan_findings)
+    assert not any("rulebase" in command for command in result.rendered.commands)
+    assert result.artifact_status != "READY"
+    assert source.model_dump() == before
+
+
+def test_pipeline_configure_requires_classifier_additive_support():
+    from fwmigrate.conversion.fortigate_to_palo_alto.decisions import PANDecisionReviewState
+    from fwmigrate.conversion.fortigate_to_palo_alto.pipeline import run_migration_pipeline
+
+    source = _static_vip_config()
+    before = source.model_dump()
+    decisions = PANMigrationDecisionSet((PANMigrationDecision(
+        "root", "interface", "wan", "target_zone", value="untrust",
+        review_state=PANDecisionReviewState.CONFIRMED, approved_operation="CONFIGURE",
+    ),))
+
+    def classifier(plan, target, device):
+        pytest.fail("three-argument classifier must not be invoked without additive classification")
+
+    with pytest.raises(TypeError, match="allow_additive"):
+        run_migration_pipeline(source, build_derived_views(source), options=OPTIONS, decisions=decisions,
+                               target_object_reuse_classifier=classifier)
+    assert source.model_dump() == before
+
+
 def test_mixed_snat_dnat_and_overlapping_vips_require_precedence_review():
     source = _static_vip_config()
     source.policies.append(FGPolicy(policy_id=2, name="outbound", srcintf=["lan"], dstintf=["wan"],

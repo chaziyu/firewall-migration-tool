@@ -205,9 +205,10 @@ def run_migration_pipeline(
                                **({"include_configuration": True} if approved_item_keys is not None else {}))
 
     reuse_classifier = target_object_reuse_classifier or classify_target_object_reuse
-    target_object_reuse = reuse_classifier(plan, target, target_device)
     if any(item.approved_operation == "CONFIGURE" for item in current.decisions):
-        target_object_reuse = classify_target_object_reuse(plan, target, target_device, allow_additive=True)
+        target_object_reuse = reuse_classifier(plan, target, target_device, allow_additive=True)
+    else:
+        target_object_reuse = reuse_classifier(plan, target, target_device)
     dependencies = build_plan_dependency_index(plan, current)
     target_plan_findings = validate_target_plan(
         plan, target_object_reuse, target_findings, current, dependencies
