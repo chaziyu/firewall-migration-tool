@@ -53,6 +53,7 @@ class CheckPointCollector:
         self.api_session_factory = _default_api_session_factory if api_session_factory is None else api_session_factory
         self.gaia_connection_factory = _default_gaia_connection_factory if gaia_connection_factory is None else gaia_connection_factory
         self.command_registry = R81_COMMAND_REGISTRY if command_registry is None else command_registry
+        self._layer_states = {}
 
     def validate_options(self, connection):
         options = validate_connection(connection, port=443, optional=("domain", "package", "layer", "gateway", "gaia_host", "gaia_username", "gaia_password"))
@@ -115,6 +116,7 @@ class CheckPointCollector:
                                        collection_timestamp=datetime.now(timezone.utc).isoformat(),
                                        requested_scope={key: options[key] or None for key in ("domain", "package", "layer", "gateway")})
         parts = []
+        self._layer_states.clear()
         try:
             for command, spec in self.command_registry.items():
                 selectors = self._plan_selectors(command, spec, bundle, options)
@@ -220,7 +222,9 @@ class CheckPointCollector:
         inline_entries = []
         seen_inline = set() if seen_inline is None else seen_inline
         if command == "show-access-rulebase" and selector:
-            seen_inline.add(str(selector[1]).casefold())
+            identity = self._layer_identity(scope.get("domain"), selector[1], bundle)
+            if identity:
+                self._layer_states[identity] = "in_progress"
         for page in range(100):
             payload = {"limit": 500, "offset": offset} if spec.pagination_required else {}
             if spec.details_level_full:
@@ -262,12 +266,42 @@ class CheckPointCollector:
                         root_uid = next((item.data.get("uid") for item in page_records if item.data.get("uid")), None)
                         for rule in self._inline_references(inline_entries):
                             reference = rule.get("inline-layer")
-                            child_name = self._inline_layer_name(reference, bundle)
-                            if not child_name or child_name.casefold() in seen_inline:
+                            child = self._inline_layer(reference, bundle, scope.get("domain"))
+                            parent = (root_uid, rule.get("uid"))
+                            if child is None:
+                                self._record_unresolved_inline(command, spec, reference, parent, scope, bundle, parts)
                                 continue
-                            seen_inline.add(child_name.casefold())
+                            child_uid, child_name = child
+                            child_identity = self._layer_identity(scope.get("domain"), child_uid or child_name, bundle)
+                            encoded_parent = f"inline-parent:{root_uid or ''}:{rule.get('uid') or ''}"
+                            for item in bundle.responses:
+                                if item.command == command and item.layer == child_name and encoded_parent not in item.collection_warnings:
+                                    item.collection_warnings.append(encoded_parent)
+                            if child_identity:
+                                state = self._layer_states.get(child_identity)
+                                if state in {"in_progress", "complete"}:
+                                    continue
+                                self._layer_states[child_identity] = "in_progress"
+                            if not child_name:
+                                self._record_unresolved_inline(command, spec, reference, parent, scope, bundle, parts)
+                                continue
+                            before = len(bundle.responses)
                             self._collect_command(session, base, command, spec, ("name", child_name), bundle, parts, options,
                                                   parent_layer_uid=root_uid, parent_rule_uid=rule.get("uid"), seen_inline=seen_inline)
+                            if child_identity:
+                                child_records = [item for item in bundle.responses[before:] if item.command == command]
+                                self._layer_states[child_identity] = "complete" if child_records and all(
+                                    collection_status_is_success(item.collection_status) for item in child_records
+                                ) else "failed"
+                            # The original response keeps the first parent; every parent edge is
+                            # retained in collection_warnings without duplicate pagination pages.
+                            if child_identity:
+                                encoded_parent = f"inline-parent:{root_uid or ''}:{rule.get('uid') or ''}"
+                                for item in bundle.responses:
+                                    if item.command == command and item.layer == child_name and encoded_parent not in item.collection_warnings:
+                                        item.collection_warnings.append(encoded_parent)
+                            # Response pages remain unique by layer for pagination grouping.
+                            # Keep every shared-layer parent edge in the existing evidence field.
                     return
                 if not items:
                     raise CollectionError("Check Point pagination stopped early.")
@@ -285,6 +319,10 @@ class CheckPointCollector:
                     command=command, status=status, complete=False,
                     error_code=error_code, error_message="Collection request failed.", **scope,
                 )
+                if command == "show-access-rulebase" and selector:
+                    identity = self._layer_identity(scope.get("domain"), selector[1], bundle)
+                    if identity:
+                        self._layer_states[identity] = "failed"
                 return
         parts.append(CollectionPart(command, CPStatus.API_ERROR.value, False))
         bundle.collection_completeness[operation_key] = CollectionCompletenessRecord(command=command, status=CPStatus.API_ERROR, complete=False, error_message="Pagination page limit exceeded.", **scope)
@@ -321,19 +359,53 @@ class CheckPointCollector:
 
     @staticmethod
     def _inline_layer_name(reference, bundle):
+        layer = CheckPointCollector._inline_layer(reference, bundle)
+        return layer[1] if layer else None
+
+    @staticmethod
+    def _inline_layer(reference, bundle, domain=None):
         if isinstance(reference, dict):
             if reference.get("name"):
-                return str(reference["name"])
+                return str(reference.get("uid") or ""), str(reference["name"])
             uid = reference.get("uid")
         else:
-            uid = None
-        key = uid or reference
+            uid = reference if reference else None
+        key = uid
+        if not key:
+            return None
+        matches = []
         for response in bundle.responses:
             if response.command == "show-access-layers":
                 for layer in response.data.get("objects", []):
-                    if isinstance(layer, dict) and (layer.get("uid") == key or layer.get("name") == key):
-                        return str(layer.get("name") or "") or None
-        return str(reference) if not isinstance(reference, dict) and reference else None
+                    if (isinstance(layer, dict) and (layer.get("uid") == key or layer.get("name") == key)
+                            and (domain is None or response.domain in (None, domain))):
+                        matches.append((str(layer.get("uid") or ""), str(layer.get("name") or "") or None))
+        unique = list(dict.fromkeys(matches))
+        return unique[0] if len(unique) == 1 else None
+
+    @staticmethod
+    def _layer_identity(domain, reference, bundle):
+        resolved = CheckPointCollector._inline_layer(reference, bundle, domain)
+        if resolved and resolved[0]:
+            return (domain or "global", "uid", resolved[0])
+        if isinstance(reference, dict):
+            uid, name = reference.get("uid"), reference.get("name")
+        else:
+            uid, name = None, reference
+        value = uid or name or reference
+        return (domain or "global", "name", str(value).casefold()) if value else None
+
+    def _record_unresolved_inline(self, command, spec, reference, parent, scope, bundle, parts):
+        label = reference.get("uid") if isinstance(reference, dict) else reference
+        operation_scope = dict(scope)
+        operation_scope["layer"] = f"unresolved-inline:{label or 'unknown'}"
+        key = self._operation_key(command, operation_scope)
+        message = "Inline access layer could not be resolved from the scoped access-layer inventory."
+        bundle.collection_completeness[key] = CollectionCompletenessRecord(
+            command=command, status=CPStatus.NOT_ATTEMPTED, complete=False,
+            error_message=message, **operation_scope,
+        )
+        parts.append(CollectionPart(command, CPStatus.NOT_ATTEMPTED.value, False))
 
     def _collect_gaia(self, options, bundle, parts):
         connection = None
