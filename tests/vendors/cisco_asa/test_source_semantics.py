@@ -1,0 +1,258 @@
+from io import BytesIO
+
+from openpyxl import load_workbook
+
+from fwmigrate.vendors.cisco_asa.export.excel import export_asa_excel
+
+from fwmigrate.vendors.cisco_asa.source_report import extract_cisco_asa_source
+
+from .helpers import assert_source_unchanged, snapshot_source
+
+from fwmigrate.vendors.cisco_asa.parser import CiscoASAParser
+
+from pathlib import Path
+
+from fwmigrate.vendors.cisco_asa import extract_cisco_asa_source
+
+from fwmigrate.vendors.cisco_asa.model import CiscoInterface, CiscoNATRule, CiscoStaticRoute
+
+from fwmigrate.vendors.cisco_asa.web_report import build_asa_preview
+
+def test_nat_optional_flags_distinguish_absent_from_explicit():
+    result = extract_cisco_asa_source(
+        "nat (inside,outside) source static 10.0.0.1 192.0.2.1\n"
+        "nat (inside,outside) source static 10.0.0.2 192.0.2.2 dns no-proxy-arp route-lookup unidirectional inactive\n"
+    )
+    absent, explicit = result.config.nat_rules
+    for field in ("dns", "no_proxy_arp", "route_lookup", "unidirectional", "inactive"):
+        assert getattr(absent, field) is False and field not in absent.explicit_fields
+        assert getattr(explicit, field) is True and field in explicit.explicit_fields
+
+def test_service_object_keeps_last_specification_and_flags_prior_conflict():
+    config = CiscoASAParser(
+        "object service APP\n"
+        " service tcp destination eq 443\n"
+        " service udp destination eq 53\n"
+    ).parse_raw()
+    service = config.service_objects[0]
+
+    assert [(item.protocol, item.destination.values) for item in service.ports] == [("udp", ["53"])]
+    assert service.extraction_status == "PARTIAL"
+    assert "Multiple service specifications in one service object" in [item.reason for item in config.diagnostics]
+    assert service.raw_extra["superseded_service_commands"] == ["service tcp destination eq 443"]
+
+def test_missing_hostname_remains_unconfigured():
+    config = extract_cisco_asa_source("interface Ethernet0/0\n").config
+    assert config.hostname is None
+    assert config.system_settings is None
+    assert config.dns_settings is None
+    assert config.failover_config is None
+    assert config.http_server is None
+    assert config.multi_context_system is None
+    assert "hostname" not in config.explicit_fields
+
+def test_explicit_hostname_is_tracked():
+    config = extract_cisco_asa_source("hostname edge\n").config
+    assert config.hostname == config.system_settings.hostname == "edge"
+    assert "hostname" in config.explicit_fields
+    assert "hostname" in config.system_settings.explicit_fields
+
+def test_interface_without_shutdown_has_no_effective_state():
+    interface = extract_cisco_asa_source("interface Ethernet0/0\n").config.interfaces[0]
+    assert interface.shutdown is None
+    assert interface.administrative_state is None
+    assert "shutdown" not in interface.explicit_fields
+
+def test_shutdown_and_no_shutdown_remain_distinct_explicit_source():
+    config = extract_cisco_asa_source(
+        "interface Ethernet0/0\n shutdown\ninterface Ethernet0/1\n no shutdown\n"
+    ).config
+    down, up = config.interfaces
+    assert (down.shutdown, down.administrative_state) == (True, "down")
+    assert (up.shutdown, up.administrative_state) == (False, "up")
+    assert {"shutdown", "administrative_state"} <= set(down.explicit_fields)
+    assert {"shutdown", "administrative_state"} <= set(up.explicit_fields)
+
+def test_explicit_no_command_is_distinct_from_missing_field():
+    config = extract_cisco_asa_source(
+        "interface Ethernet0/0\n no nameif\ninterface Ethernet0/1\n"
+    ).config
+    explicit_no, missing = config.interfaces
+    assert explicit_no.nameif is missing.nameif is None
+    assert "nameif" in explicit_no.explicit_fields
+    assert "nameif" not in missing.explicit_fields
+
+def test_route_without_distance_does_not_store_default():
+    route = extract_cisco_asa_source("route outside 192.0.2.0 255.255.255.0 192.0.2.1\n").config.static_routes[0]
+    assert route.administrative_distance is None
+    assert not hasattr(route, "effective_administrative_distance")
+
+def test_explicit_route_distance_is_preserved():
+    route = extract_cisco_asa_source("route outside 192.0.2.0 255.255.255.0 192.0.2.1 7\n").config.static_routes[0]
+    assert route.administrative_distance == 7
+    assert "administrative_distance" in route.explicit_fields
+
+def test_nat_model_contains_only_source_order():
+    fixture = Path("tests/fixtures/cisco_asa/nat_pipeline_conformance.txt").read_text()
+    rules = extract_cisco_asa_source(fixture).config.nat_rules
+    assert [rule.source_order for rule in rules] == sorted(rule.source_order for rule in rules)
+    assert all(rule.section in {"manual", "object", "after-auto"} for rule in rules)
+    assert not {"effective_source_order", "object_nat_precedence", "object_nat_specificity", "effective_order_inputs"} & set(CiscoNATRule.model_fields)
+
+def test_unknown_source_evidence_is_preserved_in_raw_extra():
+    config = extract_cisco_asa_source(
+        "interface Ethernet0/0\n vendor-knob keep-me\n"
+        "route outside 192.0.2.0 255.255.255.0 192.0.2.1 unknown-route-option\n"
+        "nat (inside,outside) source static 10.0.0.1 192.0.2.1 vendor-nat-option\n"
+    ).config
+    assert "vendor-knob keep-me" in config.interfaces[0].raw_extra["unmodeled_lines"]
+    assert "unknown-route-option" in config.static_routes[0].raw_extra["unparsed_options"]
+    assert "vendor-nat-option" in config.nat_rules[0].raw_extra["unparsed_tokens"]
+
+def test_safe_unknown_source_survives_preview_without_becoming_a_model_field():
+    result = extract_cisco_asa_source(
+        "interface Ethernet0/0\n future-interface-option alpha beta\n"
+        "object network WEB\n host 10.0.0.1\n future-object-option one two\n"
+    )
+    before = result.config.interfaces[0].raw_extra["unmodeled_lines"][:]
+    assert "future-interface-option alpha beta" in before
+    assert result.config.network_objects[0].raw_lines[-1] == "future-object-option one two"
+    assert not hasattr(result.config.interfaces[0], "future_interface_option")
+
+
+def test_absent_and_explicit_no_values_remain_distinct_in_source():
+    result = extract_cisco_asa_source(
+        "interface Ethernet0/0\n ip address 192.0.2.1 255.255.255.0\n"
+        "interface Ethernet0/1\n no shutdown\n no nameif\n no security-level\n no ip address\n"
+        "route outside 192.0.2.0 255.255.255.0 192.0.2.1\n"
+        "route outside 198.51.100.0 255.255.255.0 192.0.2.1 10\n"
+    )
+    missing, explicit_no = result.config.interfaces
+    assert missing.shutdown is None and "shutdown" not in missing.explicit_fields
+    assert explicit_no.shutdown is False and "shutdown" in explicit_no.explicit_fields
+    assert explicit_no.nameif is None and "nameif" in explicit_no.explicit_fields
+    assert explicit_no.security_level is None and "security_level" in explicit_no.explicit_fields
+    assert explicit_no.ip is None and "ip" in explicit_no.explicit_fields
+    assert [route.administrative_distance for route in result.config.static_routes] == [None, 10]
+
+
+def test_interface_excel_shows_explicit_fields_and_command_inventory_statuses():
+    result = extract_cisco_asa_source(
+        "interface Ethernet0/0\n nameif outside\n no shutdown\n future-interface-option keep\n"
+        "interface Ethernet0/1\n"
+        "future-global-command keep\n"
+    )
+    assert "source_explicit_fields" not in str(build_asa_preview(result))
+    output = BytesIO()
+    export_asa_excel(result, output)
+    workbook = load_workbook(BytesIO(output.getvalue()), read_only=True)
+    try:
+        interfaces = workbook["Interfaces"]
+        headers = next(interfaces.iter_rows(values_only=True))
+        interface_rows = [dict(zip(headers, row)) for row in interfaces.iter_rows(min_row=2, values_only=True)]
+        fields, missing = interface_rows
+        assert {"nameif", "shutdown"} <= set(fields["Source Explicit Fields"].split("; "))
+        assert fields["Shutdown"] is False
+        assert "nameif" not in missing["Source Explicit Fields"].split("; ")
+        assert "shutdown" not in missing["Source Explicit Fields"].split("; ")
+        assert missing["Shutdown"] is None
+
+        inventory = list(workbook["Source Inventory"].iter_rows(values_only=True))
+        inventory_headers = inventory[0]
+        rows = {row[inventory_headers.index("Source ID")]: row for row in inventory[1:]}
+        assert rows["2"][inventory_headers.index("Sanitized Command")] == "nameif outside"
+        assert rows["4"][inventory_headers.index("Status")] == "SOURCE_ONLY"
+        assert rows["4"][inventory_headers.index("Review Required")] is True
+        assert rows["6"][inventory_headers.index("Status")] == "UNSUPPORTED"
+        assert rows["4"][inventory_headers.index("Source Path")] == "interface"
+
+        coverage = list(workbook["Extraction Coverage"].iter_rows(values_only=True))
+        coverage_headers = coverage[0]
+        zones = next(row for row in coverage[1:] if row[0] == "Zones")
+        assert zones[coverage_headers.index("Source Only")] == 1
+        assert zones[coverage_headers.index("Detected")] == sum(
+            row[inventory_headers.index("Source Path")] == "interface" for row in inventory[1:]
+        )
+    finally:
+        workbook.close()
+
+def test_nat_optional_flags_remain_absent_in_preview_and_excel():
+    result = extract_cisco_asa_source(
+        "nat (inside,outside) source static REAL MAPPED\n"
+        "nat (inside,outside) source static REAL2 MAPPED2 dns no-proxy-arp route-lookup unidirectional inactive\n"
+    )
+
+    preview = build_asa_preview(result)["source"]["nat_rules"]
+    for field in ("dns", "no_proxy_arp", "route_lookup", "unidirectional", "inactive"):
+        assert preview[0][field] is None
+        assert preview[1][field] is True
+
+    output = BytesIO()
+    export_asa_excel(result, output)
+    sheet = load_workbook(BytesIO(output.getvalue()), read_only=True)["NAT Rules"]
+    rows = list(sheet.iter_rows(values_only=True))
+    headers = rows[0]
+    absent, explicit = (dict(zip(headers, row)) for row in rows[1:3])
+    for header in ("DNS", "No Proxy ARP", "Route Lookup", "Unidirectional", "Inactive"):
+        assert absent[header] is None
+        assert explicit[header] is True
+
+
+def test_negated_vpn_address_assignment_is_structured_without_unsupported_duplicate():
+    result = extract_cisco_asa_source("no vpn-addr-assign local\n")
+
+    assignment = result.config.vpn_address_assignments[0]
+    assert assignment.local_enabled is False
+    assert "local_enabled" in assignment.explicit_fields
+    assert not any(
+        getattr(item, "raw_capture", None) == "no vpn-addr-assign local"
+        for item in result.unsupported_items
+    )
+
+
+def test_sysopt_permit_vpn_preserves_explicit_positive_and_negative_source_state():
+    result = extract_cisco_asa_source(
+        "sysopt connection permit-vpn\n"
+        "no sysopt connection permit-vpn\n"
+    )
+
+    settings = [
+        item for item in result.config.management_settings
+        if item.setting == "sysopt connection permit-vpn"
+    ]
+    assert [item.enabled for item in settings] == [True, False]
+    assert all({"setting", "enabled"} <= item.explicit_fields for item in settings)
+    assert not result.unsupported_items
+
+def test_acl_consumer_bookkeeping_does_not_mutate_vendor_source_config():
+    result = extract_cisco_asa_source(
+        "interface Ethernet0/0\n"
+        " nameif outside\n"
+        "access-list OUT extended permit ip any any\n"
+        "access-group OUT in interface outside\n"
+    )
+
+    assert not hasattr(result.config, "acl_consumers")
+    assert len(result.derived.acl_relationships.bindings) == 1
+    binding = result.derived.acl_relationships.bindings[0]
+    assert binding.acl_name == "OUT"
+    assert binding.resolved_acl is not None
+
+
+def test_source_only_cleanup_uses_line_identity_not_duplicate_raw_text():
+    result = extract_cisco_asa_source(
+        "webvpn\n"
+        " future-webvpn-setting keep\n"
+        "future-webvpn-setting keep\n"
+    )
+
+    matching = [
+        item for item in result.config.unsupported_commands
+        if item.get("raw_line") == "future-webvpn-setting keep"
+        and item.get("reason") == "No Cisco ASA extraction handler"
+    ]
+    assert [item["line_number"] for item in matching] == [3]
+    assert result.config.webvpn_configs[0].raw_extra["unmodeled_lines"] == [
+        "future-webvpn-setting keep"
+    ]
+

@@ -1,0 +1,591 @@
+from tests.approved_design import approved_migrate, approved_payload
+import io
+import json
+import zipfile
+from types import SimpleNamespace
+from fwmigrate.web import create_app
+from fwmigrate.conversion.fortigate_to_palo_alto.application import deployment_validation_feedback
+from tests.fixture_paths import CISCO_ASA_FIXTURE
+from pathlib import Path
+
+MIGRATION_FIXTURE = Path(__file__).parent / "fixtures" / "fortigate" / "palo_alto_mvp.conf"
+PANOS_TARGET_FIXTURE = Path(__file__).parent / "fixtures" / "palo_alto" / "integrated_firewall.xml"
+
+
+def _preview(client):
+    response = client.post("/api/preview", data={"file": (io.BytesIO(MIGRATION_FIXTURE.read_bytes()), MIGRATION_FIXTURE.name)}, content_type="multipart/form-data")
+    assert response.status_code == 200
+    return response.get_json()["source_evidence"]
+
+
+def _target_preview(client):
+    response = client.post("/api/preview", data={
+        "source_vendor": "palo_alto",
+        "file": (io.BytesIO(PANOS_TARGET_FIXTURE.read_bytes()), PANOS_TARGET_FIXTURE.name),
+    }, content_type="multipart/form-data")
+    assert response.status_code == 200
+    return response.get_json()["source_evidence"]
+
+
+def test_migration_endpoint_rejects_unsupported_pair():
+    client = create_app({"TESTING": True}).test_client()
+    response = client.post(
+        "/api/migrate",
+        data={
+            "source_vendor": "cisco_asa",
+            "target_vendor": "palo_alto",
+            "include_report": "true",
+            "file": (io.BytesIO(CISCO_ASA_FIXTURE.read_bytes()), CISCO_ASA_FIXTURE.name),
+        },
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 400
+    assert response.get_json() == {"success": False, "error": "Only fortigate -> palo_alto is supported"}
+
+
+def test_mapping_yaml_import_preserves_vdom_scopes():
+    client = create_app({"TESTING": True}).test_client()
+    response = client.post("/api/migration/mapping/import", json={"yaml": "vdoms:\n  root:\n    vsys: vsys1\ninterfaces:\n  root:\n    port1:\n      target_zone: trust\n  blue:\n    port1:\n      target_zone: dmz\n"})
+    assert response.status_code == 200
+    assert response.get_json()["mapping"]["interfaces"]["blue"]["port1"]["target_zone"] == "dmz"
+
+
+def test_target_preview_adds_pending_evidence_based_suggestions():
+    client = create_app({"TESTING": True}).test_client()
+    source_preview = _preview(client)
+    target_preview = _target_preview(client)
+    response = client.post("/api/migration/requirements", json={
+        "source": source_preview,
+        "target_source": target_preview,
+    })
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["target_devices"] == ["integrated-fw"]
+    assert payload["target_device_metadata"][0]["name"] == "integrated-fw"
+    assert payload["target_evidence"]["vendor"] == "palo_alto"
+    decisions = {(item["source_name"], item["target_field"]): item for item in payload["decisions"]["decisions"]}
+    lan_interface = decisions[("lan", "target_interface")]
+    assert lan_interface["suggested_value"] == "ethernet1/1"
+    assert lan_interface["mode"] == "SUGGESTED"
+    assert lan_interface["review_state"] == "PENDING"
+    assert lan_interface["evidence_source"] == "TARGET"
+    assert lan_interface["evidence_type"] == "TARGET_INTERFACE_ADDRESS"
+    assert payload["decision_evidence"][lan_interface["key"]] == "TARGET"
+    assert payload["evidence_summary"]["target_backed"] >= 1
+    suggested_candidate = next(
+        item for item in payload["decision_candidates"][lan_interface["key"]]
+        if item["value"] == lan_interface["suggested_value"]
+    )
+    assert suggested_candidate["class"] == "STRONG"
+
+    lan_zone = decisions[("lan", "target_zone")]
+    assert lan_zone["suggested_value"] == "trust"
+    assert payload["auto_decisions"][lan_zone["key"]]["status"] == "DERIVED"
+    assert payload["auto_decisions"][lan_zone["key"]]["value"] == "trust"
+    assert "source_ip" in payload["decision_context"][lan_interface["key"]]
+    assert "decision_candidates" not in payload["decision_document"]
+    assert set(payload["review_summary"]) == {"auto_resolved", "ready_to_confirm", "choose_candidate", "needs_input", "conflicts", "confirmed"}
+    lan_group = next(item for item in payload["review_groups"] if item["source_name"] == "lan")
+    assert {item["target_field"] for item in lan_group["decisions"]} >= {"target_interface", "target_zone"}
+    assert lan_group["queue"] in {"READY_TO_CONFIRM", "CHOOSE_CANDIDATE", "NEEDS_INPUT"}
+    assert decisions[("root", "vsys")]["suggested_value"] == "vsys1"
+    assert decisions[("root", "virtual_router")]["suggested_value"] == "vr-main"
+
+
+def test_target_intent_import_export_and_bulk_approval_recheck_current_evidence():
+    client = create_app({"TESTING": True}).test_client()
+    source_preview, target_preview = _preview(client), _target_preview(client)
+    requirements = client.post("/api/migration/requirements", json={
+        "source": source_preview, "target_source": target_preview,
+    }).get_json()
+    imported = client.post("/api/migration/target-intent/import", json={
+        "source": source_preview, "decision_document": requirements["decision_document"],
+        "yaml": "interfaces:\n  lan:\n    zone: trust\n",
+    })
+    assert imported.status_code == 200
+    imported_document = imported.get_json()["decision_document"]
+    lan = next(item for item in imported_document["decisions"]
+               if item["source_kind"] == "interface" and item["source_name"] == "lan"
+               and item["target_field"] == "target_zone")
+    assert lan["review_state"] == "CONFIRMED" and lan["value"] == "trust"
+    exported = client.post("/api/migration/target-intent/export", json={
+        "source": source_preview, "decision_document": imported_document,
+    })
+    assert exported.status_code == 200
+    assert "zone: trust" in exported.get_json()["yaml"]
+
+    safe_keys = [key for key, item in requirements["auto_decisions"].items()
+                 if item["status"] in {"VERIFIED", "DERIVED"}]
+    assert safe_keys
+    approved = client.post("/api/migration/decisions/approve", json={
+        "source": source_preview, "decision_document": requirements["decision_document"],
+        "decision_keys": safe_keys, "target_source": target_preview,
+    })
+    assert approved.status_code == 200
+    assert approved.get_json()["approved_count"] == len(safe_keys)
+    approved_items = {item["key"]: item for item in approved.get_json()["decisions"]["decisions"]}
+    assert all(approved_items[key]["review_state"] == "CONFIRMED" for key in safe_keys)
+    for key in safe_keys:
+        if requirements["auto_decisions"][key].get("uses_target_evidence"):
+            assert approved_items[key]["evidence_target_digest"] == requirements["target_evidence"]["config_digest"]
+            assert approved_items[key]["evidence_target_device"] == "integrated-fw"
+        else:
+            assert approved_items[key]["evidence_target_digest"] is None
+            assert approved_items[key]["evidence_target_device"] is None
+
+    manual_key = next(key for key, item in requirements["auto_decisions"].items()
+                      if item["status"] == "MANUAL")
+    rejected = client.post("/api/migration/decisions/approve", json={
+        "source": source_preview, "decision_document": requirements["decision_document"],
+        "decision_keys": [manual_key], "target_source": target_preview,
+    })
+    assert rejected.status_code == 400
+
+
+def test_migrate_rejects_unsigned_automated_decision_document():
+    client = create_app({"TESTING": True}).test_client()
+    source_preview, target_preview = _preview(client), _target_preview(client)
+    requirements = client.post("/api/migration/requirements", json={
+        "source": source_preview,
+        "target_source": target_preview,
+    }).get_json()
+
+    response = client.post("/api/migrate", json={
+        "source": source_preview,
+        "target_source": target_preview,
+        "decision_document": requirements["decision_document"],
+    })
+    assert response.status_code == 400
+    assert 'artifact' not in response.get_json()
+
+
+def test_fixed_point_automation_requires_opt_in_policies_and_records_deterministic_provenance():
+    client = create_app({"TESTING": True}).test_client()
+    source_preview, target_preview = _preview(client), _target_preview(client)
+    requirements = client.post("/api/migration/requirements", json={
+        "source": source_preview, "target_source": target_preview,
+    }).get_json()
+    request = {"source": source_preview, "target_source": target_preview,
+               "decision_document": requirements["decision_document"]}
+
+    disabled = client.post("/api/migration/automation/run", json=request)
+    assert disabled.status_code == 200
+    assert disabled.get_json()["audit"] == []
+    assert not any(item["review_state"] == "CONFIRMED"
+                   for item in disabled.get_json()["decisions"]["decisions"])
+
+    enabled = client.post("/api/migration/automation/run", json={**request, "enabled_policies": [
+        "AUTO_APPLY_VERIFIED", "AUTO_APPLY_DERIVED",
+    ]})
+    assert enabled.status_code == 200
+    payload = enabled.get_json()
+    assert payload["stable"] is True
+    assert payload["audit"]
+    confirmed = [item for item in payload["decisions"]["decisions"] if item["review_state"] == "CONFIRMED"]
+    assert confirmed
+    assert all(item["evidence_source"] == "DERIVED"
+               and item["evidence_type"] in {"AUTOMATION_VERIFIED", "AUTOMATION_DERIVED"}
+               for item in confirmed)
+    audit_by_key = {item["decision_key"]: item for item in payload["audit"]}
+    for item in confirmed:
+        audit = audit_by_key[item["key"]]
+        if audit["uses_target_evidence"]:
+            assert item["evidence_target_digest"] == requirements["target_evidence"]["config_digest"]
+            assert item["evidence_target_device"] == "integrated-fw"
+            assert audit["target_digest"] == requirements["target_evidence"]["config_digest"]
+        else:
+            assert item["evidence_target_digest"] is None
+            assert item["evidence_target_device"] is None
+            assert audit["target_digest"] is None
+    rejected = client.post("/api/migration/automation/run", json={**request, "enabled_policies": ["AUTO_APPLY_CANDIDATE"]})
+    assert rejected.status_code == 400
+
+
+def test_source_only_requirements_show_facts_and_next_action_without_candidates():
+    client = create_app({"TESTING": True}).test_client()
+    source_preview = _preview(client)
+    payload = client.post("/api/migration/requirements", json={"source": source_preview}).get_json()
+    decision = next(item for item in payload["decisions"]["decisions"]
+                    if item["source_kind"] == "interface" and item["target_field"] == "target_zone")
+    assert payload["decision_candidates"] == {}
+    context = payload["decision_context"][decision["key"]]
+    assert context["affected_count"] >= 0
+    assert context["source_ip"]
+
+
+def test_zone_rule_applies_only_requested_related_decisions_and_confirms_them():
+    client = create_app({"TESTING": True}).test_client()
+    preview_id = _preview(client)
+    requirements = client.post("/api/migration/requirements", json={"source": preview_id}).get_json()
+    document = requirements["decision_document"]
+    zone = next(item for item in document["decisions"]
+                if item["source_kind"] == "zone" and item["source_name"] == "trust" and item["target_field"] == "target_zone")
+    zone.update(value="TRUST", review_state="CONFIRMED")
+    member = next(item for item in document["decisions"]
+                  if item["source_kind"] == "interface" and item["source_name"] == "lan" and item["target_field"] == "target_zone")
+    response = client.post("/api/migration/rules/apply", json={
+        "source": preview_id, "decision_document": document,
+        "rule_type": "APPLY_ZONE_TO_MEMBERS", "source_key": zone["key"],
+        "value": "TRUST", "apply_to": [member["key"]],
+    })
+    assert response.status_code == 200
+    updated = next(item for item in response.get_json()["decision_document"]["decisions"] if item["key"] == member["key"])
+    assert updated["value"] == "TRUST" and updated["review_state"] == "CONFIRMED"
+    assert updated["evidence_type"] == "ENGINEER_ZONE_TO_MEMBERS"
+
+    unrelated = client.post("/api/migration/rules/apply", json={
+        "source": preview_id, "decision_document": document,
+        "rule_type": "APPLY_ZONE_TO_MEMBERS", "source_key": zone["key"],
+        "value": "TRUST", "apply_to": ['["blue","interface","lan","target_zone"]'],
+    })
+    assert unrelated.status_code == 400
+
+
+def test_changed_target_evidence_restores_decisions_and_reports_staleness():
+    client = create_app({"TESTING": True}).test_client()
+    source_preview = _preview(client)
+    first_target = _target_preview(client)
+    first = client.post("/api/migration/requirements", json={
+        "source": source_preview,
+        "target_source": first_target,
+    }).get_json()
+    document = first["decision_document"]
+    decision = next(item for item in document["decisions"]
+                    if item["source_kind"] == "vdom" and item["target_field"] == "vsys")
+    decision.update(value="vsys1", review_state="CONFIRMED")
+
+    second_target_response = client.post("/api/preview", data={
+        "source_vendor": "palo_alto",
+        "file": (io.BytesIO(PANOS_TARGET_FIXTURE.read_bytes() + b"\n"), "changed-target.xml"),
+    }, content_type="multipart/form-data")
+    assert second_target_response.status_code == 200
+    second_target = second_target_response.get_json()["source_evidence"]
+    second = client.post("/api/migration/requirements", json={
+        "source": source_preview,
+        "target_source": second_target,
+        "decision_document": document,
+    })
+    assert second.status_code == 200
+    payload = second.get_json()
+    restored = next(item for item in payload["decisions"]["decisions"]
+                    if item["source_kind"] == "vdom" and item["target_field"] == "vsys")
+    assert restored["value"] == "vsys1"
+    assert restored["review_state"] == "CONFIRMED"
+    assert payload["target_evidence_changed"] is True
+
+    migration = client.post("/api/migrate", json={
+        "source": source_preview,
+        "decision_document": document,
+        "target_source": second_target,
+        "target_device": "integrated-fw",
+    })
+    assert migration.status_code == 400
+    assert 'artifact' not in migration.get_json()
+
+
+def test_changed_target_evidence_invalidates_auto_confirmations_until_reproved():
+    client = create_app({"TESTING": True}).test_client()
+    source_preview = _preview(client)
+    first_target = _target_preview(client)
+    requirements = client.post("/api/migration/requirements", json={
+        "source": source_preview,
+        "target_source": first_target,
+    }).get_json()
+    automated = client.post("/api/migration/automation/run", json={
+        "source": source_preview,
+        "target_source": first_target,
+        "decision_document": requirements["decision_document"],
+        "enabled_policies": ["AUTO_APPLY_VERIFIED", "AUTO_APPLY_DERIVED"],
+    }).get_json()
+    auto_document = automated["decision_document"]
+    auto_confirmed = {
+        item["key"] for item in auto_document["decisions"]
+        if item["review_state"] == "CONFIRMED" and item["evidence_target_digest"]
+    }
+    assert auto_confirmed
+
+    changed_target_response = client.post("/api/preview", data={
+        "source_vendor": "palo_alto",
+        "file": (io.BytesIO(PANOS_TARGET_FIXTURE.read_bytes() + b"\n"), "changed-target.xml"),
+    }, content_type="multipart/form-data")
+    assert changed_target_response.status_code == 200
+    changed_target = changed_target_response.get_json()["source_evidence"]
+
+    review = client.post("/api/migration/requirements", json={
+        "source": source_preview,
+        "target_source": changed_target,
+        "decision_document": auto_document,
+    }).get_json()
+    invalidated = {item["decision_key"] for item in review["invalidated_target_decisions"]}
+    assert invalidated == auto_confirmed
+    by_key = {item["key"]: item for item in review["decisions"]["decisions"]}
+    assert all(by_key[key]["review_state"] == "PENDING" for key in invalidated)
+    assert all(by_key[key]["evidence_target_digest"] is None for key in invalidated)
+    assert review["target_evidence_changed"] is True
+
+    plan = client.post("/api/migrate", json={
+        "source": source_preview,
+        "target_source": changed_target,
+        "decision_document": auto_document,
+        "automation_mode": "REVIEW_ONLY",
+    })
+    assert plan.status_code == 400
+    assert 'artifact' not in plan.get_json()
+
+
+def test_legacy_v2_auto_confirmations_are_bound_then_invalidated_by_new_target():
+    client = create_app({"TESTING": True}).test_client()
+    source_preview = _preview(client)
+    first_target = _target_preview(client)
+    requirements = client.post("/api/migration/requirements", json={
+        "source": source_preview,
+        "target_source": first_target,
+    }).get_json()
+    automated = client.post("/api/migration/automation/run", json={
+        "source": source_preview,
+        "target_source": first_target,
+        "decision_document": requirements["decision_document"],
+        "enabled_policies": ["AUTO_APPLY_VERIFIED", "AUTO_APPLY_DERIVED"],
+    }).get_json()
+    legacy = json.loads(json.dumps(automated["decision_document"]))
+    legacy["format_version"] = 2
+    for item in legacy["decisions"]:
+        item.pop("evidence_target_digest", None)
+        item.pop("evidence_target_device", None)
+
+    changed_target = client.post("/api/preview", data={
+        "source_vendor": "palo_alto",
+        "file": (io.BytesIO(PANOS_TARGET_FIXTURE.read_bytes() + b"\n"), "changed-target.xml"),
+    }, content_type="multipart/form-data").get_json()["source_evidence"]
+    review = client.post("/api/migration/requirements", json={
+        "source": source_preview,
+        "target_source": changed_target,
+        "decision_document": legacy,
+    }).get_json()
+
+    assert review["invalidated_target_decisions"]
+    assert review["target_evidence_changed"] is True
+    assert all(
+        item["review_state"] == "PENDING"
+        for item in review["decisions"]["decisions"]
+        if item["key"] in {entry["decision_key"] for entry in review["invalidated_target_decisions"]}
+    )
+
+
+def test_target_preview_rejects_wrong_vendor_preview():
+    client = create_app({"TESTING": True}).test_client()
+    source_preview = _preview(client)
+    response = client.post("/api/migration/requirements", json={
+        "source": source_preview,
+        "target_source": source_preview,
+    })
+    assert response.status_code == 400
+    assert "source evidence" in response.get_json()["error"]
+
+
+def test_decision_documents_round_trip_confirmed_values_and_reject_other_sources():
+    client = create_app({"TESTING": True}).test_client()
+    preview_id = _preview(client)
+    requirements = client.post("/api/migration/requirements", json={"source": preview_id}).get_json()
+    document = requirements["decision_document"]
+    assert requirements["decisions"]["decisions"]
+
+    mapping = {
+        "vdoms": {"root": {"vsys": "vsys1"}},
+        "interfaces": {"root": {
+            "lan": {"target_zone": "trust"},
+            "wan": {"target_zone": "untrust"},
+        }},
+    }
+    for decision in document["decisions"]:
+        value = (mapping.get("vdoms", {}).get(decision["source_vdom"], {}).get(decision["target_field"])
+                 if decision["source_kind"] == "vdom" else
+                 mapping.get("interfaces", {}).get(decision["source_vdom"], {}).get(decision["source_name"], {}).get(decision["target_field"]))
+        if value is not None:
+            decision["value"] = value
+            decision["review_state"] = "CONFIRMED"
+
+    planned = approved_migrate(client, json={
+        "source": preview_id, "decision_document": document,
+    })
+    assert planned.status_code == 200
+    assert planned.get_json()["command_count"] > 0
+
+    # Same-named interfaces in different VDOMs remain distinct decision identities.
+    from fwmigrate.conversion.fortigate_to_palo_alto import PANDecisionReviewState, PANMigrationDecision
+    document["decisions"].append(PANMigrationDecision(
+        "blue", "interface", "port1", "target_zone", value="dmz",
+        review_state=PANDecisionReviewState.CONFIRMED,
+    ).to_dict())
+    exported = client.post("/api/migration/decisions/export", json={
+        "source": preview_id, "decision_document": document,
+    })
+    assert exported.status_code == 200
+    saved = exported.get_json()["document"]
+    imported = client.post("/api/migration/decisions/import", json={
+        "source": preview_id, "document": saved,
+    })
+    assert imported.status_code == 200
+    restored = imported.get_json()
+    assert restored["decision_document"] == saved
+    assert restored["mapping"]["vdoms"]["root"]["vsys"] == "vsys1"
+    assert restored["mapping"]["interfaces"]["root"]["lan"]["target_zone"] == "trust"
+    assert restored["mapping"]["interfaces"]["blue"]["port1"]["target_zone"] == "dmz"
+
+    malformed = json.loads(json.dumps(saved))
+    malformed["decisions"][0].pop("key", None)
+    malformed["decisions"][0]["target_field"] = "unknown"
+    rejected = client.post("/api/migration/decisions/import", json={
+        "source": preview_id, "document": malformed,
+    })
+    assert rejected.status_code == 400
+
+    changed_source = client.post("/api/preview", data={
+        "file": (io.BytesIO(MIGRATION_FIXTURE.read_bytes() + b"\n# source digest change\n"), MIGRATION_FIXTURE.name),
+    }, content_type="multipart/form-data").get_json()["source_evidence"]
+    mismatch = client.post("/api/migration/decisions/import", json={
+        "source": changed_source, "document": saved,
+    })
+    assert mismatch.status_code == 400
+    assert "different source" in mismatch.get_json()["error"]
+
+    for legacy_version in (1, 2):
+        legacy = json.loads(json.dumps(saved))
+        legacy["format_version"] = legacy_version
+        accepted = client.post("/api/migration/decisions/import", json={
+            "source": preview_id, "document": legacy,
+        })
+        assert accepted.status_code == 200
+
+
+def test_plan_reports_missing_mappings_and_blocks_empty_bundle():
+    client = create_app({"TESTING": True}).test_client()
+    preview_id = _preview(client)
+    requirements = client.post("/api/migration/requirements", json={"source": preview_id}).get_json()["requirements"]
+    assert {item["source_vdom"] for item in requirements["vdoms"]} == {"root"}
+    plan = client.post("/api/migrate", json=approved_payload(client, {"source": preview_id}, configuration=False)).get_json()
+    assert plan["plan_status"] == "NEEDS_MAPPING"
+    assert plan["command_count"] == 0
+    assert plan["missing_mappings"]
+    bundle = client.post("/api/migration/bundle", json={"artifact": plan["artifact"], "source": preview_id})
+    assert bundle.status_code == 422
+
+
+def test_complete_mappings_create_zip_for_same_plan_artifact():
+    client = create_app({"TESTING": True}).test_client()
+    preview_id = _preview(client)
+    mapping = {
+        "vdoms": {"root": {"vsys": "vsys1", "virtual_router": "default"}},
+        "interfaces": {"root": {
+            "lan": {"target_interface": "ethernet1/1", "target_zone": "trust"},
+            "wan": {"target_interface": "ethernet1/2", "target_zone": "untrust"},
+            "trust": {"target_zone": "trust"},
+            "untrust": {"target_zone": "untrust"},
+        }},
+    }
+    plan = approved_migrate(client, json={"source": preview_id, "mapping": mapping}).get_json()
+    assert plan["command_count"] > 0
+    response = client.post("/api/migration/bundle", json={"artifact": plan["artifact"], "source": preview_id})
+    assert response.status_code == 200
+    with zipfile.ZipFile(io.BytesIO(response.data)) as archive:
+        assert set(archive.namelist()) == {"palo_alto_config.set", "migration_report.json", "migration_decisions.json", "target_mapping.yaml", "source_inventory.xlsx"}
+        assert archive.read("palo_alto_config.set").strip()
+        report = json.loads(archive.read("migration_report.json"))
+        decisions = json.loads(archive.read("migration_decisions.json"))
+        assert report["commands"] == plan["command_count"]
+        assert decisions["format_version"] == 4
+        assert decisions["source_vendor"] == "fortigate"
+        root_vsys = next(item for item in decisions["decisions"] if item["source_kind"] == "vdom" and item["target_field"] == "vsys")
+        assert root_vsys["value"] == "vsys1"
+        assert root_vsys["review_state"] == "CONFIRMED"
+        import yaml
+        saved_mapping = yaml.safe_load(archive.read("target_mapping.yaml"))
+        assert saved_mapping["vdoms"]["root"] == {"vsys": "vsys1", "virtual_router": "default"}
+        assert saved_mapping["interfaces"]["root"]["lan"] == {
+            "target_interface": "ethernet1/1", "target_zone": "trust",
+        }
+        assert saved_mapping["interfaces"]["root"]["wan"] == {
+            "target_interface": "ethernet1/2", "target_zone": "untrust",
+        }
+        assert saved_mapping["zones"]["root"] == {
+            "trust": {"target_zone": "trust"},
+            "untrust": {"target_zone": "untrust"},
+        }
+
+
+def test_vsys_only_mapping_renders_objects_and_keeps_policy_for_review():
+    client = create_app({"TESTING": True}).test_client()
+    preview_id = _preview(client)
+    plan = approved_migrate(client, json={
+        "source": preview_id,
+        "mapping": {"vdoms": {"root": {"vsys": "vsys1", "virtual_router": "default"}}},
+    }).get_json()
+    assert plan["plan_status"] == "NEEDS_MAPPING"
+    assert plan["command_count"] > 0
+    assert plan["counts"]["renderable"] > 0
+    policies = [item for item in plan["report"]["items"] if item["source_kind"] == "policy"]
+    assert policies and all(not item["renderable"] for item in policies)
+    response = client.post("/api/migration/bundle", json={"artifact": plan["artifact"], "source": preview_id})
+    assert response.status_code == 200
+    with zipfile.ZipFile(io.BytesIO(response.data)) as archive:
+        commands = archive.read("palo_alto_config.set").decode()
+        report = json.loads(archive.read("migration_report.json"))
+    assert "allow-web" not in commands
+    assert any(item["source_name"] == "allow-web" and not item["renderable"] for item in report["items"])
+
+
+def test_deploy_rejects_empty_rendered_artifact_before_credentials():
+    client = create_app({"TESTING": True}).test_client()
+    preview_id = _preview(client)
+    plan = client.post("/api/migrate", json=approved_payload(client, {"source": preview_id}, configuration=False)).get_json()
+    response = client.post("/api/deploy", json={"artifact": plan["artifact"], "source": preview_id})
+    assert response.status_code == 400
+    assert "READY artifact with commands" in response.get_json()["error"]
+
+
+def test_candidate_validation_failure_maps_to_rendered_migration_item_when_unique():
+    rendered = SimpleNamespace(report={"items": [{"source_vdom": "root", "source_kind": "service",
+        "source_name": "web-https", "target_name": "web-https", "decision_keys": ["decision-1"], "commands": [
+            "set vsys vsys1 service web-https protocol tcp port 443"]}]})
+    document = {"decisions": [{"source_vdom": "root", "source_name": "web-https", "key": "decision-1"},
+                              {"source_vdom": "root", "source_name": "web-https", "key": "wrong-kind-decision"}]}
+    validation = SimpleNamespace(status="FAILED", response="validation error: service web-https is invalid")
+    feedback = deployment_validation_feedback(rendered, document, validation)
+    assert feedback["mapping_status"] == "MAPPED"
+    assert feedback["migration_items"][0]["decision_keys"] == ["decision-1"]
+    assert feedback["migration_items"][0]["generated_commands"][0].endswith("port 443")
+
+
+def test_terraform_endpoints_are_removed():
+    client = create_app({"TESTING": True}).test_client()
+    for path in (
+        "/api/terraform/prepare",
+        "/api/terraform/plan",
+        "/api/terraform/approve",
+        "/api/terraform/apply/stream",
+        "/api/terraform/destroy/stream",
+        "/api/download/state",
+        "/api/download/package",
+    ):
+        assert client.post(path).status_code == 404
+
+
+def test_migration_recommendations_are_review_only_and_reported():
+    client = create_app({"TESTING": True}).test_client()
+    fixture = Path(__file__).parent / "fixtures" / "fortigate" / "identity_authentication_full.conf"
+    preview = client.post("/api/preview", data={
+        "file": (io.BytesIO(fixture.read_bytes() + b'\nconfig firewall address\n edit host-a\n set subnet 192.0.2.10 255.255.255.255\n next\nend\n'), fixture.name),
+    }, content_type="multipart/form-data").get_json()["source_evidence"]
+
+    requirements = client.post("/api/migration/requirements", json={"source": preview}).get_json()
+    assert requirements["recommendations"]
+    assert any(item["family"] == "Users/Admin" for item in requirements["recommendations"])
+    assert all("review_state" not in item and "planner_value" not in item for item in requirements["recommendations"])
+
+    plan = approved_migrate(client, json={"source": preview, "mapping": {}}).get_json()
+    assert plan["recommendations"] == plan["report"]["review"]["recommendations"]
+    assert plan["coverage"] == plan["report"]["coverage"]
+    assert plan["coverage"]["complete"] is False
+    assert any(item["code"] == "MIGRATION_COVERAGE_RECOMMENDATION_ONLY"
+               for item in plan["blocking_reasons"])

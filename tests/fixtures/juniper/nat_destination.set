@@ -1,0 +1,11 @@
+set version 21.4R1.12
+set system host-name SRX-DestNAT
+set security zones security-zone untrust interfaces ge-0/0/1.0
+set security zones security-zone dmz interfaces ge-0/0/2.0
+set security nat destination pool dst_web_server address 172.16.1.100/32
+set security nat destination pool dst_web_server address port 8080
+set security nat destination rule-set rs_inbound_web from zone untrust
+set security nat destination rule-set rs_inbound_web rule r_vip match destination-address 198.51.100.20/32
+set security nat destination rule-set rs_inbound_web rule r_vip match destination-port 80
+set security nat destination rule-set rs_inbound_web rule r_vip match protocol tcp
+set security nat destination rule-set rs_inbound_web rule r_vip then destination-nat pool dst_web_server

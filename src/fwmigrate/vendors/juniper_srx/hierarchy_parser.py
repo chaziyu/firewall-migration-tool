@@ -1,0 +1,139 @@
+"""Normalize hierarchical Junos configuration into display-set commands."""
+
+from __future__ import annotations
+
+import shlex
+from dataclasses import dataclass
+
+
+@dataclass
+class _Token:
+    value: str
+    line: int
+
+
+def _lex(content: str) -> list[_Token]:
+    tokens: list[_Token] = []
+    buf: list[str] = []
+    quote: str | None = None
+    line = 1
+    token_line = 1
+    i = 0
+
+    def flush() -> None:
+        nonlocal buf
+        if buf:
+            tokens.append(_Token("".join(buf), token_line))
+            buf = []
+
+    while i < len(content):
+        char = content[i]
+        if char == "\n":
+            line += 1
+        if quote:
+            if char == "\\" and i + 1 < len(content):
+                buf.append(content[i + 1])
+                i += 2
+                continue
+            if char == quote:
+                quote = None
+            else:
+                buf.append(char)
+            i += 1
+            continue
+        if content.startswith("/*", i):
+            end = content.find("*/", i + 2)
+            if end < 0:
+                break
+            line += content[i:end + 2].count("\n")
+            i = end + 2
+            continue
+        if char == "#":
+            end = content.find("\n", i)
+            i = len(content) if end < 0 else end
+            continue
+        if char in "\"'":
+            if not buf:
+                token_line = line
+            quote = char
+        elif char in "{};[]":
+            flush()
+            tokens.append(_Token(char, line))
+        elif char.isspace():
+            flush()
+        else:
+            if not buf:
+                token_line = line
+            buf.append(char)
+        i += 1
+    flush()
+    return tokens
+
+
+def normalize_hierarchy_with_provenance(content: str) -> tuple[str, tuple[int, ...]]:
+    """Return normalized commands plus their original hierarchical source lines."""
+    tokens = _lex(content)
+    output: list[tuple[str, int]] = []
+    index = 0
+
+    def render(path: list[str]) -> str:
+        return " ".join(shlex.quote(part) for part in path)
+
+    def clean(tokens: list[str]) -> tuple[list[str], bool]:
+        inactive = any(token.lower() == "inactive:" or token.lower().startswith("inactive:") for token in tokens)
+        return ([token[len("inactive:"):] if token.lower().startswith("inactive:") else token
+                 for token in tokens if token.lower() != "inactive:"], inactive)
+
+    def append_output(command: str, line: int, *, deduplicate: bool = False) -> None:
+        if deduplicate and any(existing == command for existing, _ in output):
+            return
+        output.append((command, line))
+
+    def parse_block(prefix: list[str], stop: str | None = None) -> None:
+        nonlocal index
+        statement: list[_Token] = []
+        while index < len(tokens):
+            token = tokens[index]
+            index += 1
+            if token.value == stop:
+                return
+            if token.value == "{":
+                child_prefix, inactive = clean([t.value for t in statement])
+                path = prefix + child_prefix
+                if inactive and path:
+                    directive = "deactivate " + render(path)
+                    source_line = statement[0].line if statement else token.line
+                    append_output(directive, source_line, deduplicate=True)
+                parse_block(path, "}")
+                statement = []
+            elif token.value == ";":
+                emit(prefix + [t.value for t in statement], token.line)
+                statement = []
+            else:
+                statement.append(token)
+        if statement:
+            emit(prefix + [t.value for t in statement], statement[0].line)
+
+    def emit(path: list[str], line: int) -> None:
+        if not path:
+            return
+        path, inactive = clean(path)
+        if not path:
+            return
+        path = [p for p in path if p not in ("[", "]")]
+        if inactive:
+            directive = "deactivate " + render(path)
+            append_output(directive, line, deduplicate=True)
+        append_output("set " + render(path), line)
+
+    parse_block([])
+    return "\n".join(command for command, _ in output), tuple(line for _, line in output)
+
+
+def looks_hierarchical(content: str) -> bool:
+    """Detect brace/semicolon Junos syntax without parsing feature semantics."""
+    return any(char in content for char in "{};") and not any(
+        line.lstrip().startswith(("set ", "activate ", "deactivate "))
+        for line in content.splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    )

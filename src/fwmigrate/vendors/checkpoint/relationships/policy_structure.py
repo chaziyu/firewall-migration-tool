@@ -1,0 +1,133 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Any
+
+from ..model.common import CheckPointSourceObject
+from ..model.policy import CPAccessLayer, CPAccessRule, CPAccessSection
+from ..model.source import CheckPointConfig
+from ..policy_context import CPPolicyContextRecord
+from .references import CPBrokenReference, CPReferenceIndex, CPReferenceKind, CPResolvedReference
+
+
+@dataclass(frozen=True, slots=True)
+class CPPackageLayerRelationship:
+    package: Any; layer: CPAccessLayer | None; source_field: str = "access_layers"; issue: CPBrokenReference | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class CPSectionRelationship:
+    layer: CPAccessLayer | None; section: CPAccessSection; section_path: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class CPRuleSectionRelationship:
+    rule: CPAccessRule; section_path: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class CPInlineLayerRelationship:
+    parent_layer: CPAccessLayer | None; parent_rule: CPAccessRule; inline_layer: CPAccessLayer | None; issue: CPBrokenReference | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class CPPolicyStructure:
+    package_layers: tuple[CPPackageLayerRelationship, ...] = ()
+    sections: tuple[CPSectionRelationship, ...] = ()
+    rule_sections: tuple[CPRuleSectionRelationship, ...] = ()
+    rules: tuple[CPAccessRule, ...] = ()
+    inline_layers: tuple[CPInlineLayerRelationship, ...] = ()
+    issues: tuple[CPBrokenReference, ...] = ()
+
+    @property
+    def package_layer_map(self):
+        result = {}
+        for item in self.package_layers:
+            key = item.package.uid or item.package.name
+            if key and item.layer: result.setdefault(key, []).append(item.layer.uid or item.layer.name)
+        return {key: tuple(value) for key, value in result.items()}
+
+    @property
+    def inline_layer_map(self):
+        return {item.inline_layer.uid or item.inline_layer.name: item.parent_layer.uid or item.parent_layer.name
+                for item in self.inline_layers if item.inline_layer and item.parent_layer}
+
+
+def _scope(value: Any) -> str:
+    return value.domain_uid or value.domain or "global"
+
+
+def _find_layer(config: CheckPointConfig, source: CheckPointSourceObject) -> CPAccessLayer | None:
+    source_scope = _scope(source)
+    if source.layer_uid:
+        return next((layer for layer in config.access_layers
+                     if layer.uid == source.layer_uid and _scope(layer) == source_scope), None)
+    if source.layer:
+        return next((layer for layer in config.access_layers
+                     if layer.name == source.layer and _scope(layer) == source_scope), None)
+    return None
+
+
+def _context_path(source: CheckPointSourceObject, policy_context: tuple[CPPolicyContextRecord, ...]) -> tuple[str, ...]:
+    direct = next((item for item in policy_context if item.source is source), None)
+    if direct is not None:
+        return direct.section_path
+    candidates = [
+        item for item in policy_context
+        if type(item.source) is type(source)
+        and _scope(item.source) == _scope(source)
+        and (
+            (source.uid is not None and item.source.uid == source.uid)
+            or (
+                source.uid is None
+                and item.source.uid is None
+                and item.source.order == source.order
+                and item.source.name == source.name
+                and item.source.layer_uid == source.layer_uid
+                and item.source.layer == source.layer
+            )
+        )
+    ]
+    paths = {item.section_path for item in candidates}
+    return next(iter(paths)) if len(paths) == 1 else ()
+
+
+def build_policy_structure(config: CheckPointConfig, references: CPReferenceIndex | None = None, policy_context: tuple[CPPolicyContextRecord, ...] = ()) -> CPPolicyStructure:
+    references = references or __import__(__package__ + ".references", fromlist=["build_reference_index"]).build_reference_index(config)
+    package_layers = []; issues = []
+    for package in config.policy_packages:
+        for value in package.access_layers or ():
+            resolved = references.resolve(value, owner=package, expected_kinds=(CPReferenceKind.ACCESS_LAYER,), source_field="access_layers")
+            if isinstance(resolved, CPResolvedReference): package_layers.append(CPPackageLayerRelationship(package, resolved.target))
+            else: package_layers.append(CPPackageLayerRelationship(package, None, issue=resolved)); issues.append(resolved)
+    for layer in config.access_layers:
+        if {"package_uid", "package"} & set(layer.explicit_fields) and (layer.package_uid or layer.package):
+            resolved = references.resolve(
+                layer.package_uid or layer.package,
+                owner=layer,
+                expected_kinds=(CPReferenceKind.POLICY_PACKAGE,),
+                source_field="package_uid" if layer.package_uid else "package",
+            )
+            if isinstance(resolved, CPResolvedReference):
+                package = resolved.target
+                if package and not any(item.package is package and item.layer is layer for item in package_layers):
+                    package_layers.append(CPPackageLayerRelationship(package, layer))
+    sections = tuple(
+        CPSectionRelationship(_find_layer(config, section), section, _context_path(section, policy_context))
+        for section in config.access_sections
+    )
+    rule_sections = tuple(
+        CPRuleSectionRelationship(rule, _context_path(rule, policy_context))
+        for rule in config.access_rules
+    )
+    inline_layers = []
+    for rule in config.access_rules:
+        if not rule.inline_layer: continue
+        resolved = references.resolve(rule.inline_layer, owner=rule, expected_kinds=(CPReferenceKind.ACCESS_LAYER,), source_field="inline_layer")
+        parent = _find_layer(config, rule)
+        if isinstance(resolved, CPResolvedReference): inline_layers.append(CPInlineLayerRelationship(parent, rule, resolved.target))
+        else: inline_layers.append(CPInlineLayerRelationship(parent, rule, None, resolved)); issues.append(resolved)
+    return CPPolicyStructure(tuple(package_layers), sections, rule_sections, tuple(config.access_rules), tuple(inline_layers), tuple(issues))
+
+
+__all__ = ["CPInlineLayerRelationship", "CPPackageLayerRelationship", "CPPolicyStructure", "CPRuleSectionRelationship", "CPSectionRelationship", "build_policy_structure"]

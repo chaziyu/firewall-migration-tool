@@ -1,0 +1,133 @@
+"""FortiGate security-policy planning for Palo Alto."""
+
+from typing import Any
+
+from fwmigrate.conversion.fortigate_to_palo_alto.models import PANMigrationStatus, PlannedSecurityRule
+from fwmigrate.conversion.fortigate_to_palo_alto.planning.services import service_target
+from fwmigrate.vendors.fortigate.fortios.predefined_services import is_predefined_service_reference
+from .addresses import address_references
+
+
+def ipv6_match_warnings(policy):
+    if not any(getattr(policy, field, None) is not None for field in ("srcaddr6", "dstaddr6")):
+        return ()
+    return ("IPv6 policy matching is unsupported; IPv4 and IPv6 evidence requires manual design",
+            *(f"explicit source {field} = {getattr(policy, field, None)!r}"
+              for field in ("srcaddr", "dstaddr", "srcaddr6", "dstaddr6")))
+
+
+def plan_policies(source: Any, options: Any, derived: Any = None):
+    result = []
+    explicit_services = {(item.vdom, item.name) for item in (
+        *getattr(getattr(derived, "services", None), "services", ()),
+        *getattr(getattr(derived, "services", None), "groups", ()),
+    )}
+    zone_names = {(item.vdom or "root", item.name) for item in getattr(source, "zones", ())}
+    for policy in getattr(source, "policies", ()):
+        warnings = list(ipv6_match_warnings(policy))
+        ipv6_configured = bool(warnings)
+        if policy.srcintf is None or policy.dstintf is None:
+            warnings.append("policy interface match is not explicit in the source")
+        if policy.srcaddr is None and policy.srcaddr6 is None:
+            warnings.append("policy source address match is not explicit in the source")
+        if policy.dstaddr is None and policy.dstaddr6 is None:
+            warnings.append("policy destination address match is not explicit in the source")
+        if policy.service is None:
+            warnings.append("policy service match is not explicit in the source")
+        service_names = {name for vdom, name in explicit_services if vdom == policy.vdom}
+        services = tuple(service_target(name, service_names, getattr(options, "service_names", {}).get(policy.vdom, {})) for name in policy.service or ())
+        applications = ()
+        if "PING" in (policy.service or ()) and "PING" not in service_names:
+            if len(policy.service or ()) == 1:
+                services, applications = ("any",), ("ping",)
+            else:
+                warnings.append("PING mixed with other services requires manual application matching")
+        for name in policy.service or ():
+            if name not in service_names and is_predefined_service_reference(name) and name not in {"ALL", "HTTP", "HTTPS", "DNS", "PING"}:
+                warnings.append(f"predefined service {name!r} requires manual target semantics")
+        from_zones = _zones(policy.srcintf or (), policy.vdom, options, warnings, zone_names)
+        to_zones = _zones(policy.dstintf or (), policy.vdom, options, warnings, zone_names)
+        if policy.service_negate in {"enable", "yes", "1"}:
+            warnings.append("service negation is unsupported")
+        if policy.srcaddr_negate in {"enable", "yes", "1"} and policy.dstaddr_negate in {"enable", "yes", "1"}:
+            warnings.append("negating both IPv4 address selectors would permit IPv6 matching on PAN-OS")
+        if policy.users or policy.groups:
+            warnings.append("user and group matching requires manual review")
+        if any(getattr(policy, field) not in {None, "disable"}
+               for field in ("internet_service", "internet_service_src")) or any(
+            getattr(policy, field) for field in (
+                "internet_service_name", "internet_service_group", "internet_service_custom",
+                "internet_service_src_name", "internet_service_src_group", "internet_service_src_custom",
+            )
+        ):
+            warnings.append("Internet Service matching is unsupported")
+        if policy.vpntunnel:
+            warnings.append("VPN policy action requires manual review")
+        if policy.utm_status not in {None, "disable"} or any(getattr(policy, field, None) for field in (
+            "profile_group", "av_profile", "ips_sensor", "webfilter_profile", "ssl_ssh_profile",
+            "inspection_mode", "profile_type", "profile_protocol_options", "application_list", "dnsfilter_profile",
+        )):
+            warnings.append("FortiGate inspection settings are not mapped")
+        if policy.per_ip_shaper:
+            warnings.append("FortiGate traffic shaping is not mapped")
+        if policy.srcaddr6_negate not in {None, "disable"} or policy.dstaddr6_negate not in {None, "disable"}:
+            warnings.append("IPv6 address negation requires manual review")
+        log_end = {"all": "yes", "disable": "no"}.get(policy.logtraffic)
+        log_start = None
+        if policy.logtraffic not in {None, "all", "disable"}:
+            warnings.append(f"policy logging {policy.logtraffic!r} requires manual target semantics")
+        if policy.logtraffic == "disable":
+            log_start = "no"
+        for key in policy.raw_extra:
+            if key not in {"uuid", "global-label", "label"}:
+                warnings.append(f"unclassified policy setting {key!r} requires manual review")
+        action = {"accept": "allow", "deny": "deny"}.get((policy.action or "").lower())
+        if action is None:
+            warnings.append("unsupported or missing policy action")
+        status = PANMigrationStatus.SUPPORTED if not warnings else PANMigrationStatus.PARTIAL
+        if not from_zones or not to_zones:
+            status = PANMigrationStatus.MANUAL_REVIEW
+        if ipv6_configured:
+            status = PANMigrationStatus.UNSUPPORTED
+        result.append(PlannedSecurityRule(
+            source_vdom=policy.vdom, source_kind="policy", source_object_type="security_rule",
+            source_name=policy.name or str(policy.policy_id), source_policy_id=policy.policy_id,
+            target_vsys=getattr(getattr(options, "vdoms", {}).get(policy.vdom), "vsys", None),
+            target_name=policy.name or str(policy.policy_id),
+            status=status, warnings=tuple(warnings), from_zones=from_zones, to_zones=to_zones,
+            sources=address_references(source, policy.vdom, policy.srcaddr or ()),
+            destinations=address_references(source, policy.vdom, policy.dstaddr or ()),
+            services=services, applications=applications,
+            schedule=None if policy.schedule == "always" else policy.schedule, action=action,
+            negate_source=getattr(policy, "srcaddr_negate", None) in {"enable", "yes", "1"},
+            negate_destination=getattr(policy, "dstaddr_negate", None) in {"enable", "yes", "1"},
+            disabled=getattr(policy, "status", None) in {"disable", "disabled"},
+            description=getattr(policy, "comments", None),
+            log_start=log_start, log_end=log_end,
+        ))
+    return tuple(result)
+
+
+def _zones(names, vdom, options, warnings, zone_names=()):
+    if "any" in names:
+        if len(names) != 1:
+            warnings.append("mixed wildcard and named policy interfaces require manual review")
+            return ()
+        return ("any",)
+    result = []
+    for name in names:
+        mapping = _interface_mapping(options, vdom, name, zone_names)
+        if mapping and mapping.target_zone:
+            result.append(mapping.target_zone)
+        else:
+            warnings.append(f"missing target zone mapping for {name!r}")
+    return tuple(result)
+
+
+def _interface_mapping(options, vdom, name, zone_names=()):
+    vdom = vdom or "root"
+    if (vdom, name) in zone_names:
+        zones = getattr(options, "zones", None)
+        return ((zones or {}).get(vdom, {}).get(name) if zones is not None
+                else getattr(options, "interfaces", {}).get(vdom, {}).get(name))
+    return getattr(options, "interfaces", {}).get(vdom, {}).get(name)

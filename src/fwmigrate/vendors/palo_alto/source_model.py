@@ -1,0 +1,88 @@
+from dataclasses import dataclass, field
+import xml.etree.ElementTree as ET
+from pydantic import BaseModel, Field
+from typing import Optional, Dict, Any, List, Literal
+
+
+@dataclass(frozen=True)
+class PANSourceDocument:
+    """Parsed PAN-OS XML input retained for source extraction."""
+
+    root: ET.Element
+    hostname: Optional[str] = None
+    source_version: Optional[str] = None
+
+class PANScope(BaseModel):
+    kind: str
+    name: str
+    device_name: Optional[str] = None
+    # A managed firewall serial is part of VSYS identity.  ``device_name`` is
+    # retained for compatibility with standalone/device scopes, while this
+    # field prevents two different firewalls' ``vsys1`` scopes from colliding.
+    device_serial: Optional[str] = None
+    vsys: Optional[str] = None
+    device_group: Optional[str] = None
+    parent_device_group: Optional[str] = None
+    template_stack: Optional[str] = None
+    template_provenance: Dict[str, Any] = Field(default_factory=dict)
+
+class PANSourceRecord(BaseModel):
+    """A source-faithful PAN-OS XML record.
+
+    This is deliberately close to PAN-OS XML.  It is not a portable firewall
+    object and carries no vendor defaults or target-generation state.
+    """
+
+    kind: str
+    source_path: str
+    name: Optional[str] = None
+    scope: Optional[PANScope] = None
+    rulebase_position: Literal["pre", "local", "post"] | None = None
+    values: Dict[str, Any] = Field(default_factory=dict)
+    source_order: Optional[int] = None
+    raw_xml: Optional[str] = None
+    unsupported: bool = False
+
+
+class PANExtractionIssue(BaseModel):
+    """Safe diagnostic metadata for a failed typed extraction attempt."""
+
+    source_path: str
+    source_name: Optional[str] = None
+    source_order: Optional[int] = None
+    scope: Optional[PANScope] = None
+    domain: Optional[str] = None
+    exception_type: str
+    message: str
+
+
+@dataclass(frozen=True)
+class PANOSDerivedViews:
+    """Read-only views over PAN-OS source state."""
+
+    counts: Dict[str, int] = field(default_factory=dict)
+    scope_identities: tuple[str, ...] = ()
+    unresolved_references: tuple[str, ...] = ()
+    scope_hierarchy: Any = None
+    reference_index: Any = None
+    reference_resolutions: tuple[Any, ...] = ()
+    shadowing: tuple[Any, ...] = ()
+    interface_topology: tuple[Any, ...] = ()
+    static_routes: tuple[Any, ...] = ()
+    policy_order: tuple[Any, ...] = ()
+    nat: tuple[Any, ...] = ()
+    relationship_issues: tuple[Any, ...] = ()
+
+
+def pan_scope_identity(scope: PANScope) -> str:
+    """Return a stable identity for explicit source ownership context."""
+    identity = f"{scope.kind}:{scope.name}"
+    if scope.kind == "shared":
+        return identity
+
+    qualifier = scope.device_serial or scope.device_name
+    if qualifier:
+        identity += f":device:{qualifier}"
+    if scope.vsys and scope.kind in {"template", "template-stack"}:
+        identity += f":vsys:{scope.vsys}"
+    return identity

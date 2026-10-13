@@ -1,0 +1,15 @@
+<config version="11.1.0"><devices><entry name="fw1"><network><interface>
+  <ethernet>
+    <entry name="ethernet1/1"><comment>L3 uplink</comment><link-state>auto</link-state><speed>auto</speed><duplex>auto</duplex><lldp><enable>yes</enable></lldp><layer3><interface-management-profile>allow-ping</interface-management-profile><mtu>1500</mtu><ip><entry name="192.0.2.1/24"/><entry name="192.0.2.10/24"/></ip><ipv6><address><entry name="2001:db8::1/64"><enable>yes</enable></entry></address></ipv6><units><entry name="ethernet1/1.10"><tag>10</tag><ip><entry name="10.10.10.1/24"/></ip></entry></units><future-l3>keep-l3</future-l3></layer3></entry>
+    <entry name="ethernet1/2"><link-state>up</link-state><layer2><units><entry name="ethernet1/2.20"><tag>20</tag><future-l2>keep-l2</future-l2></entry></units><vlan>users</vlan></layer2></entry>
+    <entry name="ethernet1/3"><link-state>down</link-state><virtual-wire><virtual-wire>vw-main</virtual-wire></virtual-wire></entry>
+    <entry name="ethernet1/4"><tap><future-tap>keep</future-tap></tap></entry>
+    <entry name="ethernet1/5"><ha><ha1/></ha></entry>
+    <entry name="ethernet1/6"><decrypt-mirror><future-decrypt>keep</future-decrypt></decrypt-mirror></entry>
+  </ethernet>
+  <aggregate-ethernet><entry name="ae1"><layer2><lacp><enable>yes</enable></lacp></layer2></entry></aggregate-ethernet>
+  <loopback><units><entry name="loopback.1"><ip><entry name="10.255.0.1/32"/></ip></entry></units></loopback>
+  <tunnel><units><entry name="tunnel.1"><dhcp-client><enable>yes</enable></dhcp-client></entry></units></tunnel>
+  <vlan><units><entry name="vlan.20"><ip><entry name="10.20.0.1/24"/></ip><interface-management-profile>allow-ping</interface-management-profile></entry></units></vlan>
+  <future-interface-family><entry name="future.1"><setting>keep-family</setting></entry></future-interface-family>
+</interface></network><vsys><entry name="vsys1"><import><network><interface><member>ethernet1/1</member><member>ethernet1/2.20</member></interface></network></import></entry></vsys></entry></devices></config>

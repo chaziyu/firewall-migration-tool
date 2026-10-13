@@ -1,0 +1,119 @@
+from __future__ import annotations
+
+from enum import Enum
+from typing import Any, Dict, List, Optional
+
+from pydantic import BaseModel, Field
+
+class ExtractionStatus(str, Enum):
+    EXTRACTED = "EXTRACTED"
+    PARTIAL = "PARTIAL"
+    SOURCE_ONLY = "SOURCE_ONLY"
+    UNSUPPORTED = "UNSUPPORTED"
+    UNKNOWN = "UNKNOWN"
+    IGNORED = "IGNORED"
+    PARSE_ERROR = "PARSE_ERROR"
+
+
+class SourceSectionResult(BaseModel):
+    path: str
+    source_context: Optional[str] = None
+    present: bool = True
+
+    line_start: Optional[int] = None
+    line_end: Optional[int] = None
+
+    object_count_source: Optional[int] = None
+    object_count_parsed: Optional[int] = None
+    object_count_extracted: Optional[int] = None
+
+    # Optional additive coverage fields.  Existing vendor extractors continue
+    # to use ``path`` and the original counters.
+    coverage_section: Optional[str] = None
+    domain_uid: Optional[str] = None
+    domain_name: Optional[str] = None
+    object_count_total: Optional[int] = None
+    object_count_partial: int = 0
+    object_count_source_only: int = 0
+    object_count_unsupported: int = 0
+    object_count_parse_error: int = 0
+    supported_empty: bool = False
+    collection_errors: List[str] = Field(default_factory=list)
+    review_reasons: List[str] = Field(default_factory=list)
+    source_commands: List[str] = Field(default_factory=list)
+    operational: bool = False
+
+    # Counted independently from object cardinality.  Matching source and
+    # parsed object counts is not proof that every semantic setting was
+    # extracted.
+    semantic_unknowns: List[str] = Field(default_factory=list)
+    unresolved_dependencies: int = 0
+
+    status: ExtractionStatus
+    parser_handler: Optional[str] = None
+    notes: List[str] = Field(default_factory=list)
+
+
+class SourceCommand(BaseModel):
+    operation: str
+    key: str
+    values: List[str] = Field(default_factory=list)
+    line_number: Optional[int] = None
+    status: Optional[ExtractionStatus] = None
+    parser_handler: Optional[str] = None
+    requires_manual_review: bool = False
+    source_context: Optional[str] = None
+
+
+class SourceInventoryItem(BaseModel):
+    domain: str
+    domain_uid: Optional[str] = None
+    domain_name: Optional[str] = None
+    source_path: str
+
+    name: Optional[str] = None
+    source_id: Optional[str] = None
+    source_record_id: Optional[str] = None
+    source_type: Optional[str] = None
+    source_context: Optional[str] = None
+
+    commands: List[SourceCommand] = Field(default_factory=list)
+    source_attributes: Dict[str, Any] = Field(default_factory=dict)
+    source_references: List[str] = Field(default_factory=list)
+    children: List["SourceInventoryItem"] = Field(default_factory=list)
+
+    status: ExtractionStatus = ExtractionStatus.SOURCE_ONLY
+    requires_manual_review: bool = False
+    evidence_class: str = "configuration"
+
+    notes: List[str] = Field(default_factory=list)
+
+
+class DependencyRecord(BaseModel):
+    """Context-scoped vendor reference resolution result."""
+
+    source_context: Optional[str] = None
+    source_path: str
+    source_object: Optional[str] = None
+    source_field: str
+    reference: str
+    expected_type: str
+    result: str
+    target_path: Optional[str] = None
+    notes: Optional[str] = None
+    target_uid: Optional[str] = None
+    target_name: Optional[str] = None
+    semantic_kind: Optional[str] = None
+    resolution_status: Optional[str] = None
+    reason: Optional[str] = None
+
+
+class UnsupportedItem(BaseModel):
+    source_path: str
+    source_name: Optional[str] = None
+    reason: str
+    requires_manual_review: bool = True
+    raw_capture: Optional[str] = None
+    source_context: Optional[str] = None
+
+

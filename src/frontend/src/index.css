@@ -1,0 +1,30 @@
+@import './styles/tokens.css';
+@import './styles/themes.css';
+@import './styles/colorPicker.css';
+
+#root { min-height: 100vh; }
+
+* { box-sizing: border-box; }
+
+body {
+  min-width: 320px;
+  min-height: 100vh;
+  margin: 0;
+  background: var(--canvas);
+  color: var(--text-main);
+  font: 500 15px/1.5 var(--font-ui);
+}
+
+button, input, select, textarea { font: inherit; }
+button { cursor: pointer; }
+button:disabled { cursor: not-allowed; }
+p { margin: 0; }
+:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 3px; }
+::selection { background: var(--color-primary); color: var(--color-on-primary); }
+input, select, textarea { accent-color: var(--color-primary); }
+input::placeholder, textarea::placeholder { color: var(--text-muted); opacity: 1; }
+input:disabled, select:disabled, textarea:disabled { background: var(--surface-muted); color: var(--text-muted); cursor: not-allowed; }
+input[type='file']::file-selector-button { margin-right: 12px; padding: 8px 12px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); background: var(--color-primary-subtle); color: var(--text-heading); font: inherit; cursor: pointer; }
+@media (prefers-reduced-motion: no-preference) {
+  button, a, input, select, textarea, .dropzone, summary { transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease, box-shadow 150ms ease; }
+}

@@ -1,0 +1,347 @@
+import unittest
+from fwmigrate.vendors.fortigate.derived import build_derived_views
+from fwmigrate.vendors.fortigate.model.address import FGAddress, FGAddressGroup
+from fwmigrate.vendors.fortigate.model.external_resource import FGExternalResource
+from fwmigrate.vendors.fortigate.model.interface import FGInterface
+from fwmigrate.vendors.fortigate.model.policy import FGPolicy
+from fwmigrate.vendors.fortigate.model.sdwan import FGSDWAN, FGSDWANMember, FGSDWANZone
+from fwmigrate.vendors.fortigate.model.service import FGService
+from fwmigrate.vendors.fortigate.model.source import FGConfig
+from fwmigrate.vendors.fortigate.model.vip import FGVIP, FGVIPRealServer
+from fwmigrate.vendors.fortigate.model.vpn import FGIPsecPhase2
+from fwmigrate.vendors.fortigate.transform.nat import transform_nat
+from fwmigrate.vendors.fortigate.transform.vpn import normalize_vpn_phase2
+from fwmigrate.vendors.fortigate.transform.services import transform_services
+from fwmigrate.vendors.fortigate.validation.validator import validate_config
+from fwmigrate.vendors.fortigate.source_report import FortiGateSourceReporter
+import unittest
+
+from fwmigrate.vendors.fortigate.model.interface import FGInterface
+from fwmigrate.vendors.fortigate.model.ippool import FGIPPool
+from fwmigrate.vendors.fortigate.model.policy import FGPolicy
+from fwmigrate.vendors.fortigate.model.source import FGConfig
+from fwmigrate.vendors.fortigate.transform.nat import transform_nat
+
+
+class NatSemanticsTest(unittest.TestCase):
+    def _nat(self, interface: FGInterface):
+        return transform_nat(
+            FGConfig(
+                interfaces=[interface],
+                policies=[
+                    FGPolicy(
+                        policy_id=1,
+                        nat="enable",
+                        dstintf=[interface.name],
+                    )
+                ],
+            )
+        )[0]
+
+    def _policy_nat(self, policy: FGPolicy, *, interfaces=(), ip_pools=()):
+        return transform_nat(
+            FGConfig(
+                interfaces=list(interfaces),
+                ip_pools=list(ip_pools),
+                policies=[policy],
+            )
+        )[0]
+
+    def test_static_and_cidr_addresses(self):
+        for value in ("103.230.127.102 255.255.255.0", "103.230.127.102/24"):
+            result = self._nat(FGInterface(name="wan1", ip=value))
+            self.assertEqual(result.translated_addresses, ("103.230.127.102",))
+            self.assertEqual(result.issues, ())
+
+    def test_missing_address_has_specific_issue(self):
+        result = self._nat(FGInterface(name="wan1"))
+        self.assertEqual(result.translated_addresses, ())
+        self.assertIn("no explicitly configured IPv4 address", result.issues[0])
+
+    def test_dynamic_modes_have_specific_issues(self):
+        for mode in ("dhcp", "pppoe"):
+            result = self._nat(FGInterface(name="wan1", mode=mode))
+            self.assertEqual(result.translated_addresses, ())
+            self.assertIn(f"dynamic addressing mode '{mode}'", result.issues[0])
+
+    def test_any_interface_address_nat_is_runtime_dependent(self):
+        result = self._policy_nat(
+            FGPolicy(policy_id=1, nat="enable", dstintf=["any"])
+        )
+        self.assertEqual(result.translation_type, "interface_address")
+        self.assertEqual(result.translated_addresses, ())
+        self.assertEqual(
+            result.issues,
+            (
+                "Outgoing interface 'any' is non-specific; interface-address "
+                "SNAT depends on the runtime egress path and cannot be "
+                "derived deterministically.",
+            ),
+        )
+
+    def test_any_interface_casing_has_same_semantics(self):
+        result = self._policy_nat(
+            FGPolicy(policy_id=1, nat="enable", dstintf=["ANY"])
+        )
+        self.assertEqual(result.translated_addresses, ())
+        self.assertIn("is non-specific", result.issues[0])
+        self.assertNotIn("dynamic", result.issues[0])
+
+    def test_specific_interface_has_no_non_specific_warning(self):
+        result = self._nat(FGInterface(name="wan1", ip="192.0.2.1 255.255.255.0"))
+        self.assertFalse(any("non-specific" in issue for issue in result.issues))
+
+    def test_ip_pool_nat_does_not_use_interface_address_warning(self):
+        result = self._policy_nat(
+            FGPolicy(
+                policy_id=1,
+                nat="enable",
+                dstintf=["any"],
+                ippool="enable",
+                poolname=["POOL1"],
+            ),
+            ip_pools=[FGIPPool(name="POOL1", type="overload", startip="198.51.100.10", endip="198.51.100.10", explicit_fields={"type"})],
+        )
+        self.assertEqual(result.translation_type, "ip_pool")
+        self.assertEqual(result.translated_addresses, ("198.51.100.10",))
+        self.assertFalse(any("non-specific" in issue for issue in result.issues))
+
+    def test_nat64_uses_its_pool_without_ordinary_nat(self):
+        result = self._policy_nat(
+            FGPolicy(policy_id=1, nat64="enable", poolname=["POOL64"]),
+            ip_pools=[FGIPPool(name="POOL64", type="overload", startip="198.51.100.10", endip="198.51.100.20", explicit_fields={"type"})],
+        )
+
+        self.assertEqual(result.translation_type, "nat64_ip_pool")
+        self.assertEqual(result.translated_addresses, ("198.51.100.10-198.51.100.20",))
+
+    def test_explicit_nat_and_nat64_are_derived_separately(self):
+        rows = transform_nat(FGConfig(
+            ip_pools=[FGIPPool(name="POOL1", type="overload", startip="198.51.100.10", endip="198.51.100.10", explicit_fields={"type"})],
+            policies=[FGPolicy(nat="enable", nat64="enable", ippool="enable", poolname=["POOL1"])],
+        ))
+
+        self.assertEqual(
+            [row.translation_type for row in rows],
+            ["ip_pool", "nat64_ip_pool"],
+        )
+
+    def test_nat64_without_pool_keeps_a_review_row(self):
+        result = self._policy_nat(FGPolicy(policy_id=1, nat64="enable"))
+
+        self.assertEqual(result.translation_type, "nat64_ip_pool")
+        self.assertEqual(result.translated_addresses, ())
+        self.assertTrue(any("No deterministic NAT64" in issue for issue in result.issues))
+
+    def test_nat46_and_ipsec_nat_are_manual_review_modes(self):
+        cases = (
+            (FGPolicy(policy_id=1, nat46="enable", poolname6=["V6POOL"]), "nat46", "V6POOL"),
+            (FGPolicy(policy_id=2, natinbound="enable"), "IPsec NAT controls", None),
+            (FGPolicy(policy_id=3, natoutbound="enable"), "IPsec NAT controls", None),
+            (FGPolicy(policy_id=4, natip="192.0.2.4"), "IPsec NAT controls", None),
+        )
+        for policy, mode, pool in cases:
+            with self.subTest(policy=policy.policy_id):
+                result = self._policy_nat(policy)
+                self.assertIn(mode, result.issues[0])
+                self.assertTrue(result.translation_type.startswith("unsupported_"))
+                self.assertEqual(result.translated_addresses, ())
+                self.assertEqual(result.pool_names, (pool,) if pool else ())
+
+    def test_nat46_does_not_fall_through_ordinary_nat(self):
+        rows = transform_nat(FGConfig(policies=[FGPolicy(nat="enable", nat46="enable")]))
+        self.assertEqual(len(rows), 1)
+        self.assertTrue(rows[0].translation_type.startswith("unsupported_"))
+
+    def test_incomplete_pool_endpoints_are_not_translations(self):
+        for pool in (
+            FGIPPool(name="POOL1", type="overload", startip="198.51.100.10", explicit_fields={"type"}),
+            FGIPPool(name="POOL1", type="overload", endip="198.51.100.20", explicit_fields={"type"}),
+        ):
+            with self.subTest(pool=pool):
+                result = self._policy_nat(
+                    FGPolicy(nat="enable", ippool="enable", poolname=["POOL1"]),
+                    ip_pools=[pool],
+                )
+                self.assertEqual(result.translated_addresses, ())
+                self.assertTrue(any("only one explicitly configured" in issue for issue in result.issues))
+
+    def test_nat64_pool_explicitly_disabling_nat64_is_reviewed(self):
+        result = self._policy_nat(
+            FGPolicy(nat64="enable", poolname=["POOL1"]),
+            ip_pools=[FGIPPool(name="POOL1", startip="198.51.100.10", endip="198.51.100.10", nat64="disable")],
+        )
+        self.assertEqual(result.translated_addresses, ("198.51.100.10",))
+        self.assertTrue(any("explicitly disables NAT64" in issue for issue in result.issues))
+
+    def test_unknown_interface_keeps_existing_warning(self):
+        result = self._policy_nat(
+            FGPolicy(policy_id=1, nat="enable", dstintf=["missing"])
+        )
+        self.assertIn("Outgoing interface/zone 'missing' was not found.", result.issues)
+
+    def test_malformed_address_is_previewed_without_repair(self):
+        source = "source static any any destination static " + "103.230.127.102 " * 40
+        result = self._nat(FGInterface(name="wan1", ip=source))
+        message = result.issues[0]
+        self.assertEqual(result.translated_addresses, ())
+        self.assertIn("explicit 'ip' value that could not be parsed", message)
+        self.assertIn("...", message)
+        self.assertNotIn(source, message)
+        self.assertNotIn("103.230.127.102 " * 10, message)
+
+    def test_sdwan_interface_nat_index_is_vdom_scoped(self):
+        rows = transform_nat(
+            FGConfig(
+                interfaces=[
+                    FGInterface(name="wan-a", vdom="a", ip="192.0.2.1/24"),
+                    FGInterface(name="wan-b", vdom="b", ip="198.51.100.1/24"),
+                ],
+                sdwans=[
+                    FGSDWAN(
+                        vdom="a",
+                        zones=[FGSDWANZone(name="overlay")],
+                        members=[FGSDWANMember(interface="wan-a", zone="overlay")],
+                    ),
+                    FGSDWAN(
+                        vdom="b",
+                        zones=[FGSDWANZone(name="overlay")],
+                        members=[FGSDWANMember(interface="wan-b", zone="overlay")],
+                    ),
+                ],
+                policies=[
+                    FGPolicy(policy_id=1, vdom="a", nat="enable", dstintf=["overlay"]),
+                    FGPolicy(policy_id=2, vdom="b", nat="enable", dstintf=["overlay"]),
+                ],
+            )
+        )
+
+        by_vdom = {row.vdom: row for row in rows}
+        self.assertEqual(by_vdom["a"].egress_interfaces, ("wan-a",))
+        self.assertEqual(by_vdom["a"].translated_addresses, ("192.0.2.1",))
+        self.assertEqual(by_vdom["b"].egress_interfaces, ("wan-b",))
+        self.assertEqual(by_vdom["b"].translated_addresses, ("198.51.100.1",))
+
+
+if __name__ == "__main__":
+    unittest.main()
+
+
+
+class Phase2SemanticTest(unittest.TestCase):
+
+    def _policy_nat(self, policy, *, interfaces=(), ip_pools=()):
+        return transform_nat(FGConfig(interfaces=list(interfaces), ip_pools=list(ip_pools), policies=[policy]))[0]
+
+
+
+
+
+
+
+
+    def test_ambiguous_interface_nat_has_no_address(self):
+        config = FGConfig(
+            interfaces=[
+                FGInterface(name="port1", ip="192.0.2.1/24"),
+                FGInterface(name="port2", ip="192.0.2.2/24"),
+            ],
+            policies=[
+                FGPolicy(
+                    policy_id=1,
+                    nat="enable",
+                    dstintf=["port1", "port2"],
+                )
+            ],
+        )
+
+        result = transform_nat(config)[0]
+
+        self.assertEqual(result.egress_interfaces, ("port1", "port2"))
+        self.assertEqual(result.translated_addresses, ())
+        self.assertTrue(result.issues)
+
+    def test_cli_nat64_pool_source_reaches_derived_translation(self):
+        analysis = FortiGateSourceReporter().analyze_source('''config firewall ippool
+    edit "POOL64"
+        set startip 198.51.100.10
+        set endip 198.51.100.20
+        set nat64 enable
+    next
+end
+config firewall policy
+    edit 64
+        set nat64 enable
+        set ippool enable
+        set poolname "POOL64"
+    next
+end
+''')
+        policy = analysis.extracted.config.policies[0]
+
+        self.assertIsNone(policy.nat)
+        self.assertEqual(policy.nat64, "enable")
+        self.assertIn("nat64", policy.explicit_fields)
+        self.assertEqual(analysis.derived.nat[0].translation_type, "nat64_ip_pool")
+
+    def test_ip_pool_pat_requires_explicit_overload_and_rejects_other_modes(self):
+        policy = FGPolicy(policy_id=10, nat="enable", ippool="enable", poolname=["POOL"])
+        for pool_type in (None, "one-to-one", "fixed-port-range", "port-block-allocation",
+                          "cgn-resource-allocation", "future-mode"):
+            pool = FGIPPool(name="POOL", type=pool_type, startip="198.51.100.1",
+                            endip="198.51.100.2", explicit_fields={"type"} if pool_type else set())
+            row = self._policy_nat(policy, ip_pools=[pool])
+            self.assertEqual(row.translated_addresses, ("198.51.100.1-198.51.100.2",))
+            self.assertTrue(row.issues)
+            self.assertEqual(row.pool_names, ("POOL",))
+        overload = self._policy_nat(policy, ip_pools=[FGIPPool(name="POOL", type="overload",
+            startip="198.51.100.1", endip="198.51.100.2", explicit_fields={"type"})])
+        self.assertEqual(overload.pool_types, ("overload",))
+        self.assertFalse(overload.issues)
+
+    def test_ip_pool_pat_rejects_translation_affecting_settings(self):
+        pool = FGIPPool(name="POOL", type="overload", startip="198.51.100.1", endip="198.51.100.2",
+                        source_startip="10.0.0.1", explicit_fields={"type", "source_startip"})
+        row = self._policy_nat(FGPolicy(nat="enable", ippool="enable", poolname=["POOL"]), ip_pools=[pool])
+        self.assertEqual(row.translated_addresses, ("198.51.100.1-198.51.100.2",))
+        self.assertTrue(any("source_startip" in issue for issue in row.issues))
+
+    def test_disabled_policy_nat_evidence_is_preserved_and_flagged(self):
+        row = self._policy_nat(FGPolicy(policy_id=1, nat="enable", status="disable", dstintf=["wan"]),
+                               interfaces=[FGInterface(name="wan", ip="192.0.2.1/24")])
+        self.assertTrue(row.policy_disabled)
+        self.assertEqual(row.translated_addresses, ("192.0.2.1",))
+        self.assertTrue(any("explicitly disabled" in issue for issue in row.issues))
+
+    def test_ip_pool_pat_preserves_unknown_settings_as_review_evidence(self):
+        pool = FGIPPool(name="POOL", type="overload", startip="198.51.100.1", endip="198.51.100.1",
+                        raw_extra={"future_nat_option": "on"}, explicit_fields={"type"})
+        row = self._policy_nat(FGPolicy(nat="enable", ippool="enable", poolname=["POOL"]), ip_pools=[pool])
+        self.assertTrue(any("future_nat_option" in issue for issue in row.issues))
+        self.assertEqual(row.translated_addresses, ("198.51.100.1",))
+
+    def test_cli_ip_pool_type_and_unknown_options_reach_nat_transform(self):
+        analysis = FortiGateSourceReporter().analyze_source('''config firewall ippool
+    edit "PAT"
+        set type overload
+        set startip 198.51.100.10
+        set endip 198.51.100.10
+        set port-block-allocation enable
+    next
+end
+config firewall policy
+    edit 90
+        set nat enable
+        set ippool enable
+        set poolname "PAT"
+        set dstintf "wan"
+    next
+end
+''')
+        pool = analysis.extracted.config.ip_pools[0]
+        self.assertEqual(pool.type, "overload")
+        self.assertIn("type", pool.explicit_fields)
+        row = analysis.derived.nat[0]
+        self.assertEqual(row.pool_types, ("overload",))
+        self.assertEqual(row.translated_addresses, ("198.51.100.10",))
+        self.assertTrue(any("port-block-allocation" in issue for issue in row.issues))

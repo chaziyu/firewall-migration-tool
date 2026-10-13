@@ -1,0 +1,32 @@
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class GaiaCommandFamily:
+    name: str
+    prefixes: tuple[tuple[str, ...], ...]
+    operations: frozenset[str] = frozenset({"set", "add"})
+
+
+GAIA_COMMAND_FAMILIES = (
+    GaiaCommandFamily("interface", (("interface",),), frozenset({"set"})),
+    GaiaCommandFamily("static-route-ipv4", (("static-route",), ("route", "static")), frozenset({"set"})),
+    GaiaCommandFamily("static-route-ipv6", (("ipv6", "route", "static"), ("ipv6", "static-route")), frozenset({"set"})),
+    GaiaCommandFamily("dhcp-server", (("dhcp", "server"), ("dhcp-server",)), frozenset({"set", "add"})),
+    GaiaCommandFamily("gaia-user", (("user",), ("users",)), frozenset({"set", "add"})),
+    GaiaCommandFamily("gaia-rba-role", (("rba", "role"), ("rba", "roles")), frozenset({"add"})),
+    GaiaCommandFamily("gaia-rba-user-assignment", (("rba", "user"), ("rba", "users")), frozenset({"add"})),
+    GaiaCommandFamily("vpn-tunnel-vti", (("vpn", "tunnel"), ("vpn", "tunnels"), ("vti",)), frozenset({"add"})),
+)
+
+
+def match_gaia_family(arguments: tuple[str, ...]) -> tuple[GaiaCommandFamily | None, tuple[str, ...]]:
+    lowered = tuple(item.lower() for item in arguments)
+    for family in GAIA_COMMAND_FAMILIES:
+        for prefix in family.prefixes:
+            if lowered[:len(prefix)] == prefix:
+                return family, arguments[len(prefix):]
+    return None, arguments
+
+
+SUPPORTED_GAIA_SECTIONS = frozenset(family.name for family in GAIA_COMMAND_FAMILIES)

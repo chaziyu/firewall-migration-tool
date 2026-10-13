@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<config version="11.1.0">
+  <devices><entry name="localhost.localdomain"><vsys><entry name="vsys1">
+    <tag><entry name="production"><color>color1</color><comments>Production workloads</comments></entry></tag>
+    <application>
+      <entry name="custom-chat">
+        <category>collaboration</category><subcategory>instant-messaging</subcategory><technology>client-server</technology><risk>4</risk>
+        <description>Custom chat protocol</description>
+        <default><port><member>tcp/7443</member><member>udp/7443</member></port></default>
+        <tcp-timeout>3600</tcp-timeout><tag><member>production</member></tag>
+        <signature>
+          <entry name="chat-signature"><scope>protocol-data-unit</scope><order-free>no</order-free>
+            <and-condition><entry name="and-1"><or-condition><entry name="or-1"><operator><pattern-match><context>http-req-headers</context><pattern>chat-protocol</pattern><qualifier><entry name="q1"><value>header</value></entry></qualifier></pattern-match></operator></entry></or-condition></entry></and-condition>
+          </entry>
+          <entry name="chat-equal"><and-condition><entry name="and-1"><or-condition><entry name="or-1"><operator><equal-to><context>tcp-context-free</context><position>4</position><mask>0xff</mask><value>7</value></equal-to></operator></entry></or-condition></entry></and-condition></entry>
+        </signature>
+        <future-setting><nested>retain-me</nested></future-setting>
+      </entry>
+    </application>
+    <application-group><entry name="custom-apps"><members><member>custom-chat</member><member>ssl</member></members><description>Application collection</description><tag><member>production</member></tag></entry></application-group>
+    <application-filter><entry name="risky-collaboration"><category><member>collaboration</member></category><risk><member>4</member><member>5</member></risk><technology><member>client-server</member></technology><characteristic><member>evasive</member></characteristic><tagging><member>production</member></tagging><future-criterion>retain-me</future-criterion></entry></application-filter>
+  </entry></vsys></entry></devices>
+</config>

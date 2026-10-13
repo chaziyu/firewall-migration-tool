@@ -1,0 +1,323 @@
+from __future__ import annotations
+
+import ipaddress
+import re
+from collections import defaultdict
+from datetime import datetime
+from typing import Any
+
+from ..model.source import PANOSConfig
+from ..source_model import PANOSDerivedViews, pan_scope_identity
+from .models import PANOSValidationIssue, PANOSValidationResult
+
+_PORT = re.compile(r"^(\d+)(?:\s*-\s*(\d+))?$")
+_SCHEDULE_TIME_RANGE = re.compile(r"^(\d{2}:\d{2})-(\d{2}:\d{2})$")
+_NON_RECURRING_RANGE = re.compile(
+    r"^(\d{4}/\d{2}/\d{2}@\d{2}:\d{2})-(\d{4}/\d{2}/\d{2}@\d{2}:\d{2})$"
+)
+
+
+def _issue(issues, severity, domain, message, item=None, field=None, *, scope=None, object_type=None, source_name=None, source_path=None):
+    scope = scope or getattr(item, "scope", None)
+    issues.append(PANOSValidationIssue(severity, domain, message,
+        source_path if source_path is not None else getattr(item, "source_path", None), source_name if source_name is not None else getattr(item, "name", None), field,
+        scope, pan_scope_identity(scope) if scope else None, object_type or domain))
+
+
+def _scope_key(item: Any) -> str:
+    scope = getattr(item, "scope", None)
+    return scope.model_dump_json() if scope else "<unscoped>"
+
+
+def _validate_ip(value: str, *, ranges: bool = True) -> bool:
+    if ranges and "-" in value:
+        parts = [part.strip() for part in value.split("-")]
+        if len(parts) != 2:
+            return False
+        try:
+            start, end = (ipaddress.ip_address(part) for part in parts)
+        except ValueError:
+            return False
+        return start.version == end.version and start <= end
+    try:
+        ipaddress.ip_network(value, strict=False)
+        return True
+    except ValueError:
+        try:
+            ipaddress.ip_address(value)
+            return True
+        except ValueError:
+            return False
+
+
+def _validate_interface_address(value: str, version: int) -> bool:
+    try:
+        parsed = ipaddress.ip_interface(value)
+    except ValueError:
+        return False
+    return parsed.version == version
+
+
+def _validate_schedule_time_range(value: str) -> bool:
+    match = _SCHEDULE_TIME_RANGE.fullmatch(value)
+    if not match:
+        return False
+    try:
+        for item in match.groups():
+            datetime.strptime(item, "%H:%M")
+    except ValueError:
+        return False
+    return True
+
+
+def _validate_non_recurring_range(value: str) -> bool:
+    match = _NON_RECURRING_RANGE.fullmatch(value)
+    if not match:
+        return False
+    try:
+        for item in match.groups():
+            datetime.strptime(item, "%Y/%m/%d@%H:%M")
+    except ValueError:
+        return False
+    return True
+
+
+def _validate_ip_wildcard(value: str) -> bool:
+    if value.count("/") != 1:
+        return False
+    address, mask = value.split("/")
+    try:
+        ipaddress.IPv4Address(address)
+        ipaddress.IPv4Address(mask)
+        return True
+    except ValueError:
+        return False
+
+
+def _validate_ports(value: str, *, minimum: int = 1, maximum: int = 65535) -> bool:
+    parts = [part.strip() for part in value.split(",")]
+    if not parts or any(not part for part in parts):
+        return False
+    for part in parts:
+        match = _PORT.fullmatch(part)
+        if not match:
+            return False
+        start, end = int(match.group(1)), int(match.group(2) or match.group(1))
+        if not minimum <= start <= maximum or not minimum <= end <= maximum or start > end:
+            return False
+    return True
+
+
+def validate_panos_config(config: PANOSConfig, derived: PANOSDerivedViews) -> PANOSValidationResult:
+    issues: list[PANOSValidationIssue] = []
+    for diagnostic in config.extraction_issues:
+        issues.append(PANOSValidationIssue(
+            "warning", "extraction", f"{diagnostic.exception_type}: {diagnostic.message}", diagnostic.source_path, diagnostic.source_name,
+            "typed_extraction", diagnostic.scope,
+            pan_scope_identity(diagnostic.scope) if diagnostic.scope else None,
+            diagnostic.domain or "extraction",
+        ))
+    if not config.source_inventory:
+        _issue(issues, "warning", "source", "PAN-OS XML contains no entry records.")
+    if not config.scopes:
+        _issue(issues, "warning", "scope", "PAN-OS XML contains no explicit device, VSYS, or device-group scope.")
+
+    families = {
+        "tag": config.tags,
+        "address": config.addresses, "address-group": config.address_groups,
+        "service": config.services, "service-group": config.service_groups,
+        "schedule": config.schedules, "zone": config.zones,
+        "interface": config.interfaces, "interface-unit": config.interface_units,
+        "nat": config.nat_rules, "default-security-rule": config.default_security_rules,
+        "virtual-router": config.virtual_routers, "logical-router": config.logical_routers,
+        "vulnerability-profile": config.vulnerability_profiles, "security-profile-group": config.security_profile_groups,
+        "dhcp-server": config.dhcp_servers, "sdwan-interface-profile": config.sdwan_interface_profiles,
+        "sdwan-path-quality-profile": config.sdwan_path_quality_profiles,
+        "sdwan-traffic-distribution-profile": config.sdwan_traffic_distribution_profiles,
+        "sdwan-saas-quality-profile": config.sdwan_saas_quality_profiles,
+        "sdwan-error-correction-profile": config.sdwan_error_correction_profiles,
+        "sdwan-rule": config.sdwan_rules, "administrator": config.administrators, "admin-role": config.admin_roles,
+        "ike-gateway": config.ike_gateways, "ike-crypto-profile": config.ike_crypto_profiles,
+        "ipsec-crypto-profile": config.ipsec_crypto_profiles, "ipsec-tunnel": config.ipsec_tunnels,
+        "globalprotect-portal": config.globalprotect_portals, "globalprotect-gateway": config.globalprotect_gateways,
+        "local-user": config.local_users, "local-user-group": config.local_user_groups,
+        "group-mapping": config.group_mappings,
+    }
+    for family, items in families.items():
+        seen: dict[tuple[str, str | None], Any] = {}
+        for item in items:
+            key = (_scope_key(item), getattr(item, "name", None))
+            if key[1] and key in seen:
+                _issue(issues, "error", "identity", f"duplicate {family} name {key[1]!r} in the same scope", item, "name", object_type=family)
+            elif key[1]:
+                seen[key] = item
+
+    for name, rules in _by_name(config.security_rules).items():
+        scopes = {_scope_key(rule) for rule in rules}
+        if len(rules) > len(scopes):
+            _issue(issues, "error", "identity", f"duplicate security rule name {name!r} in the same scope", rules[-1], "name", object_type="policy")
+
+    device_group_ancestors = dict(derived.scope_hierarchy.ancestors)
+    for name, rules in _by_name(config.security_rules).items():
+        device_group_rules = [
+            rule
+            for rule in rules
+            if rule.scope is not None and rule.scope.kind == "device-group"
+        ]
+        for index, left in enumerate(device_group_rules):
+            left_id = pan_scope_identity(left.scope)
+            for right in device_group_rules[index + 1:]:
+                right_id = pan_scope_identity(right.scope)
+                if left_id == right_id:
+                    continue
+                left_is_ancestor = left_id in device_group_ancestors.get(right_id, ())
+                right_is_ancestor = right_id in device_group_ancestors.get(left_id, ())
+                if not left_is_ancestor and not right_is_ancestor:
+                    continue
+                descendant = right if left_is_ancestor else left
+                ancestor = left if left_is_ancestor else right
+                _issue(
+                    issues,
+                    "error",
+                    "identity",
+                    (
+                        f"security rule name {name!r} conflicts across Panorama device-group hierarchy: "
+                        f"{ancestor.scope.name!r} and descendant {descendant.scope.name!r}"
+                    ),
+                    descendant,
+                    "name",
+                    object_type="policy",
+                )
+
+    for message in getattr(derived.scope_hierarchy, "issues", ()):
+        _issue(issues, "error", "scope", message)
+    for item in derived.reference_resolutions:
+        if item.status == "SOURCE_ONLY" and item.resolution_reason.startswith("EXTRACTION_INCOMPLETE"):
+            _issue(issues, "warning", "reference", f"source-only PAN-OS reference {item.reference_name!r}: extraction incomplete",
+                   field=item.owner_field, scope=item.source_scope, source_name=item.owner_name, object_type=item.owner_family or "reference", source_path=item.owner_source_path)
+        if item.status in {"UNRESOLVED", "AMBIGUOUS"}:
+            _issue(issues, "error" if item.status == "UNRESOLVED" else "warning", "reference",
+                   f"{item.status.lower()} PAN-OS reference {item.reference_name!r} in {item.owner_name or '<unnamed>'}.{item.owner_field}",
+                   field=item.owner_field, scope=item.source_scope, source_name=item.owner_name, object_type=item.owner_family or "reference", source_path=item.owner_source_path)
+    for item in derived.relationship_issues:
+        _issue(issues, "warning", "relationship", item.message, field=item.field,
+               scope=item.source_scope, source_name=item.source_name, object_type=item.category)
+
+    for address in config.addresses:
+        explicit_types = [
+            field for field in ("ip_netmask", "ip_range", "ip_wildcard", "fqdn")
+            if field in address.explicit_fields
+        ]
+        if len(explicit_types) > 1:
+            _issue(
+                issues, "error", "address",
+                f"address has multiple explicit value types: {', '.join(explicit_types)}",
+                address, "type",
+            )
+        for field in ("ip_netmask", "ip_range", "ip_wildcard"):
+            value = getattr(address, field)
+            valid = (_validate_ip_wildcard(value) if field == "ip_wildcard" else _validate_ip(value)) if value is not None else True
+            if value is not None and field in address.explicit_fields and not valid:
+                _issue(issues, "error", "address", f"malformed {field}: {value!r}", address, field)
+
+    for group in config.address_groups:
+        if {"static_members", "dynamic_filter"} <= group.explicit_fields:
+            _issue(
+                issues, "error", "address-group",
+                "address group has both static and dynamic source branches",
+                group, "group_type",
+            )
+
+    for item in (*config.interfaces, *config.interface_units):
+        for value in getattr(item, "ipv4_addresses", ()) or ():
+            if not _validate_interface_address(value, 4):
+                _issue(issues, "error", "interface", f"malformed IPv4 address: {value!r}", item, "ipv4_addresses")
+        for value in getattr(item, "ipv6_addresses", ()) or ():
+            text = value if isinstance(value, str) else getattr(value, "address", None)
+            if text and not _validate_interface_address(text, 6):
+                _issue(issues, "error", "interface", f"malformed IPv6 address: {text!r}", item, "ipv6_addresses")
+
+    route_names: dict[tuple[str, str | None, str | None, str | None, str], Any] = {}
+    for route in derived.static_routes:
+        if route.name:
+            key = (_scope_key(route), route.router_type, route.router_name, route.vrf_name, route.name)
+            if key in route_names:
+                owner = "/".join(value for value in key[1:4] if value) or "<unknown-router>"
+                _issue(
+                    issues, "error", "identity",
+                    f"duplicate static route name {route.name!r} in {owner}",
+                    route, "name", object_type="route",
+                )
+            else:
+                route_names[key] = route
+        if route.destination and not _validate_ip(route.destination):
+            _issue(issues, "error", "route", f"malformed route destination: {route.destination!r}", route, "destination")
+        if route.nexthop_ip_address and not _validate_ip(route.nexthop_ip_address, ranges=False):
+            _issue(issues, "error", "route", f"malformed next-hop IP: {route.nexthop_ip_address!r}", route, "nexthop_ip_address")
+
+    for service in config.services:
+        if {"tcp", "udp"} <= service.explicit_fields:
+            _issue(
+                issues, "error", "service",
+                "service has both TCP and UDP protocol branches",
+                service, "protocol",
+            )
+        for protocol in (service.tcp, service.udp):
+            if protocol and protocol.port and not _validate_ports(protocol.port, minimum=0):
+                _issue(issues, "error", "service", f"malformed port expression: {protocol.port!r}", service, "port")
+            if protocol and protocol.source_port and not _validate_ports(protocol.source_port, minimum=0):
+                _issue(issues, "error", "service", f"malformed source port expression: {protocol.source_port!r}", service, "source_port")
+
+    for schedule in config.schedules:
+        recurring = schedule.recurring
+        for value in recurring.daily or () if recurring else ():
+            if not _validate_schedule_time_range(value):
+                _issue(issues, "error", "schedule", f"malformed daily schedule range: {value!r}", schedule, "recurring.daily")
+        for day, values in (recurring.weekly or {}).items() if recurring else ():
+            for value in values:
+                if not _validate_schedule_time_range(value):
+                    _issue(issues, "error", "schedule", f"malformed weekly schedule range for {day}: {value!r}", schedule, f"recurring.weekly.{day}")
+        for value in schedule.non_recurring or ():
+            if not _validate_non_recurring_range(value):
+                _issue(issues, "error", "schedule", f"malformed non-recurring schedule range: {value!r}", schedule, "non_recurring")
+
+    for tunnel in config.ipsec_tunnels:
+        for proxy in tunnel.proxy_ids or ():
+            for field in ("local_port", "remote_port"):
+                port = getattr(proxy, field)
+                if port and not _validate_ports(port, minimum=0):
+                    _issue(issues, "error", "ipsec-tunnel", f"malformed proxy {field.replace('_', '-')} expression: {port!r}", tunnel, field)
+
+    # PANOSConfig preserves explicit source only.  Several security-rule fields
+    # have PAN-OS defaults/effective values when omitted from source, so absence
+    # must not be converted into a validation error or synthetic explicit state.
+    for rule in config.nat_rules:
+        for translation in (rule.destination_translation, rule.dynamic_destination_translation):
+            port = getattr(translation, "translated_port", None) if translation else None
+            if port and not _validate_ports(port, minimum=1):
+                _issue(issues, "error", "nat", f"malformed translated port: {port!r}", rule, "translated_port")
+        unknown_source_translation = bool(rule.raw_extra.get("source-translation"))
+        if unknown_source_translation:
+            _issue(
+                issues, "warning", "nat",
+                "NAT rule contains unsupported source-translation source configuration",
+                rule, "translation",
+            )
+        if rule.disabled in {"yes", "true"} and not rule.source_translation and not rule.destination_translation and not rule.dynamic_destination_translation:
+            continue
+        if (
+            rule.source_translation is None
+            and rule.destination_translation is None
+            and rule.dynamic_destination_translation is None
+            and not unknown_source_translation
+        ):
+            _issue(issues, "warning", "nat", "NAT rule has no explicit translation branch", rule, "translation")
+    return PANOSValidationResult(tuple(issues))
+
+
+def _by_name(items):
+    grouped = defaultdict(list)
+    for item in items:
+        if getattr(item, "name", None):
+            grouped[item.name].append(item)
+    return grouped

@@ -1,0 +1,7 @@
+set version 21.4R1.12
+set system host-name SRX-StaticNAT
+set security zones security-zone untrust interfaces ge-0/0/1.0
+set security zones security-zone dmz interfaces ge-0/0/2.0
+set security nat static rule-set rs_static_pub from zone untrust
+set security nat static rule-set rs_static_pub rule r_static_server match destination-address 198.51.100.200/32
+set security nat static rule-set rs_static_pub rule r_static_server then static-nat prefix 172.16.1.200/32

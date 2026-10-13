@@ -1,0 +1,143 @@
+"""Deterministic FortiGate address mappings for Palo Alto."""
+
+from typing import Any
+
+from fwmigrate.conversion.fortigate_to_palo_alto.models import (
+    MigrationIssue,
+    MigrationSourceRef,
+    PANMigrationStatus,
+    PlannedAddress,
+    PlannedAddressGroup,
+)
+from fwmigrate.conversion.fortigate_to_palo_alto.planning.routing import _normalize_subnet
+from .vips import vip_translation
+
+
+def address_references(source, vdom, names):
+    """Map only the IPv4 built-in all; explicit objects keep their identity."""
+    explicit = {item.name for family in ("addresses", "address_groups", "vips", "vip_groups")
+                for item in getattr(source, family, ()) if (item.vdom or "root") == (vdom or "root")}
+    return tuple("0.0.0.0/0" if name == "all" and name not in explicit else name for name in names)
+
+
+def plan_addresses(source: Any, options: Any) -> tuple[tuple[PlannedAddress, ...], tuple[PlannedAddressGroup, ...], tuple[MigrationIssue, ...]]:
+    addresses = []
+    groups = []
+    issues = []
+    for address in getattr(source, "addresses", ()):
+        item, issue = _plan_address(address, options)
+        addresses.append(item)
+        if issue:
+            issues.append(issue)
+    for group in getattr(source, "address_groups", ()):
+        item, issue = _plan_group(group, options)
+        groups.append(item)
+        if issue:
+            issues.append(issue)
+    for vip in getattr(source, "vips", ()):
+        ext, _, warnings = vip_translation(vip)
+        status, scope_warnings, issue = _scope(vip, options)
+        warnings = [*scope_warnings, *warnings]
+        if warnings:
+            status = PANMigrationStatus.MANUAL_REVIEW
+        addresses.append(PlannedAddress(
+            source_vdom=vip.vdom, source_kind="vip", source_object_type="address", source_name=vip.name,
+            target_vsys=_target_vsys(vip, options), target_name=vip.name, status=status,
+            warnings=tuple(warnings), address_type="ip-netmask", value=f"{ext}/32" if ext else None))
+        if issue:
+            issues.append(issue)
+    return tuple(addresses), tuple(groups), tuple(issues)
+
+
+def _scope(source: Any, options: Any) -> tuple[PANMigrationStatus, tuple[str, ...], MigrationIssue | None]:
+    vdom = getattr(source, "vdom", "root")
+    mapping = getattr(options, "vdoms", {}).get(vdom)
+    if mapping is not None and getattr(mapping, "vsys", None):
+        return PANMigrationStatus.SUPPORTED, (), None
+    warning = f"missing Palo Alto vsys mapping for VDOM {vdom!r}"
+    ref = MigrationSourceRef(vdom, "address", getattr(source, "name", None))
+    return (
+        PANMigrationStatus.MANUAL_REVIEW,
+        (warning,),
+        MigrationIssue("missing_vsys_mapping", warning, source=ref),
+    )
+
+
+def _target_vsys(source: Any, options: Any) -> str | None:
+    mapping = getattr(options, "vdoms", {}).get(getattr(source, "vdom", "root"))
+    return getattr(mapping, "vsys", None)
+
+
+def _plan_address(source: Any, options: Any):
+    status, warnings, issue = _scope(source, options)
+    value = None
+    address_type = None
+    if getattr(source, "subnet", None):
+        value = _normalize_subnet(source.subnet)
+        if value:
+            address_type = "ip-netmask"
+        else:
+            status = PANMigrationStatus.UNSUPPORTED
+            warnings = (*warnings, "address subnet is not a valid explicit IPv4 subnet")
+    elif getattr(source, "start_ip", None) and getattr(source, "end_ip", None):
+        address_type, value = "ip-range", f"{source.start_ip}-{source.end_ip}"
+    elif getattr(source, "fqdn", None):
+        address_type, value = "fqdn", source.fqdn
+    elif getattr(source, "wildcard", None):
+        address_type, value = "ip-wildcard", source.wildcard
+    elif getattr(source, "wildcard_fqdn", None):
+        status = PANMigrationStatus.UNSUPPORTED
+        warnings = (*warnings, "wildcard FQDN requires manual target semantics")
+    else:
+        status = PANMigrationStatus.UNSUPPORTED
+        warnings = (*warnings, "address has no supported explicit value")
+    if getattr(source, "address_family", None) == "ipv6" or getattr(source, "ip6", None) is not None:
+        status = PANMigrationStatus.UNSUPPORTED
+        warnings = (*warnings, "IPv6 address semantics require manual design")
+    return (
+        PlannedAddress(
+            source_vdom=getattr(source, "vdom", None),
+            source_kind="address",
+            source_object_type="address",
+            source_name=getattr(source, "name", None),
+            target_vsys=_target_vsys(source, options), target_name=getattr(source, "name", None),
+            status=status,
+            warnings=warnings,
+            address_type=address_type,
+            value=value,
+        ),
+        issue,
+    )
+
+
+def _plan_group(source: Any, options: Any):
+    status, warnings, issue = _scope(source, options)
+    if getattr(source, "address_family", None) == "ipv6":
+        status = PANMigrationStatus.UNSUPPORTED
+        warnings = (*warnings, "IPv6 address-group semantics require manual design")
+    exclude = getattr(source, "exclude", None)
+    exclude_value = str(exclude).strip().lower() if exclude is not None else None
+    excluded_members = getattr(source, "exclude_members", None)
+    active_exclusion = exclude_value in {"enable", "enabled", "yes", "true", "1"}
+    ambiguous_exclusion = (exclude is not None and exclude_value not in {
+        "enable", "enabled", "yes", "true", "1", "disable", "disabled", "no", "false", "0"
+    }) or (exclude is None and bool(excluded_members))
+    if active_exclusion or ambiguous_exclusion or bool(excluded_members) and exclude_value not in {"disable", "disabled", "no", "false", "0"}:
+        status = PANMigrationStatus.MANUAL_REVIEW
+        warnings = (*warnings, "address-group exclusions are not represented by a static PAN group")
+    if source.members is None:
+        status = PANMigrationStatus.MANUAL_REVIEW
+        warnings = (*warnings, "address-group membership is not explicit in the source")
+    return (
+        PlannedAddressGroup(
+            source_vdom=getattr(source, "vdom", None),
+            source_kind="address_group",
+            source_object_type="address_group",
+            source_name=getattr(source, "name", None),
+            target_vsys=_target_vsys(source, options), target_name=getattr(source, "name", None),
+            status=status,
+            warnings=warnings,
+            members=tuple(source.members or ()),
+        ),
+        issue,
+    )

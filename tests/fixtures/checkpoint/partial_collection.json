@@ -1,0 +1,9 @@
+{
+  "format": "checkpoint-export-v1", "domain": "Partial", "responses": [
+    {"command": "show-hosts", "domain": "Partial", "collection_status": "SUCCESS_WITH_DATA", "data": {"objects": [{"uid": "h1", "name": "Host", "type": "host", "ipv4-address": "192.0.2.10"}]}},
+    {"command": "show-services-tcp", "domain": "Partial", "collection_status": "SUCCESS_EMPTY", "data": {"objects": []}},
+    {"command": "show-vpn-communities", "domain": "Partial", "collection_status": "UNSUPPORTED_COMMAND", "error": "unsupported", "data": {}},
+    {"command": "show-certificates", "domain": "Partial", "collection_status": "PERMISSION_DENIED", "error": "denied", "data": {}},
+    {"command": "show-nat-rulebase", "domain": "Partial", "collection_status": "API_ERROR", "error": "provider error", "data": {}}
+  ]
+}

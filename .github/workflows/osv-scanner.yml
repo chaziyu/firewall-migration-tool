@@ -1,0 +1,48 @@
+# OSV dependency scanning.
+#
+# Full scans use the exact dependency sets used by artifact-producing builds.
+# PR differential scanning remains recursive so changes to other manifests are
+# still compared against the target branch.
+
+name: OSV-Scanner
+
+on:
+  pull_request:
+    branches: [ "main" ]
+  merge_group:
+    branches: [ "main" ]
+  schedule:
+    - cron: '22 20 * * 2'
+  push:
+    branches: [ "main" ]
+
+permissions:
+  actions: read
+  security-events: write
+  contents: read
+
+jobs:
+  scan-scheduled:
+    if: ${{ github.event_name == 'push' || github.event_name == 'schedule' }}
+    uses: "google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@a345acffa64b0eaede81a3d9aae6141214d9c8fc" # v2.6.0
+    with:
+      scan-args: |-
+        --lockfile=requirements.txt:./requirements/constraints-python312.txt
+        --lockfile=./src/frontend/package-lock.json
+
+  scan-resolved-pr:
+    if: ${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' }}
+    uses: "google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@a345acffa64b0eaede81a3d9aae6141214d9c8fc" # v2.6.0
+    with:
+      scan-args: |-
+        --lockfile=requirements.txt:./requirements/constraints-python312.txt
+        --lockfile=./src/frontend/package-lock.json
+
+  scan-pr:
+    if: ${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' }}
+    uses: "google/osv-scanner-action/.github/workflows/osv-scanner-reusable-pr.yml@a345acffa64b0eaede81a3d9aae6141214d9c8fc" # v2.6.0
+    with:
+      # Keep differential scanning recursive so manifest changes remain covered.
+      scan-args: |-
+        -r
+        ./

@@ -1,0 +1,105 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv*/
+venv/
+env/
+ENV/
+
+# Python tooling
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.mypy_cache/
+.pyright/
+.ruff_cache/
+.tox/
+.nox/
+
+# Build and packaging output
+build/
+dist/
+pip-wheel-metadata/
+
+# Local secrets and customer data: never commit actual configurations
+.env
+.env.*
+!.env.example
+*.conf
+*.xlsx
+*.xml
+examples/
+config file example/
+migration_output/
+
+# Sanitized test fixtures are intentionally committed
+!tests/fixtures/
+!tests/fixtures/**/
+!tests/fixtures/*.conf
+!tests/fixtures/**/*.conf
+!tests/fixtures/*.xml
+!tests/fixtures/**/*.xml
+!tests/fixtures/*.cfg
+!tests/fixtures/**/*.cfg
+!tests/fixtures/*.json
+!tests/fixtures/**/*.json
+!tests/fixtures/*.set
+!tests/fixtures/**/*.set
+
+# Test and generated report output
+test_output/
+outputs/
+output_*/
+split_configs/
+*-tf/
+
+# Temporary files and logs
+*.tmp
+*.swp
+*.swo
+*~
+
+# IDE and OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Local analysis and scratch files
+/.codegraph/
+!.codegraph/.gitignore
+.codex-tmp/
+scratch/transcript_dumps/
+scratch/*.jsonl
+
+# Local notes and generated summaries
+COVERAGE-ANALYSIS.md
+FILE_MANIFEST.txt
+FINAL-SUMMARY-DUAL-LICENSING.md
+LICENSING-QUICK-START.txt
+MULTI-VR-FIX.md
+QUICK-CHECKLIST.txt
+fix.md
+.fixing_plan.md
+.fortigate_interface_check.md
+firewall migration tool references link.txt
+
+# Logs
+logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist-ssr
+*.local
+
+# Editor directories and files
+*.suo
+*.ntvs*
+*.njsproj
+*.sln

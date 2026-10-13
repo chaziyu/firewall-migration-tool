@@ -1,0 +1,15 @@
+<config version="11.1.0"><shared><pre-rulebase><default-security-rules><rules>
+  <entry name="intrazone-default"><log-start>yes</log-start><future-default>shared-evidence</future-default></entry>
+</rules></default-security-rules></pre-rulebase></shared><devices><entry name="fw1">
+  <device-group><entry name="dg-parent"><post-rulebase><default-security-rules><rules>
+    <entry name="interzone-default"><action>drop</action><profile-setting><group><member>strict-group</member></group></profile-setting></entry>
+  </rules></default-security-rules></post-rulebase></entry></device-group>
+  <vsys><entry name="vsys1"><rulebase><default-security-rules><rules>
+    <entry name="intrazone-default"/>
+    <entry name="interzone-default"><action>deny</action><disabled>yes</disabled><log-end>yes</log-end><log-setting>traffic-log</log-setting>
+      <description>Local override</description><tag><member>local-tag</member></tag><group-tag>group-a</group-tag>
+      <profile-setting><profiles><virus><member>strict-av</member></virus><vulnerability><member>strict-vuln</member></vulnerability></profiles></profile-setting>
+      <option><disable-server-response-inspection>yes</disable-server-response-inspection></option><icmp-unreachable>yes</icmp-unreachable>
+    </entry>
+  </rules></default-security-rules></rulebase></entry></vsys>
+</entry></devices></config>

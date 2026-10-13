@@ -1,0 +1,22 @@
+{
+  "format": "cisco-fdm-rest-export-v1",
+  "source": "fdm-rest-api",
+  "domain": {"id": "fdm-objects", "name": "Default"},
+  "objects": {
+    "hosts": [{"id": "host", "name": "Host", "value": "192.0.2.1", "description": "host desc", "overrides": [{"deviceId": "d1", "value": "192.0.2.2"}]}],
+    "networks": [{"id": "network", "name": "Network", "value": "192.0.2.0/24"}],
+    "ranges": [{"id": "range", "name": "Range", "value": "192.0.2.1-192.0.2.9"}],
+    "network_objects": [{"id": "fqdn", "name": "FQDN", "type": "FQDN", "value": "example.test", "lookupType": "IPV4_ONLY", "addressFamily": "ipv4"}, {"id": "missing", "name": "Missing"}],
+    "services": [
+      {"id": "tcp-single", "name": "TCP Single", "protocol": "tcp", "port": "80"},
+      {"id": "tcp-range", "name": "TCP Range", "protocol": "tcp", "port": "80", "endPort": "90"},
+      {"id": "structured", "name": "Structured Ports", "protocol": "tcp", "ports": [{"start": 100, "end": 110}]},
+      {"id": "udp", "name": "UDP", "protocol": "udp", "destinationPort": "53"},
+      {"id": "protocol-only", "name": "Protocol Only", "protocol": "gre"},
+      {"id": "icmp-type", "name": "ICMP Type", "protocol": "icmp", "icmpType": "8"},
+      {"id": "icmp-code", "name": "ICMP Code", "protocol": "icmp", "icmp_type": "3", "icmp_code": "1", "overrides": [{"deviceId": "d1"}]}
+    ],
+    "network_groups": [{"id": "network-group", "name": "Network Group", "description": "group desc", "objects": [{"id": "host", "name": "Host", "type": "Host"}], "literals": [{"value": "198.51.100.1", "type": "Host"}], "overrides": [{"deviceId": "d1"}]}],
+    "service_groups": [{"id": "service-group", "name": "Service Group", "description": "service group desc", "objects": [{"id": "tcp-single", "name": "TCP Single", "type": "ProtocolPortObject"}], "overrides": [{"deviceId": "d1"}]}]
+  }
+}

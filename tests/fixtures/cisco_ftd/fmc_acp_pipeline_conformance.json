@@ -1,0 +1,68 @@
+{
+  "format": "cisco-fmc-rest-export-v1",
+  "source": "fmc-rest-api",
+  "domain": {"id": "domain-1", "name": "Global"},
+  "objects": {
+    "networkaddresses": [
+      {"id": "net-inside", "name": "Inside-Network", "type": "Network", "value": "10.0.0.0/8"},
+      {"id": "net-web", "name": "Web-Servers", "type": "Network", "value": "192.0.2.0/24"}
+    ],
+    "protocolportobjects": [
+      {"id": "port-source", "name": "Client-Ephemeral", "type": "ProtocolPortObject", "protocol": "TCP", "ports": ["49152-65535"]},
+      {"id": "port-destination", "name": "HTTPS", "type": "ProtocolPortObject", "protocol": "TCP", "ports": ["443"]}
+    ],
+    "securityzones": [
+      {"id": "zone-inside", "name": "Inside", "type": "SecurityZone"},
+      {"id": "zone-outside", "name": "Outside", "type": "SecurityZone"}
+    ],
+    "applications": [{"id": "app-web", "name": "Web Browsing", "type": "Application"}],
+    "timeranges": [{"id": "time-business", "name": "Business Hours", "type": "TimeRange"}],
+    "intrusionpolicies": [{"id": "ips-balanced", "name": "Balanced Security", "type": "IntrusionPolicy"}],
+    "variablesets": [{"id": "variables-default", "name": "Default Set", "type": "VariableSet"}],
+    "filepolicies": [{"id": "file-inspect", "name": "Inspect Files", "type": "FilePolicy"}],
+    "realmusers": [{"id": "user-alice", "name": "alice", "type": "RealmUser"}],
+    "urlcategories": [{"id": "url-business", "name": "Business", "type": "URLCategory"}]
+  },
+  "access_policies": [{
+    "id": "policy-1",
+    "name": "Corporate ACP",
+    "rules": [
+      {
+        "id": "rule-1",
+        "name": "Allow-Web",
+        "enabled": true,
+        "action": "ALLOW",
+        "metadata": {"ruleIndex": 4, "section": "Mandatory", "category": "Web Access"},
+        "comments": "Allow managed web access",
+        "sourceZones": {"objects": [{"id": "zone-inside", "name": "Inside", "type": "SecurityZone"}]},
+        "destinationZones": {"objects": [{"id": "zone-outside", "name": "Outside", "type": "SecurityZone"}]},
+        "sourceNetworks": {"objects": [{"id": "net-inside", "name": "Inside-Network", "type": "Network"}]},
+        "destinationNetworks": {"objects": [{"id": "net-web", "name": "Web-Servers", "type": "Network"}]},
+        "sourcePorts": {"objects": [{"id": "port-source", "name": "Client-Ephemeral", "type": "ProtocolPortObject"}]},
+        "destinationPorts": {"objects": [{"id": "port-destination", "name": "HTTPS", "type": "ProtocolPortObject"}]},
+        "users": {"objects": [{"id": "user-alice", "name": "alice", "type": "RealmUser"}]},
+        "applications": {"applications": [{"id": "app-web", "name": "Web Browsing", "type": "Application"}], "applicationFilters": [], "inlineApplicationFilters": []},
+        "urls": {"urlCategoriesWithReputation": [{"category": {"id": "url-business", "name": "Business", "type": "URLCategory"}, "reputation": "BENIGN_SITES", "type": "UrlCategoryAndReputation"}]},
+        "timeRange": {"id": "time-business", "name": "Business Hours", "type": "TimeRange"},
+        "ipsPolicy": {"id": "ips-balanced", "name": "Balanced Security", "type": "IntrusionPolicy"},
+        "variableSet": {"id": "variables-default", "name": "Default Set", "type": "VariableSet"},
+        "filePolicy": {"id": "file-inspect", "name": "Inspect Files", "type": "FilePolicy"},
+        "logBegin": false,
+        "logEnd": true,
+        "logFiles": true,
+        "sendEventsToFMC": false,
+        "advancedLogging": {"logApplications": [{"enabled": true, "protocol": "HTTP"}]}
+      },
+      {
+        "id": "rule-2",
+        "name": "Disabled-Rule",
+        "enabled": false,
+        "action": "TRUST",
+        "metadata": {"ruleIndex": 5, "section": "Default", "category": "Other"},
+        "comments": "Preserve disabled state",
+        "sourcePorts": {"objects": [{"id": "port-source", "name": "Client-Ephemeral", "type": "ProtocolPortObject"}]},
+        "destinationPorts": {"objects": [{"id": "port-destination", "name": "HTTPS", "type": "ProtocolPortObject"}]}
+      }
+    ]
+  }]
+}

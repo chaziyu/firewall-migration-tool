@@ -1,0 +1,74 @@
+<config version="11.1.0">
+  <devices>
+    <entry name="pa-fw-01">
+      <network>
+        <interface>
+          <ethernet>
+            <entry name="ethernet1/1">
+              <layer3>
+                <ip><entry name="192.0.2.1/24" /></ip>
+                <interface-management-profile>mgmt-full</interface-management-profile>
+              </layer3>
+            </entry>
+          </ethernet>
+        </interface>
+        <profiles>
+          <interface-management-profile>
+            <entry name="mgmt-full">
+              <http>yes</http>
+              <https>no</https>
+              <ping>yes</ping>
+              <response-pages>no</response-pages>
+              <userid-service>yes</userid-service>
+              <userid-syslog-listener-ssl>no</userid-syslog-listener-ssl>
+              <userid-syslog-listener-udp>yes</userid-syslog-listener-udp>
+              <ssh>no</ssh>
+              <telnet>yes</telnet>
+              <snmp>no</snmp>
+              <http-ocsp>yes</http-ocsp>
+              <permitted-ip>
+                <entry name="192.0.2.10" />
+                <entry name="198.51.100.0/24" />
+                <entry name="2001:db8:1::/64" />
+              </permitted-ip>
+              <future-management-setting><enabled>yes</enabled></future-management-setting>
+            </entry>
+            <entry name="mgmt-minimal">
+              <https>yes</https>
+            </entry>
+          </interface-management-profile>
+        </profiles>
+      </network>
+      <deviceconfig>
+        <system>
+          <ip-address>198.51.100.10</ip-address>
+          <netmask>255.255.255.0</netmask>
+          <default-gateway>198.51.100.1</default-gateway>
+          <type><static /></type>
+          <ipv6-address>2001:db8:2::10/64</ipv6-address>
+          <ipv6-default-gateway>2001:db8:2::1</ipv6-default-gateway>
+          <ipv6-enable>yes</ipv6-enable>
+          <ipv6-type><static /></ipv6-type>
+          <ipv6-gw-type><static /></ipv6-gw-type>
+          <permitted-ip>
+            <entry name="203.0.113.10"><description>Management host</description></entry>
+            <entry name="198.51.100.0/24"><description>Management network</description></entry>
+            <entry name="2001:db8:2::/64" />
+          </permitted-ip>
+          <service>
+            <disable-http>yes</disable-http>
+            <disable-https>no</disable-https>
+            <disable-telnet>yes</disable-telnet>
+            <disable-ssh>no</disable-ssh>
+            <disable-icmp>no</disable-icmp>
+            <disable-snmp>yes</disable-snmp>
+            <disable-userid-service>no</disable-userid-service>
+            <disable-userid-syslog-listener-ssl>yes</disable-userid-syslog-listener-ssl>
+            <disable-userid-syslog-listener-udp>no</disable-userid-syslog-listener-udp>
+            <disable-http-ocsp>yes</disable-http-ocsp>
+          </service>
+        </system>
+      </deviceconfig>
+    </entry>
+  </devices>
+</config>

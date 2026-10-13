@@ -1,0 +1,6 @@
+{
+  "format": "checkpoint-export-v1", "responses": [
+    {"command": "show-packages", "domain": "global", "data": {"objects": [{"uid": "global-pkg", "name": "GlobalPkg", "type": "package", "assigned-domains": ["Domain-A"]}]}},
+    {"command": "show-access-rulebase", "domain": "Domain-A", "package": "LocalPkg", "package_uid": "local-pkg", "layer": "LocalLayer", "layer_uid": "local-layer", "data": {"rulebase": [{"uid": "local-rule", "rule-number": 1, "name": "Local", "source": ["Any"], "destination": ["Any"], "service": ["Any"], "action": "Accept", "enabled": true}]}}
+  ]
+}

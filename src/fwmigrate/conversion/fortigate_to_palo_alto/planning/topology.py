@@ -1,0 +1,61 @@
+"""Explicit interface-to-zone topology planning for Palo Alto."""
+
+from typing import Any
+
+from fwmigrate.conversion.fortigate_to_palo_alto.models import PANMigrationStatus, PlannedZone
+
+
+def plan_topology(source: Any, derived: Any, options: Any, required_zone_keys=None, *, include_configuration=False):
+    topology = getattr(derived, "topology", None)
+    entries = {(item.vdom, item.name): item for item in getattr(topology, "interfaces", ())}
+    result = []
+    required_zone_keys = set(required_zone_keys) if required_zone_keys is not None else None
+    for zone in getattr(source, "zones", ()):
+        vdom = zone.vdom or "root"
+        if required_zone_keys is not None and (vdom, zone.name) not in required_zone_keys:
+            continue
+        mappings = getattr(options, "interfaces", {}).get(vdom, {})
+        zone_mappings = getattr(options, "zones", None)
+        zone_mapping = ((zone_mappings or {}).get(vdom, {}).get(zone.name) if zone_mappings is not None
+                        else mappings.get(zone.name))
+        target_interfaces = []
+        warnings = []
+        if zone_mapping is None or not zone_mapping.target_zone:
+            warnings.append(f"missing target zone mapping for {zone.name!r}")
+        for member in zone.members or ():
+            mapping = mappings.get(member)
+            if mapping is None or not mapping.target_interface:
+                warnings.append(f"missing target interface mapping for {member!r}")
+            else:
+                target_interfaces.append(mapping.target_interface)
+            entry = entries.get((zone.vdom, member))
+            if entry and entry.issues:
+                warnings.extend(entry.issues)
+        status = PANMigrationStatus.SUPPORTED if not warnings else PANMigrationStatus.MANUAL_REVIEW
+        result.append(PlannedZone(
+            source_vdom=vdom, source_kind="zone", source_object_type="zone",
+            source_name=zone.name, status=status, warnings=tuple(dict.fromkeys(warnings)),
+            target_vsys=getattr(getattr(options, "vdoms", {}).get(vdom), "vsys", None), target_name=getattr(zone_mapping, "target_zone", None),
+            interfaces=tuple(target_interfaces),
+        ))
+    if include_configuration:
+        memberships = {(zone.vdom or "root", member) for zone in source.zones for member in zone.members or ()}
+        proposed = {}
+        for interface in source.interfaces:
+            vdom = interface.vdom or "root"
+            if (vdom, interface.name) in memberships:
+                continue
+            mapping = getattr(options, "interfaces", {}).get(vdom, {}).get(interface.name)
+            zone = getattr(mapping, "target_zone", None)
+            if not zone:
+                continue
+            vsys = getattr(getattr(options, "vdoms", {}).get(vdom), "vsys", None)
+            group = proposed.setdefault((vdom, vsys, zone), [])
+            group.append((interface.name, getattr(mapping, "target_interface", None)))
+        for (vdom, vsys, zone), members in proposed.items():
+            warnings = tuple(f"missing target interface mapping for {name!r}" for name, target in members if not target)
+            result.append(PlannedZone(source_vdom=vdom, source_kind="interface", source_object_type="zone",
+                source_name=members[0][0], target_vsys=vsys, target_name=zone,
+                interfaces=tuple(target for _, target in members if target), warnings=warnings,
+                status=PANMigrationStatus.MANUAL_REVIEW if warnings else PANMigrationStatus.SUPPORTED))
+    return tuple(result)
