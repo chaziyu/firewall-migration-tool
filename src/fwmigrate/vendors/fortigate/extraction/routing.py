@@ -5,8 +5,8 @@ from typing import Protocol
 from ..model.route_static import FGStaticRoute
 
 from .common import (
-    evaluate_edit,
-    iter_section_edits,
+    iter_grouped_section_edits,
+    evaluate_edit_sequence,
     source_model_kwargs,
 )
 from .section_index import SectionIndex
@@ -45,14 +45,11 @@ def _extract_static_routes(
     section_path: str,
     address_family: str,
 ) -> None:
-    for source in iter_section_edits(
+    for source, edits in iter_grouped_section_edits(
         tree,
         section_path,
     ):
-        evaluation = evaluate_edit(
-            section_path,
-            source.edit,
-        )
+        evaluation = evaluate_edit_sequence(section_path, edits)
 
         attributes = source_model_kwargs(
             evaluation,

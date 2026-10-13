@@ -15,8 +15,8 @@ class FortiGateCollectedSourceSanitizer:
             FortiGateTokenizer(source_text).tokenize(), key=lambda item: item.line_number)]
         for index, (number, tokens) in enumerate(groups):
             values = [item.value for item in tokens]
-            match = re.match(r'\s*(?:set|append)\s+(\S+)', values[0])
-            key = values[1] if len(values) > 1 and values[0] in {'set', 'append'} else match[1] if match else None
+            match = re.match(r'\s*(?:set|append)\s+(\S+)', values[0], re.IGNORECASE)
+            key = values[1] if len(values) > 1 and values[0].lower() in {'set', 'append'} else match[1] if match else None
             if key and sanitize_source_value(key, 'workspace-secret-probe') == '[REDACTED]':
                 end = groups[index + 1][0] - 1 if index + 1 < len(groups) else len(lines)
                 operation = values[0] if len(values) > 1 else values[0].strip().split()[0]

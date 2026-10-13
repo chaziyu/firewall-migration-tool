@@ -263,12 +263,38 @@ def iter_grouped_section_edits(
     """Keep first occurrence order while collecting updates to native identities."""
     grouped: dict[tuple[str, str | None, str, int | None], tuple[SectionEdit, list[EditNode]]] = {}
     for source in tree.iter_edits(section_path):
-        # edit 0 allocates a new policy; it does not update a stable identity.
-        allocation = id(source.edit) if section_path == "firewall policy" and source.edit.name == "0" else None
+        # Policy edit 0 allocates. Keep route edit 0 separate until its
+        # allocation semantics are verified.
+        allocation = id(source.edit) if section_path in {"firewall policy", "router static", "router static6"} and source.edit.name == "0" else None
         key = (source.cli_scope, source.vdom, source.edit.name, allocation)
         grouped.setdefault(key, (source, []))[1].append(source.edit)
     yield from grouped.values()
 
+
+
+def combine_source_edits(edits: Iterable[EditNode]) -> EditNode:
+    """Build an extraction-only view; keep the original evidence tree intact."""
+    edits = tuple(edits)
+    children: dict[str, list[ConfigNode]] = {}
+    for edit in edits:
+        for child in edit.children:
+            children.setdefault(child.name, []).append(child)
+    combined_children = []
+    for name, blocks in children.items():
+        nested: dict[str, list[EditNode]] = {}
+        for block in blocks:
+            for edit in block.edits:
+                nested.setdefault(edit.name, []).append(edit)
+        combined_children.append(ConfigNode(
+            name=name,
+            commands=[command for block in blocks for command in block.commands],
+            edits=[combine_source_edits(group) for group in nested.values()],
+        ))
+    return EditNode(
+        name=edits[0].name,
+        commands=[command for edit in edits for command in edit.commands],
+        children=combined_children,
+    )
 
 def evaluate_config(
     section_path: str,

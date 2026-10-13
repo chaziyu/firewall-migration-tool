@@ -531,3 +531,28 @@ def test_source_failures_keep_synthetic_secrets_private(monkeypatch, caplog, rou
     })
     assert response.status_code in {400, 422, 500}
     assert 'SYNTHETIC_SOURCE_SECRET' not in response.get_data(as_text=True) + caplog.text
+
+
+def test_fortigate_mixed_case_secrets_are_safe_in_snapshot_preview_excel_and_logs(caplog):
+    from fwmigrate.collection.contracts import CollectedSource, CollectionStatus
+    from fwmigrate.collection.snapshot import make_snapshot, parse_snapshot
+    source = ('config system admin\nedit admin\nSET password ENC UPPER_SECRET_SENTINEL\n'
+              'ApPeNd private-key "MULTILINE_SECRET_SENTINEL\nTAIL_SECRET_SENTINEL"\n'
+              'unset password\nnext\nend\n')
+    secrets = ('UPPER_SECRET_SENTINEL', 'MULTILINE_SECRET_SENTINEL', 'TAIL_SECRET_SENTINEL')
+    snapshot = make_snapshot(CollectedSource('fortigate', source, 'safe.conf', 'test', CollectionStatus.SUCCESS))
+    assert all(secret not in json.dumps(snapshot) for secret in secrets)
+    imported = parse_snapshot(json.dumps(snapshot).encode())
+    assert all(secret not in imported.source_text for secret in secrets)
+    client = create_app({'TESTING': True}).test_client()
+    for route in ('/api/preview', '/api/extract/excel'):
+        response = client.post(route, data={'source_vendor': 'fortigate',
+            'file': (io.BytesIO(json.dumps(snapshot).encode()), 'safe.json')})
+        assert response.status_code == 200
+        if route.endswith('excel'):
+            workbook = load_workbook(io.BytesIO(response.data))
+            contents = repr([list(sheet.values) for sheet in workbook])
+        else:
+            contents = response.get_data(as_text=True)
+        assert all(secret not in contents for secret in secrets)
+    assert all(secret not in caplog.text for secret in secrets)
