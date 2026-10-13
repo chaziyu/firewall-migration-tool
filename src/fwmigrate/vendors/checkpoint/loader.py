@@ -229,12 +229,11 @@ def _resolve_scope(bundle: CheckPointExportBundle) -> ScopeSelectionResult:
     ambiguous = False
     reasons: List[str] = []
     for response in bundle.responses:
-        if response.command in {"show-access-rulebase", "show-nat-rulebase"} and response.data.get("rulebase") and collection_status_is_success(response.collection_status):
+        if response.command == "show-nat-rulebase" and response.data.get("rulebase") and collection_status_is_success(response.collection_status):
             if not (response.package or response.package_uid or response.data.get("package") or response.data.get("package-uid")):
                 reasons.append("missing-package-ownership")
-            if response.command == "show-access-rulebase" and not (
-                response.layer or response.layer_uid or response.data.get("name") or response.data.get("uid")
-            ):
+        if response.command == "show-access-rulebase" and response.data.get("rulebase") and collection_status_is_success(response.collection_status):
+            if not (response.layer or response.layer_uid or response.data.get("name") or response.data.get("uid")):
                 reasons.append("missing-access-layer-ownership")
     reasons = list(dict.fromkeys(reasons))
     ambiguous = bool(reasons)

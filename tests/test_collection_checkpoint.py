@@ -204,6 +204,83 @@ def test_inline_rulebase_collection_is_recursive_and_scoped():
     assert "show-access-rulebase|domain=D|layer=child" in bundle.collection_completeness
 
 
+def test_uid_only_inline_layer_is_resolved_and_child_failure_is_incomplete():
+    spec = R81CommandSpec("show-access-rulebase", expected_response_shape="rulebase", scope_type="ACCESS_LAYER", required=True)
+    calls = []
+
+    def handle(command, kwargs):
+        payload = kwargs["json"]
+        calls.append(payload["name"])
+        if payload["name"] == "root":
+            return Response({"uid": "root-uid", "name": "root", "rulebase": [
+                {"type": "access-rule", "uid": "parent", "inline-layer": {"uid": "child-uid"}},
+            ], "from": 1, "to": 1, "total": 1})
+        raise RuntimeError("child API failed")
+
+    collector = CheckPointCollector(command_registry={"show-access-rulebase": spec})
+    bundle = CheckPointExportBundle.model_validate({"responses": [{"command": "show-access-layers", "domain": "D",
+        "data": {"objects": [{"uid": "child-uid", "name": "child"}]}}]})
+    parts = []
+    collector._collect_command(FakeSession(handle), "https://mgmt/web_api/", "show-access-rulebase", spec,
+        ("name", "root"), bundle, parts, {"domain": "D", "package": None, "layer": "root"})
+
+    assert calls == ["root", "child"]
+    assert bundle.collection_completeness["show-access-rulebase|domain=D|layer=child"].complete is False
+    assert bundle.collection_completeness["show-access-rulebase|domain=D|layer=child"].status == CPStatus.TRANSPORT_ERROR
+
+
+def test_unresolved_inline_uid_never_becomes_name_selector():
+    spec = R81CommandSpec("show-access-rulebase", expected_response_shape="rulebase", scope_type="ACCESS_LAYER", required=True)
+    calls = []
+
+    def handle(command, kwargs):
+        calls.append(kwargs["json"])
+        return Response({"uid": "root", "name": "root", "rulebase": [
+            {"type": "access-rule", "uid": "parent", "inline-layer": {"uid": "unknown-uid"}},
+        ], "from": 1, "to": 1, "total": 1})
+
+    collector = CheckPointCollector(command_registry={"show-access-rulebase": spec})
+    bundle, parts = CheckPointExportBundle(), []
+    collector._collect_command(FakeSession(handle), "https://mgmt/web_api/", "show-access-rulebase", spec,
+        ("name", "root"), bundle, parts, {"domain": "D", "package": None, "layer": "root"})
+
+    assert len(calls) == 1
+    assert any(record.status == CPStatus.NOT_ATTEMPTED and not record.complete
+               for record in bundle.collection_completeness.values())
+
+
+def test_shared_inline_layer_is_collected_once_and_records_both_parent_edges():
+    spec = R81CommandSpec("show-access-rulebase", expected_response_shape="rulebase", scope_type="ACCESS_LAYER", required=True)
+    calls = []
+
+    def handle(command, kwargs):
+        name = kwargs["json"]["name"]
+        calls.append(name)
+        if name == "root-a":
+            rules = [{"type": "access-rule", "uid": "parent-a", "inline-layer": {"uid": "shared"}}]
+        elif name == "root-b":
+            rules = [{"type": "access-rule", "uid": "parent-b", "inline-layer": {"uid": "shared"}}]
+        else:
+            rules = []
+        return Response({"uid": f"{name}-uid", "name": name, "rulebase": rules,
+                         "from": 1, "to": len(rules), "total": len(rules)})
+
+    collector = CheckPointCollector(command_registry={"show-access-rulebase": spec})
+    bundle = CheckPointExportBundle.model_validate({"responses": [{"command": "show-access-layers", "domain": "D",
+        "data": {"objects": [{"uid": "shared", "name": "shared-layer"}]}}]})
+    session = FakeSession(handle)
+    for root in ("root-a", "root-b"):
+        collector._collect_command(session, "https://mgmt/web_api/", "show-access-rulebase", spec,
+            ("name", root), bundle, [], {"domain": "D", "package": None, "layer": root})
+
+    child_records = [item for item in bundle.responses if item.layer == "shared-layer"]
+    assert calls == ["root-a", "shared-layer", "root-b"]
+    assert len(child_records) == 1
+    assert {warning for warning in child_records[0].collection_warnings if warning.startswith("inline-parent:")} == {
+        "inline-parent:root-a-uid:parent-a", "inline-parent:root-b-uid:parent-b",
+    }
+
+
 def test_full_details_is_limited_to_marked_commands():
     payloads = []
 

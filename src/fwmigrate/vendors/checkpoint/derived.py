@@ -110,21 +110,21 @@ def build_checkpoint_derived_views(
         "show-services-citrix-tcp", "show-services-dce-rpc", "show-services-rpc",
         "show-services-gtp", "show-services-compound-tcp", "show-service-groups",
         "show-gateways-and-servers", "show-simple-gateways", "show-simple-clusters",
-    })
+    }, source_plane="management")
     policy_completeness = _derived_completeness(collection, {
         "show-packages", "show-access-layers", "show-access-rulebase",
-    })
+    }, source_plane="management")
     interface_completeness = _derived_completeness(collection, {
         "show-gateways-and-servers", "show-simple-gateways", "show-simple-clusters",
         "show-interoperable-devices", "show-security-zones", "gaia/show-configuration",
-    })
+    }, source_plane="management")
     vpn_completeness = _derived_completeness(collection, {
         "show-vpn-communities-star", "show-vpn-communities-meshed",
         "show-vpn-communities-remote-access",
         "show-gateways-and-servers", "show-simple-gateways",
         "show-simple-clusters", "show-interoperable-devices",
         "gaia/show-configuration", "gaia/show-vpn-tunnels",
-    })
+    }, source_plane="management")
     return CheckPointDerivedViews(
         references=references,
         broken_references=broken_references,
@@ -147,16 +147,33 @@ def build_checkpoint_derived_views(
 def _derived_completeness(
     collection: tuple[CheckPointCollectionDiagnostic, ...],
     dependencies: set[str],
+    *, source_plane: str | None = None,
 ) -> DerivedSourceCompleteness:
+    """Use both failed and absent required operations as incomplete evidence."""
+    relevant = tuple(item for item in collection if item.command in dependencies
+                     and (source_plane is None or item.source_plane == source_plane or item.command.startswith("gaia/")))
     incomplete = tuple(sorted({
         item.command
-        for item in collection
-        if not item.complete and item.command in dependencies
+        for item in relevant
+        if not item.complete or item.status.value not in {"SUCCESS_WITH_DATA", "SUCCESS_EMPTY", "OK"}
     }))
+    present = {item.command for item in relevant}
+    attempted_plane = {item.source_plane for item in collection}
+    applicable = {item for item in dependencies if not item.startswith("gaia/") or "gaia" in attempted_plane}
+    # A diagnostic stream reports work the collector attempted; absence from a
+    # scope-specific manifest is unknown unless that source plane was requested.
+    management_manifest = bool(attempted_plane & {"management", "management-api"})
+    gaia_manifest = "gaia" in attempted_plane
+    missing = set()
+    if source_plane in (None, "management") and management_manifest and len(attempted_plane) > 1:
+        missing.update(item for item in dependencies if not item.startswith("gaia/") and item not in present)
+    if any(item.startswith("gaia/") for item in dependencies) and gaia_manifest and len(attempted_plane) > 1:
+        missing.update(item for item in dependencies if item.startswith("gaia/") and item not in present)
+    incomplete = tuple(sorted(set(incomplete) | missing))
     unknown = not collection or any(item.status.value == "UNKNOWN" for item in collection)
-    if unknown:
-        return DerivedSourceCompleteness(False, incomplete, True)
-    return DerivedSourceCompleteness(not incomplete, incomplete)
+    if not unknown and relevant and not incomplete:
+        unknown = False
+    return DerivedSourceCompleteness(not incomplete and not unknown, incomplete, unknown)
 
 
 __all__ = [
