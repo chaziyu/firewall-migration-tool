@@ -149,6 +149,7 @@ def test_fmc_failed_later_page_keeps_first_page():
     assert json.loads(source.source_text)["objects"]["networkaddresses"][0]["name"] == "host"
     part = next(part for part in source.parts if part.name == "networkaddresses")
     assert (part.status, part.complete, part.count) == ("PARTIAL", False, 1)
+    assert part.failure_reason == "TIMEOUT"
 
 
 def test_fmc_total_endpoint_failure_is_failed_with_zero_count():
@@ -158,7 +159,7 @@ def test_fmc_total_endpoint_failure_is_failed_with_zero_count():
 
     parts = []
     CiscoFTDCollector(session_factory=Session)._collect_family(Session(), "https://fmc", "/hosts", {}, "hosts", parts)
-    assert parts == [CollectionPart("hosts", "FAILED", False, 0)]
+    assert parts == [CollectionPart("hosts", "FAILED", False, 0, "TIMEOUT")]
 
 
 def test_fmc_nat_rule_sections_preserve_order():
@@ -174,7 +175,7 @@ def test_fmc_nat_rule_sections_preserve_order():
             if endpoint.endswith("/ftdnatpolicies"):
                 return Response({"items": [{"id": "p1", "name": "NAT", "type": "FTDNatPolicy", "description": "policy"}], "paging": {"total": 1}})
             if endpoint.endswith("/manualnatrules"):
-                return Response({"items": [{"id": "m1", "section": "BEFORE_AUTO"}, {"id": "m2", "section": "AFTER_AUTO"}], "paging": {"total": 2}})
+                return Response({"items": [{"id": "m1", "section": "before_auto"}, {"id": "m2", "section": "AFTER_AUTO"}], "paging": {"total": 2}})
             if endpoint.endswith("/autonatrules"):
                 return Response({"items": [{"id": "a1", "section": "AUTO"}], "paging": {"total": 1}})
             return Response({"items": [], "paging": {"total": 0}})
@@ -186,6 +187,7 @@ def test_fmc_nat_rule_sections_preserve_order():
     source = collector.collect(collector.validate_options({"host": "fmc", "username": "u", "password": "p"}))
     policy = json.loads(source.source_text)["nat_policies"][0]
     assert [policy["manual_rules_before_auto"][0]["id"], policy["auto_rules"][0]["id"], policy["manual_rules_after_auto"][0]["id"]] == ["m1", "a1", "m2"]
+    assert policy["manual_rules_before_auto"][0]["section"] == "before_auto"
 
 
 def test_fmc_collects_device_interfaces_separately_from_zones_and_groups():

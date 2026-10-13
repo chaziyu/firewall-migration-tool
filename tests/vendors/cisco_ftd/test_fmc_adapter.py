@@ -75,3 +75,29 @@ def test_duplicate_nat_positions_are_reported_within_source_section():
     rules = result.config.nat_policies[0].manual_rules_before_auto
     assert [rule.name for rule in rules] == ["First", "Second"]
     assert any(issue.category == "duplicate-nat-position" for issue in result.validation.issues)
+
+
+def test_nat_section_case_variants_preserve_unknown_sections_and_source_order():
+    result = extract_cisco_ftd_source(json.dumps({"source": "fmc-rest-api", "nat_policies": [{
+        "id": "nat", "name": "NAT", "manual_rules": [
+            {"id": "b1", "section": "before_auto", "position": 1},
+            {"id": "b2", "section": "BEFORE_AUTO", "position": 2},
+            {"id": "unknown", "section": "future_section", "position": 3},
+            {"id": "missing", "position": 4},
+            {"id": "a1", "section": "after_auto", "position": 5},
+        ], "auto_rules": [{"id": "auto", "position": 1}],
+    }]}))
+    policy = result.config.nat_policies[0]
+    assert [rule.source_id for rule in policy.manual_rules_before_auto] == ["b1", "b2"]
+    assert [rule.source_id for rule in policy.auto_rules] == ["auto"]
+    assert [rule.source_id for rule in policy.manual_rules_after_auto] == ["a1"]
+    assert [rule.source_id for rule in policy.unclassified_manual_rules] == ["unknown", "missing"]
+    assert policy.manual_rules_before_auto[0].section == "before_auto"
+    assert [rule.source_id for rule in policy.manual_rules_before_auto] == ["b1", "b2"]
+    preview = build_ftd_preview(result)["sections"]["nat"]
+    assert [row["rule_id"] for row in preview] == ["b1", "b2", "auto", "a1", "unknown", "missing"]
+    output = BytesIO()
+    export_ftd_excel(result, output)
+    output.seek(0)
+    rows = list(load_workbook(output, read_only=True)["NAT Rules"].values)
+    assert [row[2] for row in rows[1:]] == ["b1", "b2", "auto", "a1", "unknown", "missing"]

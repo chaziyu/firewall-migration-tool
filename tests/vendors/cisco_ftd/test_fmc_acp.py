@@ -82,6 +82,15 @@ def test_duplicate_acp_positions_are_reported_without_reordering():
     assert any(issue.category == "duplicate-acp-position" for issue in result.validation.issues)
 
 
+def test_malformed_acp_reference_is_not_adapted_as_a_reference_list():
+    result = extract_cisco_ftd_source(json.dumps({"source": "fmc-rest-api", "access_policies": [{
+        "id": "p1", "name": "Policy", "rules": [{"id": "r1", "name": "Rule", "sourceNetworks": "host-1"}]
+    }]}))
+    rule = result.config.access_control_policies[0].rules[0]
+    assert rule.source_networks is None
+    assert rule.raw_extra["sourceNetworks"] == "host-1"
+
+
 def test_acp_excel_appends_source_fields_for_full_and_fast_profiles():
     result = extract_cisco_ftd_source(json.dumps({
         "format": "cisco-fmc-rest-export-v1", "domain": {"id": "domain-1", "name": "Global"},
