@@ -30,6 +30,8 @@ export type MigrationDraft = {
   destination_verified: boolean
   decisions: DraftRow[]
   configuration: DraftRow[]
+  issues?: MigrationIssue[]
+  readiness?: { coverage: { supported: number; manual: number }; deployment: { eligible: false; missing_prerequisites: string[] } }
   findings: Array<{ code: string; message: string }>
 }
 
@@ -59,4 +61,13 @@ export interface MigrationDecisionDocument {
   source_digest: string
   decisions: MigrationDecision[]
   [key: string]: unknown
+}
+
+export type MigrationStage = 'load' | 'place' | 'exceptions' | 'review' | 'export'
+export type MigrationIssue = {
+  id: string; code: string; category: 'CHOICE' | 'PREREQUISITE' | 'CONFLICT' | 'MANUAL'
+  source_vdom: string; source_kind: string; source_name: string
+  explanation: string; explanations?: string[]; resolution_kind: string; affected_keys: string[]
+  affected_sources: Array<{ source_vdom: string; source_kind: string; source_name: string }>
+  prerequisite_keys: string[]; action: { kind: 'EDIT_MAPPING'; decision_key: string } | null
 }

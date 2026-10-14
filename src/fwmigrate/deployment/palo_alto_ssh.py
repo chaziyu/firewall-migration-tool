@@ -7,7 +7,7 @@ from dataclasses import replace
 import time
 
 from .models import (PANCommitResult, PANDeploymentCommandResult, PANDeploymentOptions,
-                     PANDeploymentResult, PANValidationResult)
+                     PANDeploymentResult, PANValidationResult, PANCandidateInspection)
 from fwmigrate.conversion.fortigate_to_palo_alto.rendering.renderer import RenderedMigration
 from fwmigrate.vendors.palo_alto.config_fingerprint import BASELINE_FORMAT, destination_fingerprint
 
@@ -66,6 +66,9 @@ class PANSSHDeployer:
             # Persist only the fingerprint; secret changes must also invalidate validation.
             canonical = ET.canonicalize(ET.tostring(root, encoding="unicode"), strip_text=False)
             digest = hashlib.sha256(canonical.encode()).hexdigest()
+            self._baseline_matches = (self.options.baseline_format == BASELINE_FORMAT
+                and bool(self.options.expected_baseline_sha256)
+                and destination_fingerprint(candidate) == self.options.expected_baseline_sha256)
             if verify_baseline:
                 if (self.options.baseline_format != BASELINE_FORMAT
                         or not self.options.expected_baseline_sha256):
@@ -106,7 +109,7 @@ class PANSSHDeployer:
                 response = _safe_text(str(exc), self.options.password)
                 results.append(PANDeploymentCommandResult(index, safe_command, False, response))
                 return PANDeploymentResult(True, len(results), sum(item.accepted for item in results), index,
-                                           f"command {index} failed: {response}", tuple(results))
+                                           f"command {index} failed: {response}", tuple(results), recovery_state="OUTCOME_UNKNOWN")
             # Some transports retain echo despite strip_command; discard only this command.
             diagnostics = "\n".join(line for line in response.splitlines()
                                     if line.strip() != safe_command
@@ -115,8 +118,8 @@ class PANSSHDeployer:
             results.append(PANDeploymentCommandResult(index, safe_command, accepted, response))
             if not accepted:
                 return PANDeploymentResult(True, len(results), sum(item.accepted for item in results), index,
-                                           f"command {index} rejected: {response or 'command rejected'}", tuple(results))
-        return PANDeploymentResult(True, len(results), len(results), command_results=tuple(results))
+                                           f"command {index} rejected: {response or 'command rejected'}", tuple(results), recovery_state="PARTIAL_PUSH" if any(item.accepted for item in results) else "REJECTED_BEFORE_WRITES")
+        return PANDeploymentResult(True, len(results), len(results), command_results=tuple(results), recovery_state="COMMANDS_SENT")
 
     def _poll_job(self, job_id):
         attempts = max(1, int(self.options.job_poll_attempts))
@@ -161,7 +164,7 @@ class PANSSHDeployer:
         match = _JOB.search(response or "")
         job_id = match.group(1) if match else None
         if not job_id:
-            status = "SUCCESS" if re.search(r"\bsuccess(?:ful)?\b|\bOK\b", response or "", re.I) else "FAILED"
+            status = "SUCCESS" if re.search(r"\bsuccess(?:ful)?\b|\bOK\b", response or "", re.I) else "UNKNOWN"
             return PANCommitResult(None, status, response or "commit job ID missing")
         status, result = self._poll_job(job_id)
         return PANCommitResult(job_id, status, result or response or "")
@@ -209,7 +212,7 @@ class PANSSHDeployer:
                 failure_message = f"candidate validation {validation.status.lower()}"
             return PANDeploymentResult(pushed.connected, pushed.commands_attempted, pushed.commands_succeeded,
                                        pushed.failed_command_index, failure_message, pushed.command_results,
-                                       validation)
+                                       validation, recovery_state="VALIDATED" if validation.status == "SUCCESS" else "VALIDATION_FAILED")
         except Exception as exc:
             return PANDeploymentResult(True, failure_message=_safe_text(exc, self.options.password))
         finally:
@@ -225,20 +228,43 @@ class PANSSHDeployer:
             self.connect()
         except Exception as exc:
             return PANCommitResult(None, "FAILED", _safe_text(exc, self.options.password))
+        submitted = False
         try:
             if self.options.expected_serial:
                 if not self.options.expected_candidate_sha256:
                     raise ValueError("A validated candidate fingerprint is required")
                 self._candidate_identity()
+            submitted = True
             return self._commit_candidate()
         except Exception as exc:
-            return PANCommitResult(None, "FAILED", _safe_text(exc, self.options.password))
+            return PANCommitResult(None, "UNKNOWN" if submitted else "FAILED", _safe_text(exc, self.options.password))
         finally:
             try:
                 self.connection.disconnect()
             except Exception:
                 pass
             finally:
+                self.connection = None
+
+    def inspect(self):
+        """Read-only recovery check. Never restore a session or send migration commands."""
+        try:
+            self.connect()
+            serial, before = self._candidate_identity()
+            matches = self._baseline_matches
+            diff = self.connection.send_command("show config diff")
+            clean = isinstance(diff, str) and not diff.strip()
+            self._unchanged_candidate(before)
+            return PANCandidateInspection("CLEAN_BASELINE" if clean and matches else "RECONCILIATION_REQUIRED",
+                                          serial, matches, clean)
+        except Exception:
+            return PANCandidateInspection("OUTCOME_UNKNOWN")
+        finally:
+            if self.connection is not None:
+                try:
+                    self.connection.disconnect()
+                except Exception:
+                    pass
                 self.connection = None
 
     def validate(self):

@@ -60,9 +60,12 @@ export function MigrationDesignReview({ draft, busy, approvedItems, onPrepare, o
     {!!approvalPreview.length && <section className="migration-approval-preview" aria-label="Approval preview">
       <h4>Review {approvalPreview.length} exact proposal groups</h4>
       <p>{approvalPreview.filter((key) => byKey.get(key)?.decision_key).length} mapping decisions · {approvalPreview.filter((key) => !byKey.get(key)?.decision_key).length} configuration items. Prerequisites are included.</p>
-      <PagedList items={approvalPreview} render={(key) => { const row = byKey.get(key); return row ? `${row.source_vdom} / ${row.source_name} · ${row.target_field || row.family} → ${row.proposed_value || row.target_name || 'Unresolved'} · ${row.operation || row.status}` : key }} />
+      <PagedList items={approvalPreview} render={(key) => { const row = byKey.get(key); return row ? <div><p>{row.source_vdom} / {row.source_name} · {row.target_field || row.family} → <strong>{row.proposed_value || row.target_name || 'Unresolved'}</strong> · {row.target_scope || 'Scope unresolved'} · {row.operation || row.status}</p>
+        {row.configuration && <><p>{Object.entries(row.configuration).filter(([field, value]) => !['warnings', 'status', 'source_vdom', 'source_kind', 'source_name', 'source_object_type', 'target_vsys', 'target_name'].includes(field) && value != null).map(([field, value]) => `${field.replaceAll('_', ' ')}: ${Array.isArray(value) ? value.join(', ') : typeof value === 'object' ? JSON.stringify(value) : String(value)}`).join(' · ')}</p><LazyDetails summary="Exact configuration values">{() => <pre>{JSON.stringify(row.configuration, null, 2)}</pre>}</LazyDetails></>}
+        <p>Prerequisites: {row.dependencies.map((key) => { const dependency = byKey.get(key); return dependency ? `${dependency.source_vdom} / ${dependency.source_name} · ${dependency.target_field || dependency.family}` : 'Unresolved prerequisite' }).join('; ') || 'None'}</p>
+      </div> : 'Unresolved prerequisite'  }} />
       {approvalBlocked && <p role="alert">This selection contains unresolved prerequisites. Resolve them before approval.</p>}
-      <button type="button" className="primary-button" disabled={busy || approvalBlocked} onClick={() => { onApprove(approvalPreview); setApprovalPreview([]) }}>Approve reviewed selection</button>
+      <button type="button" className="primary-button" disabled={busy || approvalBlocked} onClick={() => onApprove(approvalPreview)}>Approve these changes and generate commands</button>
       <button type="button" onClick={() => setApprovalPreview([])}>Cancel approval</button>
     </section>}
     <p className="report-count-note">Approval includes the shown values, operations, configuration and prerequisites. Unresolved groups stay blocked.</p>
@@ -79,7 +82,7 @@ export function MigrationDesignReview({ draft, busy, approvedItems, onPrepare, o
       {!!portGroups.get(keyFor(row))?.length && <LazyDetails summary={`Affected by this port allocation (${portGroups.get(keyFor(row))!.length})`}>
         {() => <PagedList items={portGroups.get(keyFor(row))!} render={(affected) => <>{affected.source_vdom} / {affected.source_name} · {affected.target_field || affected.family}{affected.configuration && <LazyDetails summary="Affected configuration">{() => <pre>{JSON.stringify(affected.configuration, null, 2)}</pre>}</LazyDetails>}</>} />}
       </LazyDetails>}
-      {row.decision_key && <LazyDetails summary={row.proposed_value ? 'Edit proposal' : 'Set target value'}>
+      {row.decision_key && row.status !== 'UNSUPPORTED' && <LazyDetails summary={row.proposed_value ? 'Edit proposal' : 'Set target value'}>
         {() => <form onSubmit={(event) => { event.preventDefault(); const value = new FormData(event.currentTarget).get('value')?.toString().trim(); if (value) onPrepare({ ...draft.context.overrides, [row.decision_key!]: value }) }}>
           <label className="field">{row.source_vdom} / {row.source_name} · {row.target_field}<input name="value" defaultValue={row.proposed_value || ''} required disabled={busy} /></label>
           <button type="submit" disabled={busy}>Update draft and dependents</button>
@@ -92,6 +95,7 @@ export function MigrationDesignReview({ draft, busy, approvedItems, onPrepare, o
         <label className="field">Target service name<input name="service-name" defaultValue={row.target_name || row.source_name} required maxLength={63} disabled={busy} /></label>
         <button type="submit" disabled={busy}>Propose service name</button>
       </form>}
+      {row.configuration && <dl className="configuration-comparison">{Object.entries(row.configuration).filter(([field, value]) => ['from_zones', 'to_zones', 'sources', 'destinations', 'services', 'applications', 'action', 'source_policy_id', 'translated_address', 'translated_port', 'destination', 'nexthop', 'ip', 'interface', 'members'].includes(field) && value != null).map(([field, value]) => <div key={field}><dt>{field.replaceAll('_', ' ')}</dt><dd>{Array.isArray(value) ? value.join(', ') : String(value)}</dd></div>)}</dl>}
       {row.configuration && <LazyDetails summary="Affected configuration">{() => <pre>{JSON.stringify(row.configuration, null, 2)}</pre>}</LazyDetails>}
       {!!row.dependencies.length && <LazyDetails summary={`Prerequisites (${row.dependencies.length})`}>{() => <PagedList items={row.dependencies} render={(key) => { const parent = byKey.get(key); return parent ? `${parent.source_vdom} / ${parent.source_name} · ${parent.target_field || parent.family}` : key }} />}</LazyDetails>}
       </div>}

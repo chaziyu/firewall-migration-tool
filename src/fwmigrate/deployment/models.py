@@ -35,6 +35,7 @@ class PANDeploymentResult:
     command_results: tuple[PANDeploymentCommandResult, ...] = ()
     validation: PANValidationResult = field(default_factory=PANValidationResult)
     commit: PANCommitResult = field(default_factory=PANCommitResult)
+    recovery_state: str = "REJECTED_BEFORE_WRITES"
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,3 +65,11 @@ class PANDeploymentOptions:
     expected_candidate_sha256: str | None = None
     expected_baseline_sha256: str | None = None
     baseline_format: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class PANCandidateInspection:
+    state: str
+    device_serial: str | None = None
+    baseline_matches: bool = False
+    candidate_clean: bool = False

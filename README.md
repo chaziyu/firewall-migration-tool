@@ -430,7 +430,7 @@ CLI `deploy` and `commit` are disabled because they do not carry signed design a
 
 Web executable artifact generation requires a current signed approval from `/api/migration/design/prepare` → `/api/migration/design/approve`. Raw mappings and unsigned decision documents are proposal inputs: they cannot issue executable artifacts. The compatibility interface-confirmation, decision-approval, automation, and rule APIs preserve editable proposals and imports; their outputs still require deterministic design approval. Approvals expire after 24 hours, matching the browser workspace lifetime, and require renewed engineer review. Partial approvals render only approved groups with satisfied dependencies; unapproved or dependency-blocked items produce no commands. IPv6 and mixed-family policy matches remain visible as unsupported evidence and render no security rules.
 
-Web candidate preparation requires a signed `READY` artifact and an explicit serial and baseline fingerprint in the approved destination XML evidence. A device name or hostname alone cannot establish serial identity. Before pushing, the SSH workflow checks the live serial, verifies the approved `baseline_sha256` against the live sanitized PAN-OS configuration, and requires `show config diff` to be empty. Destination drift requires refreshed evidence and renewed approval. After the push, the workflow fingerprints the complete XML candidate from `show config candidate` without exporting its contents. Revalidation and explicit commit check the same live serial and candidate fingerprint. Drift, validation failure, unknown commit state, session expiry, and server restart require another candidate preparation. `READY_NO_CHANGES` artifacts are downloadable but cannot deploy.
+Web candidate preparation requires a signed `READY` artifact and an explicit serial and baseline fingerprint in the approved destination XML evidence. A device name or hostname alone cannot establish serial identity. Before pushing, the SSH workflow checks the live serial, verifies the approved `baseline_sha256` against the live sanitized PAN-OS configuration, and requires `show config diff` to be empty. Destination drift requires refreshed evidence and renewed approval. After the push, the workflow fingerprints the complete XML candidate from `show config candidate` without exporting its contents. Revalidation and explicit commit check the same live serial and candidate fingerprint. Drift, validation failure, unknown commit state, session expiry, and server restart require read-only inspection and operator reconciliation before fresh preparation. `READY_NO_CHANGES` artifacts are downloadable but cannot deploy.
 
 These guards apply to the web workflow; CLI deployment and commit are disabled. Device-native configuration locking is not enforced: another administrator can still change the candidate between the final fingerprint check and commit. Coordinate administrator access during candidate preparation and commit. The baseline fingerprint identifies approved sanitized destination evidence; the rendered command SHA-256 identifies the commands to apply; the post-push candidate SHA-256 identifies the candidate configuration checked during validation and commit. They serve distinct purposes.
 
@@ -442,6 +442,72 @@ one reviewed plan
 → one command digest
 → preview / download / bundle / deployment
 ```
+
+## Guided migration workspace
+
+Open **Plan migration** after loading a FortiGate configuration. The workspace follows
+**Load configurations → Place configuration → Resolve exceptions → Review changes → Export or deploy**.
+Navigation does not approve or change the design.
+
+1. Choose **Plan offline** or **Prepare for a destination firewall**. Intent changes
+   guidance. Evidence starts as an **Architecture template**; explicitly choose
+   **Destination configuration** only for XML from the intended firewall. Destination
+   mode needs the selected device, real serial and reviewed baseline before candidate
+   preparation. XML cannot verify hardware capacity or licensing.
+2. Review VDOM ownership (VSYS and virtual router), then parent ports and derived
+   VLANs, then zones. Save validates proposals; approval remains separate. Bulk
+   editors and legacy mapping YAML, target-intent YAML and decisions JSON remain
+   under Advanced tools.
+3. Resolve the grouped exceptions. Placement actions apply only to editable
+   decisions. Unsupported inspection, source ambiguity and other manual work remain
+   excluded even after mappings are supplied. Affected counts are deduplicated within
+   each task; tasks may overlap.
+4. Review the exact selection, operations, scope, configuration and expanded
+   prerequisites, then choose **Approve these changes and generate commands**.
+   A failed draft request retains the previous view and staged edits as read-only
+   evidence; Retry submits the same intended update. Failed generation after approval
+   can be retried without approving again. Revalidate to change an approved selection
+   or renew an expired approval.
+5. Check export status separately from candidate eligibility. **Partial export**
+   excludes blocked and manual work and cannot deploy. Supporting configuration
+   without traffic rules is called out explicitly. **No changes needed** can produce
+   a bundle without an artificial command or candidate push. Preview, `.set`, bundle
+   and deployment use the same reviewed commands and SHA-256.
+
+### Download and resume a project
+
+Work is memory-only and refresh loses it. Choose **Download project** before closing
+or refreshing the page, then use **Resume project** in a fresh migration workspace.
+The versioned FortiGate → PAN-OS JSON file contains backend-sanitized source and
+optional target evidence, evidence role, selected device, intent, mapping proposals
+and service renames. It still contains customer topology; store it securely.
+Credentials, signed approvals, generated artifacts and candidate sessions are excluded.
+
+Import validates the size (51 MB project limit), version, pair and schema, sanitizes
+and reparses evidence, and rebuilds the draft. Unmatched source identities are
+reported and excluded. Restored values are proposals requiring fresh approval;
+imported destination evidence does not prove the live firewall is unchanged. A
+rejected import leaves the current workspace intact.
+
+### Candidate recovery
+
+Preparation performs preflight, pushes commands and validates automatically. Successful
+validation permits explicit commit; revalidation is optional. The password clears
+after every operation and must be re-entered for inspection, revalidation or commit.
+
+Partial push, validation failure, candidate drift, expired/lost session, server
+restart and interrupted or ambiguous commit disable execution. Use **Inspect candidate
+(read-only)** with a current approved destination artifact to check live serial,
+reviewed baseline and candidate cleanliness. Known attempted/accepted counts are
+shown; an interrupted response does not prove that nothing was written. Inspection
+never creates a validated session or commits, rolls back, discards or replays commands.
+
+Reconcile dirty or unknown candidate state with the operator; changes may include
+another administrator's work. Only a verified clean reviewed baseline permits fresh
+preparation. Renew evidence and approval after destination drift or artifact expiry.
+Commit uncertainty also requires checking device jobs and running state with the
+operator; the application cannot recover its process-local session after restart.
+The one-worker deployment baseline and device locking limitations still apply.
 
 ## Candidate Deployment
 

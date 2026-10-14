@@ -99,3 +99,13 @@ export function buildBulkPreview(
       value: valueFor(item).trim(),
     }))
 }
+
+export function mappingIdentityLabel(key: string): string {
+  try {
+    const identity: unknown = JSON.parse(key)
+    if (Array.isArray(identity) && identity.length === 4 && identity.every((value) => typeof value === 'string')) {
+      return `${identity[0]} / ${identity[2]} · ${identity[3].replaceAll('_', ' ')}`
+    }
+  } catch { /* Legacy keys remain available in technical details. */ }
+  return 'related placement'
+}
