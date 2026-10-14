@@ -7,7 +7,7 @@ from typing import Any
 from fwmigrate.extraction.models import ExtractionStatus
 from fwmigrate.extraction.sanitize import sanitize_source_attributes, sanitize_source_value
 from ....source_reporting.options import ExcelExportProfile
-from ....source_reporting.excel_style import append_report_row, append_report_title, finish_report_workbook
+from ....source_reporting.excel_style import append_report_row, finish_report_workbook, write_report_summary
 
 from .excel_schema import SHEET_HEADERS, SHEET_ORDER
 from ..transforms.effective_state import effective_path_state
@@ -376,42 +376,6 @@ def export_juniper_excel(
             continue
         sheet = workbook.create_sheet(name)
         if name == "Summary":
-            if profile is ExcelExportProfile.FAST:
-                append_report_title(sheet, "Juniper SRX Configuration Report")
-            append_report_row(sheet, ("Field", "Value"))
-            append_report_row(sheet, ("Vendor", "Juniper SRX"))
-            append_report_row(sheet, ("Hostname", result.config.hostname))
-            append_report_row(sheet, ("Source Format", result.source_format))
-            if collection_status is not None:
-                parts = tuple(collection_parts or ())
-                warnings = tuple(collection_warnings or ())
-                incomplete = sum(
-                    not (part.get("complete") if isinstance(part, dict) else getattr(part, "complete", False))
-                    for part in parts
-                )
-                append_report_row(sheet, ("Collection Status", collection_status))
-                append_report_row(sheet, ("Incomplete Collection Parts", incomplete))
-                if warnings:
-                    append_report_row(sheet, ("Collection Warnings", " | ".join(str(item) for item in warnings)))
-            append_report_row(sheet, ("Contexts", len(result.config.contexts)))
-            append_report_row(sheet, ("Configuration Groups", len(result.config.configuration_groups)))
-            append_report_row(sheet, ("Source Sections", len(result.source_sections)))
-            append_report_row(sheet, ("Partial Sections", sum(item.status == ExtractionStatus.PARTIAL for item in result.source_sections)))
-            append_report_row(sheet, ("Source Only Sections", sum(item.status == ExtractionStatus.SOURCE_ONLY for item in result.source_sections)))
-            append_report_row(sheet, ("Unsupported Sections", sum(item.status == ExtractionStatus.UNSUPPORTED for item in result.source_sections)))
-            append_report_row(sheet, ("Parse Errors", sum(item.status == ExtractionStatus.PARSE_ERROR for item in result.source_sections)))
-            append_report_row(sheet, ("Validation Errors", len(result.validation.errors)))
-            append_report_row(sheet, ("Validation Warnings", len(result.validation.warnings)))
-            append_report_row(sheet, ("Unresolved References", sum(item.result == "UNRESOLVED" for item in views.dependencies)))
-            append_report_row(sheet, ("Interfaces", len(views.interface_topology)))
-            append_report_row(sheet, ("Zones", len(views.zone_memberships)))
-            append_report_row(sheet, ("Policies", len(views.policies)))
-            append_report_row(sheet, ("NAT Rule Sets", len(views.nat_rule_sets)))
-            append_report_row(sheet, ("Routes", sum(len(context.routes) for context in result.config.iter_contexts())))
-            append_report_row(sheet, ("DHCP Objects", len(views.dhcp)))
-            append_report_row(sheet, ("VPNs", len(views.vpn_relationships)))
-            append_report_row(sheet, ("Remote Access Profiles", len(result.config.contexts) and sum(len(context.remote_access.profiles) for context in result.config.iter_contexts())))
-            append_report_row(sheet, ("APBR SLA Rules", sum(len(context.apbr.sla_rules) for context in result.config.iter_contexts())))
             continue
         if name == "Source Inventory":
             append_report_row(sheet, ("Domain", "Source Path", "Context", "Line", "Operation", "Key",
@@ -456,6 +420,45 @@ def export_juniper_excel(
             elif hasattr(item, "__dict__"):
                 item = item.__dict__
             append_report_row(sheet, tuple(_value(item.get(header.lower().replace(" ", "_"))) for header in SHEET_HEADERS[name]))
+    coverage = []
+    if collection_status is not None:
+        parts = tuple(collection_parts or ())
+        warnings = tuple(collection_warnings or ())
+        coverage.extend((("Collection Status", collection_status),
+                         ("Incomplete Collection Parts", sum(
+                             not (part.get("complete") if isinstance(part, dict) else getattr(part, "complete", False))
+                             for part in parts))))
+        if warnings:
+            coverage.append(("Collection Warnings", " | ".join(str(item) for item in warnings)))
+    write_report_summary(
+        workbook["Summary"], title="Juniper SRX Configuration Report", profile=profile.value.upper(),
+        metadata=(("Hostname", result.config.hostname), ("Version", None),
+                  ("Scopes", "\n".join(f"{context.context_type}: {context.name}"
+                                       for context in result.config.iter_contexts()) or None),
+                  ("Source File", None), ("Source Format", result.source_format)),
+        validation=(("Errors", len(result.validation.errors)), ("Warnings", len(result.validation.warnings)),
+                    ("Unresolved References", sum(item.result == "UNRESOLVED" for item in views.dependencies))),
+        inventory=(("Interfaces", len(views.interface_topology), "Interfaces"),
+                   ("Zones", len(views.zone_memberships), "Zones"),
+                   ("Policies", len(views.policies), "Policies"),
+                   ("NAT Rule Sets", len(views.nat_rule_sets), "NAT"),
+                   ("Routes", sum(len(context.routes) for context in result.config.iter_contexts()), "Static Routes"),
+                   ("DHCP Objects", len(views.dhcp), "DHCP Pools"),
+                   ("VPNs", len(views.vpn_relationships), "VPN"),
+                   ("Remote Access Profiles", len(result.config.contexts) and sum(
+                       len(context.remote_access.profiles) for context in result.config.iter_contexts()), "Remote Access"),
+                   ("APBR SLA Rules", sum(len(context.apbr.sla_rules) for context in result.config.iter_contexts()), "APBR")),
+        coverage=(*coverage, ("Contexts", len(result.config.contexts)),
+                  ("Configuration Groups", len(result.config.configuration_groups)),
+                  ("Source Sections", len(result.source_sections)),
+                  *((label, sum(item.status == status for item in result.source_sections)) for label, status in (
+                      ("Partial Sections", ExtractionStatus.PARTIAL),
+                      ("Source Only Sections", ExtractionStatus.SOURCE_ONLY),
+                      ("Unsupported Sections", ExtractionStatus.UNSUPPORTED),
+                      ("Parse Errors", ExtractionStatus.PARSE_ERROR))),
+                  ("Export Limitations", "FAST omits Source Inventory and Extraction Coverage. Use FULL for traceability."
+                   if profile is ExcelExportProfile.FAST else "FULL includes Source Inventory and Extraction Coverage.")),
+    )
     finish_report_workbook(workbook, summary_title="Juniper SRX Configuration Report")
     if hasattr(output, "write"):
         workbook.save(output)

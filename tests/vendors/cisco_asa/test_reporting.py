@@ -51,7 +51,9 @@ def test_selected_asa_domains_have_stable_report_sheets_and_headers():
     workbook = load_workbook(BytesIO(output.getvalue()), read_only=True)
     assert tuple(workbook.sheetnames) == SHEET_ORDER
     for name, headers in SHEET_HEADERS.items():
-        header_row = 2 if name == "Summary" else 1
+        if name == "Summary":
+            continue
+        header_row = 1
         row = tuple(workbook[name].iter_rows(min_row=header_row, max_row=header_row, values_only=True))[0]
         assert row[:len(headers)] == headers
     assert workbook["Summary"]["A1"].value == "Cisco ASA Configuration Report"
@@ -293,7 +295,7 @@ def test_excel_keeps_missing_hostname_and_labels_nat_source_order():
     workbook = load_workbook(BytesIO(output.getvalue()), read_only=True)
     summary = dict((row[0], row[1]) for row in workbook["Summary"].iter_rows(min_row=3, values_only=True) if row[0] is not None)
     nat_rows = list(workbook["NAT Rules"].iter_rows(values_only=True))
-    assert summary["Hostname"] is None
+    assert summary["Hostname"] == "Not reported"
     assert nat_rows[0][1] == "Source Order"
     assert nat_rows[1][1] == result.config.nat_rules[0].source_order
 

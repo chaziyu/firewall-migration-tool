@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from collections import Counter
+
 from pathlib import Path
 import json
 from typing import Any
 
 from ....source_reporting.options import ExcelExportProfile
-from ....source_reporting.excel_style import append_report_row, append_report_title, finish_report_workbook
+from ....source_reporting.excel_style import append_report_row, finish_report_workbook, write_report_summary
 from .excel_schema import SHEET_HEADERS, SHEET_ORDER
 
 
@@ -254,21 +256,8 @@ def export_ftd_excel(result: Any, output: Any, *, profile: ExcelExportProfile | 
     for name in SHEET_ORDER:
         sheet = workbook.create_sheet(name)
         if name == "Summary":
-            if profile is ExcelExportProfile.FAST:
-                append_report_title(sheet, "Cisco FTD Configuration Report")
-            append_report_row(sheet, ("Field", "Value"))
-            collection_provided = config.collection_metadata.provided
-            for key, value in {"Vendor": "Cisco FTD", "Input Source": config.input_source_type,
-                               "Source Plane": config.source_plane,
-                               "Collection Status": config.collection_metadata.status if collection_provided else "NOT_PROVIDED",
-                               "Collection Parts": len(config.collection_metadata.parts) if collection_provided else "Not provided",
-                               "Incomplete Collection Parts": (
-                                   sum(not part.complete for part in config.collection_metadata.parts)
-                                   if collection_provided else "Not provided"
-                               ),
-                               "Validation Issues": len(result.validation.issues)}.items():
-                append_report_row(sheet, (key, _text(value)))
-        elif name == "Source Inventory":
+            continue
+        if name == "Source Inventory":
             append_report_row(sheet, SHEET_HEADERS[name])
             for item in inventory_items:
                 attrs = item.source_attributes
@@ -312,6 +301,30 @@ def export_ftd_excel(result: Any, output: Any, *, profile: ExcelExportProfile | 
             append_report_row(sheet, SHEET_HEADERS[name])
             for row in rows[name]:
                 append_report_row(sheet, tuple(_text(value) for value in row))
+    collection_provided = config.collection_metadata.provided
+    scopes = sorted({f"{key}: {item.source_attributes[key]}" for item in inventory_items
+                     for key in ("domain_id", "device_id", "parent_policy_id", "policy_id")
+                     if item.source_attributes.get(key) is not None})
+    write_report_summary(
+        workbook["Summary"], title="Cisco FTD Configuration Report", profile=profile.value.upper(),
+        metadata=(("Hostname", None), ("FTD Version", config.version),
+                  ("Scopes", "\n".join(scopes) or None), ("Source File", None),
+                  ("Input Source", config.input_source_type), ("Source Plane", config.source_plane)),
+        validation=(("Errors", sum(issue.severity == "error" for issue in result.validation.issues)),
+                    ("Warnings", sum(issue.severity == "warning" for issue in result.validation.issues)),
+                    ("Unresolved References", len(derived.unresolved_references) if derived is not None else None),
+                    ("Validation Issues", len(result.validation.issues))),
+        inventory=((name, len(rows[name]), name) for name in SHEET_ORDER if name in rows),
+        coverage=(("Collection Status", config.collection_metadata.status if collection_provided else "NOT_PROVIDED"),
+                  ("Collection Parts", len(config.collection_metadata.parts) if collection_provided else None),
+                  ("Incomplete Collection Parts", sum(not part.complete for part in config.collection_metadata.parts)
+                   if collection_provided else None),
+                  ("Unsupported Source Evidence", len(config.unsupported_evidence)),
+                  *((f"Coverage: {status}", count, "Semantic Completeness") for status, count in Counter(
+                      status for family, status in getattr(derived, "source_plane_completeness", {}).items()
+                      if not family.startswith("collection:")).items()),
+                  ("Export Limitations", "FAST and FULL retain source evidence and collection completeness.")),
+    )
     finish_report_workbook(workbook, summary_title="Cisco FTD Configuration Report")
     if hasattr(output, "write"):
         workbook.save(output)
