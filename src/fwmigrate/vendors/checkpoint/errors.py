@@ -11,8 +11,3 @@ class CheckPointError(ValueError):
 class CheckPointParseError(CheckPointError):
     """Raised when Check Point JSON, export bundle, or syntax is malformed."""
     pass
-
-
-class CheckPointResolutionError(CheckPointError):
-    """Raised when a required Check Point object reference cannot be resolved safely."""
-    pass
