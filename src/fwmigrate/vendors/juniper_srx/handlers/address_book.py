@@ -123,22 +123,32 @@ def _parse_address_book_body(
             return True
 
         sub = body_toks[2].lower()
+
+        def finish_address(consumed: int) -> bool:
+            if len(body_toks) > consumed:
+                addr.source_attributes.setdefault("unknown_children", []).append(
+                    sanitize_source_attributes({"tokens": body_toks[consumed:], "raw": cmd.raw_sanitized})
+                )
+                cmd.extraction_status = ExtractionStatus.PARTIAL
+                cmd.requires_manual_review = True
+            else:
+                cmd.extraction_status = ExtractionStatus.EXTRACTED
+            return True
+
         if sub == "description" and len(body_toks) >= 4:
             addr.description = body_toks[3]
             record_scalar_candidate(addr.field_provenance, addr.field_candidate_history, "description", addr.description, cmd)
-            cmd.extraction_status = ExtractionStatus.EXTRACTED
-            return True
+            return finish_address(4)
         elif sub in ("dns-name", "dns-address") and len(body_toks) >= 4:
             addr.type = sub
             addr.fqdn = body_toks[3]
             record_scalar_candidate(addr.field_provenance, addr.field_candidate_history, "fqdn", addr.fqdn, cmd)
-            cmd.extraction_status = ExtractionStatus.EXTRACTED
-            return True
+            return finish_address(4)
         elif sub == "range-address":
             addr.source_attributes["range_address_source"] = sanitize_source_attributes(
                 {"tokens": body_toks[3:], "raw": cmd.raw_sanitized}
             )
-            if len(body_toks) != 6 or body_toks[4].lower() != "to":
+            if len(body_toks) < 6 or body_toks[4].lower() != "to":
                 cmd.extraction_status = ExtractionStatus.PARSE_ERROR
                 cmd.requires_manual_review = True
                 cmd.parse_error = f"Malformed range-address; expected '<start> to <end>' in '{cmd.raw_sanitized}'"
@@ -160,14 +170,12 @@ def _parse_address_book_body(
             addr.range_start = body_toks[3]
             addr.range_end = body_toks[5]
             record_scalar_candidate(addr.field_provenance, addr.field_candidate_history, "range", (addr.range_start, addr.range_end), cmd)
-            cmd.extraction_status = ExtractionStatus.EXTRACTED
-            return True
+            return finish_address(6)
         elif sub == "wildcard-address" and len(body_toks) >= 4:
             addr.type = "wildcard-address"
             addr.wildcard = body_toks[3]
             record_scalar_candidate(addr.field_provenance, addr.field_candidate_history, "wildcard", addr.wildcard, cmd)
-            cmd.extraction_status = ExtractionStatus.EXTRACTED
-            return True
+            return finish_address(4)
         elif sub == "ip-prefix" and len(body_toks) >= 4:
             if body_toks[3].upper() == "ACCESS-DENIED" or cmd.access_denied:
                 addr.source_attributes["access_denied"] = True
@@ -179,9 +187,10 @@ def _parse_address_book_body(
             record_scalar_candidate(addr.field_provenance, addr.field_candidate_history, "prefix", addr.prefix, cmd)
             try:
                 ipaddress.ip_network(addr.prefix, strict=False)
-                cmd.extraction_status = ExtractionStatus.EXTRACTED
+                return finish_address(4)
             except ValueError:
                 cmd.extraction_status = ExtractionStatus.PARSE_ERROR
+                cmd.requires_manual_review = True
                 cmd.parse_error = f"Invalid IP prefix: {addr.prefix}"
             return True
         else:
@@ -192,16 +201,19 @@ def _parse_address_book_body(
                 cmd.extraction_status = ExtractionStatus.UNSUPPORTED
                 cmd.requires_manual_review = True
                 return True
+            try:
+                ipaddress.ip_network(val, strict=False)
+            except ValueError:
+                addr.source_attributes.setdefault("unsupported_address_source", []).append(
+                    sanitize_source_attributes({"tokens": body_toks[2:], "raw": cmd.raw_sanitized})
+                )
+                cmd.extraction_status = ExtractionStatus.SOURCE_ONLY
+                cmd.requires_manual_review = True
+                return True
             addr.type = "ip-prefix"
             addr.prefix = val
             record_scalar_candidate(addr.field_provenance, addr.field_candidate_history, "prefix", addr.prefix, cmd)
-            try:
-                ipaddress.ip_network(val, strict=False)
-                cmd.extraction_status = ExtractionStatus.EXTRACTED
-            except ValueError:
-                cmd.extraction_status = ExtractionStatus.PARSE_ERROR
-                cmd.parse_error = f"Invalid IP prefix: {val}"
-            return True
+            return finish_address(3)
 
     # Address-set definition: address-set <set_name> ...
     if first == "address-set" and len(body_toks) >= 2:

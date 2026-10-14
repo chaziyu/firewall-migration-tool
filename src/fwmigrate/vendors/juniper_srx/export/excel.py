@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from fwmigrate.extraction.models import ExtractionStatus
-from fwmigrate.extraction.sanitize import sanitize_source_attributes
+from fwmigrate.extraction.sanitize import sanitize_source_attributes, sanitize_source_value
 from ....source_reporting.options import ExcelExportProfile
 from ....source_reporting.excel_style import append_report_row, append_report_title, finish_report_workbook
 
@@ -48,7 +48,7 @@ def _additional_settings(value: Any, context: str, path: tuple[str, ...] = ()) -
         for key, child in value.items():
             if key in {"raw_extra", "settings", "source_attributes"} and isinstance(child, dict):
                 for setting, setting_value in child.items():
-                    safe = sanitize_source_attributes({setting: setting_value})[setting]
+                    safe = sanitize_source_value(str(setting), setting_value)
                     rows.append((context, ".".join(path[:-1]), path[-1] if path else "source",
                                  setting, json.dumps(safe, sort_keys=True, ensure_ascii=False, default=str)))
             elif key not in {"field_candidate_history", "non_effective_candidate_history", "field_provenance"}:

@@ -14,6 +14,44 @@ from fwmigrate.vendors.juniper_srx.web_report import build_juniper_preview
 from fwmigrate.vendors.juniper_srx.export.excel import export_juniper_excel
 
 
+def test_preview_projection_preserves_nested_native_keys_and_redacts_secrets():
+    from fwmigrate.vendors.juniper_srx.web_report import _project
+
+    source = {"Objects": {"APP-A": {"Name": "APP-A"}, "app-a": {"Name": "app-a"}},
+              "settings": {"password": "secret-password", "psk": "secret-psk",
+                           "api-token": "secret-token", "private-key": "secret-private-key"}}
+    before = deepcopy(source)
+    projected = _project(source)
+    assert set(projected["Objects"]) == {"APP-A", "app-a"}
+    assert projected["Objects"]["APP-A"]["Name"] == "APP-A"
+    assert all(value == "[REDACTED]" for value in projected["settings"].values())
+    assert source == before
+
+
+def test_additional_settings_preserves_keys_and_secrets_in_both_profiles():
+    from fwmigrate.source_reporting.options import ExcelExportProfile
+    from fwmigrate.vendors.juniper_srx.export.excel import _additional_settings
+
+    settings = {"raw_extra": {"native-setting": {"settings": {"safe-value": "retained",
+                                                           "private-key": "hidden-material"}}},
+                "source_attributes": {"Case-Key": {"api-token": "hidden-token"}}}
+    rows = _additional_settings(settings, "root")
+    assert {row[3] for row in rows} == {"native-setting", "Case-Key"}
+    assert "retained" in repr(rows)
+    assert "hidden-material" not in repr(rows) and "hidden-token" not in repr(rows)
+    result = extract_juniper_source("set system host-name SRX")
+    result.config.get_context().source_attributes.update(settings)
+    before = deepcopy(result.config.model_dump(mode="python"))
+    for profile in (ExcelExportProfile.FULL, ExcelExportProfile.FAST):
+        output = BytesIO()
+        export_juniper_excel(result, output, profile=profile)
+        workbook = load_workbook(BytesIO(output.getvalue()), read_only=True)
+        values = list(workbook["Additional Settings"].values)
+        assert "native-setting" in repr(values) and "Case-Key" in repr(values)
+        assert "hidden-material" not in repr(values) and "hidden-token" not in repr(values)
+    assert result.config.model_dump(mode="python") == before
+
+
 def test_source_accounting_preserves_source_only_and_does_not_call_commands_objects():
     commands = [
         JunosCommand(operation=JunosOperation.SET, tokens=["set", "security", "native"],
