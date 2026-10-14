@@ -1,6 +1,89 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { createServer } from 'vite'
+import { createElement } from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
+import { readFileSync } from 'node:fs'
+import ts from 'typescript'
+import * as jsxRuntime from 'react/jsx-runtime'
+import * as presentation from '../src/features/report/reportPresentation.ts'
 import { activeSubsection, interfaceTopologyRows, matchingSourceRows, reportSections, reportSectionRowCount, reportCounts, reportSearchText, compactValue, rowColumns, safeValue, defaultColumns, cellSummary, detailGroups, findingGroups, findingGroupKey, fieldLabel } from '../src/features/report/reportPresentation.ts'
+
+test('configuration summary renders each count once, preserves missing and zero values, and keeps informational rows plain', async () => {
+  const server = await createServer({ server: { middlewareMode: true }, appType: 'custom' })
+  try {
+    const { SourceReport } = await server.ssrLoadModule('/src/features/report/SourceReport.tsx')
+    const render = (data) => renderToStaticMarkup(createElement(SourceReport, {
+      data, excelProfile: 'fast', onExcelProfileChange() {}, exporting: false, exportStatus: '', onExport() {},
+    }))
+    const data = { vendor: 'fortigate', summary: { objects: { policies: 1724, interfaces: 83, addresses: 6000, address_groups: 100, services: 100, service_groups: 56 }, unsupported_count: 2 }, sections: { schedules: [], nat: [{}, {}], routes: [{}], vpn_tunnels: [{}], unresolved_references: [] } }
+    const before = structuredClone(data)
+    const html = render(data)
+    const table = html.match(/<table class="configuration-summary"[\s\S]*?<\/table>/)[0]
+    const rows = [...table.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/g)].slice(1).map((match) => match[1])
+    const labels = ['Policies', 'Address/service objects', 'Interfaces', 'Schedules', 'NAT', 'Routes', 'VPN', 'Unresolved references', 'Unsupported / source-only']
+    const values = [1724, 6256, 83, 0, 2, 1, 1, 0, 2]
+    assert.equal(rows.length, labels.length)
+    rows.forEach((row, index) => {
+      assert.ok(row.includes(`>${labels[index]}<`))
+      assert.ok(row.includes(`<td>${values[index].toLocaleString()}</td>`))
+      assert.equal(row.includes('<button'), index < 8)
+      assert.equal(row.includes('›'), index < 8)
+    })
+    assert.match(html, /<summary>About these counts<\/summary>/)
+    assert.ok(!table.includes('Review findings'))
+    assert.ok(!table.includes('configuration-summary-warning'))
+    const missing = render({ vendor: 'fortigate' })
+    const missingTable = missing.match(/<table class="configuration-summary"[\s\S]*?<\/table>/)[0]
+    assert.equal((missingTable.match(/Not reported/g) ?? []).length, 7)
+    assert.ok(!missingTable.includes('Unresolved references'))
+    assert.ok(!missingTable.includes('Unsupported / source-only'))
+    assert.match(render({ vendor: 'fortigate', sections: { unresolved_references: [{}] } }), /class="configuration-summary-warning"/)
+    assert.deepEqual(data, before)
+  } finally {
+    await server.close()
+  }
+})
+
+test('summary buttons retain their section and subsection destinations', () => {
+  const slots = []
+  let cursor = 0
+  const hooks = {
+    useState(initial) {
+      const index = cursor++
+      if (!(index in slots)) slots[index] = initial
+      return [slots[index], (value) => { slots[index] = typeof value === 'function' ? value(slots[index]) : value }]
+    },
+    useMemo: (factory) => factory(),
+    useRef: () => ({ current: null }),
+    useEffect() {},
+  }
+  const source = readFileSync(new URL('../src/features/report/SourceReport.tsx', import.meta.url), 'utf8')
+  const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText
+  const exports = {}
+  const modules = { react: hooks, 'react/jsx-runtime': jsxRuntime, './reportPresentation': presentation, './ReportDetails': {}, '../../components/common/tabKeyboard': {} }
+  new Function('require', 'exports', compiled)((name) => { assert.ok(name in modules); return modules[name] }, exports)
+  function nodes(node) {
+    if (Array.isArray(node)) return node.flatMap(nodes)
+    return node && typeof node === 'object' ? [node, ...nodes(node.props?.children)] : []
+  }
+  const data = { sections: { addresses: [], address_groups: [{}], interfaces: [{}], unresolved_references: [] } }
+  function render() {
+    cursor = 0
+    return nodes(exports.SourceReport({ data, excelProfile: 'fast', onExcelProfileChange() {}, exporting: false, exportStatus: '', onExport() {} }))
+  }
+  for (const [label, section, subsection] of [
+    ['Policies', 'Policies'], ['Address/service objects', 'Objects', 'addresses'], ['Interfaces', 'Interfaces', 'interface_topology'],
+    ['Schedules', 'Schedules'], ['NAT', 'NAT'], ['Routes', 'Routes'], ['VPN', 'VPN'], ['Unresolved references', 'References'],
+  ]) {
+    const tree = render()
+    tree.find((node) => node.type === 'button' && node.props.children === label).props.onClick()
+    const next = render()
+    assert.ok(next.some((node) => node.props.role === 'tab' && node.props.children === section && node.props['aria-selected']))
+    if (subsection) assert.ok(next.some((node) => node.props.id === `subsection-tab-${subsection}` && node.props['aria-selected']))
+    next.find((node) => node.props.role === 'tab' && node.props.children === 'Overview').props.onClick()
+  }
+})
 
 test('each section is reachable once; inventory, topology, plural policies, and VPN retain their boundaries', () => {
   const sections = { policies: [{ policy_id: 1 }, { policy_id: 1 }], security_policies: [], interfaces: [{ name: 'same', vdom: 'a' }, { name: 'same', vdom: 'b' }], interface_topology: [{ name: 'same' }], policy_vpn_phase1: [{}], unknown_section: [null, 'unsupported', { unknown: [] }], metadata: { complete: false }, validation: [] }
