@@ -93,8 +93,9 @@ def handle_system_command(cmd: JunosCommand, config: JuniperSRXConfig,
                 config.authentication_order.extend(extract_value_list(toks[3:]))
                 cmd.extraction_status = ExtractionStatus.EXTRACTED
                 return True
-            if sub in {"login", "radius-server", "tacplus-server"} and len(toks) >= 4:
-                is_login = sub == "login" and toks[3].lower() in {"class", "user"}
+            if (sub == "login" and len(toks) >= 5 and toks[3].lower() in {"class", "user"}
+                    or sub in {"radius-server", "tacplus-server"} and len(toks) >= 4):
+                is_login = sub == "login"
                 if sub == "login" and toks[3].lower() == "class" and len(toks) >= 5:
                     name, store = toks[4], config.login_classes
                     item = store.setdefault(name, JuniperLoginClass(name=name))

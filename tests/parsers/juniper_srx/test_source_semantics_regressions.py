@@ -3,6 +3,52 @@ from fwmigrate.vendors.juniper_srx.source_report import extract_juniper_source
 from fwmigrate.vendors.juniper_srx.web_report import build_juniper_preview
 
 
+def test_login_source_only_branches_never_create_aaa_servers():
+    result = extract_juniper_source('''set system login message "Authorized users only"
+set system login user
+set system login class
+set system login user Alice class operator
+set system login class Custom permissions view
+set system radius-server 192.0.2.1 secret hidden-radius-secret
+set system tacplus-server 192.0.2.2 secret hidden-tacacs-secret
+''')
+    assert set(result.config.admin_users) == {"Alice"}
+    assert result.config.admin_users["Alice"].login_class == "operator"
+    assert result.config.login_classes["Custom"].settings["permissions"] == ["view"]
+    assert set(result.config.radius_servers) == {"192.0.2.1"}
+    assert set(result.config.tacplus_servers) == {"192.0.2.2"}
+    assert "system_login_message_Authorized_users_only" in result.config.get_context().source_attributes
+    commands = [cmd for item in result.inventory_items for cmd in item.commands]
+    assert sum(cmd.status == ExtractionStatus.SOURCE_ONLY for cmd in commands) >= 3
+    assert "hidden-radius-secret" not in repr(result.config)
+    assert "hidden-tacacs-secret" not in repr(result.config)
+
+
+def test_address_trailing_tokens_are_partial_and_unsupported_leaves_are_source_only():
+    forms = {
+        "V4": "192.0.2.1/32", "V6": "2001:db8::1/128",
+        "DNS": "dns-name example.org", "WILD": "wildcard-address 192.0.2.0/255.255.255.0",
+        "PREFIX": "ip-prefix 198.51.100.0/24", "RANGE": "range-address 192.0.2.1 to 192.0.2.9",
+    }
+    source = "\n".join(f"set security address-book global address {name} {form} extra-option value"
+                       for name, form in forms.items())
+    result = extract_juniper_source(source + "\nset security address-book global address OTHER native-leaf value")
+    book = result.config.get_context().address_books["global"]
+    for name in forms:
+        assert book.addresses[name].source_attributes["unknown_children"][0]["tokens"] == ["extra-option", "value"]
+    assert book.addresses["V4"].prefix == "192.0.2.1/32"
+    assert book.addresses["DNS"].fqdn == "example.org"
+    assert book.addresses["RANGE"].range_end == "192.0.2.9"
+    assert book.addresses["OTHER"].prefix is None
+    assert book.addresses["OTHER"].source_attributes["unsupported_address_source"]
+    commands = [cmd for item in result.inventory_items for cmd in item.commands]
+    assert sum(cmd.status == ExtractionStatus.PARTIAL for cmd in commands) == len(forms)
+    assert all(cmd.requires_manual_review for cmd in commands)
+    assert result.review_required
+    preview = build_juniper_preview(result)
+    assert preview["review_required"]
+
+
 def test_hierarchical_quoted_values_survive_normalization():
     result = extract_juniper_source(
         """interfaces {

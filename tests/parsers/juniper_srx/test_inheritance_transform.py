@@ -8,6 +8,36 @@ from fwmigrate.vendors.juniper_srx.web_report import build_juniper_preview
 from fwmigrate.vendors.juniper_srx.transforms.inheritance import build_inheritance_view
 
 
+def test_effective_state_normalizes_only_the_owning_context():
+    from fwmigrate.vendors.juniper_srx.transforms.effective_state import effective_path_state
+    from fwmigrate.vendors.juniper_srx.transforms.effective_lookup import EffectiveJunosLookup
+
+    path = ("security", "address-book", "global", "address", "A")
+    for context, prefix in (("root", ()), ("logical-system LS1", ("logical-systems", "LS1")),
+                            ("tenant T1", ("tenants", "T1"))):
+        view = {"effective_statements": ({"context": context, "target_path": (*prefix, *path),
+                                         "status": "EFFECTIVE", "origin": "inherited-group"},),
+                "inactive_hierarchies": ()}
+        before = deepcopy(view)
+        assert effective_path_state(view, context, path) == "EFFECTIVE"
+        assert effective_path_state(view, context, (*prefix, *path)) == "EFFECTIVE"
+        assert effective_path_state(view, context, ("unknown",)) is None
+        assert effective_path_state(view, "logical-system OTHER", path) is None
+        assert view == before
+        view["inactive_hierarchies"] = ({"context": context, "path": (*prefix, *path)},)
+        assert effective_path_state(view, context, path) == "INACTIVE"
+        lookup = EffectiveJunosLookup((*view["effective_statements"],
+            {"context": context, "target_path": (*prefix, *path), "origin": "activation"}))
+        assert lookup.hierarchy_is_inactive(context, path)
+        assert not lookup.path_is_effective(context, path)
+    mismatched = {"effective_statements": ({"context": "logical-system LS1",
+        "target_path": ("logical-systems", "LS2", *path), "status": "EFFECTIVE"},)}
+    assert effective_path_state(mismatched, "logical-system LS1", path) is None
+    inactive_scope = {"inactive_hierarchies": ({"context": "logical-system ls1", "path": ()},)}
+    assert effective_path_state(inactive_scope, "logical-system LS1", path) == "INACTIVE"
+    assert effective_path_state(inactive_scope, "logical-system LS2", path) is None
+
+
 def _view(source):
     parser = JuniperSRXParser(source)
     parser.extract_source()
@@ -15,6 +45,35 @@ def _view(source):
     result = build_inheritance_view(parser.commands)
     assert parser.commands == commands_before
     return result
+
+
+def test_scoped_effective_state_agrees_in_preview_and_excel_without_source_mutation():
+    from io import BytesIO
+    from openpyxl import load_workbook
+
+    result = extract_juniper_source('''set security address-book global address ROOT-A 192.0.2.1/32
+set logical-systems LS1 security address-book global address LS-A 192.0.2.2/32
+set logical-systems LS2 security address-book global address LS-A 192.0.2.3/32
+deactivate logical-systems LS2 security address-book global address LS-A
+set tenants T1 security address-book global address TENANT-A 192.0.2.4/32
+''')
+    source_before = deepcopy(result.config.model_dump(mode="python"))
+    derived_before = deepcopy(result.derived)
+    preview = build_juniper_preview(result)
+    states = {(row["scope"], row["name"]): row["effective_state"]
+              for row in preview["sections"]["addresses"]}
+    assert states == {("root", "ROOT-A"): "EFFECTIVE", ("logical-system LS1", "LS-A"): "EFFECTIVE",
+                      ("logical-system LS2", "LS-A"): "INACTIVE", ("tenant T1", "TENANT-A"): "EFFECTIVE"}
+    output = BytesIO()
+    export_juniper_excel(result, output)
+    workbook = load_workbook(BytesIO(output.getvalue()), read_only=True)
+    rows = list(workbook["Addresses"].values)
+    headers = rows[0]
+    excel_states = {(row[headers.index("Context")], row[headers.index("Name")]): row[headers.index("Effective State")]
+                    for row in rows[1:]}
+    assert excel_states == states
+    assert result.config.model_dump(mode="python") == source_before
+    assert result.derived == derived_before
 
 
 def test_local_override_and_group_order_keep_candidates_and_provenance():
