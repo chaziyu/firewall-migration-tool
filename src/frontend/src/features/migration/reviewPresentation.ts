@@ -40,7 +40,7 @@ export function groupPlanBlockers(rows: Array<Record<string, unknown>>) {
 
 export const reviewQueueNames = ['NEEDS_INPUT', 'CHOOSE_CANDIDATE', 'READY_TO_CONFIRM', 'CONFLICT', 'COMPLETE'] as const
 
-export type BulkPreviewRow = { key: string; scope: string; value: string }
+type BulkPreviewRow = { key: string; scope: string; value: string }
 
 export function reviewSuggestions(decisions: Decision[]) {
   return decisions.filter((item) => item.mode === 'SUGGESTED' && item.review_state !== 'CONFIRMED' && item.suggested_value)
