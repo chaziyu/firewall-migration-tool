@@ -82,7 +82,7 @@ def apply_explicit_options(config, decisions: PANMigrationDecisionSet,
                            options: PANMigrationOptions | dict | None) -> PANMigrationDecisionSet:
     """Apply explicit engineer mappings as confirmed decisions.
 
-    Extra mappings are preserved as pair-specific decisions so existing CLI and
+    Valid optional mappings are preserved as pair-specific decisions so existing CLI and
     API mapping documents remain backward compatible. No source or target value
     is inferred here.
     """
@@ -96,11 +96,23 @@ def apply_explicit_options(config, decisions: PANMigrationDecisionSet,
     by_key = {item.key: item for item in decisions.decisions}
     zones = {(item.vdom or "root", item.name) for item in getattr(config, "zones", ()) if item.name}
     interfaces = {(item.vdom or "root", item.name) for item in getattr(config, "interfaces", ()) if item.name}
+    source_vdoms = {item.vdom or "root" for values in vars(config).values() if isinstance(values, (list, tuple))
+                    for item in values if hasattr(item, "vdom")}
+    if not source_vdoms:
+        source_vdoms.add("root")
+    # Required identities can originate in explicit references in partial source input.
+    requirements = build_mapping_requirements(config, object(), include_configuration=True)
+    required_keys = {make_decision_key(item["source_vdom"], item["kind"], item["source_name"], field)
+                     for item in requirements["interfaces"] for field in item["requires"]}
 
     def confirm(vdom: str, kind: str, name: str, field: str, value: str | None) -> None:
         if value is None:
             return
         key = make_decision_key(vdom, kind, name, field)
+        valid = ((vdom in source_vdoms and name == vdom) if kind == "vdom" else
+                 (vdom, name) in (zones if kind == "zone" else interfaces) or key in required_keys)
+        if not valid:
+            raise ValueError(f"Invalid source mapping identity: {vdom!r} / {kind} / {name!r}")
         old = by_key.get(key)
         if old is None:
             old = PANMigrationDecision(vdom, kind, name, field, mode=PANDecisionMode.REQUIRED)
@@ -114,6 +126,8 @@ def apply_explicit_options(config, decisions: PANMigrationDecisionSet,
             target_object=value,
             evidence_target_digest=None,
             evidence_target_device=None,
+            approved_operation=old.approved_operation if old.value == value else None,
+            approval_context=old.approval_context if old.value == value else None,
         )
 
     for vdom, mapping in options.vdoms.items():

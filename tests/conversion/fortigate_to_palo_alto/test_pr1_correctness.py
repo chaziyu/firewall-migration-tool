@@ -388,6 +388,30 @@ def test_builtin_all_and_named_all_preserve_ipv4_match_identity():
         assert source.policies[0].srcaddr == ["all"]
 
 
+@pytest.mark.parametrize("family", ["addresses", "address_groups", "vips", "vip_groups"])
+def test_address_references_preserve_explicit_all_in_each_scoped_family(family):
+    from fwmigrate.conversion.fortigate_to_palo_alto.planning.addresses import address_references
+    source = SimpleNamespace(**{family: [SimpleNamespace(name="all", vdom="branch")]})
+    assert address_references(source, "branch", ["host", "all", "all"]) == ("host", "all", "all")
+    assert address_references(source, "root", ["host", "all"]) == ("host", "0.0.0.0/0")
+    assert address_references(source, None, ["all"]) == ("0.0.0.0/0",)
+
+
+def test_address_references_skip_inventory_without_all_and_stop_at_explicit_all():
+    from fwmigrate.conversion.fortigate_to_palo_alto.planning.addresses import address_references
+
+    class UnreadableInventory:
+        def __iter__(self):
+            pytest.fail("Unneeded address inventory scan")
+
+    source = SimpleNamespace(addresses=UnreadableInventory())
+    assert address_references(source, "root", iter(["host", "host"])) == ("host", "host")
+    assert address_references(source, "root", []) == ()
+    source.addresses = [SimpleNamespace(name="all", vdom=None)]
+    source.address_groups = UnreadableInventory()
+    assert address_references(source, "root", ["all"]) == ("all",)
+
+
 def test_literal_ipv4_selectors_are_only_exempt_for_addresses_and_keep_named_dependencies():
     from dataclasses import replace
     address = PlannedAddress(source_object_type="address", source_name="192.0.2.1", target_vsys="vsys1",

@@ -205,3 +205,22 @@ test('10,000-row draft groups in under one second without changing row order', (
   assert.ok(elapsed < 1000, `Grouping took ${elapsed.toFixed(1)} ms`)
   console.log(`10,000-row grouping: ${elapsed.toFixed(1)} ms`)
 })
+
+test('11,319-row review ordering stays fast and preserves dependency order and input', () => {
+  const rows = Array.from({ length: 11319 }, (_, index) => ({ decision_key: `row-${index}`, status: 'NEEDS_INPUT', dependencies: [] }))
+  rows[0].dependencies = ['row-86']
+  const groups = Array.from({ length: 87 }, (_, index) => ({ decision_keys: [`row-${index}`], source_vdom: 'root',
+    source_kind: 'interface', source_name: `port-${index}`, queue: 'NEEDS_INPUT', affected_count: 87 - index }))
+  const original = structuredClone(groups)
+  const start = performance.now()
+  const ordered = orderReviewGroups(groups, rows, {})
+  const elapsed = performance.now() - start
+  assert.equal(ordered.length, groups.length)
+  assert.equal(new Set(ordered).size, groups.length)
+  assert.ok(ordered.indexOf(groups[86]) < ordered.indexOf(groups[0]))
+  assert.deepEqual(groups, original)
+  const byKey = new Map(rows.map((row) => [row.decision_key, row]))
+  for (const group of groups) assert.equal(reviewGroupActionable(group, byKey), reviewGroupActionable(group, rows))
+  assert.ok(elapsed < 1000, `Ordering took ${elapsed.toFixed(1)} ms`)
+  console.log(`11,319-row review ordering: ${elapsed.toFixed(1)} ms`)
+})

@@ -1,6 +1,6 @@
 import { saveWorkspace, workspace } from '../../storage/workspaceStore'
 import type { SourceEvidence } from '../../storage/workspaceTypes'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { SetStateAction } from 'react'
 import { postForm } from '../../api/client'
 import { FileUpload } from '../source/FileUpload'
@@ -12,7 +12,7 @@ import type { Decision, DecisionDocument, ReviewData, ReviewGroup } from './revi
 import { download } from './download'
 import { MigrationReviewQueues } from './components/MigrationReviewQueues'
 import { MigrationDecisionTable } from './components/MigrationDecisionTable'
-import { orderReviewGroups, reconcileReviewDrafts, reviewGroupActionable } from './reviewDrafts'
+import { draftRowKey, orderReviewGroups, reconcileReviewDrafts, reviewGroupActionable } from './reviewDrafts'
 import { MigrationInterfaceMappings } from './components/MigrationInterfaceMappings'
 import { useMigrationReviewActivity } from './hooks/useMigrationReviewActivity'
 import {
@@ -70,6 +70,7 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
     postJson,
     run,
     busy,
+    actionBusy,
     elapsedSeconds,
     setReviewLoading,
     error,
@@ -215,6 +216,11 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
     const heading = document.getElementById(`review-group-heading-${focusNextGroupKey.current}`)
     if (heading) { heading.scrollIntoView({ block: 'center' }); heading.focus(); focusNextGroupKey.current = '' }
   }, [selectedGroupKey, review])
+
+  const proposalRows = useMemo(() => [...(deterministicDraft?.decisions ?? []), ...(deterministicDraft?.configuration ?? [])], [deterministicDraft])
+  const proposalByKey = useMemo(() => new Map(proposalRows.map((row) => [draftRowKey(row), row])), [proposalRows])
+  const reviewGroups = useMemo(() => review ? orderReviewGroups(review.review_groups, proposalRows, review.decision_context ?? {}) : [], [review, proposalRows])
+  const actionableGroups = useMemo(() => reviewGroups.filter((group) => reviewGroupActionable(group, proposalByKey)), [reviewGroups, proposalByKey])
 
   if (vendor !== 'fortigate' || !previewId) return null
 
@@ -395,9 +401,6 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
   const decisions = review?.decisions.decisions ?? []
   const suggestions = reviewSuggestions(decisions)
   const devices = targetDevices
-  const reviewGroups = review ? orderReviewGroups(review.review_groups, [...(deterministicDraft?.decisions ?? []), ...(deterministicDraft?.configuration ?? [])], review.decision_context ?? {}) : []
-  const proposalRows = [...(deterministicDraft?.decisions ?? []), ...(deterministicDraft?.configuration ?? [])]
-  const actionableGroups = reviewGroups.filter((group) => reviewGroupActionable(group, proposalRows))
   const vdoms = reviewVdoms(reviewGroups)
   const queueNames = [...reviewQueueNames]
   const visibleGroups = visibleReviewGroups(reviewGroups, activeQueue, vdomFilter, search)
@@ -433,7 +436,7 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
       <div className="migration-toolbar">
         <div className="target-xml-upload">
           <h3>Optional PAN-OS target XML</h3>
-          {(!targetSource || replaceTarget) && <FileUpload file={null} accept=".xml,application/xml,text/xml" disabled={busy} title="Drop your target XML here" helpText="Optional · Supports .xml files" onChange={(file) => { if (file) void uploadTarget(file) }} />}
+          {(!targetSource || replaceTarget) && <FileUpload file={null} accept=".xml,application/xml,text/xml" disabled={actionBusy} title="Drop your target XML here" helpText="Optional · Supports .xml files" onChange={(file) => { if (file) void uploadTarget(file) }} />}
           {targetFilename && <p className="report-count-note">Loaded target: {targetFilename}</p>}
         </div>
         {targetSource && <button className="secondary-button" type="button" disabled={busy} onClick={() => setReplaceTarget((value) => !value)}>Replace XML</button>}

@@ -312,6 +312,21 @@ def test_reused_address_remains_available_to_a_rendered_policy():
     assert any("lan-net" in command and "source" in command for command in rendered.commands), rendered.commands
 
 
+def test_circular_group_dependencies_cannot_be_satisfied_by_reuse():
+    groups = tuple(PlannedAddressGroup(source_vdom="root", source_kind="address_group",
+        source_object_type="address_group", source_name=name, target_name=name, target_vsys="vsys1",
+        status=PANMigrationStatus.SUPPORTED, members=members)
+        for name, members in (("a", ("b",)), ("b", ("a",)), ("dependent", ("a",))))
+    plan = PANMigrationPlan(address_groups=groups)
+    decisions = PANMigrationDecisionSet()
+    classifications = [{"family": "address_group", "source_vdom": "root", "source_kind": "address_group",
+                        "source_name": "a", "target_vsys": "vsys1", "status": "EXACT_MATCH"}]
+    dispositions, _ = assess_target_plan(plan, classifications, (), decisions, build_plan_dependency_index(plan, decisions))
+    rendered = PANSetRenderer().render(plan, dispositions=dispositions)
+    assert rendered.commands == ()
+    assert all(row["render_disposition"] == "BLOCK" for row in rendered.report["items"])
+
+
 def test_dependency_index_scopes_same_names_by_object_family():
     address = PlannedAddress(source_vdom="root", source_kind="address", source_object_type="address",
         source_name="web", target_vsys="vsys1", target_name="web", status=PANMigrationStatus.SUPPORTED,

@@ -1,6 +1,7 @@
 """Dependency and field validation for FortiGate to PAN-OS plans."""
 
 from dataclasses import dataclass
+from graphlib import CycleError, TopologicalSorter
 from ipaddress import IPv4Address, IPv4Network
 
 from .models import MigrationIssue, MigrationSourceRef, PANMigrationPlan, PANMigrationStatus
@@ -154,6 +155,9 @@ def validate_plan(plan: PANMigrationPlan) -> MigrationValidationResult:
             if getattr(item, "interface", None) is None and any("interface mapping" in warning for warning in item.warnings):
                 add("missing_route_interface", "missing target interface mapping", item)
         elif item.source_object_type == "nat_rule":
+            for value in item.translated_addresses:
+                if not (_valid_ipv4(value) or _valid_pool(value)):
+                    add("invalid_snat_address", "SNAT requires an explicit IPv4 host or ordered address range", item)
             if item.source_interface_address and not item.to_interface:
                 add("missing_nat_interface", "interface-address NAT requires an explicit mapped interface", item)
             if not item.target_vsys:
@@ -173,6 +177,20 @@ def validate_plan(plan: PANMigrationPlan) -> MigrationValidationResult:
                     add("missing_snat_translation", "SNAT translation is missing", item)
         elif item.source_object_type != "static_route" and not item.target_vsys:
             add("missing_target_vsys", "missing target VSYS mapping", item)
+
+    for groups in (plan.address_groups, plan.service_groups):
+        by_identity = {(item.target_vsys, item.target_name or item.source_name): item for item in groups}
+        graph = {identity: [(item.target_vsys, name) for name in item.members
+                            if (item.target_vsys, name) in by_identity]
+                 for identity, item in by_identity.items()}
+        while True:
+            try:
+                TopologicalSorter(graph).prepare()
+                break
+            except CycleError as exc:
+                for identity in exc.args[1]:
+                    add("circular_group_reference", "group membership contains a circular dependency", by_identity[identity])
+                    graph[identity] = ()
 
     # A base item is eligible only when its own status and required fields are valid.
     renderable = {

@@ -2,6 +2,65 @@
 
 from ipaddress import IPv4Address
 
+from fwmigrate.vendors.fortigate.relationships.references import ReferenceIndex, ReferenceKind
+
+
+def vip_policy_consumers(source, derived):
+    """Resolve scoped VIP consumers without treating invalid groups as partial matches."""
+    index = getattr(derived, "references", None)
+    if index is None:
+        index = ReferenceIndex()
+        for family, kind in (("vips", ReferenceKind.VIP), ("vip_groups", ReferenceKind.VIP_GROUP),
+                             ("addresses", ReferenceKind.ADDRESS), ("address_groups", ReferenceKind.ADDRESS_GROUP)):
+            for item in getattr(source, family, ()):
+                if getattr(item, "address_family", "ipv4") == "ipv4":
+                    index.add(kind, vdom=item.vdom or "root", name=item.name, target=item)
+    consumers = {}
+    kinds = (ReferenceKind.VIP, ReferenceKind.VIP_GROUP)
+    duplicates = {(item.vdom, item.name) for item in index.duplicates if item.kind in kinds}
+    for policy in getattr(source, "policies", ()):
+        vdom = policy.vdom or "root"
+        found, warnings, groups = {}, [], {}
+        pending = [(name, ()) for name in policy.dstaddr or ()]
+        visited = set()
+        while pending:
+            name, path = pending.pop()
+            if name in path:
+                warnings.append(f"circular VIP-group reference {name!r}")
+                continue
+            if (vdom, name) in duplicates or all(index.get(kind, vdom=vdom, name=name) is not None for kind in kinds):
+                warnings.append(f"ambiguous VIP reference {name!r}")
+            reference = index.resolve_any(vdom=vdom, name=name, kinds=kinds)
+            if reference is None:
+                if path:
+                    warnings.append(f"unresolved VIP-group member {name!r} in VDOM {vdom!r}")
+                continue
+            if any(index.get(kind, vdom=vdom, name=name) is not None
+                   for kind in (ReferenceKind.ADDRESS, ReferenceKind.ADDRESS_GROUP)):
+                warnings.append(f"ambiguous VIP/address reference {name!r}")
+            if reference.kind is ReferenceKind.VIP:
+                found.setdefault(name, set()).update(path)
+                continue
+            if path:
+                warnings.append(f"nested VIP-group reference {name!r} is unsupported")
+            if name in visited:
+                continue
+            visited.add(name)
+            group = reference.target
+            groups[name] = group
+            if not group.members:
+                warnings.append(f"VIP group {name!r} has no explicit members")
+            for key in group.raw_extra:
+                if key not in {"color"}:
+                    warnings.append(f"unclassified VIP-group setting {key!r} requires manual review")
+            pending.extend((member, (*path, name)) for member in group.members)
+        for name in found:
+            vip = index.get(ReferenceKind.VIP, vdom=vdom, name=name)
+            group_warnings = [f"VIP-group interface {group.interface!r} is not verified for VIP {name!r}"
+                              for group_name in found[name] if (group := groups[group_name]).interface not in {None, "any", vip.extintf}]
+            consumers.setdefault((vdom, name), []).append((policy, tuple(dict.fromkeys([*warnings, *group_warnings]))))
+    return consumers
+
 
 def vip_translation(vip):
     warnings = []

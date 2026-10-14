@@ -8,6 +8,7 @@ import pytest
 from openpyxl import Workbook
 from openpyxl import load_workbook
 from openpyxl.utils import get_column_letter
+from fwmigrate.source_reporting.options import ExcelExportProfile
 
 from fwmigrate.vendors.palo_alto.source_report import PaloAltoSourceReporter, PaloAltoSourceResult
 from fwmigrate.vendors.palo_alto.export.excel_schema import HIDDEN_COLUMNS_BY_DEFAULT, SHEET_HEADERS, SHEET_ORDER
@@ -20,11 +21,11 @@ from fwmigrate.vendors.palo_alto.validation.models import PANOSValidationIssue, 
 FIXTURES = Path(__file__).parents[2] / "fixtures" / "palo_alto"
 
 
-def _workbook(name: str):
+def _workbook(name: str, profile=ExcelExportProfile.FULL):
     reporter = PaloAltoSourceReporter()
     result = reporter.analyze_source((FIXTURES / name).read_text(encoding="utf-8"))
     output = BytesIO()
-    reporter.export_excel(result, output, source_name=name)
+    reporter.export_excel(result, output, source_name=name, profile=profile)
     output.seek(0)
     return load_workbook(output, data_only=True)
 
@@ -58,12 +59,26 @@ def test_workbook_uses_fortigate_presentation_structure():
     assert summary.merged_cells.ranges
     assert summary.freeze_panes == "A5"
     assert summary["A1"].fill.fgColor.rgb[-6:] == "17324D"
-    assert summary["E3"].value == "Workbook navigation"
+    assert summary["E3"].value is None
     assert addresses["A1"].value == "Addresses"
     assert addresses["A3"].value == "Name"
     assert addresses.freeze_panes == "A4"
     assert addresses.auto_filter.ref
     assert addresses.cell(2, addresses.max_column).value == "Back to Summary"
+
+
+@pytest.mark.parametrize("profile", [ExcelExportProfile.FULL, ExcelExportProfile.FAST])
+def test_summary_navigation_starts_in_column_a_below_summary_data(profile):
+    workbook = _workbook("objects.xml", profile=profile)
+    summary = workbook["Summary"]
+    header = next(cell for row in summary for cell in row if cell.value == "Workbook navigation")
+    assert header.column == 1
+    assert header.row > max(row[0].row for row in summary if row[1].value is not None)
+    links = list(summary.iter_rows(min_row=header.row + 1))
+    assert [row[0].value for row in links] == workbook.sheetnames[1:]
+    assert all(row[0].hyperlink.target == f"#'{row[0].value}'!A1" for row in links)
+    assert all(cell.value is None for row in links for cell in row[1:])
+    assert summary["B3"].value == ("FAST" if profile is ExcelExportProfile.FAST else "objects.xml")
 
 
 def test_source_and_derived_policy_order_are_separate():

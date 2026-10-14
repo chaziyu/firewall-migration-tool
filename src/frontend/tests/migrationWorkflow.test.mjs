@@ -358,3 +358,85 @@ test('a failed proposal save keeps the staged target value for retry', async () 
   assert.equal(queues.props.drafts.port, 'ethernet1/9')
   assert.equal(queues.props.selectedGroupKey, 'port')
 })
+
+for (const lateInitial of [false, true]) test(`target upload supersedes initial preparation with initial response ${lateInitial ? 'last' : 'first'}`, async () => {
+  const initial = Promise.withResolvers()
+  const upload = Promise.withResolvers()
+  const fresh = Promise.withResolvers()
+  const saves = [], contexts = [], documents = [], requests = []
+  let orderCalls = 0
+  const result = (digest, device = '') => ({ decisions: { decisions: [] }, decision_document: { decisions: [], source_digest: digest },
+    target_devices: device ? [device] : [], target_device: device, decision_candidates: {}, review_groups: [], rule_suggestions: [],
+    draft: { digest, context: { overrides: {} }, decisions: [], configuration: [] } })
+  const harness = component('../src/features/migration/MigrationReview.tsx', 'MigrationReview', {
+    '../../storage/workspaceStore': { ...workspace, saveWorkspace: async (value) => saves.push(value) },
+    '../../api/client': { ...api, postForm: () => upload.promise, postJson: (path, payload) => {
+      requests.push({ path, payload }); return requests.length === 1 ? initial.promise : fresh.promise
+    } },
+    '../source/FileUpload': { FileUpload: 'FileUpload' }, './download': {},
+    './reviewDrafts': { ...drafts, orderReviewGroups: (...args) => { orderCalls++; return drafts.orderReviewGroups(...args) } },
+    './reviewPresentation': presentation, './components/MigrationDesignReview': { MigrationDesignReview: 'Design' },
+    './components/MigrationReviewQueues': { MigrationReviewQueues: 'Queues' },
+    './components/MigrationDecisionTable': { MigrationDecisionTable: 'Decisions' },
+    './components/MigrationInterfaceMappings': { MigrationInterfaceMappings: 'Interfaces' },
+  })
+  const props = { preview: { source_digest: 'source', source_evidence: {} }, vendor: 'fortigate',
+    onContextChange: (...args) => contexts.push(args), onDecisionDocument: (value) => documents.push(value) }
+  const oldInterval = globalThis.setInterval, oldClear = globalThis.clearInterval
+  globalThis.setInterval = () => 0
+  globalThis.clearInterval = () => {}
+  try {
+    let tree = await harness.render(props)
+    const input = elements(tree).find((node) => node.type === 'FileUpload')
+    assert.equal(input.props.disabled, false)
+    input.props.onChange(new Blob(['<config/>'], { type: 'application/xml' }))
+    tree = await harness.render(props)
+    assert.equal(elements(tree).find((node) => node.type === 'FileUpload').props.disabled, true)
+    if (!lateInitial) { initial.resolve(result('stale')); await harness.render(props) }
+    const target = { vendor: 'palo_alto', source_text: '<config/>' }
+    upload.resolve({ source_evidence: target })
+    await harness.render(props)
+    assert.deepEqual(requests[1].payload.target_source, target)
+    fresh.resolve(result('fresh', 'fw'))
+    tree = await harness.render(props)
+    if (lateInitial) { initial.resolve(result('stale')); tree = await harness.render(props) }
+    assert.deepEqual(contexts, [[target, 'fw']])
+    assert.equal(documents.filter(Boolean).length, 1)
+    assert.equal(documents.filter(Boolean)[0].source_digest, 'fresh')
+    assert.equal(saves.filter((value) => value.deterministicDraft).length, 1)
+    assert.equal(saves.find((value) => value.deterministicDraft).deterministicDraft.digest, 'fresh')
+    const ordered = orderCalls
+    await harness.render(props)
+    assert.equal(orderCalls, ordered, 'Unchanged draft must not be sorted again on render')
+    assert.ok(elements(tree).some((node) => node.props?.role === 'status' && String(node.props.children).includes('Target evidence loaded')))
+  } finally { globalThis.setInterval = oldInterval; globalThis.clearInterval = oldClear }
+})
+
+test('failed target upload releases the input and ignores the superseded initial draft', async () => {
+  const initial = Promise.withResolvers()
+  const upload = Promise.withResolvers()
+  const documents = []
+  const harness = component('../src/features/migration/MigrationReview.tsx', 'MigrationReview', {
+    '../../storage/workspaceStore': workspace,
+    '../../api/client': { ...api, postJson: () => initial.promise, postForm: () => upload.promise },
+    '../source/FileUpload': { FileUpload: 'FileUpload' }, './download': {}, './reviewDrafts': drafts, './reviewPresentation': presentation,
+    './components/MigrationDesignReview': { MigrationDesignReview: 'Design' }, './components/MigrationReviewQueues': { MigrationReviewQueues: 'Queues' },
+    './components/MigrationDecisionTable': { MigrationDecisionTable: 'Decisions' }, './components/MigrationInterfaceMappings': { MigrationInterfaceMappings: 'Interfaces' },
+  })
+  const props = { preview: { source_digest: 'source', source_evidence: {} }, vendor: 'fortigate', onDecisionDocument: (value) => documents.push(value) }
+  const oldInterval = globalThis.setInterval, oldClear = globalThis.clearInterval
+  globalThis.setInterval = () => 0
+  globalThis.clearInterval = () => {}
+  try {
+    let tree = await harness.render(props)
+    elements(tree).find((node) => node.type === 'FileUpload').props.onChange(new Blob(['invalid']))
+    await harness.render(props)
+    upload.reject(new Error('Invalid PAN-OS XML'))
+    tree = await harness.render(props)
+    assert.equal(elements(tree).find((node) => node.type === 'FileUpload').props.disabled, false)
+    assert.ok(elements(tree).some((node) => node.props?.role === 'alert' && node.props.children === 'Invalid PAN-OS XML'))
+    initial.resolve({})
+    await harness.render(props)
+    assert.deepEqual(documents.filter(Boolean), [])
+  } finally { globalThis.setInterval = oldInterval; globalThis.clearInterval = oldClear }
+})

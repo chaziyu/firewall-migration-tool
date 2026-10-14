@@ -15,9 +15,13 @@ from .vips import vip_translation
 
 def address_references(source, vdom, names):
     """Map only the IPv4 built-in all; explicit objects keep their identity."""
-    explicit = {item.name for family in ("addresses", "address_groups", "vips", "vip_groups")
-                for item in getattr(source, family, ()) if (item.vdom or "root") == (vdom or "root")}
-    return tuple("0.0.0.0/0" if name == "all" and name not in explicit else name for name in names)
+    names = tuple(names)
+    if "all" not in names:
+        return names
+    explicit_all = any(item.name == "all" and (item.vdom or "root") == (vdom or "root")
+                       for family in ("addresses", "address_groups", "vips", "vip_groups")
+                       for item in getattr(source, family, ()))
+    return tuple("0.0.0.0/0" if name == "all" and not explicit_all else name for name in names)
 
 
 def plan_addresses(source: Any, options: Any) -> tuple[tuple[PlannedAddress, ...], tuple[PlannedAddressGroup, ...], tuple[MigrationIssue, ...]]:
