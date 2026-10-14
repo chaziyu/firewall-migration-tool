@@ -349,3 +349,44 @@ def test_deployment_rejects_untrusted_host_keys_before_writing(monkeypatch):
     result = PANSSHDeployer(PANDeploymentOptions("fw", "admin", "secret")).deploy(rendered("set one"))
     assert not result.connected and result.commands_attempted == 0
     assert "Host key not trusted" in result.failure_message
+
+
+def test_partial_write_then_dirty_candidate_requires_reconciliation_without_replay(monkeypatch):
+    connection = GuardedConnection(['ok', RuntimeError('network after write')])
+    fake_netmiko(monkeypatch, lambda **kwargs: connection)
+    options = PANDeploymentOptions('fw', 'admin', 'secret', expected_serial=connection.serial,
+        expected_baseline_sha256=destination_fingerprint(connection.candidate), baseline_format=BASELINE_FORMAT)
+    result = PANSSHDeployer(options).deploy(rendered('set one', 'set two'))
+    assert result.commands_succeeded == 1 and result.commands_attempted == 2
+    assert result.recovery_state == 'OUTCOME_UNKNOWN'
+    connection.diff = '+ candidate changes'
+    inspection = PANSSHDeployer(options).inspect()
+    assert inspection.state == 'RECONCILIATION_REQUIRED'
+    retried = PANSSHDeployer(options).deploy(rendered('set one', 'set two'))
+    assert retried.commands_attempted == 0
+    assert connection.commits == 0
+
+
+@pytest.mark.parametrize('dirty,drift', [(False, False), (True, False), (False, True)])
+def test_readonly_inspection_requires_both_clean_candidate_and_matching_baseline(monkeypatch, dirty, drift):
+    connection = GuardedConnection()
+    options = PANDeploymentOptions('fw', 'admin', 'secret', expected_serial=connection.serial,
+        expected_baseline_sha256=destination_fingerprint(connection.candidate), baseline_format=BASELINE_FORMAT)
+    connection.diff = '+ another administrator' if dirty else ''
+    if drift: connection.candidate = connection.candidate.replace('fw', 'changed')
+    fake_netmiko(monkeypatch, lambda **kwargs: connection)
+    result = PANSSHDeployer(options).inspect()
+    assert result.state == ('RECONCILIATION_REQUIRED' if dirty or drift else 'CLEAN_BASELINE')
+    assert result.baseline_matches is not drift and result.candidate_clean is not dirty
+    assert connection.commits == 0
+
+
+def test_missing_commit_response_is_unknown_after_submission(monkeypatch):
+    class InterruptedCommit(GuardedConnection):
+        def commit(self):
+            self.commits += 1
+            raise RuntimeError('network interruption')
+    connection = InterruptedCommit()
+    fake_netmiko(monkeypatch, lambda **kwargs: connection)
+    result = PANSSHDeployer(PANDeploymentOptions('fw', 'admin', 'secret')).commit()
+    assert result.status == 'UNKNOWN' and connection.commits == 1

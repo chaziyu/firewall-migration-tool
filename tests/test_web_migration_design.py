@@ -360,3 +360,74 @@ def test_manual_confirmation_cannot_launder_invalid_design_approval(change):
         'selections': [{'decision_key': interface['key'], 'value': interface['value']}],
         'reviewed_target_evidence': data['target_evidence']})
     assert response.status_code == 400, response.get_json()
+
+
+def test_inspection_remains_manual_with_complete_placement_and_mixed_causes():
+    client, payload = setup()
+    policy = '''config firewall policy
+ edit 1
+ set name inspect
+ set srcintf port1
+ set dstintf vlan10
+ set srcaddr all
+ set dstaddr all
+ set service ALL
+ set action accept
+ set inspection-mode flow
+ next
+end
+'''
+    source = SOURCE + policy
+    payload['source'] = client.post('/api/preview', data={'source_vendor': 'fortigate',
+        'file': (io.BytesIO(source.encode()), 'inspection.conf')}).get_json()['source_evidence']
+    data, payload = allocate(client, payload)
+    row = next(row for row in data['draft']['configuration'] if row['family'] == 'security_rule')
+    assert row['status'] == 'UNSUPPORTED'
+    issue = next(issue for issue in data['draft']['issues'] if issue['code'] == 'INSPECTION_UNSUPPORTED')
+    assert issue['category'] == 'MANUAL' and issue['action'] is None
+    response = approve(client, payload, data)
+    assert response.status_code == 200
+    artifact = client.post('/api/migrate', json={**payload, 'decision_document': response.get_json()['decision_document']}).get_json()['artifact']
+    assert not any('rulebase security' in command for command in artifact['commands'])
+    assert artifact['report']['deployment_eligibility']['eligible'] is False
+    data, _ = prepare(client, {**payload, 'draft_overrides': {}})
+    assert any(issue['code'] == 'INSPECTION_UNSUPPORTED' for issue in data['draft']['issues'])
+    assert any(issue['action'] for issue in data['draft']['issues'])
+
+
+def test_pre_artifact_readiness_never_authorizes_a_template():
+    client, payload = setup(role='TEMPLATE')
+    data, _ = prepare(client, payload)
+    readiness = data['draft']['readiness']['deployment']
+    assert readiness['assessment'] == 'PRE_ARTIFACT'
+    assert readiness['eligible'] is False
+    assert 'destination_evidence' in readiness['missing_prerequisites']
+
+
+def test_missing_parent_is_one_task_with_deduplicated_dependent_scope():
+    client, payload = setup()
+    data, _ = prepare(client, payload)
+    port_key = next(row['decision_key'] for row in data['draft']['decisions']
+        if row['source_name'] == 'port1' and row['target_field'] == 'target_interface')
+    tasks = [
+        issue for issue in data['draft']['issues'] if issue['action'] and issue['action']['decision_key'] == port_key]
+    assert len(tasks) == 1
+    assert len(tasks[0]['affected_keys']) == len(set(tasks[0]['affected_keys']))
+    assert any(row['source_name'] == 'vlan10' for row in tasks[0]['affected_sources'])
+    assert any(row['source_name'] == '1' for row in tasks[0]['affected_sources'])
+
+
+def test_offline_supported_objects_export_without_destination_eligibility():
+    client, payload = setup(target=None, role='TEMPLATE')
+    data, payload = prepare(client, {**payload, 'reference_role': 'TEMPLATE'})
+    vsys = next(row['decision_key'] for row in data['draft']['decisions'] if row['target_field'] == 'vsys')
+    data, payload = prepare(client, {**payload, 'draft_overrides': {vsys: 'vsys1'}})
+    response = approve(client, payload, data)
+    assert response.status_code == 200
+    result = client.post('/api/migrate', json={**payload,
+        'decision_document': response.get_json()['decision_document']})
+    assert result.status_code == 200, result.get_json()
+    artifact = result.get_json()['artifact']
+    assert any('address net' in command for command in artifact['commands'])
+    assert artifact['report']['deployment_eligibility']['eligible'] is False
+    assert artifact['report']['readiness']['export']['status'] == 'PARTIAL'

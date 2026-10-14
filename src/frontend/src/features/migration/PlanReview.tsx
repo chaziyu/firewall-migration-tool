@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import type { PlanArtifact } from './migrationApi'
-import { groupPlanBlockers } from './reviewPresentation'
+import { groupPlanBlockers, mappingIdentityLabel } from './reviewPresentation'
 import { asRecord, compactValue, safeValue } from '../report/reportPresentation'
 
 function PlanRows({ rows, kind, onReviewDecision }: { rows: Array<Record<string, unknown>>; kind: 'items' | 'blockers' | 'recommendations' | 'affected items'; onReviewDecision: (key: string) => void }) {
@@ -38,7 +38,7 @@ function PlanRows({ rows, kind, onReviewDecision }: { rows: Array<Record<string,
           {Array.isArray(row.affected) && <details><summary>Affected items ({row.affected.length})</summary><PlanRows rows={row.affected as Array<Record<string, unknown>>} kind="affected items" onReviewDecision={onReviewDecision} /></details>}
           {!keys.length && <p>Manual action: {String(row.next_action ?? 'Review the source evidence and support guidance. Mapping approval alone cannot resolve this finding.')}</p>}
         </>}
-        {keys.map((key) => <button type="button" className="finding-inline-link" key={key} onClick={() => onReviewDecision(key)}>Review mapping: {key}</button>)}
+        {keys.map((key) => <button type="button" className="finding-inline-link" key={key} onClick={() => onReviewDecision(key)}>Resolve {mappingIdentityLabel(key)}</button>)}
       </article>
     })}
     <div className="report-pager"><button type="button" className="secondary-button" disabled={currentPage <= 1} onClick={() => setPage(currentPage - 1)}>Previous {kind}</button><span role="status">Page {currentPage} of {pageCount} · {filtered.length} {kind}</span><button type="button" className="secondary-button" disabled={currentPage >= pageCount} onClick={() => setPage(currentPage + 1)}>Next {kind}</button></div>

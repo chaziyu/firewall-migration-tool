@@ -101,12 +101,13 @@ test('a new source analysis opens the target stage for optional PAN-OS XML', asy
     './SourceOverview': { SourceOverview: 'SourceOverview' }, './VendorSelect': { VendorSelect: 'VendorSelect' }, './LiveCollection': { LiveCollection: 'LiveCollection' },
     '../migration/MigrationWorkflow': { MigrationWorkflow: 'MigrationWorkflow' }, '../migration/MigrationReview': { MigrationReview: 'MigrationReview' },
     '../report/reportPresentation': { asRecord: (value) => value ?? {} },
+    '../../api/client': {}, '../migration/download': {},
   })
   let tree = await harness.render({ view: 'migration', onViewChange: () => {} })
   const upload = elements(tree).find((node) => node.type === 'FileUpload')
   upload.props.onChange(new Blob(['config']))
   tree = await harness.render({ view: 'migration', onViewChange: () => {} })
-  assert.equal(elements(tree).find((node) => node.type === 'MigrationReview').props.stage, 'target')
+  assert.equal(elements(tree).find((node) => node.type === 'MigrationReview').props.stage, 'load')
 })
 
 function elements(tree) {
@@ -247,7 +248,7 @@ test('stale approval offers reapproval and candidate drift revokes commit', asyn
   tree = await live.render(liveProps)
   assert.equal(elements(tree).find((node) => node.type === 'Button' && node.props.children === 'Commit').props.disabled, true)
   assert.ok(elements(tree).some((node) => node.type === 'Error' && node.props.message.includes('Candidate changed')))
-  assert.ok(elements(tree).some((node) => node.props?.role === 'status' && node.props.children.includes('Prepare the candidate again')))
+  assert.ok(elements(tree).some((node) => node.props?.role === 'status' && node.props.children.includes('Inspect the candidate')))
 })
 
 test('expired deployment approval revokes the artifact and offers reapproval', async () => {
@@ -366,13 +367,13 @@ test('a server-validated mapping proposal is reported as pending approval withou
   assert.deepEqual(calls.map((call) => call.path), ['/api/migration/design/prepare', '/api/migration/design/prepare'])
   assert.deepEqual(calls[1].payload.draft_overrides, { port: 'ethernet1/2' })
   assert.ok(saves.some((value) => value.artifact === null))
-  tree = await harness.render({ ...props, stage: 'configuration' })
+  tree = await harness.render({ ...props, stage: 'review' })
   assert.ok(elements(tree).some((node) => node.type === 'Design'))
   assert.equal(elements(tree).find((node) => node.props['aria-label'] === 'Resolve mappings').props.hidden, true)
-  tree = await harness.render({ ...props, stage: 'mappings' })
+  tree = await harness.render({ ...props, stage: 'place' })
   assert.equal(elements(tree).find((node) => node.type === 'Queues').props.drafts.port, 'ethernet1/2')
   elements(tree).find((node) => node.type === 'button' && node.props.children === 'Bulk editing').props.onClick()
-  tree = await harness.render({ ...props, stage: 'mappings' })
+  tree = await harness.render({ ...props, stage: 'place' })
   const guided = elements(tree).find((node) => node.type === 'div' && elements(node.props.children).some((child) => child.type === 'Queues'))
   const bulk = elements(tree).find((node) => node.type === 'div' && elements(node.props.children).some((child) => child.type === 'Interfaces'))
   assert.equal(guided.props.hidden, true)
@@ -481,7 +482,7 @@ test('failed target upload releases the input and ignores the superseded initial
     upload.reject(new Error('Invalid PAN-OS XML'))
     tree = await harness.render(props)
     assert.equal(elements(tree).find((node) => node.type === 'FileUpload').props.disabled, false)
-    assert.ok(elements(tree).some((node) => node.props?.role === 'alert' && node.props.children === 'Invalid PAN-OS XML'))
+    assert.ok(elements(tree).some((node) => node.props?.role === 'alert' && Array.isArray(node.props.children) && node.props.children.includes('Invalid PAN-OS XML')))
     initial.resolve({})
     await harness.render(props)
     assert.deepEqual(documents.filter(Boolean), [])
