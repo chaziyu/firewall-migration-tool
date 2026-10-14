@@ -7,7 +7,7 @@ import * as drafts from '../src/features/migration/reviewDrafts.ts'
 import * as presentation from '../src/features/migration/reviewPresentation.ts'
 
 // Exercise component handlers and effects with the same hook harness used by validationReport tests.
-function component(file, name, modules) {
+function component(file, name, modules, { strictEffectReplay = false } = {}) {
   const slots = []
   let cursor = 0
   let pending = false
@@ -64,7 +64,10 @@ function component(file, name, modules) {
         tree = exports[name](props)
         const currentEffects = effects
         effects = []
-        currentEffects.forEach((effect) => effect())
+        currentEffects.forEach((effect) => {
+          const cleanup = effect()
+          if (strictEffectReplay && attempt === 0 && typeof cleanup === 'function') { cleanup(); effect() }
+        })
         await new Promise((resolve) => setImmediate(resolve))
         if (!pending) return tree
       }
@@ -72,6 +75,21 @@ function component(file, name, modules) {
     },
   }
 }
+
+test('initial migration preparation starts once when StrictMode replays effects', async () => {
+  const requests = []
+  const result = { decisions: { decisions: [] }, decision_document: { decisions: [] }, target_devices: [], target_device: null,
+    decision_candidates: {}, review_groups: [], rule_suggestions: [], draft: { digest: 'draft', context: { overrides: {} }, decisions: [], configuration: [] } }
+  const harness = component('../src/features/migration/MigrationReview.tsx', 'MigrationReview', {
+    '../../storage/workspaceStore': { ...workspace, saveWorkspace: async () => {} },
+    '../../api/client': { RequestError: api.RequestError, postJson: async (path) => { requests.push(path); return result } },
+    '../source/FileUpload': { FileUpload: 'FileUpload' }, './download': {}, './reviewDrafts': drafts, './reviewPresentation': presentation,
+    './components/MigrationDesignReview': { MigrationDesignReview: 'Design' }, './components/MigrationReviewQueues': { MigrationReviewQueues: 'Queues' },
+    './components/MigrationDecisionTable': { MigrationDecisionTable: 'Decisions' }, './components/MigrationInterfaceMappings': { MigrationInterfaceMappings: 'Interfaces' },
+  }, { strictEffectReplay: true })
+  await harness.render({ preview: { source_digest: 'source', source_evidence: {} }, vendor: 'fortigate' })
+  assert.deepEqual(requests, ['/api/migration/design/prepare'])
+})
 
 test('a new source analysis opens the target stage for optional PAN-OS XML', async () => {
   const harness = component('../src/features/source/SourceConfiguration.tsx', 'SourceConfiguration', {
