@@ -43,8 +43,13 @@ export function MigrationDesignReview({ draft, busy, approvedItems, onPrepare, o
       <p><strong>Mappings</strong><br />{mappingCounts.READY || 0} ready · {mappingCounts.NEEDS_INPUT || 0} need input · {mappingCounts.CONFLICT || 0} conflicts</p>
       <p><strong>Configuration items</strong><br />{configurationCounts.READY || 0} ready · {configurationCounts.NEEDS_INPUT || 0} blocked · {configurationCounts.CONFLICT || 0} conflicts · {configurationCounts.UNSUPPORTED || 0} manual</p>
     </div>
+    <div className="migration-summary" aria-label="Proposed change summary">
+      {(['CREATE', 'CONFIGURE', 'REUSE'] as const).map((operation) => <p key={operation}><strong>{operation === 'CREATE' ? 'Create' : operation === 'CONFIGURE' ? 'Configure' : 'Reuse'}</strong><br />{draft.configuration.filter((row) => row.operation === operation).length}</p>)}
+      <p><strong>Blocked</strong><br />{draft.configuration.filter((row) => row.status !== 'READY' && row.status !== 'UNSUPPORTED' && !isApproved(row)).length}</p>
+      <p><strong>Manual work</strong><br />{configurationCounts.UNSUPPORTED || 0}</p>
+    </div>
     <div className="migration-toolbar">
-      <button type="button" className="primary-button" disabled={busy || !ready.length} onClick={() => preview(ready.map(keyFor))}>Review ready selection ({ready.length})</button>
+      <button type="button" className="primary-button" disabled={busy || !ready.length} onClick={() => preview(ready.map(keyFor))}>Review ready items ({ready.length})</button>
       <button type="button" disabled={busy || !selected.length} onClick={() => preview(selected)}>Review selected items and prerequisites</button>
       <label className="field">Show proposals<select value={filter} onChange={(event) => { setFilter(event.target.value); setPage(1) }}>
         <option value="ACTIONABLE">Resolve exceptions first</option><option value="all">All proposals</option><option value="NEEDS_INPUT">Needs decision</option><option value="CONFLICT">Conflicts</option><option value="UNSUPPORTED">Manual work</option><option value="READY">Ready for review</option>

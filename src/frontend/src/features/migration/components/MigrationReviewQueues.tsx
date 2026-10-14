@@ -57,6 +57,7 @@ export function MigrationReviewQueues({
   updateGroup: (group: ReviewGroup) => Promise<void>
 }) {
   const [groupPage, setGroupPage] = useState(1)
+  const [customFields, setCustomFields] = useState<Record<string, boolean>>({})
   const pages = Math.max(1, Math.ceil(visibleGroups.length / 20))
   const selectedIndex = visibleGroups.findIndex((group) => group.decision_keys[0] === selectedGroupKey)
   const currentPage = selectedIndex >= 0 ? Math.floor(selectedIndex / 20) + 1 : Math.min(groupPage, pages)
@@ -108,6 +109,7 @@ export function MigrationReviewQueues({
             {[...new Set(group.decision_keys.flatMap((key) => rowsByKey.get(key)?.dependencies ?? []))].map((key) => {
               const prerequisite = rowsByKey.get(key)
               if (!prerequisite || prerequisite.status === 'READY' || prerequisite.approved) return null
+              if (group.decision_keys.includes(key)) return <p key={key}>Choose {decisions.find((item) => item.key === key)?.target_field.replaceAll('_', ' ') || 'the required value'} below before completing this mapping.</p>
               const prerequisiteGroup = reviewGroups.find((item) => item.decision_keys.includes(key))
               const source = decisions.find((item) => item.key === key)
               return prerequisiteGroup && source ? <button key={key} className="text-button review-prerequisite" type="button" onClick={() => { setSearch(''); setVdomFilter('all'); setActiveQueue(prerequisiteGroup.queue); setSelectedGroupKey(prerequisiteGroup.decision_keys[0]); requestAnimationFrame(() => { const input = document.getElementById(`decision-${key}`); if (input) { const details = input.closest('details'); if (details) details.open = true; input.scrollIntoView({ block: 'center' }); input.focus() } }) }}>Resolve prerequisite {source.source_name} · {source.target_field} first</button> : <p key={key}>Prerequisite details unavailable for {key}.</p>
@@ -121,17 +123,25 @@ export function MigrationReviewQueues({
               const value = drafts[decision.key] ?? decision.value ?? decision.suggested_value ?? ''
               const candidates = group.candidates[decision.key] ?? review.decision_candidates[decision.key] ?? []
               return <div className="review-work-field" key={decision.key}>
-                {candidates.length > 0 && <fieldset className="review-candidate-options"><legend>{decision.target_field === 'target_zone' ? 'Target zone' : `Available ${decision.target_field.replaceAll('_', ' ')}`}</legend>{candidates.map((candidate) => {
-                  const sameValue = candidates.filter((item) => item.value === candidate.value)
-                  const unavailable = candidate.available === false || candidate.contested || sameValue.length > 1
-                  const status = candidateLabel(candidate, decision.target_field)
-                  return <label className="review-candidate-option" key={`${candidate.target_scope}:${candidate.value}`}><input type="radio" name={`candidate-${decision.key}`} value={candidate.value} aria-label={`${candidate.value}, ${status}, ${candidate.target_scope || 'target scope not returned'}`} checked={sameValue.length === 1 && value === candidate.value} disabled={busy || unavailable} onChange={() => setDrafts((current) => ({ ...current, [decision.key]: candidate.value }))} /><span><strong>{decision.target_field === 'target_zone' ? 'Use existing zone' : candidate.value}</strong><small>{status}{candidate.reason ? ` · ${candidate.reason}` : ''}{sameValue.length > 1 ? ' · same target value appears in multiple scopes' : ''}</small></span></label>
-                })}</fieldset>}
-                {candidates.some((candidate) => candidates.filter((item) => item.value === candidate.value).length > 1) && <p>These candidate values appear in multiple target scopes. The decision stores the target value only, so it cannot select between those scopes.</p>}
-                {decision.target_field === 'target_zone' && <p className="review-work-suggestion">{candidates.some((candidate) => candidate.value === value) ? 'Intent: use the selected existing zone.' : 'Intent: propose a new zone. This remains provisional until validation and design approval.'}</p>}
-                <p className="review-work-suggestion">{decisionLabel(decision, candidates, group.conflicts?.some((finding) => finding.decision_key === decision.key))}{decision.suggested_value && decision.review_state !== 'CONFIRMED' ? `: ${decision.suggested_value} · requires design approval` : ''}</p>
-                <p>{decision.reason}{decision.evidence_source ? ` · ${decision.evidence_source}` : ''}{decision.evidence_type ? ` · ${decision.evidence_type}` : ''}</p>
-                <details className="review-custom-target" open={!candidates.length || !candidates.some((candidate) => candidate.value === value)}><summary>{candidates.some((candidate) => candidate.value === value) ? 'Technical details and custom target' : 'Enter another target'}</summary><label>{decision.target_field.replaceAll('_', ' ')}<input id={`decision-${decision.key}`} disabled={busy} aria-label={`${decision.target_field} for ${group.source_vdom} / ${group.source_name}`} value={value} onChange={(event) => setDrafts((current) => ({ ...current, [decision.key]: event.target.value }))} placeholder={decision.suggested_value ? `Suggested: ${decision.suggested_value}` : 'Enter mapping'} /></label>{candidates.some((candidate) => candidates.filter((item) => item.value === candidate.value).length > 1) && <p>These options share a value across target scopes. This decision stores the target value only, so it cannot select between those scopes.</p>}{candidates.length > 0 && <ul>{candidates.map((candidate) => <li key={`${candidate.target_scope}:${candidate.value}`}>{candidate.target_scope || 'Target scope not returned'} · {candidate.value} · {candidateLabel(candidate, decision.target_field)}{candidate.reason ? ` · ${candidate.reason}` : ''}{[...(candidate.strong_evidence ?? []), ...(candidate.supporting_evidence ?? [])].map((fact) => ` · ${fact}`)}</li>)}</ul>}</details>
+                <label className="field">{decision.target_field.replaceAll('_', ' ')}
+                  <select id={`decision-${decision.key}`} aria-label={`${decision.target_field} for ${group.source_vdom} / ${group.source_name}`} disabled={busy} value={customFields[decision.key] ? '__custom__' : value && candidates.filter((candidate) => candidate.value === value).length === 1 ? value : value ? '__custom__' : ''} onChange={(event) => {
+                    const next = event.target.value
+                    setDrafts((current) => ({ ...current, [decision.key]: next === '__custom__' ? value && !candidates.some((candidate) => candidate.value === value) ? value : '' : next }))
+                    setCustomFields((current) => ({ ...current, [decision.key]: next === '__custom__' }))
+                  }}>
+                    <option value="">Select {decision.target_field.replaceAll('_', ' ')}</option>
+                    {candidates.map((candidate) => <option key={`${candidate.target_scope}:${candidate.value}`} value={candidate.value} disabled={candidate.available === false || candidate.contested || candidates.filter((item) => item.value === candidate.value).length > 1}>{candidate.value} · {candidateLabel(candidate, decision.target_field)}{candidates.filter((item) => item.value === candidate.value).length > 1 ? ` · ${candidate.target_scope} · ambiguous scope` : ''}</option>)}
+                    <option value="__custom__">{decision.target_field === 'target_zone' ? 'Propose a new zone…' : 'Enter a custom target…'}</option>
+                  </select>
+                </label>
+                {(customFields[decision.key] || !candidates.length || (value && !candidates.some((candidate) => candidate.value === value))) && <label className="field">{decision.target_field === 'target_zone' ? 'Proposed zone name' : 'Custom target value'}<input disabled={busy} aria-label={`Custom ${decision.target_field} for ${group.source_vdom} / ${group.source_name}`} value={value} onChange={(event) => setDrafts((current) => ({ ...current, [decision.key]: event.target.value }))} placeholder="Enter target value" /></label>}
+                {decision.target_field === 'target_zone' && value && <p>{candidates.some((candidate) => candidate.value === value) ? 'Use existing zone.' : 'Propose a new zone; requires validation and approval.'}</p>}
+                <p className="review-work-suggestion">{decisionLabel(decision, candidates, group.conflicts?.some((finding) => finding.decision_key === decision.key))}</p>
+                <details className="review-custom-target"><summary>Why these choices?</summary>
+                  <p>{decision.reason}{decision.evidence_source ? ` · ${decision.evidence_source}` : ''}{decision.evidence_type ? ` · ${decision.evidence_type}` : ''}</p>
+                  {candidates.some((candidate) => candidates.filter((item) => item.value === candidate.value).length > 1) && <p>These options share a value across target scopes. This decision stores the target value only, so it cannot select between those scopes.</p>}
+                  <ul>{candidates.map((candidate) => <li key={`${candidate.target_scope}:${candidate.value}`}>{candidate.value} · {candidate.target_scope || 'Target scope not returned'} · {candidateLabel(candidate, decision.target_field)}{candidate.reason ? ` · ${candidate.reason}` : ''}{[...(candidate.strong_evidence ?? []), ...(candidate.supporting_evidence ?? [])].map((fact) => ` · ${fact}`)}</li>)}</ul>
+                </details>
               </div>
             })}
             <div className="review-work-impact"><p>{group.affected_count} affected-object impact estimate · {group.dependent_decision_count} dependent mappings will be re-evaluated</p>{group.next_action && <p>Next action: {group.next_action}</p>}
@@ -142,7 +152,7 @@ export function MigrationReviewQueues({
             {(() => {
               const required = group.decisions.filter((item) => item.mode !== 'UNSUPPORTED' && item.mode !== 'AUTO')
               const incomplete = required.some((item) => !(drafts[item.key] ?? item.value ?? item.suggested_value ?? '').trim())
-              return required.length > 0 && <><p>Saving asks the server to validate required fields, dependencies and conflicts before moving on.</p><button className="primary-button" type="button" disabled={busy} onClick={() => void run(() => updateGroup(group))}>{incomplete ? 'Save incomplete proposal' : 'Save proposal and continue'}</button></>
+              return required.length > 0 && <><p>Saving validates this draft. Approval is a separate step.</p><button className="primary-button" type="button" disabled={busy || incomplete} onClick={() => void run(() => updateGroup(group))}>Save &amp; next</button>{incomplete && <><p>Choose the required target values to continue.</p><button type="button" disabled={busy} onClick={() => void run(() => updateGroup(group))}>Save draft</button></>}</>
             })()}
           </article>)}
           </div></div>

@@ -237,7 +237,8 @@ class ExcelReportTest(unittest.TestCase):
         assert {"Summary", "Review Required"} <= set(fast.sheetnames)
 
         summary = fast["Summary"]
-        assert "FAST export omits command-level Source Inventory" in summary["B10"].value
+        limitation = next(row[1] for row in summary if row[0].value == "Export Limitations")
+        assert "FAST export omits command-level Source Inventory" in limitation.value
         links = [
             cell.hyperlink.target
             for row in summary.iter_rows()
@@ -248,15 +249,13 @@ class ExcelReportTest(unittest.TestCase):
         assert links
         assert link_sheets <= set(fast.sheetnames)
         assert {"FortiGate Source Inventory", "Extraction Coverage"}.isdisjoint(link_sheets)
-        assert summary.sheet_view.showGridLines is True
+        assert summary.sheet_view.showGridLines is False
         assert summary.sheet_view.zoomScale == 90
-        for column, width in {"A": 42, "B": 60, "C": 20, "D": 4, "E": 38, "F": 18}.items():
+        for column, width in {"A": 38, "B": 32, "C": 28, "D": 32, "E": 28, "F": 32}.items():
             assert summary.column_dimensions[column].width == width
-        assert summary["B10"].alignment.wrap_text is True
-        assert summary.row_dimensions[10].height == 45
-        for row in summary.iter_rows():
-            for cell in row:
-                assert all(getattr(cell.border, side).style is None for side in ("left", "right", "top", "bottom"))
+        assert limitation.alignment.wrap_text is True
+        assert summary.row_dimensions[limitation.row].height >= 60
+        assert all(cell.value != "Workbook navigation" for row in summary for cell in row)
         assert list(full["FortiGate Source Inventory"].iter_rows(min_row=3, values_only=True))
         assert list(full["Extraction Coverage"].iter_rows(min_row=3, values_only=True))
 
@@ -376,8 +375,10 @@ end
             if sheet_name == "Summary":
                 for rows in (plain_values, measured_values):
                     for index, row in enumerate(rows):
-                        if row and row[0] == "Generated UTC":
-                            rows[index] = (row[0], None, *row[2:])
+                        if "Generated UTC" in row:
+                            values = list(row)
+                            values[values.index("Generated UTC") + 1] = None
+                            rows[index] = tuple(values)
             self.assertEqual(plain_values, measured_values, sheet_name)
 
         self.assertIn("workbook_build", metrics.stages)
@@ -411,7 +412,7 @@ end
             source_name="sample.conf",
         )
         events = []
-        times = iter((0.0, 0.1, 1.0, 2.0))
+        times = iter((1.0, 2.0, 0.0, 0.1))
 
         def timed_counter():
             events.append("perf")
@@ -444,7 +445,7 @@ end
             workbook = _build_fast_workbook(context, metrics=metrics)
 
         workbook.save(io.BytesIO())
-        self.assertEqual(["perf", "first_row", "perf"], events[2:5])
+        self.assertEqual(["perf", "first_row", "perf"], events[:3])
         by_name = {sheet["sheet_name"]: sheet for sheet in metrics.sheets}
         self.assertEqual(1000.0, by_name["Addresses"]["duration_ms"])
 
@@ -1253,7 +1254,7 @@ end
         self.assertEqual(20, row[secondary.index("HA Priority")])
 
         summary = workbook["Summary"]
-        summary_values = {summary.cell(row, 1).value: summary.cell(row, 2).value for row in range(1, summary.max_row + 1)}
+        summary_values = {row[col]: row[col + 1] for row in summary.iter_rows(values_only=True) for col in (0, 2, 4)}
         self.assertEqual("FG-TEST", summary_values["Hostname"])
         self.assertEqual("Yes", summary_values["IPv6 Explicit Configuration Present"])
         extracted = extract_fortigate_config(
@@ -1506,13 +1507,12 @@ end
         )
         summary = workbook["Summary"]
         summary_values = {
-            summary.cell(row, 1).value: summary.cell(row, 2).value
-            for row in range(1, summary.max_row + 1)
+            row[col]: row[col + 1] for row in summary.iter_rows(values_only=True) for col in (0, 2, 4)
         }
         self.assertEqual("7.2.13", summary_values["FortiOS Version"])
 
         workbook = self._workbook("# no config version\n")
-        self.assertIsNone(workbook["Summary"]["B5"].value)
+        self.assertEqual("Not reported", workbook["Summary"]["D4"].value)
 
     def test_policy_order_action_origin_and_review_summary_are_traceable(self):
         workbook = self._workbook()

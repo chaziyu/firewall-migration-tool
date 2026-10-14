@@ -46,7 +46,7 @@ def test_palo_alto_source_preview_and_excel_are_registered():
     assert workbook.status_code == 200
     exported = load_workbook(io.BytesIO(workbook.data), read_only=True, data_only=True)
     assert "Interfaces" in exported.sheetnames
-    assert exported["Summary"]["B3"].value == "panos.xml"
+    assert exported["Summary"]["B5"].value == "panos.xml"
     assert {"PAN-OS Source Inventory", "Extraction Coverage", "PAN-OS Source Appendix"} <= set(exported.sheetnames)
 
 

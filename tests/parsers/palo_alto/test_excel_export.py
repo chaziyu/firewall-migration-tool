@@ -42,7 +42,7 @@ def test_supported_fixtures_export_real_workbooks(name):
     assert "Validation" not in workbook.sheetnames
     assert "PAN-OS Source Inventory" in workbook.sheetnames
     assert workbook.sheetnames == list(SHEET_ORDER)
-    assert workbook["Summary"]["B3"].value == name
+    assert workbook["Summary"]["B5"].value == name
 
 
 def test_complete_schema_is_retained_and_route_path_monitors_are_implemented():
@@ -56,10 +56,10 @@ def test_workbook_uses_fortigate_presentation_structure():
     workbook = _workbook("objects.xml")
     summary = workbook["Summary"]
     addresses = workbook["Addresses"]
-    assert summary.merged_cells.ranges
+    assert summary["A3"].value == "SOURCE DETAILS"
     assert summary.freeze_panes == "A5"
     assert summary["A1"].fill.fgColor.rgb[-6:] == "17324D"
-    assert summary["E3"].value is None
+    assert summary["C5"].value == "Export Profile"
     assert addresses["A1"].value == "Addresses"
     assert addresses["A3"].value == "Name"
     assert addresses.freeze_panes == "A4"
@@ -68,17 +68,17 @@ def test_workbook_uses_fortigate_presentation_structure():
 
 
 @pytest.mark.parametrize("profile", [ExcelExportProfile.FULL, ExcelExportProfile.FAST])
-def test_summary_navigation_starts_in_column_a_below_summary_data(profile):
+def test_summary_inventory_has_inline_links_to_exported_sheets(profile):
     workbook = _workbook("objects.xml", profile=profile)
     summary = workbook["Summary"]
-    header = next(cell for row in summary for cell in row if cell.value == "Workbook navigation")
-    assert header.column == 1
-    assert header.row > max(row[0].row for row in summary if row[1].value is not None)
-    links = list(summary.iter_rows(min_row=header.row + 1))
-    assert [row[0].value for row in links] == workbook.sheetnames[1:]
-    assert all(row[0].hyperlink.target == f"#'{row[0].value}'!A1" for row in links)
-    assert all(cell.value is None for row in links for cell in row[1:])
-    assert summary["B3"].value == ("FAST" if profile is ExcelExportProfile.FAST else "objects.xml")
+    links = [row for row in summary if row[2].hyperlink]
+    assert links
+    assert all(row[2].value == "Open" for row in links)
+    assert all(row[2].hyperlink.target == f"#'{row[0].value}'!A1" for row in links)
+    assert all(row[0].value in workbook.sheetnames for row in links)
+    assert all(cell.value != "Workbook navigation" for row in summary for cell in row)
+    assert summary["D5"].value == profile.value.upper()
+    assert summary["B5"].value == "objects.xml"
 
 
 def test_source_and_derived_policy_order_are_separate():

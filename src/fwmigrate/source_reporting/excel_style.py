@@ -1,13 +1,103 @@
 """Lightweight presentation shared by vendor-native Excel reports."""
 
 from openpyxl.cell import WriteOnlyCell
-from openpyxl.styles import Font, PatternFill
+from datetime import datetime, timezone
+from textwrap import wrap
+
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
+from openpyxl.worksheet.worksheet import Worksheet
 
 _HEADER_FILL = PatternFill("solid", fgColor="0F766E")
 _HEADER_FONT = Font(color="FFFFFF", bold=True, size=10)
 _TITLE_FILL = PatternFill("solid", fgColor="17324D")
 _TITLE_FONT = Font(color="FFFFFF", bold=True, size=14)
+
+
+def write_report_summary(
+    sheet, *, title, metadata, profile, validation, inventory, coverage=(), indicators=(),
+) -> None:
+    """Present vendor-owned metrics without inferring source state or sheet availability."""
+    sheet._report_summary_written = True
+    sheet.sheet_view.showGridLines = False
+    sheet.sheet_view.zoomScale = 90
+    sheet.freeze_panes = "A5"
+    sheet.sheet_properties.pageSetUpPr.fitToPage = True
+    sheet.page_setup.orientation = "landscape"
+    sheet.page_setup.paperSize = Worksheet.PAPERSIZE_A4
+    sheet.page_setup.fitToWidth, sheet.page_setup.fitToHeight = 1, 0
+    sheet.print_options.horizontalCentered = True
+    for column, width in zip("ABCDEF", (38, 32, 28, 32, 28, 32)):
+        sheet.column_dimensions[column].width = width
+    separator = Border(bottom=Side(style="hair", color="E2E8F0"))
+    label_font = Font(bold=True, color="334155")
+    section_fill = PatternFill("solid", fgColor="EEF2F6")
+    row_number = 0
+
+    def append(values, *, heading=False, title_band=False, labels=(), link=None):
+        nonlocal row_number
+        row_number += 1
+        # Streaming row dimensions must be set before appending the row.
+        lines = 1
+        for index, value in enumerate(values):
+            width = int(sheet.column_dimensions[get_column_letter(index + 1)].width) - 2
+            lines = max(lines, sum(max(1, len(wrap(line, width=width))) for line in str(value).split("\n")))
+        sheet.row_dimensions[row_number].height = 30 if title_band else 24 if heading else min(409, max(32, lines * 15 + 8))
+        cells = []
+        for index, value in enumerate((*values, *([None] * (6 - len(values))))):
+            value = "Not reported" if value is None and index < len(values) else value
+            cell = WriteOnlyCell(sheet, _safe_cell_value(value))
+            cell.row, cell.column = row_number, index + 1
+            cell.alignment = Alignment(
+                vertical="center", wrap_text=not title_band,
+                horizontal="right" if isinstance(value, (int, float)) else "left",
+                indent=1 if not heading and not title_band and (index in labels or link and index == 2) else 0,
+            )
+            if isinstance(value, int) and not isinstance(value, bool):
+                cell.number_format = "#,##0"
+            if title_band:
+                cell.fill, cell.font = _TITLE_FILL, _TITLE_FONT
+            elif heading:
+                cell.fill, cell.font = section_fill, label_font
+            else:
+                cell.border = separator
+                if index in labels:
+                    cell.font = label_font
+            if link and index == 2:
+                target = link.replace("'", "''")
+                cell.hyperlink = f"#'{target}'!A1"
+                cell.font = Font(color="0563C1", underline="single")
+            cells.append(cell)
+        sheet.append(cells)
+
+    def pairs(values):
+        values = tuple(values)
+        for start in range(0, len(values), 3):
+            append([value for pair in values[start:start + 3] for value in pair], labels=(0, 2, 4))
+
+    append([title], title_band=True)
+    sheet.append(())
+    row_number += 1
+    append(["SOURCE DETAILS"], heading=True)
+    pairs((*metadata, ("Export Profile", profile),
+           ("Generated UTC", datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"))))
+    append(["VALIDATION"], heading=True)
+    pairs(validation)
+    append(["CONFIGURATION INVENTORY"], heading=True)
+    append(["Section", "Count", "Sheet"], heading=True)
+    for label, count, target in inventory:
+        available = target in sheet.parent.sheetnames if target else False
+        append([label, count, "Open" if available else "Not exported"], labels=(0,),
+               link=target if available else None)
+    append(["SOURCE COVERAGE"], heading=True)
+    for label, value, *target in coverage:
+        link = target[0] if target and target[0] in sheet.parent.sheetnames else None
+        append([label, value, "Open"] if link else [label, value], labels=(0,), link=link)
+    if indicators:
+        append(["MIGRATION INDICATORS"], heading=True)
+        for label, value in indicators:
+            append([label, value], labels=(0,))
+    sheet.print_area = f"A1:F{row_number}"
 
 
 def _safe_cell_value(value):
@@ -91,6 +181,20 @@ def append_report_navigation(workbook, *, column: int = 5) -> None:
 
 def finish_report_workbook(workbook, *, summary_title: str | None = None) -> None:
     """Finalize FAST filters or FULL headers and workbook navigation."""
+    if getattr(workbook["Summary"], "_report_summary_written", False):
+        for sheet in workbook.worksheets:
+            if sheet.title == "Summary":
+                continue
+            if workbook.write_only:
+                first_row = 2 if getattr(sheet, "_report_title_written", False) else 1
+                sheet.auto_filter.ref = (
+                    f"A{first_row}:{get_column_letter(sheet._report_column_count)}"
+                    f"{sheet._report_row_count + first_row - 1}"
+                )
+            else:
+                style_fast_sheet(sheet)
+                sheet.cell(1, 1).hyperlink = "#'Summary'!A1"
+        return
     if workbook.write_only:
         append_report_navigation(workbook)
         for sheet in workbook.worksheets:

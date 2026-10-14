@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from itertools import chain
 from pathlib import Path
 from typing import Any, BinaryIO, Iterable, Mapping
@@ -12,7 +11,7 @@ from openpyxl.utils import get_column_letter
 
 from ....source_reporting.options import ExcelExportProfile
 from ....source_reporting.collection_excel import collection_summary, write_collection_evidence
-from ....source_reporting.excel_style import append_report_navigation, append_report_row, append_report_title, style_fast_sheet
+from ....source_reporting.excel_style import append_report_row, style_fast_sheet, write_report_summary
 
 from .excel_rows import ROW_BUILDERS, _PANExcelContext
 from .excel_schema import SHEET_ORDER, HIDDEN_COLUMNS_BY_DEFAULT, SHEET_HEADERS
@@ -21,9 +20,7 @@ from ..source_report import PaloAltoSourceResult
 _TITLE_FILL = PatternFill("solid", fgColor="17324D")
 _HEADER_FILL = PatternFill("solid", fgColor="0F766E")
 _TITLE_FONT = Font(color="FFFFFF", bold=True, size=14)
-_SUMMARY_TITLE_FONT = Font(color="FFFFFF", bold=True, size=18)
 _WHITE_FONT = Font(color="FFFFFF", bold=True)
-_LABEL_FONT = Font(bold=True)
 _MUTED_FONT = Font(color="64748B", italic=True)
 _LINK_FONT = Font(color="0563C1", underline="single")
 _TITLE_ALIGNMENT = Alignment(vertical="center")
@@ -79,39 +76,33 @@ def _write_table(workbook: Workbook, name: str, rows: Iterable[Mapping[str, Any]
 
 
 def _write_summary(workbook: Workbook, context: _PANExcelContext, row_counts: Mapping[str, int]) -> None:
-    sheet = workbook.create_sheet("Summary")
-    sheet.sheet_view.showGridLines = True
-    sheet.freeze_panes = "A5"
-    sheet.merge_cells("A1:F1")
-    sheet["A1"], sheet["A1"].fill, sheet["A1"].font = "PAN-OS Configuration Report", _TITLE_FILL, _SUMMARY_TITLE_FONT
-    sheet["A1"].alignment = _TITLE_ALIGNMENT
-    sheet.row_dimensions[1].height = 30
-    details = (("Source File", context.source_name), ("Hostname", context.config.hostname), ("PAN-OS Version", context.config.source_version),
-               ("Scopes", "\n".join(_scope for _scope in context.derived.scope_identities)), ("Generated UTC", datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")),
-               ("Validation Errors", len(context.validation.errors)), ("Validation Warnings", len(context.validation.warnings)))
-    details += collection_summary(context.collection_status)
-    for row, (label, value) in enumerate(details, 3):
-        sheet.cell(row, 1, label).font = _LABEL_FONT
-        sheet.cell(row, 2, _excel_safe(value))
-        sheet.cell(row, 2).alignment = _BODY_ALIGNMENT
-    section_row = max(11, len(details) + 4)
-    sheet.cell(section_row, 1, "Inventory")
-    sheet.cell(section_row, 1).fill, sheet.cell(section_row, 1).font = _HEADER_FILL, _WHITE_FONT
-    sheet.merge_cells(start_row=section_row, start_column=1, end_row=section_row, end_column=3)
-    inventory = [name for name in SHEET_ORDER if name not in {"Summary", "Review Required", "Unresolved References", "Unsupported", "PAN-OS Source Inventory", "Extraction Coverage"}]
-    for row, name in enumerate(inventory, section_row + 1):
-        sheet.cell(row, 1, name)
-        sheet.cell(row, 2, row_counts.get(name, 0))
-        cell = sheet.cell(row, 3, "Open sheet")
-        cell.hyperlink, cell.font = f"#'{name}'!A1", _LINK_FONT
-    nav_row = sheet.max_row + 2
-    sheet.cell(nav_row, 1, "Workbook navigation")
-    sheet.cell(nav_row, 1).fill, sheet.cell(nav_row, 1).font = _HEADER_FILL, _WHITE_FONT
-    for row, name in enumerate((item for item in SHEET_ORDER if item != "Summary"), nav_row + 1):
-        cell = sheet.cell(row, 1, name)
-        cell.hyperlink, cell.font = f"#'{name}'!A1", _LINK_FONT
-    for column in ("A", "B", "C", "D", "E", "F"):
-        sheet.column_dimensions[column].width = 28
+    sheet = workbook["Summary"] if "Summary" in workbook.sheetnames else workbook.create_sheet("Summary")
+    coverage_sheets = {"Review Required", "Unresolved References", "Unsupported",
+                       "PAN-OS Source Inventory", "Extraction Coverage", "PAN-OS Source Appendix"}
+    write_report_summary(
+        sheet, title="PAN-OS Configuration Report",
+        metadata=(("Hostname", context.config.hostname), ("PAN-OS Version", context.config.source_version),
+                  ("Scopes", "\n".join(context.derived.scope_identities) or None),
+                  ("Source File", context.source_name)),
+        profile="FAST" if workbook.write_only else "FULL",
+        validation=(("Errors", len(context.validation.errors)),
+                    ("Warnings", len(context.validation.warnings)),
+                    ("Unresolved References", len(context.derived.unresolved_references))),
+        inventory=((name, count, name) for name, count in row_counts.items()
+                   if name not in coverage_sheets),
+        coverage=(*collection_summary(context.collection_status),
+                  *((name, count, name) for name, count in row_counts.items() if name in coverage_sheets),
+                  ("Source Inventory Records", len(context.config.source_inventory)),
+                  ("Extraction Issues", len(context.config.extraction_issues)),
+                  *((f"{status.replace('_', ' ').title()} Records", sum(
+                      value == status for values in context.domain_statuses.values() for value in values))
+                    for status in ("PARTIAL", "SOURCE_ONLY", "UNSUPPORTED")),
+                  ("Export Limitations", (
+                      "FAST omits PAN-OS Source Inventory, Extraction Coverage, and PAN-OS Source Appendix. "
+                      "Use FULL for complete source traceability." if workbook.write_only else
+                      "FULL includes PAN-OS Source Inventory, Extraction Coverage, and PAN-OS Source Appendix."
+                  ))),
+    )
 
 
 def _write_table_fast(workbook: Workbook, name: str, rows: Iterable[Mapping[str, Any]]) -> int:
@@ -142,8 +133,7 @@ def _write_table_fast(workbook: Workbook, name: str, rows: Iterable[Mapping[str,
 
 def _build_fast_workbook(context: _PANExcelContext) -> Workbook:
     workbook = Workbook(write_only=True)
-    summary = workbook.create_sheet("Summary")
-    append_report_title(summary, "PAN-OS Configuration Report")
+    workbook.create_sheet("Summary")
     counts = {}
     no_rows = object()
     for name in SHEET_ORDER:
@@ -154,19 +144,7 @@ def _build_fast_workbook(context: _PANExcelContext) -> Workbook:
         if first is no_rows and name != "Review Required":
             continue
         counts[name] = _write_table_fast(workbook, name, () if first is no_rows else chain((first,), rows))
-    append_report_row(summary, ("Field", "Value"))
-    for label, value in (
-        ("Excel Profile", "FAST"), ("Source File", context.source_name),
-        ("Hostname", context.config.hostname), ("PAN-OS Version", context.config.source_version),
-        ("Scopes", "\n".join(context.derived.scope_identities)),
-        ("Generated UTC", datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")),
-        ("Validation Errors", len(context.validation.errors)), ("Validation Warnings", len(context.validation.warnings)),
-        ("Export Profile", "FAST omits PAN-OS Source Inventory, Extraction Coverage, and PAN-OS Source Appendix. Use FULL for complete source traceability."),
-        *collection_summary(context.collection_status),
-        *counts.items(),
-    ):
-        append_report_row(summary, (label, _excel_safe(value)))
-    append_report_navigation(workbook, column=1)
+    _write_summary(workbook, context, counts)
     return workbook
 
 
