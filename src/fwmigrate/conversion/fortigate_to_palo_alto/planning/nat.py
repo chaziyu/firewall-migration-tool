@@ -7,7 +7,7 @@ from fwmigrate.conversion.fortigate_to_palo_alto.models import PANMigrationStatu
 from .policies import ipv6_match_warnings
 from .services import service_target
 from .addresses import address_references
-from .vips import vip_translation
+from .vips import vip_policy_consumers, vip_translation
 
 
 def plan_nat(source: Any, derived: Any, options: Any):
@@ -81,11 +81,13 @@ def plan_nat(source: Any, derived: Any, options: Any):
             service=(service_target(policy.service[0], service_names.get(vdom, ()), getattr(options, "service_names", {}).get(vdom, {})) if policy and policy.service and len(policy.service) == 1 else None),
             to_interface=getattr(egress_mapping, "target_interface", None),
         ))
+    vip_consumers = vip_policy_consumers(source, derived)
     for vip in getattr(source, "vips", ()):
         vdom = vip.vdom or "root"
-        referencing = [policy for policy in getattr(source, "policies", ())
-                       if (policy.vdom or "root") == vdom and vip.name in (policy.dstaddr or ())]
+        consumers = vip_consumers.get((vdom, vip.name), ())
+        referencing = [policy for policy, _ in consumers]
         ext, mapped, warnings = vip_translation(vip)
+        warnings.extend(warning for _, issues in consumers for warning in issues)
         if not referencing:
             warnings.append("VIP has no referencing firewall policy for NAT source zone")
         from_contexts = []
@@ -154,6 +156,10 @@ def plan_nat(source: Any, derived: Any, options: Any):
 
 def _nat_policy_warnings(policy, service_groups):
     warnings = []
+    if getattr(policy, "status", None) not in {None, "enable", "disable", "disabled", "no", "0"}:
+        warnings.append("NAT policy state is unsupported")
+    if getattr(policy, "poolname", None) and getattr(policy, "ippool", None) not in {None, "enable"}:
+        warnings.append("NAT IP-pool references conflict with the explicit pool activation setting")
     if any(((policy.vdom or "root"), name) in service_groups for name in policy.service or ()):
         warnings.append("NAT service-group matching has no verified PAN-OS service mapping")
     for field in ("srcaddr_negate", "dstaddr_negate", "srcaddr6_negate", "dstaddr6_negate", "service_negate"):

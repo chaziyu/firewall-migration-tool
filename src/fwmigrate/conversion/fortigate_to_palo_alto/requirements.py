@@ -1,5 +1,7 @@
 """Explicit target mappings needed by the FortiGate to PAN-OS planner."""
 
+from .planning.vips import vip_policy_consumers
+
 
 def build_mapping_requirements(config, derived, *, include_configuration=False):
     """Return only mappings consumed by the currently implemented planner.
@@ -107,10 +109,10 @@ def build_mapping_requirements(config, derived, *, include_configuration=False):
                 if (vdom, egress) not in zone_names:
                     need(vdom, egress, "interface", "source_nat", consumer, "target_interface")
 
+    vip_consumers = vip_policy_consumers(config, derived)
     for vip in getattr(config, "vips", ()):
         vdom = vip.vdom or "root"
-        consumers = [policy for policy in getattr(config, "policies", ())
-                     if (policy.vdom or "root") == vdom and vip.name in (policy.dstaddr or ())]
+        consumers = [policy for policy, _ in vip_consumers.get((vdom, vip.name), ())]
         if consumers:
             need_vdom(vdom, "vsys")
         for policy in consumers:
