@@ -44,8 +44,7 @@ def _public_deployment_result(result):
         if public['failure_message'] is not None:
             public['failure_message'] = _public_deployment_error(public['failure_message'], 'Candidate preparation failed')
         for command in public.get('command_results', ()):
-            if not command['accepted']:
-                command['response'] = 'Candidate command failed'
+            command['response'] = 'Candidate command accepted' if command['accepted'] else 'Candidate command failed'
         for name in ('validation', 'commit'):
             nested = public.get(name)
             if nested and nested['status'] not in {'SUCCESS', 'NOT_RUN'}:
@@ -53,6 +52,15 @@ def _public_deployment_result(result):
     elif public['status'] not in {'SUCCESS', 'NOT_RUN'}:
         public['response'] = _public_deployment_error(public['response'], 'Candidate operation failed')
     return public
+
+
+def _recovery(state, *, result=None, artifact_id=None):
+    return {"state": state, "artifact_id": artifact_id,
+            "commands_attempted": getattr(result, "commands_attempted", None),
+            "commands_succeeded": getattr(result, "commands_succeeded", None),
+            "failed_command_index": getattr(result, "failed_command_index", None),
+            "next_action": "NONE" if state == "COMMITTED" else "REVIEW_VALIDATION" if state == "VALIDATED" else "INSPECT_CANDIDATE",
+            "explanation": "Re-enter credentials to inspect identity, reviewed baseline and candidate changes. Reconcile with the operator; changes may include another administrator's work. Never replay or discard automatically."}
 
 
 class _CandidateSessionError(ValueError):
@@ -114,7 +122,7 @@ def register_deployment_routes(
                 }), 403
             payload = request.get_json(silent=True) or {}
             try:
-                if request.path == '/api/deploy':
+                if request.path in {'/api/deploy', '/api/inspect-candidate'}:
                     rendered = _request_artifact(payload)
                     if rendered is None:
                         raise ValueError('A current validated rendered migration is required')
@@ -201,6 +209,7 @@ def register_deployment_routes(
     @app.route('/api/deploy', methods=['POST'])
     @_candidate_operation
     def deploy_candidate():
+        submitted = False
         try:
             payload = request.get_json(silent=True) or {}
             artifact_id = (payload.get('artifact') or {}).get('artifact_id')
@@ -217,6 +226,7 @@ def register_deployment_routes(
             context = payload['artifact']['decision_document']['design_approval']['context']
             options = replace(options, expected_serial=serial,
                 expected_baseline_sha256=context['baseline_sha256'], baseline_format=context['baseline_format'])
+            submitted = True
             result = deployer_factory(options).deploy(rendered)
             decision_document = payload['artifact']['decision_document']
             validation_feedback = deployment_validation_feedback(rendered, decision_document, result.validation)
@@ -251,10 +261,30 @@ def register_deployment_routes(
                 'validation_feedback': validation_feedback,
                 'deployment_session_id': deployment_session_id,
                 'candidate_validated': succeeded,
+                'recovery': _recovery('VALIDATED' if succeeded else ('VALIDATION_FAILED' if result.commands_succeeded == result.commands_attempted and result.commands_attempted else result.recovery_state), result=result, artifact_id=artifact_id),
             }), (200 if succeeded else 502)
         except (ValueError, KeyError, TypeError):
             _LOGGER.info('Deployment request rejected due to invalid payload or state')
-            return jsonify({'success': False, 'error': 'Invalid deployment request'}), 400
+            return jsonify({'success': False, 'error': 'Invalid deployment request', 'recovery': _recovery('OUTCOME_UNKNOWN' if submitted else 'REJECTED_BEFORE_WRITES')}), 400
+        except Exception:
+            _LOGGER.info('Candidate preparation outcome unknown')
+            return jsonify({'success': False, 'error': 'Candidate preparation outcome unknown', 'recovery': _recovery('OUTCOME_UNKNOWN')}), 502
+
+    @app.route('/api/inspect-candidate', methods=['POST'])
+    @_candidate_operation
+    def inspect_candidate():
+        payload = request.get_json(silent=True) or {}
+        try:
+            _request_artifact(payload)
+            context = payload['artifact']['decision_document']['design_approval']['context']
+            options = replace(_deployment_options(payload), expected_serial=context['target_serial'],
+                expected_baseline_sha256=context['baseline_sha256'], baseline_format=context['baseline_format'])
+            result = deployer_factory(options).inspect()
+            return jsonify({'success': True, 'inspection': asdict(result),
+                            'recovery': _recovery(result.state, artifact_id=payload['artifact']['artifact_id'])})
+        except Exception:
+            return jsonify({'success': False, 'error': 'Candidate inspection unavailable; renew evidence and review or reconcile with the operator.',
+                            'recovery': _recovery('OUTCOME_UNKNOWN')}), 400
 
     @app.route('/api/validate-candidate', methods=['POST'])
     @_candidate_operation
@@ -283,6 +313,7 @@ def register_deployment_routes(
                 'result': _public_deployment_result(result),
                 'deployment_session_id': session.session_id if valid else None,
                 'validation_feedback': validation_feedback,
+                'recovery': _recovery('VALIDATED' if valid else 'CANDIDATE_CHANGED'),
             }), (200 if valid else 502)
         except ArtifactEligibilityError as exc:
             deployment_sessions.pop(payload.get('deployment_session_id'), None)
@@ -292,11 +323,12 @@ def register_deployment_routes(
                 'success': False,
                 'error': _CandidateSessionError.MESSAGES[exc.code],
                 'error_code': exc.code,
+                'recovery': _recovery('SESSION_LOST'),
             }), 400
         except Exception:
             deployment_sessions.pop(payload.get('deployment_session_id'), None)
             _LOGGER.info('Invalid candidate validation request')
-            return jsonify({'success': False, 'error': 'Invalid candidate validation request'}), 400
+            return jsonify({'success': False, 'error': 'Candidate validation requires recovery', 'recovery': _recovery('OUTCOME_UNKNOWN')}), 400
 
     @app.route('/api/commit', methods=['POST'])
     @_candidate_operation
@@ -308,7 +340,8 @@ def register_deployment_routes(
             deployment_sessions.pop(session.session_id, None)
             return jsonify({
                 'success': result.status == 'SUCCESS',
-                'error': None if result.status == 'SUCCESS' else 'Candidate commit failed',
+                'error': None if result.status == 'SUCCESS' else 'Candidate commit outcome requires inspection',
+                'recovery': _recovery('COMMITTED' if result.status == 'SUCCESS' else 'OUTCOME_UNKNOWN' if result.status in {'UNKNOWN', 'TIMEOUT'} else 'RECONCILIATION_REQUIRED'),
                 'result': _public_deployment_result(result),
                 'deployment_session_id': None,
             }), (200 if result.status == 'SUCCESS' else 502)
@@ -320,8 +353,9 @@ def register_deployment_routes(
                 'success': False,
                 'error': _CandidateSessionError.MESSAGES[exc.code],
                 'error_code': exc.code,
+                'recovery': _recovery('SESSION_LOST'),
             }), 400
         except Exception:
             deployment_sessions.pop(payload.get('deployment_session_id'), None)
             _LOGGER.info("Invalid candidate commit request")
-            return jsonify({'success': False, 'error': 'Invalid candidate commit request'}), 400
+            return jsonify({'success': False, 'error': 'Candidate commit outcome unknown', 'recovery': _recovery('OUTCOME_UNKNOWN')}), 400

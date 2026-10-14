@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 import json
 import re
+import hashlib
 
 from fwmigrate.conversion.fortigate_to_palo_alto.decisions import PANMigrationDecisionSet, make_decision_key
 
@@ -30,6 +31,11 @@ class PANSupportGuidance:
             "title": self.title, "why": self.why, "next_action": self.next_action,
             "becomes_supported_when": self.becomes_supported_when,
             "decision_key": self.decision_key,
+            "id": hashlib.sha256(json.dumps([self.source_vdom, self.source_kind, self.source_name,
+                                              self.code, self.decision_key]).encode()).hexdigest(),
+            "category": "CHOICE" if self.resolution_type == "MISSING_MAPPING" and self.decision_key else
+                        "CONFLICT" if self.resolution_type == "TARGET_CONFLICT" else "MANUAL",
+            "action": {"kind": "EDIT_MAPPING", "decision_key": self.decision_key} if self.decision_key else None,
         }
 
 
@@ -103,7 +109,7 @@ def build_support_guidance(plan, validation, decisions, target_findings=()):
     result = []
     items = tuple(_items(plan))
     by_source = {}
-    decision_keys = frozenset(item.key for item in decisions.decisions)
+    decision_keys = frozenset(item.key for item in decisions.decisions if item.mode.value != "UNSUPPORTED")
     known_whys = set()
     for item in items:
         # Keep the existing first-match order when source identities overlap.
@@ -133,7 +139,7 @@ def build_support_guidance(plan, validation, decisions, target_findings=()):
         result.append(_guidance(item, finding.code, "TARGET_CONFLICT", "Target evidence conflict", finding.message,
                                 "Review the confirmed mapping against the selected target evidence.",
                                 "the confirmed value matches the selected target or the target design is intentionally changed",
-                                finding.decision_key))
+                                finding.decision_key if finding.decision_key in decision_keys else None))
     unique = {}
     for entry in result:
         unique[(entry.source_vdom, entry.source_kind, entry.source_name, entry.code, entry.decision_key)] = entry

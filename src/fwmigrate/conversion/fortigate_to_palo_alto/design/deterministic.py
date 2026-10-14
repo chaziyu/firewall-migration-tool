@@ -18,6 +18,7 @@ from ..validation import validate_plan
 from ..requirements import build_mapping_requirements
 from ..coverage import build_migration_coverage
 from ..recommendations.recommendation_engine import build_recommendations
+from ..recommendations.support_guidance import _warning_guidance
 from ..options import PANMigrationOptions
 
 
@@ -245,15 +246,20 @@ def build_deterministic_draft(config, derived, decisions, *, source_digest, targ
             reasons.append("Resolve the related mapping decisions")
         valid = (item.source_object_type, item.target_vsys, item.target_name or item.source_name) in validation.renderable_item_keys
         operation = dispositions[key].value
+        causes = [_warning_guidance(item, warning, frozenset(by_key)).to_dict()
+                  for warning in item.warnings]
+        manual = any(cause["resolution_type"] not in {"MISSING_MAPPING", "TARGET_CONFLICT"}
+                     or (cause["resolution_type"] == "MISSING_MAPPING" and not cause["decision_key"])
+                     for cause in causes)
         configuration.append({"group_key": "item:" + key, "item_key": key,
             "source_vdom": item.source_vdom, "source_kind": item.source_kind, "source_name": item.source_name,
             "family": item.source_object_type, "target_name": item.target_name, "target_scope": item.target_vsys,
             "operation": operation if operation != "BLOCK" else None,
             "status": "READY" if valid and operation != "BLOCK" and not reasons else
-                "UNSUPPORTED" if item.status.value == "UNSUPPORTED" else
+                "UNSUPPORTED" if item.status.value == "UNSUPPORTED" or manual else
                 "CONFLICT" if any(code.startswith("TARGET_") for code in blockers.get(key, ())) else "NEEDS_INPUT",
             "dependencies": list(required) + item_dependencies, "blocking_reasons": reasons,
-            "configuration": asdict(item)})
+            "configuration": asdict(item), "causes": causes})
         comparison = classification_by_source.get((item.source_vdom or "root", item.source_kind, item.source_name, item.source_object_type))
         if comparison and comparison['status'] != 'NO_MATCH':
             configuration[-1]['target_comparison'] = comparison

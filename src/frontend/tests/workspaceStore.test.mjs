@@ -85,7 +85,7 @@ test('TTL expires in-memory state and context changes invalidate rendered artifa
 
 test('role and decision changes invalidate deterministic state without persistent storage', async () => {
   await clearWorkspace()
-  assert.equal(workspace().referenceRole, 'DESTINATION')
+  assert.equal(workspace().referenceRole, 'TEMPLATE')
 
   await saveWorkspace({
     preview: { vendor: 'fortigate' },
@@ -93,7 +93,7 @@ test('role and decision changes invalidate deterministic state without persisten
     artifact: { artifact_id: 'approved' },
     decisionDocument: { design_approval: {} },
   })
-  await saveWorkspace({ referenceRole: 'TEMPLATE' })
+  await saveWorkspace({ referenceRole: 'DESTINATION' })
   assert.equal(workspace().deterministicDraft, null)
   assert.equal(workspace().artifact, null)
 

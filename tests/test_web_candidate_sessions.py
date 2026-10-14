@@ -287,7 +287,7 @@ def test_unexpected_commit_value_error_does_not_expose_device_details(monkeypatc
         **CREDS, "artifact": artifact, "deployment_session_id": session,
     })
     assert response.status_code == 400
-    assert response.get_json()["error"] == "Invalid candidate commit request"
+    assert response.get_json()["error"] == "Candidate commit outcome unknown"
     assert "synthetic-private-password-device-detail" not in response.get_data(as_text=True)
     assert "synthetic-private-password-device-detail" not in caplog.text
 
@@ -312,7 +312,7 @@ def test_deployment_exceptions_keep_secrets_private(monkeypatch, caplog, operati
 
     monkeypatch.setattr(web, 'PANSSHDeployer', Failing)
     response = client.post('/api/' + operation, json={**CREDS, 'artifact': artifact, 'deployment_session_id': session})
-    assert response.status_code in {400, 500}
+    assert response.status_code in {400, 500, 502}
     assert 'SYNTHETIC_DEPLOYMENT_SECRET' not in response.get_data(as_text=True) + caplog.text
     assert all(record.exc_info is None for record in caplog.records)
 
@@ -340,3 +340,55 @@ def test_failed_deployment_results_do_not_expose_transport_errors(monkeypatch, c
     assert response.status_code == 502
     assert 'SYNTHETIC_TRANSPORT_SECRET' not in response.get_data(as_text=True) + caplog.text
     assert response.json['deployment_session_id'] is None
+
+
+def test_read_only_candidate_inspection_does_not_restore_a_lost_session(monkeypatch):
+    from fwmigrate.deployment.models import PANCandidateInspection
+    class Inspector(_SuccessfulDeployer):
+        def inspect(self):
+            assert self.options.expected_baseline_sha256
+            assert self.options.expected_candidate_sha256 is None
+            return PANCandidateInspection('CLEAN_BASELINE', self.options.expected_serial, True, True)
+        def deploy(self, rendered):
+            pytest.fail('Inspection must not push commands')
+        def commit(self):
+            pytest.fail('Inspection must not commit')
+    monkeypatch.setattr(web, 'PANSSHDeployer', Inspector)
+    client = web.create_app({'TESTING': True}).test_client()
+    artifact = _ready_artifact(client)
+    response = client.post('/api/inspect-candidate', json={**CREDS, 'artifact': artifact})
+    assert response.status_code == 200, response.get_json()
+    assert response.get_json()['inspection']['state'] == 'CLEAN_BASELINE'
+    assert 'deployment_session_id' not in response.get_json()
+    assert client.post('/api/commit', json={**CREDS, 'artifact': artifact,
+        'deployment_session_id': 'lost'}).get_json()['recovery']['state'] == 'SESSION_LOST'
+
+
+def test_partial_push_recovery_contract_preserves_counts_without_transport_output(monkeypatch):
+    from fwmigrate.deployment import PANDeploymentCommandResult
+    class PartialPush(_SuccessfulDeployer):
+        def deploy(self, rendered):
+            return PANDeploymentResult(True, 2, 1, 1, 'secret transport output',
+                (PANDeploymentCommandResult(0, rendered.commands[0], True, 'secret transport output'),),
+                recovery_state='OUTCOME_UNKNOWN')
+    monkeypatch.setattr(web, 'PANSSHDeployer', PartialPush)
+    client = web.create_app({'TESTING': True}).test_client()
+    response = client.post('/api/deploy', json={**CREDS, 'artifact': _ready_artifact(client)})
+    assert response.status_code == 502
+    assert b'secret transport output' not in response.data
+    recovery = response.get_json()['recovery']
+    assert recovery['state'] == 'OUTCOME_UNKNOWN'
+    assert recovery['commands_attempted'] == 2 and recovery['commands_succeeded'] == 1
+    assert recovery['failed_command_index'] == 1
+
+
+def test_unexpected_payload_type_error_after_submission_is_not_reported_as_no_writes(monkeypatch):
+    class InterruptedPush(_SuccessfulDeployer):
+        def deploy(self, rendered):
+            raise ValueError('secret after possible write')
+    monkeypatch.setattr(web, 'PANSSHDeployer', InterruptedPush)
+    client = web.create_app({'TESTING': True}).test_client()
+    response = client.post('/api/deploy', json={**CREDS, 'artifact': _ready_artifact(client)})
+    assert response.get_json()['recovery']['state'] == 'OUTCOME_UNKNOWN'
+    assert response.get_json()['recovery']['commands_attempted'] is None
+    assert b'secret after possible write' not in response.data

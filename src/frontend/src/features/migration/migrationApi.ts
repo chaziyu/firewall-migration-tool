@@ -68,3 +68,10 @@ export function downloadFile(blob: Blob, filename: string) {
   link.click()
   URL.revokeObjectURL(url)
 }
+
+export type CandidateRecovery = {
+  state: string; artifact_id?: string; commands_attempted?: number | null; commands_succeeded?: number | null
+  failed_command_index?: number | null; explanation?: string
+}
+export const inspectCandidate = (artifact: PlanArtifact, connection: Record<string, unknown>) =>
+  postJson<{ inspection: { state: string; device_serial: string | null; baseline_matches: boolean; candidate_clean: boolean }; recovery: CandidateRecovery }>('/api/inspect-candidate', { ...connection, artifact: artifact.artifact })

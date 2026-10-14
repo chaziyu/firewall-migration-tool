@@ -8,6 +8,7 @@ import logging
 import time
 import re
 import zipfile
+from datetime import datetime, timezone
 from dataclasses import dataclass, replace
 
 import yaml
@@ -56,6 +57,8 @@ from fwmigrate.conversion.fortigate_to_palo_alto.application import (
     target_evidence_changed as target_evidence_has_changed,
     target_evidence_identity,
 )
+from fwmigrate.collection.snapshot import MAX_BYTES
+from fwmigrate.source_reporting.web_report import normalize_web_report
 from fwmigrate.source_reporting import source_reporters
 from fwmigrate.vendors.palo_alto.config_fingerprint import BASELINE_FORMAT, destination_fingerprint
 from fwmigrate.web_support.artifact_signing import sign_envelope, verify_artifact, verify_envelope
@@ -68,6 +71,7 @@ from fwmigrate.web_support.request_source import (
 from fwmigrate.web_support.public_errors import safe_validation_message
 
 _LOGGER = logging.getLogger(__name__)
+PROJECT_MAX_BYTES = 2 * MAX_BYTES + 1_000_000
 _SAFE_COLLECTION_ERROR = 'Migration requires a complete live collection; this source is PARTIAL or FAILED.'
 _SAFE_TARGET_SOURCE_ERROR = 'Vendor-native source evidence is required'
 _SAFE_DECISION_SOURCE_ERROR = 'Migration decisions belong to a different source configuration'
@@ -207,6 +211,94 @@ def register_migration_routes(
             service_names=payload.get('service_name_overrides', bound.get('service_names')))
         return state, draft, approval
 
+    def _project_values(payload, *, importing=False):
+        """Reparse sanitized evidence and bind proposals to current source identities."""
+        if not isinstance(payload, dict):
+            raise ValueError('Project must be an object')
+        if len(json.dumps(payload).encode('utf-8')) > PROJECT_MAX_BYTES:
+            raise ValueError('Project exceeds size limit')
+        allowed = {'format', 'version', 'pair', 'exported_at', 'source', 'target_source',
+                   'target_device', 'reference_role', 'workflow_mode', 'proposals', 'service_names', 'source_digest'}
+        if set(payload) - allowed:
+            raise ValueError('Project contains unknown fields or execution authority')
+        if importing and (payload.get('format') != 'fwmigrate-fortigate-pan-project'
+                or type(payload.get('version')) is not int or payload['version'] != 1
+                or payload.get('pair') != 'fortigate_to_palo_alto'):
+            raise ValueError('Unsupported project format, version or pair')
+        if importing and (not isinstance(payload.get('source_digest'), str)
+                or not re.fullmatch(r'[0-9a-f]{64}', payload['source_digest'])
+                or not isinstance(payload.get('exported_at'), str) or len(payload['exported_at']) > 64):
+            raise ValueError('Invalid project identity or export metadata')
+        role = payload.get('reference_role')
+        mode = payload.get('workflow_mode')
+        if role not in {'DESTINATION', 'TEMPLATE'} or mode not in {'offline', 'destination'}:
+            raise ValueError('Explicit evidence role and workflow mode are required')
+        if not isinstance(payload.get('target_device', ''), str):
+            raise ValueError('Invalid selected target device')
+        proposals = payload.get('proposals', {})
+        names = payload.get('service_names', {})
+        if not isinstance(proposals, dict) or any(not isinstance(key, str) or not isinstance(value, str)
+                or not value.strip() or len(value) > 256 for key, value in proposals.items()):
+            raise ValueError('Invalid project mapping proposals')
+        if not isinstance(names, dict) or any(not isinstance(vdom, str) or not isinstance(entries, dict)
+                or any(not isinstance(name, str) or not isinstance(value, str) for name, value in entries.items())
+                for vdom, entries in names.items()):
+            raise ValueError('Invalid service name proposals')
+        entry = _migration_source(payload)
+        base = {**payload, 'service_name_overrides': {}, 'draft_overrides': {}}
+        state, initial, _ = _deterministic_state(base, entry)
+        editable = {row.decision_key for row in initial.decisions if row.status != 'UNSUPPORTED'}
+        identity_matches = not importing or payload.get('source_digest') == entry.source_digest
+        if not identity_matches:
+            editable = set()
+        unmatched = sorted(set(proposals) - editable)
+        proposals = {key: value for key, value in proposals.items() if key in editable}
+        eligible_services = {(row['source_vdom'], row['source_name']) for row in initial.configuration
+                             if row.get('family') == 'service' and row.get('configuration', {}).get('status') == 'SUPPORTED'}
+        if not identity_matches:
+            eligible_services = set()
+        filtered_names = {}
+        for vdom, entries in names.items():
+            for name, value in entries.items():
+                if (vdom, name) in eligible_services:
+                    filtered_names.setdefault(vdom, {})[name] = value
+                else:
+                    unmatched.append(f'service:{vdom}/{name}')
+        # Invalid names fail before any client state is replaced.
+        state, draft, _ = _deterministic_state({**base, 'draft_overrides': proposals,
+                                               'service_name_overrides': filtered_names}, entry)
+        target_entry = analyze_request_source(payload, 'palo_alto', target=True) if payload.get('target_source') else None
+        project = {'format': 'fwmigrate-fortigate-pan-project', 'version': 1,
+            'pair': 'fortigate_to_palo_alto', 'exported_at': datetime.now(timezone.utc).isoformat(),
+            'source': entry.evidence, 'source_digest': entry.source_digest, 'target_source': target_entry.evidence if target_entry else None,
+            'target_device': state['target_device'] or '', 'reference_role': role, 'workflow_mode': mode,
+            'proposals': proposals, 'service_names': filtered_names}
+        return project, entry, state, draft, unmatched
+
+    @app.route('/api/migration/project/export', methods=['POST'])
+    def export_migration_project():
+        try:
+            project, _entry, _state, _draft, unmatched = _project_values(request.get_json(silent=True))
+            return jsonify({'success': True, 'project': project, 'unmatched_entries': unmatched})
+        except (ValueError, TypeError, KeyError):
+            return jsonify({'success': False, 'error': 'Invalid project evidence or proposals; project was not exported.'}), 400
+
+    @app.route('/api/migration/project/import', methods=['POST'])
+    def import_migration_project():
+        try:
+            payload = request.get_json(silent=True)
+            project, entry, state, draft, unmatched = _project_values(payload, importing=True)
+            report = source_reporters.get('fortigate').build_preview(entry.analysis)
+            preview = {**normalize_web_report(report, 'fortigate', copy=False), 'vendor': 'fortigate',
+                       'source_evidence': entry.evidence, 'source_digest': entry.source_digest}
+            review = _migration_review_response(entry, state).get_json()
+            review['draft'] = sign_envelope(draft.to_dict(), signing_key)
+            return jsonify({'success': True, 'project': project, 'preview': preview, 'review': review,
+                            'unmatched_entries': unmatched,
+                            'notice': 'Proposals restored. New approval and fresh destination checks are required.'})
+        except (ValueError, TypeError, KeyError):
+            return jsonify({'success': False, 'error': 'Invalid or unsupported project; current workspace is unchanged.'}), 400
+
     @app.route('/api/migration/design/prepare', methods=['POST'])
     def prepare_migration_design():
         payload = request.get_json(silent=True)
@@ -216,6 +308,7 @@ def register_migration_routes(
         state, draft, approval = _deterministic_state(payload, entry)
         response = _migration_review_response(entry, state).get_json()
         response['draft'] = sign_envelope(draft.to_dict(), signing_key)
+        response['approval_readiness'] = {'current': bool(approval), 'expires_at': approval.get('expires_at') if approval else None}
         response['decision_document']['draft_required'] = True
         if approval:
             response['decision_document']['design_approval'] = approval
@@ -681,7 +774,12 @@ def register_migration_routes(
                 deployment_eligibility = {'eligible': True, 'reason': None}
             except ArtifactEligibilityError as exc:
                 deployment_eligibility = {'eligible': False, 'reason': str(exc)}
-            rendered = replace(rendered, report={**rendered.report, 'deployment_eligibility': deployment_eligibility})
+            rendered = replace(rendered, report={**rendered.report, 'deployment_eligibility': deployment_eligibility,
+                'readiness': {'approval': {'current': True, 'expires_at': design_approval['expires_at']},
+                    'export': {'status': 'NO_CHANGES' if plan_status == 'READY_NO_CHANGES' else 'READY' if plan_status == 'READY' else 'PARTIAL',
+                               'command_count': len(rendered.commands)},
+                    'deployment': deployment_eligibility},
+                'issues': [item.to_dict() for item in result.support_guidance]})
             artifact_id = uuid_factory().hex
             artifact = sign_envelope({
                 'artifact_id': artifact_id, 'commands': list(rendered.commands),
