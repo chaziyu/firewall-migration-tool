@@ -1,6 +1,21 @@
 """Read-only lookup of local and inherited effective Junos paths."""
 
 
+def context_local_path(context, path):
+    """Strip only the owning scope prefix; reject paths owned by another scope."""
+    context = context.lower()
+    path = tuple(str(part).lower() for part in path)
+    prefix = (("logical-systems", context.removeprefix("logical-system "))
+              if context.startswith("logical-system ") else
+              ("tenants", context.removeprefix("tenant "))
+              if context.startswith("tenant ") else ())
+    if path[:1] in (("logical-systems",), ("tenants",)):
+        if path[:2] != tuple(part.lower() for part in prefix):
+            return None
+        return path[2:]
+    return path
+
+
 class EffectiveJunosLookup:
     def __init__(self, statements=()):
         self._inherited = {}
@@ -10,21 +25,14 @@ class EffectiveJunosLookup:
         for item in statements:
             self.has_source = True
             if item.get("origin") == "activation":
-                self._inactive.setdefault(item.get("context", "root"), set()).add(
-                    tuple(part.lower() for part in item.get("target_path") or ()))
+                context = item.get("context", "root").lower()
+                path = context_local_path(context, item.get("target_path") or ())
+                if path is not None:
+                    self._inactive.setdefault(context, set()).add(path)
             if item.get("status") != "EFFECTIVE":
                 continue
-            context = item.get("context", "root")
-            path = tuple(part.lower() for part in item.get("target_path") or ())
-            prefix = (("logical-systems", context.removeprefix("logical-system "))
-                      if context.startswith("logical-system ") else
-                      ("tenants", context.removeprefix("tenant "))
-                      if context.startswith("tenant ") else ())
-            prefix = tuple(part.lower() for part in prefix)
-            if prefix and path[:2] == prefix:
-                path = path[2:]
-            elif context == "root" and path[:1] in (("logical-systems",), ("tenants",)):
-                continue
+            context = item.get("context", "root").lower()
+            path = context_local_path(context, item.get("target_path") or ())
             if path:
                 index = self._inherited if item.get("origin") == "inherited-group" else self._local
                 index.setdefault(context, set()).add(path)
@@ -36,10 +44,10 @@ class EffectiveJunosLookup:
 
     def contains(self, context, *paths):
         """Keep inherited-only semantics for existing callers."""
-        return self._contains(self._inherited.get(context, ()), *paths)
+        return self._contains(self._inherited.get(context.lower(), ()), *paths)
 
     def contains_effective_path(self, context, *paths):
-        return any(self._contains(index.get(context, ()), path)
+        return any(self._contains(index.get(context.lower(), ()), path)
                    and not self.hierarchy_is_inactive(context, path)
                    for index in (self._inherited, self._local) for path in paths)
 
@@ -48,10 +56,10 @@ class EffectiveJunosLookup:
         return self.contains_effective_path(context, path)
 
     def hierarchy_is_inactive(self, context, *paths):
-        inactive = self._inactive.get(context, ())
+        inactive = self._inactive.get(context.lower(), ())
         return any(tuple(part.lower() for part in target)[:len(prefix)] == prefix
                    for prefix in inactive for target in paths)
 
     def explicit_object_is_effective(self, context, path):
         path = tuple(part.lower() for part in path)
-        return self._contains(self._local.get(context, ()), path) and not self.hierarchy_is_inactive(context, path)
+        return self._contains(self._local.get(context.lower(), ()), path) and not self.hierarchy_is_inactive(context, path)
