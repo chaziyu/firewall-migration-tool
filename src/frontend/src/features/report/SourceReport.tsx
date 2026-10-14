@@ -8,7 +8,7 @@ import { tabKeyboard } from '../../components/common/tabKeyboard'
 type Finding = Record<string, unknown>
 const EMPTY_ROWS: Finding[] = []
 type ValidationTarget = { section: string; label: string; rows: unknown[] }
-type OverviewMetric = { label: string; value: number | null; tier: 'primary' | 'secondary'; section?: string; objectSection?: string; tone?: string }
+type OverviewMetric = { label: string; value: number | null; section?: string; objectSection?: string; tone?: string }
 
 const VALIDATION_TARGETS: Record<string, [string, string]> = {
   nat: ['nat', 'NAT'],
@@ -206,17 +206,17 @@ export function SourceReport({ data, excelProfile, onExcelProfileChange, exporti
   const errorCount = counts.errors
   const warningCount = counts.warnings
   const overviewMetrics: OverviewMetric[] = []
-  overviewMetrics.push({ label: 'Policies', value: counts.policies, tier: 'primary', section: 'Policies' })
-  overviewMetrics.push({ label: 'Address/service objects', value: counts.objects, tier: 'primary', section: 'Objects', objectSection: 'addresses' })
-  overviewMetrics.push({ label: 'Interfaces', value: counts.interfaces, tier: 'primary', section: 'Interfaces', objectSection: 'interfaces' })
+  overviewMetrics.push({ label: 'Policies', value: counts.policies, section: 'Policies' })
+  overviewMetrics.push({ label: 'Address/service objects', value: counts.objects, section: 'Objects', objectSection: 'addresses' })
+  overviewMetrics.push({ label: 'Interfaces', value: counts.interfaces, section: 'Interfaces', objectSection: 'interfaces' })
   for (const section of ['Schedules', 'NAT', 'Routes', 'VPN']) {
     const group = sections.find((item) => item.label === section)
-    overviewMetrics.push({ label: section, value: reportSectionRowCount(group), tier: 'secondary', section })
+    overviewMetrics.push({ label: section, value: reportSectionRowCount(group), section })
   }
   const unresolved = asRows(sectionsData.unresolved_references).length
-  if (sectionsData.unresolved_references) overviewMetrics.push({ label: 'Unresolved references', value: unresolved, tier: 'secondary', section: 'References', tone: unresolved ? 'warning' : undefined })
+  if (sectionsData.unresolved_references) overviewMetrics.push({ label: 'Unresolved references', value: unresolved, section: 'References', tone: unresolved ? 'warning' : undefined })
   const unsupported = Number(summary.unsupported_count ?? summary.source_only_count ?? 0)
-  if (summary.unsupported_count != null || summary.source_only_count != null) overviewMetrics.push({ label: 'Unsupported / source-only', value: unsupported, tier: 'secondary' })
+  if (summary.unsupported_count != null || summary.source_only_count != null) overviewMetrics.push({ label: 'Unsupported / source-only', value: unsupported })
   const active = sections.find(({ label: sectionLabel }) => sectionLabel === activeSection)
   const activeRows: Finding[] = active?.rows ?? EMPTY_ROWS
   const scopes = [...new Set(activeRows.map((row) => String(row.scope ?? row.vdom ?? '')).filter(Boolean))].sort()
@@ -263,10 +263,11 @@ export function SourceReport({ data, excelProfile, onExcelProfileChange, exporti
   const warningGroups = findingGroups(validationRows).filter((group) => String(group.row.severity).toLowerCase() === 'warning').length
 
   function renderOverviewMetric(item: OverviewMetric) {
-    const className = `report-stat report-stat-${item.tier}${item.tone ? ` report-stat-${item.tone}` : ''}${item.section ? ' report-stat-button' : ''}`
-    const content = <><span className="report-stat-label">{item.label}</span><strong>{item.value === null ? 'Not reported' : item.value.toLocaleString()}{item.tier === 'secondary' && item.value !== null && ['Schedules', 'NAT', 'Routes', 'VPN'].includes(item.label) && <small> rows</small>}</strong>{item.section && <span className="report-stat-affordance" aria-hidden="true">→</span>}</>
-    if (!item.section) return <div className={className} key={item.label}>{content}</div>
-    return <button className={className} type="button" key={item.label} onClick={() => { changeSection(item.section!); if (item.objectSection) setSourceSection(item.objectSection, item.section) }}>{content}</button>
+    return <tr key={item.label} className={item.tone ? `configuration-summary-${item.tone}` : undefined}>
+      <th scope="row">{item.section ? <button type="button" onClick={() => { changeSection(item.section!); if (item.objectSection) setSourceSection(item.objectSection, item.section) }}>{item.label}</button> : item.label}</th>
+      <td>{item.value === null ? 'Not reported' : item.value.toLocaleString()}</td>
+      <td aria-hidden="true">{item.section && '›'}</td>
+    </tr>
   }
 
   return <section className="panel source-report" aria-labelledby="report-title">
@@ -295,10 +296,15 @@ export function SourceReport({ data, excelProfile, onExcelProfileChange, exporti
     {activeSection === 'Overview' ? <>
       <h3 className="report-overview-heading">Validation</h3>
       <button type="button" className={`report-validation-attention${errorCount ? ' has-errors' : warningCount ? ' has-warnings' : ''}`} onClick={() => changeSection('Validation')}><div>{sectionsData.validation == null && asRecord(summary.validation).severity_counts == null ? 'Not reported' : <>{errorCount.toLocaleString()} errors · {warningCount.toLocaleString()} warnings <small>{warningGroups.toLocaleString()} warning groups</small></>}</div><span>Review findings →</span></button>
-      {(['primary', 'secondary'] as const).map((tier) => {
-        const items = overviewMetrics.filter((item) => item.tier === tier)
-        return items.length ? <div className="report-overview-group" key={tier}><h3 className="report-overview-heading">{tier === 'primary' ? 'Configured inventory' : 'Report sections'}</h3><div className={`report-summary-${tier}`}>{items.map(renderOverviewMetric)}</div></div> : null
-      })}
+      <div className="report-overview-group">
+        <h3 className="report-overview-heading" id="configuration-summary-title">Configuration summary</h3>
+        <div className="configuration-summary-wrap">
+          <table className="configuration-summary" aria-labelledby="configuration-summary-title">
+            <thead><tr><th scope="col">Section</th><th scope="col">Count</th><th scope="col"><span className="visually-hidden">Navigation</span></th></tr></thead>
+            <tbody>{overviewMetrics.map(renderOverviewMetric)}</tbody>
+          </table>
+        </div>
+      </div>
       <details className="report-count-explanation"><summary>About these counts</summary><p>Configured objects count addresses, address groups, services, and service groups once. Policies and interfaces use configured inventory counts. Report sections count rows, including expanded entries. Not reported means the count is unavailable.</p></details>
     </> : activeSection === 'Validation' ? null : <>
       {activeSection !== 'Interfaces' && active?.subsections.some((item) => !item.rows.length) && <label className="report-empty-toggle"><input type="checkbox" checked={showEmpty} onChange={(event) => setShowEmpty(event.target.checked)} /> Show empty sections</label>}
