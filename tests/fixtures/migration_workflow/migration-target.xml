@@ -1,0 +1,3 @@
+<config><devices><entry name="fw" serial="012345678901"><network><interface><ethernet>
+<entry name="ethernet1/1"><layer3/></entry></ethernet></interface></network>
+<vsys><entry name="vsys1"/></vsys></entry></devices></config>

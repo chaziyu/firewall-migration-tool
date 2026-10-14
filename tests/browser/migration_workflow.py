@@ -17,7 +17,7 @@ from playwright.sync_api import sync_playwright, expect
 
 
 def run(url, chromium):
-    fixtures = Path(__file__).parent
+    fixtures = Path(__file__).parent.parent / 'fixtures' / 'migration_workflow'
     with sync_playwright() as playwright, tempfile.TemporaryDirectory() as temporary:
         browser = playwright.chromium.launch(executable_path=chromium, args=['--no-sandbox'])
         page = browser.new_page()
