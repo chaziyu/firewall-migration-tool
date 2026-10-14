@@ -73,6 +73,24 @@ function component(file, name, modules) {
   }
 }
 
+test('a new source analysis opens the target stage for optional PAN-OS XML', async () => {
+  const harness = component('../src/features/source/SourceConfiguration.tsx', 'SourceConfiguration', {
+    '../../storage/workspaceStore': { restoreWorkspace: async () => ({}), saveWorkspace: async () => {} },
+    '../../components/common/Button': { Button: 'Button' }, '../../components/common/ErrorBanner': { ErrorBanner: 'ErrorBanner' },
+    '../../components/common/LoadingState': { LoadingState: 'LoadingState' }, './FileUpload': { FileUpload: 'FileUpload' },
+    '../report/SourceReport': { SourceReport: 'SourceReport' },
+    './sourceApi': { loadSourceVendors: async () => [{ vendor_id: 'fortigate', display_name: 'FortiGate', file_extensions: ['.conf'] }], previewSource: async () => ({ source_digest: 'source', source_evidence: {} }), downloadSourceWorkbook: async () => {}, importCollectionSnapshot: async () => {} },
+    './SourceOverview': { SourceOverview: 'SourceOverview' }, './VendorSelect': { VendorSelect: 'VendorSelect' }, './LiveCollection': { LiveCollection: 'LiveCollection' },
+    '../migration/MigrationWorkflow': { MigrationWorkflow: 'MigrationWorkflow' }, '../migration/MigrationReview': { MigrationReview: 'MigrationReview' },
+    '../report/reportPresentation': { asRecord: (value) => value ?? {} },
+  })
+  let tree = await harness.render({ view: 'migration', onViewChange: () => {} })
+  const upload = elements(tree).find((node) => node.type === 'FileUpload')
+  upload.props.onChange(new Blob(['config']))
+  tree = await harness.render({ view: 'migration', onViewChange: () => {} })
+  assert.equal(elements(tree).find((node) => node.type === 'MigrationReview').props.stage, 'target')
+})
+
 function elements(tree) {
   if (Array.isArray(tree)) return tree.flatMap(elements)
   if (!tree || typeof tree !== 'object') return []

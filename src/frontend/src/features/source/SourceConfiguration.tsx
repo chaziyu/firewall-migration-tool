@@ -98,7 +98,7 @@ export function SourceConfiguration({ view, onViewChange }: {
     void saveWorkspace({ deterministicDraft: null, artifact: null }).catch((cause) => setError(String(cause)))
     setLoading(false)
     setMigrationVisited(false)
-    setMigrationView('mappings')
+    setMigrationView('target')
     setRequestedDecision(null)
     setPreview(null)
     setDecisionDocument(null)
