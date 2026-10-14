@@ -29,17 +29,3 @@ class PairMigrationPlanner(Protocol):
     ) -> Any:
         """Return a pair-specific migration plan."""
         ...
-
-
-class MigrationPlanValidator(Protocol):
-    """Validates a pair-specific migration plan."""
-
-    def validate(self, plan: Any) -> Any:
-        ...
-
-
-class MigrationPlanRenderer(Protocol):
-    """Renders a validated pair-specific migration plan."""
-
-    def render(self, plan: Any, **options: Any) -> Any:
-        ...

@@ -609,7 +609,6 @@ def register_migration_routes(
         if (source_vendor.casefold(), target_vendor.casefold()) != ('fortigate', 'palo_alto'):
             return jsonify({'success': False, 'error': 'Only fortigate -> palo_alto is supported'}), 400
 
-        uploaded = request.files.get('file')
         try:
             entry = _migration_source(payload)
             analysis = entry.analysis
@@ -794,7 +793,6 @@ def register_migration_routes(
     @app.route('/api/migration/bundle', methods=['POST'])
     def migration_bundle():
         payload = request.get_json(silent=True) or {}
-        artifact_id = (payload.get('artifact') or {}).get('artifact_id')
         rendered = _request_artifact(payload)
         if rendered is None:
             return jsonify({'success': False, 'error': 'A current migration plan is required'}), 400
@@ -826,7 +824,6 @@ def register_migration_routes(
     @app.route('/api/migration/command-preview', methods=['POST'])
     def migration_command_preview():
         payload = request.get_json(silent=True) or {}
-        artifact_id = (payload.get('artifact') or {}).get('artifact_id')
         rendered = _request_artifact(payload)
         if rendered is None:
             return jsonify({'success': False, 'error': 'A current migration plan is required'}), 400
