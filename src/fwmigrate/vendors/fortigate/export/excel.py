@@ -3,13 +3,14 @@ from __future__ import annotations
 from collections import defaultdict
 from copy import deepcopy
 from dataclasses import asdict, is_dataclass
-from datetime import datetime, timezone
 from enum import Enum
 from functools import lru_cache
 from itertools import chain
 from pathlib import Path
 from time import perf_counter
 from typing import Any, BinaryIO, Iterable, Iterator, Mapping, Sequence
+
+from ....source_reporting.excel_style import write_report_summary
 
 from openpyxl import Workbook
 from openpyxl.cell import WriteOnlyCell
@@ -299,7 +300,7 @@ def _build_workbook(
 
     for sheet_name in order:
         if sheet_name == "Summary":
-            _build_summary(workbook, context, order)
+            workbook.create_sheet("Summary")
         elif sheet_name == "FortiGate Source Inventory":
             _write_source_inventory_sheet(workbook, context)
         else:
@@ -312,6 +313,7 @@ def _build_workbook(
                 context=context,
             )
 
+    _build_summary(workbook, context, order)
     return workbook
 
 
@@ -321,10 +323,7 @@ def _build_fast_workbook(
     metrics: ExcelExportMetrics | None = None,
 ) -> Workbook:
     workbook = Workbook(write_only=True)
-    summary_started = perf_counter()
-    _write_fast_summary(workbook, context)
-    if metrics is not None:
-        metrics.add_stage("fast_summary", (perf_counter() - summary_started) * 1000)
+    workbook.create_sheet("Summary")
     no_rows = object()
     other_sheet_total = 0.0
     measured_sheets: set[str] = set()
@@ -370,6 +369,10 @@ def _build_fast_workbook(
                 metrics.add_sheet(sheet_name, 0, len(SHEET_HEADERS[sheet_name]), 0.0)
         metrics.add_stage("other_sheet_total", other_sheet_total)
 
+    summary_started = perf_counter()
+    _write_fast_summary(workbook, context)
+    if metrics is not None:
+        metrics.add_stage("fast_summary", (perf_counter() - summary_started) * 1000)
     return workbook
 
 
@@ -392,87 +395,7 @@ def _fast_cell(
 
 
 def _write_fast_summary(workbook: Workbook, context: _ExcelContext) -> None:
-    sheet = workbook.create_sheet("Summary")
-    sheet.freeze_panes = "A5"
-    sheet.sheet_view.showGridLines = True
-    sheet.sheet_view.zoomScale = 90
-    for column, width in (("A", 42), ("B", 60), ("C", 20), ("D", 4), ("E", 38), ("F", 18)):
-        sheet.column_dimensions[column].width = width
-    sheet.row_dimensions[1].height = 24
-    sheet.row_dimensions[10].height = 45
-
-    width = 6
-    band = lambda value, end: [
-        _fast_cell(sheet, value, font=_TITLE_FONT if end == 6 else _WHITE_FONT, fill=_TITLE_FILL if end == 6 else _HEADER_FILL),
-        *[_fast_cell(sheet, None, fill=_TITLE_FILL if end == 6 else _HEADER_FILL) for _ in range(end - 1)],
-        *([None] * (width - end)),
-    ]
-    sheet.append([
-        *band("FortiGate Configuration Report", 6),
-    ])
-    sheet.append([None] * width)
-    metadata = [
-        ("Source File", context.source_name),
-        ("Hostname", _hostname(context)),
-        ("FortiOS Version", context.extracted.source_metadata.fortios_version),
-        ("VDOMs", "\n".join(_vdoms(context))),
-        ("Generated UTC", datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")),
-        ("Validation Errors", len(context.validation.errors)),
-        ("Validation Warnings", len(context.validation.warnings)),
-        (
-            "Export Profile",
-            "FAST export omits command-level Source Inventory and Extraction Coverage. It is not a complete command-level source audit. Use FULL for traceability.",
-        ),
-    ]
-    metadata.append(("Source Sections Found", len(context.source_paths)))
-    metadata.extend(collection_summary(context.collection_status))
-    counts = _inventory_counts(context)
-    navigation = list(dict.fromkeys(
-        target
-        for _, count, target in counts
-        if count and target not in _FAST_EXCLUDED_SHEETS
-    ))
-    nav_index = 0
-
-    def append_row(values: list[Any], *, navigation_header: bool = False) -> None:
-        nonlocal nav_index
-        values.extend([None] * (width - len(values)))
-        if navigation_header:
-            values[4] = _fast_cell(sheet, "Workbook navigation", font=_WHITE_FONT, fill=_HEADER_FILL)
-        elif nav_index < len(navigation):
-            target = navigation[nav_index]
-            nav_index += 1
-            cell = _fast_cell(sheet, target, font=_LINK_FONT)
-            cell.hyperlink = f"#'{target}'!A1"
-            values[4] = cell
-        sheet.append(values)
-
-    for index, (label, value) in enumerate(metadata):
-        row = [
-            _fast_cell(sheet, label, font=Font(bold=True, color="41504C")),
-            _fast_cell(sheet, _excel_safe(value), alignment=Alignment(wrap_text=True, vertical="top")),
-            None,
-            None,
-        ]
-        append_row(row, navigation_header=index == 0)
-
-    sheet.append(band("Inventory", 3))
-    for label, count, target in counts:
-        row = [label, count]
-        if count and target not in _FAST_EXCLUDED_SHEETS:
-            cell = _fast_cell(sheet, "Open sheet", font=_LINK_FONT)
-            cell.hyperlink = f"#'{target}'!A1"
-            row.append(cell)
-        else:
-            row.append(None)
-        append_row(row)
-
-    sheet.append(band("Migration Indicators", 3))
-    for label, value in _migration_indicators(context):
-        append_row([label, _excel_safe(value)])
-
-    while nav_index < len(navigation):
-        append_row([])
+    _build_summary(workbook, context, workbook.sheetnames)
 
 
 def _build_summary(
@@ -480,87 +403,30 @@ def _build_summary(
     context: _ExcelContext,
     order: Sequence[str],
 ) -> None:
-    sheet = workbook.create_sheet("Summary")
-    sheet.sheet_view.showGridLines = False
-    sheet.freeze_panes = "A5"
-
-    sheet.merge_cells("A1:F1")
-    sheet["A1"] = "FortiGate Configuration Report"
-    sheet["A1"].fill = _TITLE_FILL
-    sheet["A1"].font = Font(color="FFFFFF", bold=True, size=18)
-    sheet["A1"].alignment = Alignment(vertical="center")
-    sheet.row_dimensions[1].height = 30
-
-    metadata = [
-        ("Source File", context.source_name),
-        ("Hostname", _hostname(context)),
-        ("FortiOS Version", context.extracted.source_metadata.fortios_version),
-        ("VDOMs", "\n".join(_vdoms(context))),
-        ("Generated UTC", datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")),
-        ("Validation Errors", len(context.validation.errors)),
-        ("Validation Warnings", len(context.validation.warnings)),
-    ]
-
-    metadata.extend(collection_summary(context.collection_status))
-    for row_number, (label, value) in enumerate(metadata, start=3):
-        sheet.cell(row_number, 1, label).font = Font(bold=True, color="41504C")
-        sheet.cell(row_number, 2, _excel_safe(value))
-        sheet.cell(row_number, 2).alignment = Alignment(wrap_text=True, vertical="top")
-
-    section_row = max(11, len(metadata) + 4)
-    sheet.cell(section_row, 1, "Inventory")
-    sheet.cell(section_row, 1).fill = _HEADER_FILL
-    sheet.cell(section_row, 1).font = _WHITE_FONT
-    sheet.merge_cells(start_row=section_row, start_column=1, end_row=section_row, end_column=3)
-
     counts = _inventory_counts(context)
-
-    row_number = section_row + 1
-    for label, count, target in counts:
-        sheet.cell(row_number, 1, label)
-        sheet.cell(row_number, 2, count)
-        if target in order:
-            cell = sheet.cell(row_number, 3, "Open sheet")
-            cell.hyperlink = f"#'{target}'!A1"
-            cell.font = _LINK_FONT
-        row_number += 1
-
-    indicator_row = row_number + 1
-    sheet.cell(indicator_row, 1, "Migration Indicators")
-    sheet.cell(indicator_row, 1).fill = _HEADER_FILL
-    sheet.cell(indicator_row, 1).font = _WHITE_FONT
-    sheet.merge_cells(
-        start_row=indicator_row,
-        start_column=1,
-        end_row=indicator_row,
-        end_column=3,
+    coverage_labels = {"Review Required", "Source-only Sections"}
+    write_report_summary(
+        workbook["Summary"], title="FortiGate Configuration Report",
+        metadata=(("Hostname", _hostname(context)),
+                  ("FortiOS Version", context.extracted.source_metadata.fortios_version),
+                  ("VDOMs", "\n".join(_vdoms(context)) or None),
+                  ("Source File", context.source_name or None)),
+        profile=context.profile.value.upper(),
+        validation=(("Errors", len(context.validation.errors)),
+                    ("Warnings", len(context.validation.warnings)),
+                    ("Unresolved References", len(context.derived.broken_references))),
+        inventory=(item for item in counts if item[0] not in coverage_labels),
+        coverage=(("Source Sections Found", len(context.source_paths)),
+                  *(item for item in counts if item[0] in coverage_labels),
+                  *collection_summary(context.collection_status),
+                  ("Export Limitations", (
+                      "FAST export omits command-level Source Inventory and Extraction Coverage. "
+                      "It is not a complete command-level source audit. Use FULL for traceability."
+                      if context.profile is ExcelExportProfile.FAST else
+                      "FULL includes command-level Source Inventory and Extraction Coverage."
+                  ))),
+        indicators=_migration_indicators(context),
     )
-
-    for row_number, (label, value) in enumerate(
-        _migration_indicators(context),
-        start=indicator_row + 1,
-    ):
-        sheet.cell(row_number, 1, label)
-        sheet.cell(row_number, 2, value)
-
-    nav_col = 5
-    sheet.cell(3, nav_col, "Workbook navigation")
-    sheet.cell(3, nav_col).fill = _HEADER_FILL
-    sheet.cell(3, nav_col).font = _WHITE_FONT
-
-    nav_row = 4
-    for name in order:
-        if name == "Summary":
-            continue
-        cell = sheet.cell(nav_row, nav_col, name)
-        cell.hyperlink = f"#'{name}'!A1"
-        cell.font = _LINK_FONT
-        nav_row += 1
-
-    sheet.column_dimensions["A"].width = 28
-    sheet.column_dimensions["B"].width = 24
-    sheet.column_dimensions["C"].width = 16
-    sheet.column_dimensions["E"].width = 34
 
 
 def _write_table_sheet(

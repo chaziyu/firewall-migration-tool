@@ -208,7 +208,7 @@ def test_panos_excel_defaults_to_full_and_explicit_fast_is_preserved():
         evidence_sheets = {"PAN-OS Source Inventory", "Extraction Coverage", "PAN-OS Source Appendix"}
         assert evidence_sheets <= set(full_book.sheetnames)
         assert evidence_sheets.isdisjoint(fast_book.sheetnames)
-        assert other_book["Summary"]["B3"].value == "Cisco ASA"
+        assert other_book["Summary"]["A1"].value == "Cisco ASA Configuration Report"
     finally:
         full_book.close()
         fast_book.close()
@@ -432,7 +432,7 @@ def test_excel_selector_reaches_real_vendor_profiles(vendor, fixture, excluded, 
         for workbook in (fast, full):
             assert "Collection Evidence" not in workbook.sheetnames
             assert "Collection Status" not in str(list(workbook["Summary"].values))
-        assert full["Summary"]["A11"].value == "Inventory"
+        assert "CONFIGURATION INVENTORY" in {row[0] for row in full["Summary"].values}
     if vendor == "palo_alto":
         for workbook in (fast, full):
             assert "Review Required" in workbook.sheetnames

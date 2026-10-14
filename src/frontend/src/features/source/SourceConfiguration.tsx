@@ -40,7 +40,7 @@ export function SourceConfiguration({ view, onViewChange }: {
   const [ingestMode, setIngestMode] = useState<'config' | 'snapshot'>('config')
   const [error, setError] = useState<string | null>(null)
   const [migrationVisited, setMigrationVisited] = useState(false)
-  const [migrationView, setMigrationView] = useState<'mappings' | 'plan'>('mappings')
+  const [migrationView, setMigrationView] = useState<'target' | 'mappings' | 'configuration' | 'plan'>('target')
   const [requestedDecision, setRequestedDecision] = useState<{ key: string; request: number } | null>(null)
   const analysisRequest = useRef(0)
 
@@ -223,11 +223,11 @@ export function SourceConfiguration({ view, onViewChange }: {
         </div>}
         {view === 'migration' && <div className="report-source-context"><strong>FortiGate → PAN-OS</strong><span>{preview.source_evidence?.source_name || file?.name || 'Loaded source configuration'}</span><span>Destination: {targetDevice || 'Not selected'}</span></div>}
         {view === 'migration' && <nav className="migration-view-nav" aria-label="Migration workspace">
-          <button className={migrationView === 'mappings' ? 'active' : ''} type="button" onClick={() => setMigrationView('mappings')}>Evidence &amp; design</button>
-          <button className={migrationView === 'plan' ? 'active' : ''} type="button" disabled={!decisionDocument} onClick={() => setMigrationView('plan')}>Build &amp; export</button>
+          {([['target', '1 Target'], ['mappings', '2 Mappings'], ['configuration', '3 Review & approve'], ['plan', '4 Export']] as const).map(([stage, label]) => <button key={stage} className={migrationView === stage ? 'active' : ''} aria-current={migrationView === stage ? 'step' : undefined} type="button" disabled={stage === 'plan' && !decisionDocument?.design_approval} onClick={() => setMigrationView(stage)}>{label}</button>)}
         </nav>}
-        <section hidden={view !== 'migration' || migrationView !== 'mappings'}>
+        <section hidden={view !== 'migration' || migrationView === 'plan'}>
         <MigrationReview key={previewId} preview={preview} vendor={vendor} requestedDecision={requestedDecision}
+          stage={migrationView === 'plan' ? 'configuration' : migrationView} onStageChange={setMigrationView}
           onDecisionDocument={setDecisionDocument}
           onContextChange={(nextSource, nextDevice) => { setTargetSource(nextSource); setTargetDevice(nextDevice) }} />
         </section>

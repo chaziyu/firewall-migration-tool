@@ -330,6 +330,17 @@ test('a server-validated mapping proposal is reported as pending approval withou
   assert.deepEqual(calls.map((call) => call.path), ['/api/migration/design/prepare', '/api/migration/design/prepare'])
   assert.deepEqual(calls[1].payload.draft_overrides, { port: 'ethernet1/2' })
   assert.ok(saves.some((value) => value.artifact === null))
+  tree = await harness.render({ ...props, stage: 'configuration' })
+  assert.ok(elements(tree).some((node) => node.type === 'Design'))
+  assert.equal(elements(tree).find((node) => node.props['aria-label'] === 'Resolve mappings').props.hidden, true)
+  tree = await harness.render({ ...props, stage: 'mappings' })
+  assert.equal(elements(tree).find((node) => node.type === 'Queues').props.drafts.port, 'ethernet1/2')
+  elements(tree).find((node) => node.type === 'button' && node.props.children === 'Bulk editing').props.onClick()
+  tree = await harness.render({ ...props, stage: 'mappings' })
+  const guided = elements(tree).find((node) => node.type === 'div' && elements(node.props.children).some((child) => child.type === 'Queues'))
+  const bulk = elements(tree).find((node) => node.type === 'div' && elements(node.props.children).some((child) => child.type === 'Interfaces'))
+  assert.equal(guided.props.hidden, true)
+  assert.equal(bulk.props.hidden, false)
 })
 
 test('a failed proposal save keeps the staged target value for retry', async () => {
@@ -439,4 +450,47 @@ test('failed target upload releases the input and ignores the superseded initial
     await harness.render(props)
     assert.deepEqual(documents.filter(Boolean), [])
   } finally { globalThis.setInterval = oldInterval; globalThis.clearInterval = oldClear }
+})
+
+
+test('guided mappings use named compact choices, keep evidence closed, and preserve draft saves', async () => {
+  const harness = component('../src/features/migration/components/MigrationReviewQueues.tsx', 'MigrationReviewQueues', {
+    '../reviewDrafts': drafts, '../../../components/common/tabKeyboard': { tabKeyboard() {} },
+  })
+  const port = { key: 'port', source_vdom: 'root', source_name: 'wan1', source_kind: 'interface', target_field: 'target_interface', mode: 'REQUIRED' }
+  const zone = { ...port, key: 'zone', target_field: 'target_zone' }
+  const group = { source_vdom: 'root', source_name: 'wan1', source_kind: 'interface', queue: 'CHOOSE_CANDIDATE', decision_keys: ['port', 'zone'], decisions: [port, zone], candidates: {
+    port: [{ value: 'ethernet1/1' }, { value: 'ethernet1/2', available: false }, { value: 'ethernet1/3', contested: true }],
+    zone: [{ value: 'WAN' }, { value: 'TRUST' }, { value: 'duplicate', target_scope: 'a' }, { value: 'duplicate', target_scope: 'b' }],
+  }, source_evidence: {}, affected_count: 1, dependent_decision_count: 1 }
+  let values = {}
+  let saved = 0
+  const props = { review: { decision_candidates: {}, rule_suggestions: [] }, selectedGroupKey: 'port', setSelectedGroupKey() {}, reviewGroups: [group], queueNames: ['CHOOSE_CANDIDATE'], activeQueue: 'CHOOSE_CANDIDATE', setActiveQueue() {}, search: '', setSearch() {}, vdomFilter: 'all', setVdomFilter() {}, vdoms: ['root'], visibleGroups: [group], setDecisionPage() {}, decisions: [port, zone], proposals: [{ decision_key: 'port', status: 'NEEDS_INPUT', dependencies: [] }, { decision_key: 'zone', status: 'NEEDS_INPUT', dependencies: ['port'] }], busy: false, run: async (action) => action(), updateGroup: async () => { saved++ }, setDrafts: (update) => { values = update(values) } }
+  const render = async () => elements(await harness.render({ ...props, drafts: values }))
+  let nodes = await render()
+  const choice = (field) => nodes.find((node) => node.type === 'select' && node.props['aria-label'] === `${field} for root / wan1`)
+  assert.ok(nodes.some((node) => node.type === 'option' && String(node.props.children).includes('WAN')))
+  assert.ok(!nodes.some((node) => node.type === 'input' && node.props.type === 'radio'))
+  assert.ok(!nodes.some((node) => node.type === 'button' && String(node.props.children).includes('Resolve prerequisite')))
+  assert.ok(nodes.some((node) => node.type === 'p' && String(node.props.children).includes('below before completing')))
+  assert.ok(nodes.filter((node) => node.type === 'details').every((node) => !node.props.open))
+  for (const value of ['ethernet1/2', 'ethernet1/3', 'duplicate']) assert.ok(nodes.filter((node) => node.type === 'option' && node.props.value === value).every((node) => node.props.disabled))
+  assert.equal(nodes.find((node) => node.type === 'button' && node.props.className === 'primary-button').props.disabled, true)
+  await nodes.find((node) => node.type === 'button' && node.props.children === 'Save draft').props.onClick()
+  assert.equal(saved, 1)
+  choice('target_interface').props.onChange({ target: { value: 'ethernet1/1' } })
+  nodes = await render()
+  choice('target_zone').props.onChange({ target: { value: 'WAN' } })
+  nodes = await render()
+  assert.deepEqual(values, { port: 'ethernet1/1', zone: 'WAN' })
+  assert.equal(nodes.find((node) => node.type === 'button' && node.props.className === 'primary-button').props.disabled, false)
+  choice('target_zone').props.onChange({ target: { value: '__custom__' } })
+  nodes = await render()
+  const custom = nodes.find((node) => node.type === 'input' && node.props['aria-label'] === 'Custom target_zone for root / wan1')
+  assert.ok(custom)
+  custom.props.onChange({ target: { value: 'new-zone' } })
+  nodes = await render()
+  await nodes.find((node) => node.type === 'button' && node.props.className === 'primary-button').props.onClick()
+  assert.deepEqual(values, { port: 'ethernet1/1', zone: 'new-zone' })
+  assert.equal(saved, 2)
 })
