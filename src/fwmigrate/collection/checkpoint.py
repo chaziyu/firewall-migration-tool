@@ -357,10 +357,6 @@ class CheckPointCollector:
         walk(rulebase)
         return result
 
-    @staticmethod
-    def _inline_layer_name(reference, bundle):
-        layer = CheckPointCollector._inline_layer(reference, bundle)
-        return layer[1] if layer else None
 
     @staticmethod
     def _inline_layer(reference, bundle, domain=None):
