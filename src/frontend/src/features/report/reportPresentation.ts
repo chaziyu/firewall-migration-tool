@@ -1,6 +1,6 @@
 export type ReportRow = Record<string, unknown>
 
-export const SENSITIVE_KEY = /raw_extra|password(?!_configured$)|secret(?!_configured$)|credential|token|private.?key(?!_configured$)|psk(?!_configured$)/i
+const SENSITIVE_KEY = /raw_extra|password(?!_configured$)|secret(?!_configured$)|credential|token|private.?key(?!_configured$)|psk(?!_configured$)/i
 export function asRecord(value: unknown): ReportRow {
   return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as ReportRow : {}
 }
