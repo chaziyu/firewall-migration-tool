@@ -80,12 +80,13 @@ export function orderReviewGroups<T extends { decision_keys: string[]; source_vd
     const physical = facts.some((item) => ['physical', 'ethernet', 'aggregate'].includes(String(item.source_type)))
     const unavailable = group.decision_keys.some((key) => !rowByKey.has(key) || (rowByKey.get(key)?.dependencies ?? []).some((dependency) => !rowByKey.has(dependency)))
     if (unavailable) return [1, originalOrder.get(group)!]
-    return [group.queue === 'COMPLETE' ? 3 : reviewGroupActionable(group, rows) ? 0 : 2,
+    return [group.queue === 'COMPLETE' ? 3 : reviewGroupActionable(group, rowByKey) ? 0 : 2,
       group.source_kind === 'vdom' ? 0 : parent ? 3 : physical ? 1 : group.source_kind === 'zone' ? 2 : 2,
       -Number(group.affected_count ?? 0), group.source_vdom, group.source_name]
   }
+  const ranks = new Map(groups.map((group) => [group, rank(group)]))
   const compare = (a: T, b: T) => {
-    const x = rank(a), y = rank(b)
+    const x = ranks.get(a)!, y = ranks.get(b)!
     for (let i = 0; i < x.length; i++) {
       const result = typeof x[i] === 'number' ? Number(x[i]) - Number(y[i]) : String(x[i]).localeCompare(String(y[i]))
       if (result) return result
@@ -103,9 +104,9 @@ export function orderReviewGroups<T extends { decision_keys: string[]; source_vd
   return ordered
 }
 
-export function reviewGroupActionable(group: { decision_keys: string[]; queue: string }, rows: DraftRow[]) {
+export function reviewGroupActionable(group: { decision_keys: string[]; queue: string }, rows: DraftRow[] | Map<string, DraftRow>) {
   if (group.queue === 'COMPLETE') return false
-  const byKey = new Map(rows.map((row) => [draftRowKey(row), row]))
+  const byKey = rows instanceof Map ? rows : new Map(rows.map((row) => [draftRowKey(row), row]))
   const taskKeys = new Set(group.decision_keys)
   const taskRows = group.decision_keys.map((key) => byKey.get(key))
   if (taskRows.some((row) => !row)) return false

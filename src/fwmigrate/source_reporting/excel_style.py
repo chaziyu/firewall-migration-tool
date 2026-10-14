@@ -73,20 +73,20 @@ def append_report_title(sheet, title: str) -> None:
     sheet._report_title_written = True
 
 
-def append_report_navigation(workbook) -> None:
-    """Append sheet links beside a streaming summary."""
+def append_report_navigation(workbook, *, column: int = 5) -> None:
+    """Append sheet links below a streaming summary."""
     summary = workbook["Summary"]
-    summary.column_dimensions["E"].width = 34
+    summary.column_dimensions[get_column_letter(column)].width = 34
     header = WriteOnlyCell(summary, "Workbook navigation")
     header.fill, header.font = _HEADER_FILL, _HEADER_FONT
-    summary.append([None, None, None, None, header])
+    summary.append([None] * (column - 1) + [header])
     for sheet in workbook.worksheets:
         if sheet is summary:
             continue
         cell = WriteOnlyCell(summary, sheet.title)
         cell.hyperlink = f"#'{sheet.title}'!A1"
         cell.font = Font(color="0563C1", underline="single")
-        summary.append([None, None, None, None, cell])
+        summary.append([None] * (column - 1) + [cell])
 
 
 def finish_report_workbook(workbook, *, summary_title: str | None = None) -> None:

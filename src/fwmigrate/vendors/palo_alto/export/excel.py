@@ -104,11 +104,11 @@ def _write_summary(workbook: Workbook, context: _PANExcelContext, row_counts: Ma
         sheet.cell(row, 2, row_counts.get(name, 0))
         cell = sheet.cell(row, 3, "Open sheet")
         cell.hyperlink, cell.font = f"#'{name}'!A1", _LINK_FONT
-    nav_column = 5
-    sheet.cell(3, nav_column, "Workbook navigation")
-    sheet.cell(3, nav_column).fill, sheet.cell(3, nav_column).font = _HEADER_FILL, _WHITE_FONT
-    for row, name in enumerate((item for item in SHEET_ORDER if item != "Summary"), 4):
-        cell = sheet.cell(row, nav_column, name)
+    nav_row = sheet.max_row + 2
+    sheet.cell(nav_row, 1, "Workbook navigation")
+    sheet.cell(nav_row, 1).fill, sheet.cell(nav_row, 1).font = _HEADER_FILL, _WHITE_FONT
+    for row, name in enumerate((item for item in SHEET_ORDER if item != "Summary"), nav_row + 1):
+        cell = sheet.cell(row, 1, name)
         cell.hyperlink, cell.font = f"#'{name}'!A1", _LINK_FONT
     for column in ("A", "B", "C", "D", "E", "F"):
         sheet.column_dimensions[column].width = 28
@@ -166,7 +166,7 @@ def _build_fast_workbook(context: _PANExcelContext) -> Workbook:
         *counts.items(),
     ):
         append_report_row(summary, (label, _excel_safe(value)))
-    append_report_navigation(workbook)
+    append_report_navigation(workbook, column=1)
     return workbook
 
 
