@@ -169,11 +169,15 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
   }
 
   useEffect(() => {
-    if (vendor === 'fortigate' && previewId) {
-      // Invalidate the previous decision document immediately; local state updates follow the awaited API response.
-      void loadReview(workspace().decisionDocument as unknown as DecisionDocument | undefined).catch(() => {})
-    }
+    let active = true
+    // StrictMode replays effects; defer so its cancelled setup never starts a request.
+    queueMicrotask(() => {
+      if (active && vendor === 'fortigate' && previewId) {
+        void loadReview(workspace().decisionDocument as unknown as DecisionDocument | undefined).catch(() => {})
+      }
+    })
     return () => {
+      active = false
       // Invalidate in-flight requests; this ref is a version counter, not a DOM node.
       invalidateReviewRequests()
       // This is also a request version counter, not a DOM node.
