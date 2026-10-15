@@ -41,7 +41,7 @@ def run(url, chromium, destination=False):
             expect(page.get_by_text('Preparing and validating', exact=False)).not_to_be_visible()
             page.get_by_label('Drop your target XML here').set_input_files(str(fixtures / 'migration-target.xml'))
             page.get_by_text('Target evidence loaded.', exact=False).wait_for()
-            expect(page.get_by_label('Reference role')).to_have_count(0)
+            expect(page.get_by_label('Reference role')).to_be_visible()
             expect(page.get_by_text('Reference role: Destination configuration', exact=True)).to_be_visible()
         else:
             expect(page.get_by_label('Migration intent')).to_have_value('offline')
@@ -70,7 +70,7 @@ def run(url, chromium, destination=False):
         else:
             page.get_by_label('Custom target_interface for root / port1', exact=True).fill('ethernet1/1')
         requests_before_save = len(preparations)
-        page.get_by_role('button', name='Save draft', exact=True).click()
+        expect(page.get_by_role('button', name='Save draft', exact=True)).to_have_count(0)
         expect(page.get_by_text('Draft saved locally.', exact=False)).to_be_visible()
         assert len(preparations) == requests_before_save
         page.route('**/api/migration/design/prepare', lambda route: route.fulfill(status=502,
