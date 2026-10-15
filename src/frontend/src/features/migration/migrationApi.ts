@@ -27,17 +27,18 @@ export type PlanArtifact = {
   blocking_reasons: Array<Record<string, unknown>>
   recommendations: Array<Record<string, unknown>>
   support_guidance?: Array<Record<string, unknown>>
-  report: { items?: Array<Record<string, unknown>>; command_sha256?: string; deployment_eligibility?: { eligible: boolean; reason: string | null } }
+  report: { items?: Array<Record<string, unknown>>; command_sha256?: string; workflow_mode?: string; destination_verified?: boolean; deployment_eligibility?: { eligible: boolean; reason: string | null } }
   decision_document: DecisionDocument
 }
 
-export const buildPlan = (source: SourceEvidence, document: unknown, targetSource?: SourceEvidence | null, targetDevice?: string) =>
+export const buildPlan = (source: SourceEvidence, document: unknown, targetSource?: SourceEvidence | null, targetDevice?: string, workflowMode?: 'offline' | 'destination') =>
   postJson<Omit<PlanArtifact, 'commands' | 'report' | 'decision_document' | 'recommendations' | 'support_guidance'>>('/api/migrate', {
     compact_response: true,
     source,
     source_vendor: 'fortigate',
     target_vendor: 'palo_alto',
     decision_document: document,
+    ...(workflowMode ? { workflow_mode: workflowMode === 'offline' ? 'OFFLINE_EXPORT' : 'DESTINATION_AWARE' } : {}),
     ...(targetSource ? { target_source: targetSource } : {}),
     ...(targetDevice ? { target_device: targetDevice } : {}),
   }).then((result): PlanArtifact => ({ ...result, commands: result.artifact.commands,

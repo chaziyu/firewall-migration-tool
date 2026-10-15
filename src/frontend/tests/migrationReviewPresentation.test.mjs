@@ -7,6 +7,9 @@ import {
   reviewVdoms,
   visibleReviewDecisions,
   visibleReviewGroups,
+  orderedCandidates,
+  reviewSourceSummary,
+  approvedDraftKeys,
 } from '../src/features/migration/reviewPresentation.ts'
 
 const decisions = [
@@ -42,4 +45,28 @@ test('suggestions and bulk preview stay presentation-only and exclude unsupporte
     { key: 'zone', scope: 'root · zone · trust · target_zone', value: 'trust' },
     { key: 'iface', scope: 'branch · interface · port1 · target_interface', value: 'ethernet1/1' },
   ])
+})
+
+test('candidate evidence sorts ahead of available choices without changing eligibility or input order', () => {
+  const candidates = [{ value: 'unused' }, { value: 'occupied', class: 'STRONG', available: false },
+    { value: 'possible', supporting_evidence: ['source IP match'] }, { value: 'strong', class: 'STRONG' },
+    { value: 'contested', class: 'STRONG', contested: true }, { value: 'family', supporting_evidence: ['INTERFACE_FAMILY_MATCH'] }]
+  const snapshot = structuredClone(candidates)
+  assert.deepEqual(orderedCandidates(candidates).map((row) => row.value), ['strong', 'possible', 'unused', 'family', 'occupied', 'contested'])
+  assert.deepEqual(candidates, snapshot)
+})
+
+test('ownership and zone tasks do not invent missing interface evidence', () => {
+  assert.equal(reviewSourceSummary({ source_kind: 'vdom', source_evidence: {} }), 'Choose target VSYS and virtual-router ownership for this VDOM.')
+  assert.equal(reviewSourceSummary({ source_kind: 'zone', source_name: 'trust', source_evidence: {} }), 'Source zone: trust. Review its explicit member evidence below.')
+  assert.equal(reviewSourceSummary({ source_kind: 'interface', source_evidence: { source_vlan: 0, source_parent: 'port1' } }), 'Parent: port1 · VLAN: 0')
+})
+
+test('approved presentation requires signed design selection rather than saved or legacy confirmed mappings', () => {
+  assert.deepEqual(approvedDraftKeys({ decisions: [{ key: 'legacy', review_state: 'CONFIRMED' }] }), [])
+  assert.deepEqual(approvedDraftKeys({ design_approval: { configuration: { item: {} }, decisions: {
+    mapping: { review_state: 'CONFIRMED', approved_operation: 'CREATE' },
+    suggested: { review_state: 'PENDING', approved_operation: null },
+    legacy: { review_state: 'CONFIRMED', approved_operation: null },
+  } } }), ['item', 'mapping'])
 })

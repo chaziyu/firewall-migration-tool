@@ -406,6 +406,24 @@ visible as manual work, so partial approval is not a complete migration.
 
 Unimplemented migration pairs fail closed.
 
+The browser defaults to offline `.set` export. Upload one FortiGate configuration,
+review automatic proposals and allocate physical target ports, review conversion
+coverage, then approve and download the commands and report. PAN-OS XML is not
+required. VSYS and virtual-router proposals require engineer confirmation.
+VLAN subinterface identifiers are editable independently of their VLAN tags.
+
+Offline readiness describes the approved export only. Destination collisions,
+hardware compatibility, capacity and licensing remain unverified. `CREATE`
+describes the proposed design; it does not establish that an object is absent
+from a firewall. Unsupported or blocked source configuration remains visible
+and prevents a complete export. Independent supported objects can still export.
+
+Select the advanced destination-aware workflow to supply destination XML and
+check reuse. Changing workflow mode revokes the previous approval and artifact.
+Offline artifacts cannot prepare, validate or commit a live candidate. Live
+execution requires a newly approved destination-aware design and the existing
+serial, sanitized baseline, clean candidate and explicit commit checks.
+
 ## Migration Artifacts
 
 Rendering is deterministic for a given reviewed migration plan.

@@ -168,6 +168,7 @@ def run_migration_pipeline(
     planner: FortiGateToPaloAltoPlanner | None = None,
     target_object_reuse_classifier=None,
     approved_item_keys=None,
+    workflow_mode: str = "DESTINATION_AWARE",
 ) -> PANMigrationPipelineResult:
     """Run the complete supported FortiGate -> PAN-OS planning pipeline.
 
@@ -176,6 +177,10 @@ def run_migration_pipeline(
     regenerated from the final decision set to prevent stale mappings.
     """
     mode = PANAutomationMode(automation_mode)
+    if workflow_mode not in {"OFFLINE_EXPORT", "DESTINATION_AWARE"}:
+        raise ValueError("Invalid migration workflow mode")
+    if workflow_mode == "OFFLINE_EXPORT" and (target is not None or target_device or target_evidence):
+        raise ValueError("Offline export cannot use destination evidence")
     from .plan_dependencies import item_key
     requirements = build_mapping_requirements(source, derived, include_configuration=approved_item_keys is not None)
     # Rebuild from current requirements so stale decision documents cannot keep
@@ -219,7 +224,9 @@ def run_migration_pipeline(
                                **({"include_configuration": True} if approved_item_keys is not None else {}))
 
     reuse_classifier = target_object_reuse_classifier or classify_target_object_reuse
-    if any(item.approved_operation == "CONFIGURE" for item in current.decisions):
+    if workflow_mode == "OFFLINE_EXPORT":
+        target_object_reuse = ()
+    elif any(item.approved_operation == "CONFIGURE" for item in current.decisions):
         target_object_reuse = reuse_classifier(plan, target, target_device, allow_additive=True)
     else:
         target_object_reuse = reuse_classifier(plan, target, target_device)
@@ -271,6 +278,7 @@ def run_migration_pipeline(
     rendered = replace(rendered, report={
         **rendered.report,
         "plan_status": status,
+        "workflow_mode": workflow_mode,
         "automation": {
             "mode": mode.value,
             "applied": len(design_session.deterministic_audit),

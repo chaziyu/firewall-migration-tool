@@ -42,10 +42,12 @@ export async function restoreWorkspace(): Promise<Workspace> {
 export function saveWorkspace(update: Partial<Workspace>): Promise<void> {
   // Workflow state can contain sanitized customer configuration and target topology.
   // Keep it in memory only; connection forms and credentials never enter this object.
+  const modeChanged = update.workflowMode !== undefined && update.workflowMode !== (current.workflowMode ?? 'offline')
   const contextChanged = (update.preview !== undefined && JSON.stringify(update.preview?.source_evidence) !== JSON.stringify(current.preview?.source_evidence))
     || (update.targetSource !== undefined && JSON.stringify(update.targetSource) !== JSON.stringify(current.targetSource))
     || (update.targetDevice !== undefined && update.targetDevice !== current.targetDevice)
     || (update.referenceRole !== undefined && update.referenceRole !== current.referenceRole)
+    || modeChanged
   const decisionsChanged = update.decisionDocument !== undefined
     && JSON.stringify(update.decisionDocument) !== JSON.stringify(current.decisionDocument)
   const derivedStateChanged = contextChanged || decisionsChanged
@@ -58,7 +60,7 @@ export function saveWorkspace(update: Partial<Workspace>): Promise<void> {
     targetSource: update.targetSource === undefined ? current.targetSource : update.targetSource,
     targetDevice: update.targetDevice ?? current.targetDevice,
     referenceRole: update.referenceRole ?? current.referenceRole,
-    decisionDocument: update.decisionDocument === undefined ? current.decisionDocument : update.decisionDocument,
+    decisionDocument: update.decisionDocument === undefined ? (modeChanged ? null : current.decisionDocument) : update.decisionDocument,
     deterministicDraft: update.deterministicDraft === undefined
       ? (derivedStateChanged ? null : current.deterministicDraft)
       : update.deterministicDraft,

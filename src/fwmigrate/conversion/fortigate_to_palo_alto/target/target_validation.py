@@ -1,6 +1,7 @@
 """Report-only validation of confirmed FortiGate mappings against PAN-OS evidence."""
 
 from dataclasses import dataclass
+import re
 
 from fwmigrate.conversion.fortigate_to_palo_alto.decisions import PANDecisionMode, PANDecisionReviewState, PANMigrationDecisionSet
 from fwmigrate.conversion.fortigate_to_palo_alto.target.target_suggestions import _addresses, _compatible, _device
@@ -84,7 +85,8 @@ def validate_against_target(source, decisions: PANMigrationDecisionSet, target, 
                         and source_item.vlanid is not None and source_item.interface):
                     parent = confirmed_names.get((decision.source_vdom, source_item.interface))
                     parent_records = _records(target, device, parent) if parent else []
-                    if (parent and decision.value == f"{parent}.{source_item.vlanid}"
+                    if (parent and re.fullmatch(re.escape(parent) + r"\.[0-9]+", decision.value)
+                            and 1 <= int(decision.value.rsplit('.', 1)[1]) <= 9999
                             and len(parent_records) == 1 and parent_records[0].interface_family == "ethernet"
                             and getattr(parent_records[0], "mode", None) in (None, "layer3")):
                         continue

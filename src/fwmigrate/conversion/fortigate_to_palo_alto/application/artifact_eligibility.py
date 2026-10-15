@@ -33,6 +33,8 @@ def validate_artifact_approval(rendered, document, approval):
     if not approval_is_current(approval):
         raise ArtifactEligibilityError("Design approval has expired; prepare and approve the design again")
     context = approval["context"]
+    if report.get("workflow_mode", "DESTINATION_AWARE") != context.get("workflow_mode", "DESTINATION_AWARE"):
+        raise ArtifactEligibilityError("Artifact workflow differs from the approved design")
     if (report.get("approved_design_digest") != approval.get("draft_digest")
             or not approval.get("draft_digest")
             or report.get("source", {}).get("digest") != context.get("source_digest")
@@ -74,6 +76,8 @@ def validate_approved_plan(plan, approval):
 
 def deployment_serial(rendered, document, approval):
     validate_artifact_approval(rendered, document, approval)
+    if approval["context"].get("workflow_mode") == "OFFLINE_EXPORT":
+        raise ArtifactEligibilityError("Offline export cannot prepare a candidate; review destination evidence and approve a new design")
     if rendered.report.get("plan_status") != "READY" or not rendered.commands:
         raise ArtifactEligibilityError("Candidate deployment requires a READY artifact with commands")
     context = approval["context"]

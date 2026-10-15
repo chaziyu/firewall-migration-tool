@@ -9,7 +9,7 @@ export function draftDependencies(rows: DraftRow[] | Map<string, DraftRow>, keys
   const result = new Set(keys)
   for (const key of result) for (const parent of byKey.get(key)?.dependencies || []) {
     const row = byKey.get(parent)
-    if (row && !row.approved && !(row.item_key && approved.has(row.item_key))) result.add(parent)
+    if (row && !row.approved && !approved.has(row.item_key || row.decision_key || '')) result.add(parent)
   }
   return [...result]
 }
