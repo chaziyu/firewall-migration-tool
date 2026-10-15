@@ -85,3 +85,12 @@ def test_shared_source_members_block_both_aggregate_owners():
     config.interfaces.append(FGInterface(name='other', type='aggregate', members=['port1'], raw_extra={'lacp-mode': 'static'}))
     items = plan_interfaces(config, options(other={'target_interface': 'ae2'}))
     assert all(item.status is PANMigrationStatus.MANUAL_REVIEW for item in items if not item.parent)
+
+
+def test_unmapped_aggregate_never_turns_its_members_into_standalone_interfaces():
+    config = source()
+    config.interfaces.pop()  # No VLAN; member mappings must still fail closed.
+    items = plan_interfaces(config, options(bond={}))
+    assert {item.source_name for item in items} == {'port1', 'port2'}
+    assert all(item.status is PANMigrationStatus.MANUAL_REVIEW for item in items)
+    assert not PANSetRenderer().render(PANMigrationPlan(interfaces=items)).commands
