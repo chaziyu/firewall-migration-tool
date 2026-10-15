@@ -164,7 +164,7 @@ class FGSSLVPNClient(BaseModel):
     peer: str | None = None
     port: int | None = None
     priority: int | None = None
-    psk_configured: bool = False
+    psk_configured: bool | None = None
     realm: str | None = None
     server: str | None = None
     source_ip: str | None = None

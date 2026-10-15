@@ -715,10 +715,10 @@ def _sheet_note(
             "Other values are explicit source data unless identified as derived or analysis output."
         )
 
-    if sheet_name == "Services":
-        return "Generated identifies report rows derived by FortiGate service transformation; Summary separates explicit source objects from generated rows."
-    if sheet_name == "Service Groups":
-        return "Generated identifies report rows derived by FortiGate service transformation; Summary separates explicit source groups from generated rows."
+    if sheet_name in {"Services", "Service Groups"}:
+        return "Native FortiGate source objects. Transformed services and groups appear in Derived Service Expansions."
+    if sheet_name == "Derived Service Expansions":
+        return "Derived FortiGate service transformation output. Generated identifies synthesized services and groups; native objects remain in Services and Service Groups."
 
     if sheet_name == "NAT Rules" and row_count:
         return f"{row_count} record(s). Derived policy NAT view, not a separate FortiGate source rulebase. SNAT Type, SNAT Address, and Egress Interfaces are derived reporting values."
@@ -742,9 +742,13 @@ def _inventory_counts(context: _ExcelContext) -> list[tuple[str, int, str]]:
         ("Addresses", len(config.addresses), "Addresses"),
         ("Address Groups", len(config.address_groups), "Address Groups"),
         ("Explicit Service Objects", len(config.services), "Services"),
-        ("Generated Service Rows", sum(bool(item.generated) for item in context.derived.services.services), "Services"),
+        ("Generated Service Rows", sum(bool(item.generated) for item in context.derived.services.services), "Derived Service Expansions"),
         ("Explicit Service Groups", len(config.service_groups), "Service Groups"),
-        ("Generated Service Group Rows", sum(bool(item.generated) for item in context.derived.services.groups), "Service Groups"),
+        ("Generated Service Group Rows", sum(bool(item.generated) for item in context.derived.services.groups), "Derived Service Expansions"),
+        ("Service Categories", len(config.service_categories), "Service Categories"),
+        ("One-Time Schedules", len(config.one_time_schedules), "One-Time Schedules"),
+        ("Recurring Schedules", len(config.recurring_schedules), "Recurring Schedules"),
+        ("Schedule Groups", len(config.schedule_groups), "Schedule Groups"),
         ("Policies", len(config.policies), "Policies"),
         ("Security Policies", len(config.security_policies), "Security Policies"),
         ("NAT Rules", len(context.derived.nat), "NAT Rules"),

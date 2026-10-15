@@ -16,6 +16,7 @@ from .models import (
     ValidationResult,
     ValidationSeverity,
 )
+from .cli_constraints import validate_cli_constraints
 
 
 def validate_config(
@@ -48,7 +49,7 @@ def validate_config(
             config
         )
 
-    issues: list[ValidationIssue] = []
+    issues: list[ValidationIssue] = validate_cli_constraints(config)
 
     for interface in config.interfaces:
         if interface.vdom is None:

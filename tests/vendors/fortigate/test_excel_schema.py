@@ -209,12 +209,12 @@ end
         self.assertEqual(list(SHEET_ORDER), workbook.sheetnames)
         removed = {
             "System Settings", "Session Helpers", "Router Settings", "IPS Settings",
-            "Service Categories", "Protocol Options", "Per-IP Shapers",
+            "Protocol Options", "Per-IP Shapers",
             "SSL VPN Host Checks", "SSL VPN Host Check Items", "User Group Guests",
             "NAC Policies", "Kerberos Keytabs", "KMIP Servers", "SDN Proxies",
             "IPv6 Address Templates", "On-Demand Sniffers", "Affinity Interrupts",
             "Serial Ports", "Firewall Regions", "Vendor MACs",
-            "Schedules", "Schedule Groups",
+            "Schedules",
             "SSL VPN Bookmark Owners", "SSL VPN Bookmarks",
             "Address Group Tags", "Local-In Policies",
             "Multicast Policies", "Policy Routes", "Routing Protocol Settings",
