@@ -7,13 +7,14 @@ import json
 from typing import Any
 
 from ....source_reporting.options import ExcelExportProfile
-from ....source_reporting.excel_style import append_report_row, finish_report_workbook, write_report_summary
+from ....source_reporting.excel_style import append_report_row, excel_safe_value, finish_report_workbook, write_report_summary
+from ....source_reporting.collection_excel import collection_summary, write_collection_evidence
 from .excel_schema import SHEET_HEADERS, SHEET_ORDER
 
 
 def _text(value: Any) -> Any:
     value = str(value) if isinstance(value, (list, tuple, dict)) else value
-    return "'" + value if isinstance(value, str) and value.startswith(("=", "+", "-", "@")) else value
+    return excel_safe_value(value)
 
 
 def _source_name(record: Any) -> Any:
@@ -114,7 +115,11 @@ def _inspection_rows(config: Any, completeness: dict[str, str] | None = None) ->
     return rows
 
 
-def export_ftd_excel(result: Any, output: Any, *, profile: ExcelExportProfile | str = ExcelExportProfile.FULL) -> Any:
+def export_ftd_excel(
+    result: Any, output: Any, *, profile: ExcelExportProfile | str = ExcelExportProfile.FULL,
+    source_name: str | None = None, collection_status: str | None = None,
+    collection_parts: Any = (), collection_warnings: Any = (),
+) -> Any:
     from openpyxl import Workbook
 
     profile = ExcelExportProfile(profile)
@@ -301,6 +306,7 @@ def export_ftd_excel(result: Any, output: Any, *, profile: ExcelExportProfile | 
             append_report_row(sheet, SHEET_HEADERS[name])
             for row in rows[name]:
                 append_report_row(sheet, tuple(_text(value) for value in row))
+    write_collection_evidence(workbook, collection_status, collection_parts or (), collection_warnings or ())
     collection_provided = config.collection_metadata.provided
     scopes = sorted({f"{key}: {item.source_attributes[key]}" for item in inventory_items
                      for key in ("domain_id", "device_id", "parent_policy_id", "policy_id")
@@ -308,14 +314,16 @@ def export_ftd_excel(result: Any, output: Any, *, profile: ExcelExportProfile | 
     write_report_summary(
         workbook["Summary"], title="Cisco FTD Configuration Report", profile=profile.value.upper(),
         metadata=(("Hostname", None), ("FTD Version", config.version),
-                  ("Scopes", "\n".join(scopes) or None), ("Source File", None),
+                  ("Scopes", "\n".join(scopes) or None), ("Source File", source_name),
                   ("Input Source", config.input_source_type), ("Source Plane", config.source_plane)),
         validation=(("Errors", sum(issue.severity == "error" for issue in result.validation.issues)),
                     ("Warnings", sum(issue.severity == "warning" for issue in result.validation.issues)),
                     ("Unresolved References", len(derived.unresolved_references) if derived is not None else None),
                     ("Validation Issues", len(result.validation.issues))),
         inventory=((name, len(rows[name]), name) for name in SHEET_ORDER if name in rows),
-        coverage=(("Collection Status", config.collection_metadata.status if collection_provided else "NOT_PROVIDED"),
+        coverage=(*collection_summary(collection_status),
+                  ("Native Collection Status" if collection_status is not None else "Collection Status",
+                   config.collection_metadata.status if collection_provided else "NOT_PROVIDED"),
                   ("Collection Parts", len(config.collection_metadata.parts) if collection_provided else None),
                   ("Incomplete Collection Parts", sum(not part.complete for part in config.collection_metadata.parts)
                    if collection_provided else None),
@@ -325,7 +333,7 @@ def export_ftd_excel(result: Any, output: Any, *, profile: ExcelExportProfile | 
                       if not family.startswith("collection:")).items()),
                   ("Export Limitations", "FAST and FULL retain source evidence and collection completeness.")),
     )
-    finish_report_workbook(workbook, summary_title="Cisco FTD Configuration Report")
+    finish_report_workbook(workbook)
     if hasattr(output, "write"):
         workbook.save(output)
         return output

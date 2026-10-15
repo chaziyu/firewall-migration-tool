@@ -46,7 +46,7 @@ def write_report_summary(
         cells = []
         for index, value in enumerate((*values, *([None] * (6 - len(values))))):
             value = "Not reported" if value is None and index < len(values) else value
-            cell = WriteOnlyCell(sheet, _safe_cell_value(value))
+            cell = WriteOnlyCell(sheet, excel_safe_value(value))
             cell.row, cell.column = row_number, index + 1
             cell.alignment = Alignment(
                 vertical="center", wrap_text=not title_band,
@@ -100,9 +100,9 @@ def write_report_summary(
     sheet.print_area = f"A1:F{row_number}"
 
 
-def _safe_cell_value(value):
+def excel_safe_value(value):
     """Prevent untrusted source strings from being interpreted as Excel formulas."""
-    if isinstance(value, str) and value.startswith(("=", "+", "-", "@")):
+    if isinstance(value, str) and value.startswith(("=", "+", "-", "@", "\t", "\r", "\n")):
         return "'" + value
     return value
 
@@ -123,11 +123,12 @@ def style_fast_sheet(sheet, *, header_row: int = 1) -> None:
 
 def append_report_row(sheet, values) -> None:
     """Append vendor-owned values to either a normal or streaming worksheet."""
-    values = tuple(_safe_cell_value(value) for value in values)
+    values = tuple(excel_safe_value(value) for value in values)
+    count = getattr(sheet, "_report_row_count", 0)
     if not sheet.parent.write_only:
         sheet.append(values)
+        sheet._report_row_count = count + 1
         return
-    count = getattr(sheet, "_report_row_count", 0)
     if count == 0:
         values = tuple(values)
         sheet._report_column_count = len(values)
@@ -180,7 +181,10 @@ def append_report_navigation(workbook, *, column: int = 5) -> None:
 
 
 def finish_report_workbook(workbook, *, summary_title: str | None = None) -> None:
-    """Finalize FAST filters or FULL headers and workbook navigation."""
+    """Finalize details; summary_title applies only to legacy summaries.
+
+    Modern summaries get their title from write_report_summary, including streaming exports.
+    """
     if getattr(workbook["Summary"], "_report_summary_written", False):
         for sheet in workbook.worksheets:
             if sheet.title == "Summary":

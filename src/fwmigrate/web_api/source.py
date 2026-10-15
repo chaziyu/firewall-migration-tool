@@ -21,6 +21,7 @@ from fwmigrate.source_reporting import (
 )
 from fwmigrate.source_reporting.web_report import normalize_web_report
 from fwmigrate.web_support.request_source import analyze_request_source
+from fwmigrate.web_support.request_controls import live_device_access_allowed
 from fwmigrate.web_support.reporting import (
     ConfigurationDecodeError,
     _parse_bool,
@@ -33,9 +34,11 @@ _LOGGER = logging.getLogger(__name__)
 
 def register_source_routes(app) -> None:
     def live_collection_allowed() -> bool:
-        if app.config.get('ALLOW_REMOTE_COLLECTION'):
-            return True
-        return request.remote_addr in {'127.0.0.1', '::1'}
+        return live_device_access_allowed(app)
+
+    @app.route('/api/capabilities', methods=['GET'])
+    def capabilities():
+        return jsonify({'live_device_access': live_device_access_allowed(app)})
 
     @app.route('/api/vendors', methods=['GET'])
     def list_vendors():

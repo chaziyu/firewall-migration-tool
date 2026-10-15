@@ -10,7 +10,8 @@ from openpyxl.utils import get_column_letter
 
 from fwmigrate.extraction.sanitize import sanitize_source_attributes
 from ....source_reporting.options import ExcelExportProfile
-from ....source_reporting.excel_style import append_report_row, finish_report_workbook, write_report_summary
+from ....source_reporting.excel_style import append_report_row, excel_safe_value, finish_report_workbook, write_report_summary
+from ....source_reporting.collection_excel import collection_summary, write_collection_evidence
 from ..validation.index import CheckPointValidationIndex
 from .excel_schema import DERIVED_SHEETS, SHEET_HEADERS, SHEET_ORDER, SOURCE_SHEETS
 
@@ -48,9 +49,7 @@ def _excel_safe(value: Any) -> Any:
     value = _plain_value(value)
     if isinstance(value, (dict, list)):
         value = json.dumps(value, ensure_ascii=False, sort_keys=True)
-    if isinstance(value, str) and value.startswith(("=", "+", "-", "@")):
-        return "'" + value
-    return value
+    return excel_safe_value(value)
 
 
 def _plain_value(value: Any) -> Any:
@@ -145,7 +144,11 @@ def _derived_rows(result: Any, sheet: str):
             for i in result.derived.broken_references]
 
 
-def export_checkpoint_excel(result: Any, output: Any, *, profile: ExcelExportProfile | str = ExcelExportProfile.FULL) -> Any:
+def export_checkpoint_excel(
+    result: Any, output: Any, *, profile: ExcelExportProfile | str = ExcelExportProfile.FULL,
+    source_name: str | None = None, collection_status: str | None = None,
+    collection_parts: Any = (), collection_warnings: Any = (),
+) -> Any:
     from openpyxl import Workbook
 
     profile = ExcelExportProfile(profile)
@@ -199,18 +202,20 @@ def export_checkpoint_excel(result: Any, output: Any, *, profile: ExcelExportPro
                     groups[key] = groups.get(key, 0) + 1
             for (command, scope, status, reason), count in groups.items(): append_report_row(sheet, tuple(_excel_safe(v) for v in (command, scope, count, reason or status, command)))
         else: append_report_row(sheet, SHEET_HEADERS[name])
+    write_collection_evidence(workbook, collection_status, collection_parts or (), collection_warnings or ())
     write_report_summary(
         workbook["Summary"], title="Check Point Configuration Report", profile=profile.value.upper(),
         metadata=(("Management Server", result.source_metadata.management_server),
                   ("API Version", result.source_metadata.api_version),
                   ("Domain", result.scope.selected_domain), ("Package", result.scope.selected_package),
                   ("Access Layer", result.scope.selected_access_layer), ("Gateway", result.scope.selected_gateway),
-                  ("Source File", None)),
+                  ("Source File", source_name)),
         validation=(("Errors", len(result.validation.errors)), ("Warnings", len(result.validation.warnings)),
                     ("Unresolved References", len(result.derived.broken_references)),
                     ("Validation Findings", len(result.validation.issues))),
         inventory=((name, len(getattr(result.config, field)), name) for name, field in SOURCE_SHEETS.items()),
-        coverage=(("Source Objects", sum(len(getattr(result.config, f)) for f in SOURCE_SHEETS.values())),
+        coverage=(*collection_summary(collection_status),
+                  ("Source Objects", sum(len(getattr(result.config, f)) for f in SOURCE_SHEETS.values())),
                   ("Derived Views", sum(len(_derived_rows(result, s)) for s in DERIVED_SHEETS)),
                   ("Incomplete Collections", len(result.derived.collection_incomplete)),
                   ("Source Inventory Evidence", len(result.source_inventory)),
@@ -225,7 +230,7 @@ def export_checkpoint_excel(result: Any, output: Any, *, profile: ExcelExportPro
                   ("Permission-Denied Collection Operations", result.source_metadata.permission_denied_count),
                   ("Export Limitations", "FAST and FULL retain Management API and Gaia source worksheets.")),
     )
-    finish_report_workbook(workbook, summary_title="Check Point Configuration Report")
+    finish_report_workbook(workbook)
     if hasattr(output, "write"):
         workbook.save(output); return output
     path = Path(output); workbook.save(path); return path

@@ -75,6 +75,7 @@ def export_asa_excel(
     output: Any,
     *,
     profile: ExcelExportProfile | str = ExcelExportProfile.FULL,
+    source_name: str | None = None,
     collection_status: str | None = None,
     collection_parts: Any = (),
     collection_warnings: Any = (),
@@ -124,10 +125,10 @@ def export_asa_excel(
             append_report_row(sheet, SHEET_HEADERS[name])
             for item in result.unsupported_items:
                 raw = getattr(item, "raw_capture", None)
-                source_name = getattr(item, "source_name", "") or ""
+                item_source_name = getattr(item, "source_name", "") or ""
                 line = getattr(item, "line_number", None)
-                if line is None and source_name.startswith("line ") and source_name[5:].isdigit():
-                    line = int(source_name[5:])
+                if line is None and item_source_name.startswith("line ") and item_source_name[5:].isdigit():
+                    line = int(item_source_name[5:])
                 append_report_row(sheet, (line, getattr(item, "source_context", None),
                               getattr(item, "source_path", None), item.reason, raw))
             continue
@@ -282,29 +283,25 @@ def export_asa_excel(
             for item in values:
                 append_report_row(sheet, tuple(excel_value(value) for value in _derived_row(name, item)))
             continue
-    write_collection_evidence(workbook, collection_status, collection_parts, collection_warnings)
+    write_collection_evidence(workbook, collection_status, collection_parts or (), collection_warnings or ())
     write_report_summary(
         workbook["Summary"], title="Cisco ASA Configuration Report", profile=profile.value.upper(),
         metadata=(("Hostname", config.hostname), ("Version", None),
                   ("Contexts", "\n".join(item.name for item in config.contexts) or None),
-                  ("Source File", None)),
+                  ("Source File", source_name)),
         validation=(("Errors", len(result.validation.errors)), ("Warnings", len(result.validation.warnings)),
                     ("Unresolved References", sum(item.status == "UNRESOLVED" for item in result.derived.relationship_issues)), ("Validation Issues", len(result.validation.issues))),
-        inventory=(("Interfaces", len(config.interfaces), "Interfaces"),
-                   ("Network Objects", len(config.network_objects), "Network Objects"),
-                   ("Network Groups", len(config.network_groups), "Network Groups"),
-                   ("Service Objects", len(config.service_objects), "Service Objects"),
-                   ("Service Groups", len(config.service_groups), "Service Groups"),
-                   ("ACL Rules", len(config.access_rules), "ACL Rules"),
-                   ("ACL Bindings", len(result.derived.acl_relationships.bindings), "ACL Bindings"),
-                   ("NAT Rules", len(config.nat_rules), "NAT Rules"),
-                   ("Routes", len(result.derived.routes.routes), "Routes")),
+        inventory=((name, workbook[name]._report_row_count - 1, name) for name in SHEET_ORDER
+                   if name in workbook.sheetnames and name not in {
+                       "Summary", "Review Required", "Validation", "Source Inventory",
+                       "Extraction Coverage", "Unsupported", "Additional Settings",
+                   }),
         coverage=(("Unsupported Commands", len(result.unsupported_items)),
                   *collection_summary(collection_status),
                   ("Export Limitations", "FAST omits Source Inventory and Extraction Coverage. Use FULL for traceability."
                    if profile is ExcelExportProfile.FAST else "FULL includes Source Inventory and Extraction Coverage.")),
     )
-    finish_report_workbook(workbook, summary_title="Cisco ASA Configuration Report")
+    finish_report_workbook(workbook)
     if hasattr(output, "write"):
         workbook.save(output)
         return output
