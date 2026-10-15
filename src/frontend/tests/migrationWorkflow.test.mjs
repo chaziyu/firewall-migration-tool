@@ -6,6 +6,8 @@ import * as jsxRuntime from 'react/jsx-runtime'
 import * as drafts from '../src/features/migration/reviewDrafts.ts'
 import * as presentation from '../src/features/migration/reviewPresentation.ts'
 
+globalThis.requestAnimationFrame ??= () => 0
+
 // Exercise component handlers and effects with the same hook harness used by validationReport tests.
 function component(file, name, modules, { strictEffectReplay = false } = {}) {
   const slots = []
@@ -78,17 +80,47 @@ function component(file, name, modules, { strictEffectReplay = false } = {}) {
 
 test('initial migration preparation starts once when StrictMode replays effects', async () => {
   const requests = []
+  const modes = []
   const result = { decisions: { decisions: [] }, decision_document: { decisions: [] }, target_devices: [], target_device: null,
     decision_candidates: {}, review_groups: [], rule_suggestions: [], draft: { digest: 'draft', context: { overrides: {} }, decisions: [], configuration: [] } }
   const harness = component('../src/features/migration/MigrationReview.tsx', 'MigrationReview', {
     '../../storage/workspaceStore': { ...workspace, saveWorkspace: async () => {} },
-    '../../api/client': { RequestError: api.RequestError, postJson: async (path) => { requests.push(path); return result } },
+    '../../api/client': { RequestError: api.RequestError, postJson: async (path, payload) => { requests.push(path); modes.push(payload.workflow_mode); return result } },
     '../source/FileUpload': { FileUpload: 'FileUpload' }, './download': {}, './reviewDrafts': drafts, './reviewPresentation': presentation,
     './components/MigrationDesignReview': { MigrationDesignReview: 'Design' }, './components/MigrationReviewQueues': { MigrationReviewQueues: 'Queues' },
     './components/MigrationDecisionTable': { MigrationDecisionTable: 'Decisions' }, './components/MigrationInterfaceMappings': { MigrationInterfaceMappings: 'Interfaces' },
   }, { strictEffectReplay: true })
   await harness.render({ preview: { source_digest: 'source', source_evidence: {} }, vendor: 'fortigate' })
   assert.deepEqual(requests, ['/api/migration/design/prepare'])
+  assert.deepEqual(modes, ['OFFLINE_EXPORT'])
+})
+
+test('Setup keeps offline reference collapsed and mapping tools in Resolve mappings', async () => {
+  const result = { decisions: { decisions: [] }, decision_document: { decisions: [] }, target_devices: [], target_device: null,
+    decision_candidates: {}, review_groups: [], rule_suggestions: [], draft: { digest: 'draft', context: { overrides: {} }, decisions: [], configuration: [], readiness: { coverage: { supported: 0, manual: 2841 }, deployment: { missing_prerequisites: ['baseline_sha256'] } } } }
+  const harness = component('../src/features/migration/MigrationReview.tsx', 'MigrationReview', {
+    '../../storage/workspaceStore': { ...workspace, saveWorkspace: async () => {} },
+    '../../api/client': { RequestError: api.RequestError, postJson: async () => result },
+    '../source/FileUpload': { FileUpload: 'FileUpload' }, './download': {}, './reviewDrafts': drafts, './reviewPresentation': presentation,
+    './components/MigrationDesignReview': { MigrationDesignReview: 'Design' }, './components/MigrationReviewQueues': { MigrationReviewQueues: 'Queues' },
+    './components/MigrationDecisionTable': { MigrationDecisionTable: 'Decisions' }, './components/MigrationInterfaceMappings': { MigrationInterfaceMappings: 'Interfaces' },
+  })
+  const props = { preview: { source_digest: 'source', source_evidence: {} }, vendor: 'fortigate', stage: 'load' }
+  let tree = await harness.render(props)
+  const evidence = (tree) => elements(tree).find((node) => node.type === 'details' && node.props.className === 'migration-target-evidence')
+  const tools = (tree) => elements(tree).find((node) => node.type === 'details' && elements(node.props.children).some((child) => child.type === 'summary' && child.props.children === 'Advanced tools and mapping files'))
+  assert.equal(evidence(tree).props.open, false)
+  assert.equal(evidence(tree).props.hidden, true)
+  assert.equal(tools(tree).props.hidden, true)
+  assert.ok(!JSON.stringify(tree).includes('Candidate prerequisites missing'))
+  assert.ok(!elements(tree).map((node) => [node.props.children].flat().filter((value) => typeof value === 'string').join(' ')).join(' ').includes('baseline_sha256'))
+  assert.ok(!JSON.stringify(tree).includes('migration-review-intro'))
+  await elements(tree).find((node) => node.type === 'select' && node.props['aria-label'] === 'Migration intent').props.onChange({ target: { value: 'destination' } })
+  tree = await harness.render(props)
+  assert.equal(evidence(tree).props.open, true)
+  assert.equal(evidence(tree).props.hidden, false)
+  tree = await harness.render({ ...props, stage: 'place' })
+  assert.equal(tools(tree).props.hidden, false)
 })
 
 test('a new source analysis opens the target stage for optional PAN-OS XML', async () => {
@@ -104,10 +136,26 @@ test('a new source analysis opens the target stage for optional PAN-OS XML', asy
     '../../api/client': {}, '../migration/download': {},
   })
   let tree = await harness.render({ view: 'migration', onViewChange: () => {} })
+  const projectInput = elements(tree).find((node) => node.type === 'input' && node.props['aria-label'] === 'Resume project')
+  let pickerOpened = 0
+  projectInput.props.ref.current = { click: () => { pickerOpened++ } }
+  elements(tree).find((node) => node.type === 'Button' && node.props.children === 'Resume project').props.onClick()
+  assert.equal(pickerOpened, 1)
+  assert.equal(projectInput.props.hidden, true)
   const upload = elements(tree).find((node) => node.type === 'FileUpload')
   upload.props.onChange(new Blob(['config']))
   tree = await harness.render({ view: 'migration', onViewChange: () => {} })
   assert.equal(elements(tree).find((node) => node.type === 'MigrationReview').props.stage, 'load')
+  const labels = ['Setup', 'Resolve mappings', 'Review & approve', 'Export']
+  const stages = ['load', 'place', 'review', 'export']
+  const nav = elements(tree).find((node) => node.props['aria-label'] === 'Migration workspace')
+  assert.equal(elements(nav.props.children).filter((node) => node.type === 'button').length, 4)
+  for (const index of [1, 2, 3, 0]) {
+    const button = elements(tree).find((node) => node.type === 'button' && node.props.children?.[2] === labels[index])
+    button.props.onClick()
+    tree = await harness.render({ view: 'migration', onViewChange: () => {} })
+    assert.equal(elements(tree).find((node) => node.type === 'MigrationReview').props.stage, stages[index])
+  }
 })
 
 function elements(tree) {
@@ -157,6 +205,20 @@ test('approved partial plans build only on request and downloads identify exclud
   tree = await harness.render({ ...props, targetDevice: 'changed-device' })
   assert.equal(builds, 1)
   assert.ok(!elements(tree).some((node) => node.type === 'Button' && node.props.children === 'Download partial bundle'))
+})
+
+test('ready offline export shows unverified destination separately and hides live deployment', async () => {
+  const artifact = { artifact_id: 'offline', plan_status: 'READY', render_summary: { create: 1 },
+    blocking_reasons: [], recommendations: [], report: { workflow_mode: 'OFFLINE_EXPORT', destination_verified: false,
+      deployment_eligibility: { eligible: false } }, artifact: { commands: ['set vsys vsys1 address host ip-netmask 192.0.2.1/32'], command_count: 1 } }
+  let mode
+  const harness = workflowHarness({ buildPlan: async (...args) => { mode = args[4]; return artifact } })
+  const tree = await buildArtifact(harness, { preview: { vendor: 'fortigate', source_digest: 'source', source_evidence: {} },
+    decisionDocument: { design_approval: {}, decisions: [] }, targetSource: null, targetDevice: '', activeSection: 'plan' })
+  assert.equal(mode, 'offline')
+  assert.ok(elements(tree).some((node) => node.props.children === 'Ready for export'))
+  assert.ok(elements(tree).some((node) => String(node.props.children).startsWith('Destination unverified. Check')))
+  assert.ok(!elements(tree).some((node) => node.props.children === 'Open live migration'))
 })
 
 test('a context change suppresses an in-flight artifact download', async () => {
@@ -363,7 +425,10 @@ test('a server-validated mapping proposal is reported as pending approval withou
   queues = elements(tree).find((node) => node.type === 'Queues')
   await queues.props.updateGroup(group)
   tree = await harness.render(props)
-  assert.ok(elements(tree).some((node) => node.props?.role === 'status' && node.props.children?.[0] === 'Proposal saved — awaiting approval.'))
+  assert.equal(calls.length, 1, 'reviewing staged values makes no request')
+  await elements(tree).find((node) => node.type === 'button' && node.props.children === 'Validate staged changes').props.onClick()
+  tree = await harness.render(props)
+  assert.ok(elements(tree).some((node) => node.props?.role === 'status' && node.props.children?.[0] === 'Staged changes validated — awaiting approval.'))
   assert.deepEqual(calls.map((call) => call.path), ['/api/migration/design/prepare', '/api/migration/design/prepare'])
   assert.deepEqual(calls[1].payload.draft_overrides, { port: 'ethernet1/2' })
   assert.ok(saves.some((value) => value.artifact === null))
@@ -400,11 +465,60 @@ test('a failed proposal save keeps the staged target value for retry', async () 
   queues.props.setDrafts({ port: 'ethernet1/9' })
   tree = await harness.render(props)
   queues = elements(tree).find((node) => node.type === 'Queues')
-  await assert.rejects(queues.props.updateGroup(group), /prepare failed/)
+  await queues.props.updateGroup(group)
+  tree = await harness.render(props)
+  await elements(tree).find((node) => node.type === 'button' && node.props.children === 'Validate staged changes').props.onClick()
   tree = await harness.render(props)
   queues = elements(tree).find((node) => node.type === 'Queues')
   assert.equal(queues.props.drafts.port, 'ethernet1/9')
   assert.equal(queues.props.selectedGroupKey, 'port')
+  assert.ok(elements(tree).some((node) => node.props.role === 'alert' && node.props.children?.[0] === 'prepare failed'))
+  assert.ok(elements(tree).some((node) => node.props['aria-label'] === 'Bulk proposal review'))
+})
+
+test('one validation request batches scoped mappings, skips blanks, and keeps incomplete tasks selected', async () => {
+  const decisions = [
+    { key: 'root-port', source_vdom: 'root', source_kind: 'interface', source_name: 'port1', target_field: 'target_interface' },
+    { key: 'blue-port', source_vdom: 'blue', source_kind: 'interface', source_name: 'port1', target_field: 'target_interface' },
+    { key: 'root-zone', source_vdom: 'root', source_kind: 'interface', source_name: 'port1', target_field: 'target_zone' },
+  ].map((row) => ({ ...row, mode: 'REQUIRED', review_state: 'PENDING', value: null, suggested_value: null }))
+  const group = { decision_keys: ['root-port', 'root-zone'], source_vdom: 'root', source_kind: 'interface', source_name: 'port1', queue: 'NEEDS_INPUT', decisions: [decisions[0], decisions[2]], candidates: {}, source_evidence: {}, affected_count: 2, dependent_decision_count: 0 }
+  const blue = { ...group, source_vdom: 'blue', decision_keys: ['blue-port'], decisions: [decisions[1]] }
+  const calls = [], documents = [], saves = []
+  const harness = component('../src/features/migration/MigrationReview.tsx', 'MigrationReview', {
+    '../../storage/workspaceStore': { ...workspace, saveWorkspace: async (value) => saves.push(value) },
+    '../../api/client': { RequestError: api.RequestError, postJson: async (path, payload) => {
+      calls.push({ path, payload })
+      const overrides = payload.draft_overrides ?? {}
+      return { decisions: { decisions }, decision_document: { decisions }, target_devices: [], target_device: null,
+        decision_candidates: {}, review_groups: [group, blue], rule_suggestions: [],
+        draft: { digest: 'draft', context: { overrides }, decisions: decisions.map((row) => ({ ...row, decision_key: row.key, proposed_value: overrides[row.key], status: overrides[row.key] ? 'READY' : 'NEEDS_INPUT', dependencies: row.key === 'root-zone' ? ['root-port'] : [] })), configuration: [] } }
+    } },
+    '../source/FileUpload': { FileUpload: 'FileUpload' }, './download': {}, './reviewDrafts': drafts, './reviewPresentation': presentation,
+    './components/MigrationDesignReview': { MigrationDesignReview: 'Design' }, './components/MigrationReviewQueues': { MigrationReviewQueues: 'Queues' },
+    './components/MigrationDecisionTable': { MigrationDecisionTable: 'Decisions' }, './components/MigrationInterfaceMappings': { MigrationInterfaceMappings: 'Interfaces' },
+  })
+  const props = { preview: { source_digest: 'source', source_evidence: {} }, vendor: 'fortigate', stage: 'place', onDecisionDocument: (value) => documents.push(value) }
+  let tree = await harness.render(props)
+  elements(tree).find((node) => node.type === 'Queues').props.setSelectedGroupKey('root-port')
+  elements(tree).find((node) => node.type === 'Queues').props.setDrafts({ 'root-port': ' ethernet1/1 ', 'blue-port': 'ethernet1/2', 'root-zone': ' ' })
+  tree = await harness.render(props)
+  assert.equal(documents.at(-1), null)
+  assert.ok(saves.some((save) => save.artifact === null))
+  assert.equal(calls.length, 1)
+  await elements(tree).find((node) => node.type === 'Queues').props.updateGroup(group)
+  tree = await harness.render(props)
+  assert.equal(calls.length, 1)
+  const preview = elements(tree).find((node) => node.props['aria-label'] === 'Bulk proposal review')
+  assert.equal(elements(preview).filter((node) => node.type === 'li').length, 3)
+  assert.ok(elements(preview).some((node) => node.type === 'summary' && node.props.children === 'Review direct dependents'))
+  await elements(tree).find((node) => node.type === 'button' && node.props.children === 'Validate staged changes').props.onClick()
+  tree = await harness.render(props)
+  assert.deepEqual(calls[1].payload.draft_overrides, { 'root-port': 'ethernet1/1', 'blue-port': 'ethernet1/2' })
+  assert.equal(calls.length, 2)
+  assert.equal(elements(tree).find((node) => node.type === 'Queues').props.selectedGroupKey, 'root-port')
+  assert.ok(!documents.at(-1).design_approval)
+  assert.equal(elements(tree).find((node) => node.type === 'Design').props.busy, false)
 })
 
 for (const lateInitial of [false, true]) test(`target upload supersedes initial preparation with initial response ${lateInitial ? 'last' : 'first'}`, async () => {
@@ -493,6 +607,7 @@ test('failed target upload releases the input and ignores the superseded initial
 test('guided mappings use named compact choices, keep evidence closed, and preserve draft saves', async () => {
   const harness = component('../src/features/migration/components/MigrationReviewQueues.tsx', 'MigrationReviewQueues', {
     '../reviewDrafts': drafts, '../../../components/common/tabKeyboard': { tabKeyboard() {} },
+    '../reviewPresentation': presentation,
   })
   const port = { key: 'port', source_vdom: 'root', source_name: 'wan1', source_kind: 'interface', target_field: 'target_interface', mode: 'REQUIRED' }
   const zone = { ...port, key: 'zone', target_field: 'target_zone' }
@@ -512,22 +627,56 @@ test('guided mappings use named compact choices, keep evidence closed, and prese
   assert.ok(nodes.some((node) => node.type === 'p' && String(node.props.children).includes('below before completing')))
   assert.ok(nodes.filter((node) => node.type === 'details').every((node) => !node.props.open))
   for (const value of ['ethernet1/2', 'ethernet1/3', 'duplicate']) assert.ok(nodes.filter((node) => node.type === 'option' && node.props.value === value).every((node) => node.props.disabled))
-  assert.equal(nodes.find((node) => node.type === 'button' && node.props.className === 'primary-button').props.disabled, true)
+  assert.equal(nodes.find((node) => node.type === 'button' && node.props.children === 'Review staged changes').props.disabled, false)
   await nodes.find((node) => node.type === 'button' && node.props.children === 'Save draft').props.onClick()
-  assert.equal(saved, 1)
+  assert.equal(saved, 0, 'Save draft must stay local even when fields are incomplete')
   choice('target_interface').props.onChange({ target: { value: 'ethernet1/1' } })
   nodes = await render()
   choice('target_zone').props.onChange({ target: { value: 'WAN' } })
   nodes = await render()
   assert.deepEqual(values, { port: 'ethernet1/1', zone: 'WAN' })
-  assert.equal(nodes.find((node) => node.type === 'button' && node.props.className === 'primary-button').props.disabled, false)
+  assert.ok(nodes.some((node) => node.type === 'p' && node.props.children === 'Staged change — needs validation.'))
+  assert.equal(nodes.find((node) => node.type === 'button' && node.props.children === 'Review staged changes').props.disabled, false)
   choice('target_zone').props.onChange({ target: { value: '__custom__' } })
   nodes = await render()
   const custom = nodes.find((node) => node.type === 'input' && node.props['aria-label'] === 'Custom target_zone for root / wan1')
   assert.ok(custom)
   custom.props.onChange({ target: { value: 'new-zone' } })
   nodes = await render()
-  await nodes.find((node) => node.type === 'button' && node.props.className === 'primary-button').props.onClick()
+  await nodes.find((node) => node.type === 'button' && node.props.children === 'Review staged changes').props.onClick()
   assert.deepEqual(values, { port: 'ethernet1/1', zone: 'new-zone' })
-  assert.equal(saved, 2)
+  assert.equal(saved, 1)
+  nodes = elements(await harness.render({ ...props, drafts: values, proposals: [
+    { decision_key: 'port', proposed_value: 'ethernet1/1', status: 'READY', dependencies: [] },
+    { decision_key: 'zone', proposed_value: 'new-zone', status: 'READY', dependencies: ['port'] },
+  ] }))
+  assert.equal(nodes.filter((node) => node.type === 'p' && node.props.children === 'Validated proposal — awaiting approval.').length, 2)
+})
+
+test('approval preview expands prerequisites, shows exact scopes, and leaves manual work excluded', async () => {
+  const calls = []
+  const harness = component('../src/features/migration/components/MigrationDesignReview.tsx', 'MigrationDesignReview', {
+    '../reviewDrafts': drafts, '../reviewPresentation': presentation,
+  })
+  const mapping = { decision_key: 'port', source_vdom: 'root', source_name: 'port1', source_kind: 'interface', target_field: 'target_interface', proposed_value: 'ethernet1/1', target_scope: 'vsys1', operation: 'CONFIGURE', status: 'READY', dependencies: [], blocking_reasons: [] }
+  const config = { group_key: 'vlan', source_vdom: 'root', source_name: 'vlan10', source_kind: 'interface', family: 'interface', target_name: 'ethernet1/1.10', target_scope: 'vsys1', operation: 'CREATE', status: 'READY', dependencies: ['port'], blocking_reasons: [], configuration: { vlan_tag: 10 } }
+  const manual = { ...config, group_key: 'vpn', status: 'UNSUPPORTED', operation: null, family: 'VPN' }
+  const props = { draft: { decisions: [mapping], configuration: [config, manual], findings: [] }, approvedItems: [], busy: false, onApprove: (keys) => calls.push(keys) }
+  let tree = await harness.render(props)
+  assert.equal(elements(tree).find((node) => node.type === 'select' && node.props.value === 'READY').props.value, 'READY')
+  const configInput = elements(tree).find((node) => node.type === 'article' && node.key === 'vlan')
+  elements(configInput).find((node) => node.type === 'input').props.onChange({ target: { checked: true } })
+  tree = await harness.render(props)
+  elements(tree).find((node) => node.type === 'button' && node.props.children === 'Review selected items and prerequisites').props.onClick()
+  tree = await harness.render(props)
+  const preview = elements(tree).find((node) => node.props['aria-label'] === 'Approval preview')
+  const list = elements(preview).find((node) => node.props.items)
+  assert.deepEqual(list.props.items, ['vlan', 'port'])
+  assert.ok(JSON.stringify(list.props.render('vlan')).includes('vsys1'))
+  assert.ok(JSON.stringify(list.props.render('vlan')).includes('vlan tag: 10'))
+  elements(preview).find((node) => node.type === 'button' && node.props.children === 'Approve selected changes').props.onClick()
+  assert.deepEqual(calls, [['vlan', 'port']])
+  assert.deepEqual(drafts.draftDependencies([mapping, config], ['vlan'], ['port']), ['vlan'])
+  tree = await harness.render({ ...props, draft: { ...props.draft, decisions: [{ ...mapping, status: 'NEEDS_INPUT' }] } })
+  assert.equal(elements(tree).find((node) => node.type === 'button' && node.props.children === 'Approve selected changes').props.disabled, true)
 })

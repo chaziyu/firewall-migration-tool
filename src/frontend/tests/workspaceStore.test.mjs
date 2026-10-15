@@ -103,3 +103,14 @@ test('role and decision changes invalidate deterministic state without persisten
   assert.equal(workspace().artifact, null)
   assert.equal(saved, undefined)
 })
+
+test('switching workflow mode revokes approval and artifacts without persisting source evidence', async () => {
+  await clearWorkspace()
+  await saveWorkspace({ workflowMode: 'offline', decisionDocument: { design_approval: { signature: 'old' } },
+    deterministicDraft: { digest: 'old' }, artifact: { artifact_id: 'old' } })
+  await saveWorkspace({ workflowMode: 'destination' })
+  assert.equal(workspace().artifact, null)
+  assert.equal(workspace().deterministicDraft, null)
+  assert.equal(workspace().decisionDocument, null)
+  assert.equal(saved, undefined)
+})

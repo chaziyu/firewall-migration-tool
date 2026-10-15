@@ -43,7 +43,7 @@ export function MigrationWorkflow({ preview, decisionDocument, targetSource, tar
     setBusy(true); setError(null); setStatus('Building migration plan…'); setSessionId(''); setCandidateValidated(false)
     setActivityLog((lines) => [...lines, '[PLAN] Building a plan from the current confirmed decisions.'])
     try {
-      const result = await buildPlan(preview.source_evidence!, decisionDocument, targetSource, targetDevice || undefined)
+      const result = await buildPlan(preview.source_evidence!, decisionDocument, targetSource, targetDevice || undefined, workspace().workflowMode ?? 'offline')
       if (request !== buildRequest.current) return
       setArtifact(result)
       await saveWorkspace({ artifact: result })
@@ -182,14 +182,15 @@ export function MigrationWorkflow({ preview, decisionDocument, targetSource, tar
   }
 
   return activeSection === 'plan' ? <section className="panel migration-workflow" aria-labelledby="migration-title">
-    <h2 id="migration-title">Export or deploy</h2>
+    <h2 id="migration-title">Export</h2>
     <p>Approval generates commands. Retry generation here if the build fails. Source, target evidence or mapping edits revoke the previous artifact.</p>
-    <Button disabled={busy || !decisionDocument || !decisionDocument.design_approval} onClick={() => void generatePlan()}>{error ? 'Retry generation with current approval' : partial ? 'Build approved partial plan' : 'Build approved artifact'}</Button>
+    {!artifact && <Button disabled={busy || !decisionDocument || !decisionDocument.design_approval} onClick={() => void generatePlan()}>{error ? 'Retry generation with current approval' : partial ? 'Build approved partial plan' : 'Build approved artifact'}</Button>}
     {(!decisionDocument?.design_approval || (!artifact && error)) && <Button onClick={() => onReviewDecision('')}>Review and approve design</Button>}
     {status && <p role="status" aria-live="polite">{status}</p>}
     {artifact && <div className="artifact-summary">
       <h3>Approved migration changes</h3>
-      <p><strong>{artifact.plan_status === 'READY_NO_CHANGES' ? 'No changes needed' : partial ? 'Partial export' : 'Ready for export'}</strong></p><p>Candidate preparation: {artifact.report.deployment_eligibility?.eligible ? 'Eligible — live preflight still required' : artifact.report.deployment_eligibility?.reason || 'Eligibility unverified'}</p>
+      <p><strong>{artifact.plan_status === 'READY_NO_CHANGES' ? 'No changes needed' : artifact.plan_status === 'NEEDS_MAPPING' ? 'Needs mapping' : partial ? 'Partial export' : 'Ready for export'}</strong></p>
+      {artifact.report.workflow_mode === 'OFFLINE_EXPORT' ? <p>Destination unverified. Check destination collisions, hardware compatibility and licensing before applying these commands.</p> : <p>Candidate preparation: {artifact.report.deployment_eligibility?.eligible ? 'Eligible — live preflight still required' : artifact.report.deployment_eligibility?.reason || 'Eligibility unverified'}</p>}
       <p>{artifact.render_summary.create || 0} to create · {artifact.render_summary.configure || 0} to configure · {artifact.render_summary.reuse || 0} to reuse · {artifact.render_summary.blocked || 0} blocked · {artifact.artifact.command_count} commands</p>
       {partial && <p className="error-banner" role="status">Partial export: blocked and unsupported work is excluded. This artifact is not deployment-ready.</p>}
       {noTrafficRules && <p role="status">No security policies, NAT rules or static routes are included. This export contains supporting configuration only.</p>}
@@ -202,7 +203,7 @@ export function MigrationWorkflow({ preview, decisionDocument, targetSource, tar
         {artifact.plan_status === 'NEEDS_MAPPING' && <Button onClick={() => onReviewDecision(String(decisionDocument?.decisions.find((item) => item.mode !== 'AUTO' && item.mode !== 'UNSUPPORTED' && item.review_state !== 'CONFIRMED')?.key ?? artifact.support_guidance?.find((item) => item.decision_key)?.decision_key ?? ''))}>Review required mappings</Button>}
       </div>}
       <div className="action-row"><Button disabled={busy || (!artifact.artifact.command_count && artifact.plan_status !== 'READY_NO_CHANGES')} onClick={() => void saveArtifact('bundle')}>{partial ? 'Download partial bundle' : 'Download migration bundle'}</Button><Button disabled={busy || !artifact.artifact.command_count} onClick={() => void saveArtifact('commands')}>{partial ? 'Download partial .set' : 'Download .set'}</Button></div>
-      <Button className="text-button" onClick={() => onViewChange('live')}>Open live migration</Button>
+      {artifact.report.workflow_mode !== 'OFFLINE_EXPORT' && <Button className="text-button" onClick={() => onViewChange('live')}>Open live migration</Button>}
     </div>}
     {error && <ErrorBanner message={error} />}
   </section> : <>
@@ -218,6 +219,7 @@ export function MigrationWorkflow({ preview, decisionDocument, targetSource, tar
     </section>
     <section className="panel" aria-labelledby="deployment-title">
       <h2 id="deployment-title">Review &amp; deploy</h2>
+      <p>Candidate preparation requires actual destination XML, a selected device and serial, an approved baseline, and a clean candidate. Verify hardware capacity and licensing before deployment.</p>
       <p aria-live="polite">{artifact && decisionDocument ? `${artifact.artifact.command_count} reviewed commands · ${artifact.plan_status} · ${sessionId ? 'Candidate session active' : 'No deployment session'}` : 'No current reviewed artifact. Build and review a migration plan first.'}</p>
       {artifact && artifact.report.deployment_eligibility?.eligible !== true && <p role="status">{artifact.report.deployment_eligibility?.reason || 'Build a current artifact to check candidate deployment eligibility.'}</p>}
       {status && <p role="status" aria-live="polite">{status}</p>}

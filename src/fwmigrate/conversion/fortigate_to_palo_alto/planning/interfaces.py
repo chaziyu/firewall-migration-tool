@@ -83,10 +83,16 @@ def plan_interfaces(source: Any, options: Any) -> tuple[PlannedInterface, ...]:
                 blockers.append("VLAN interface has no explicit VLAN ID")
             else:
                 tag = item.vlanid
+                if not 1 <= tag <= 4094:
+                    blockers.append("VLAN tag must be between 1 and 4094")
             if parent_target and not target.startswith(f"{parent_target}."):
                 blockers.append(
                     f"target subinterface {target!r} is not under mapped parent {parent_target!r}"
                 )
+            elif parent_target:
+                suffix = target[len(parent_target) + 1:]
+                if not re.fullmatch(r"[0-9]+", suffix) or not 1 <= int(suffix) <= 9999:
+                    blockers.append("target subinterface identifier must be between 1 and 9999")
             interface_family = "ethernet"
         else:
             if item.interface:

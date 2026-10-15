@@ -93,6 +93,8 @@ class _TargetEvidenceContext:
 
 
 def _target_evidence(payload):
+    if draft_context('', workflow_mode=payload.get('workflow_mode'))['workflow_mode'] == 'OFFLINE_EXPORT':
+        return None
     if not payload.get('target_source') and not request.files.get('target_file'):
         return None
     entry = analyze_request_source(payload, 'palo_alto', target=True)
@@ -171,12 +173,13 @@ def register_migration_routes(
         verify_envelope(approval, signing_key)
         if approval.get('envelope_type') != 'pan_design_approval':
             raise ValueError('A signed design approval is required')
-        target_context = _target_evidence(payload)
         bound = approval['context']
+        target_context = _target_evidence({**payload, 'workflow_mode': payload.get('workflow_mode', bound.get('workflow_mode'))})
         context = draft_context(entry.source_digest, target_context.metadata if target_context else None,
             payload.get('reference_role', bound['reference_role']),
             target_context.selected_device if target_context else None,
-            payload.get('target_intent', bound['intent']))
+            payload.get('target_intent', bound['intent']),
+            payload.get('workflow_mode', bound.get('workflow_mode')))
         context['overrides'] = payload.get('draft_overrides', bound.get('overrides', {}))
         if 'service_names' in bound or 'service_name_overrides' in payload:
             context['service_names'] = payload.get('service_name_overrides', bound.get('service_names', {}))
@@ -197,7 +200,8 @@ def register_migration_routes(
         bound = (approval or {}).get('context', {})
         payload = {**payload, 'decision_document': document,
                    '_deterministic_draft': True,
-                   'reference_role': payload.get('reference_role', bound.get('reference_role'))}
+                   'reference_role': payload.get('reference_role', bound.get('reference_role')),
+                   'workflow_mode': payload.get('workflow_mode', bound.get('workflow_mode'))}
         state = _build_migration_review_state(entry, payload)
         target_context = state['target_context']
         draft = build_deterministic_draft(state['analysis'].extracted.config, state['analysis'].derived,
@@ -208,7 +212,8 @@ def register_migration_routes(
             reference_role=payload.get('reference_role'),
             intent=payload.get('target_intent', bound.get('intent')),
             overrides=payload.get('draft_overrides', bound.get('overrides')),
-            service_names=payload.get('service_name_overrides', bound.get('service_names')))
+            service_names=payload.get('service_name_overrides', bound.get('service_names')),
+            workflow_mode=payload.get('workflow_mode'))
         return state, draft, approval
 
     def _project_values(payload, *, importing=False):
@@ -712,7 +717,7 @@ def register_migration_routes(
                 raise ValueError('Review and approve the deterministic draft before building an artifact')
             decision_set = load_decision_document(serialized, entry.source_digest)
 
-            target_context = _target_evidence(payload)
+            target_context = _target_evidence({**payload, 'workflow_mode': payload.get('workflow_mode', design_approval['context']['workflow_mode'])})
             target_evidence_changed = target_evidence_has_changed((serialized.get('target_evidence') if isinstance(serialized, dict) else None), (target_context.metadata if target_context else None))
             target = target_context.analysis if target_context else None
             target_device = target_context.selected_device if target_context else None
@@ -735,6 +740,7 @@ def register_migration_routes(
                 planner=migration_planner_registry.get(source_vendor, target_vendor),
                 target_object_reuse_classifier=object_reuse_classifier,
                 approved_item_keys=set(design_approval['configuration']),
+                workflow_mode=design_approval['context']['workflow_mode'],
             )
             validate_approved_plan(result.plan, design_approval)
             target_evidence_changed = target_evidence_changed or bool(result.invalidated_target_decisions)
@@ -750,6 +756,7 @@ def register_migration_routes(
                 'source': {'vendor': 'fortigate', 'digest': entry.source_digest},
                 'target_evidence': safe_target_evidence,
                 'approved_design_digest': design_approval['draft_digest'],
+                'workflow_mode': design_approval['context']['workflow_mode'],
                 'destination_verified': bool(design_approval['context']['reference_role'] == 'DESTINATION'
                                              and target is not None and target_device),
                 'review': {
@@ -766,7 +773,8 @@ def register_migration_routes(
                 },
             })
             plan_status = result.artifact_status
-            if not rendered.report['destination_verified']:
+            workflow_mode = design_approval['context']['workflow_mode']
+            if workflow_mode != 'OFFLINE_EXPORT' and not rendered.report['destination_verified']:
                 plan_status = 'PARTIAL'
                 rendered = replace(rendered, report={**rendered.report, 'plan_status': plan_status})
             try:
@@ -776,8 +784,12 @@ def register_migration_routes(
                 deployment_eligibility = {'eligible': False, 'reason': str(exc)}
             rendered = replace(rendered, report={**rendered.report, 'deployment_eligibility': deployment_eligibility,
                 'readiness': {'approval': {'current': True, 'expires_at': design_approval['expires_at']},
-                    'export': {'status': 'NO_CHANGES' if plan_status == 'READY_NO_CHANGES' else 'READY' if plan_status == 'READY' else 'PARTIAL',
+                    'export': {'status': 'NO_CHANGES' if plan_status == 'READY_NO_CHANGES' else plan_status,
                                'command_count': len(rendered.commands)},
+                    'migration': {'complete': plan_status in {'READY', 'READY_NO_CHANGES'}},
+                    'destination': {'verified': rendered.report['destination_verified'],
+                        'collisions': 'ASSESSED' if rendered.report['destination_verified'] else 'UNVERIFIED',
+                        'hardware_compatibility': 'UNVERIFIED', 'licensing': 'UNVERIFIED'},
                     'deployment': deployment_eligibility},
                 'issues': [item.to_dict() for item in result.support_guidance]})
             artifact_id = uuid_factory().hex

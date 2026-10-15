@@ -22,7 +22,14 @@ from ..recommendations.support_guidance import _warning_guidance
 from ..options import PANMigrationOptions
 
 
-def draft_context(source_digest, reference=None, reference_role=None, target_device=None, intent=None):
+def draft_context(source_digest, reference=None, reference_role=None, target_device=None, intent=None,
+                  workflow_mode=None):
+    mode = "DESTINATION_AWARE" if workflow_mode is None else workflow_mode
+    if not isinstance(mode, str):
+        raise ValueError("workflow_mode must be OFFLINE_EXPORT or DESTINATION_AWARE")
+    mode = {"offline": "OFFLINE_EXPORT", "destination": "DESTINATION_AWARE"}.get(mode, mode)
+    if mode not in {"OFFLINE_EXPORT", "DESTINATION_AWARE"}:
+        raise ValueError("workflow_mode must be OFFLINE_EXPORT or DESTINATION_AWARE")
     role = reference_role or ("DESTINATION" if reference else None)
     if role not in {None, "DESTINATION", "TEMPLATE"}:
         raise ValueError("reference_role must be DESTINATION, TEMPLATE, or null")
@@ -30,7 +37,7 @@ def draft_context(source_digest, reference=None, reference_role=None, target_dev
             "reference_role": role, "target_device": target_device, "target_serial": (reference or {}).get("serial"),
             "baseline_sha256": (reference or {}).get("baseline_sha256"),
             "baseline_format": (reference or {}).get("baseline_format"),
-            "intent": parse_target_intent(intent), "schema_version": 1}
+            "intent": parse_target_intent(intent), "workflow_mode": mode, "schema_version": 1}
 
 
 def _intent_values(context, decisions):
@@ -54,8 +61,10 @@ def _intent_values(context, decisions):
 
 def build_deterministic_draft(config, derived, decisions, *, source_digest, target=None,
                               target_device=None, reference=None, reference_role=None,
-                              intent=None, overrides=None, service_names=None):
-    context = draft_context(source_digest, reference, reference_role, target_device, intent)
+                              intent=None, overrides=None, service_names=None, workflow_mode=None):
+    context = draft_context(source_digest, reference, reference_role, target_device, intent, workflow_mode)
+    if context["workflow_mode"] == "OFFLINE_EXPORT" and (reference or target is not None or target_device):
+        raise ValueError("Offline export cannot use destination or template evidence")
     overrides = overrides or {}
     by_key = {item.key: item for item in decisions.decisions}
     if not isinstance(overrides, dict) or set(overrides) - set(by_key):
@@ -96,6 +105,7 @@ def build_deterministic_draft(config, derived, decisions, *, source_digest, targ
     approved = {item.key for item in decisions.decisions if item.value and
                 (item.review_state is PANDecisionReviewState.CONFIRMED or item.mode is PANDecisionMode.AUTO)}
     values.update({key: by_key[key].value for key in approved if key not in explicit})
+    vdoms = sorted({item.source_vdom for item in decisions.decisions})
     destination = target if context["reference_role"] == "DESTINATION" and target_device else None
     evidence = {key: ["Explicit engineer allocation" if key in explicit else "Existing engineer decision"] for key in values}
     # Draft parents unlock evidence discovery; authoritative decisions never change.
@@ -124,7 +134,10 @@ def build_deterministic_draft(config, derived, decisions, *, source_digest, targ
                 values[key] = compatible[0]["value"]
                 evidence[key] = list(compatible[0].get("strong_evidence", ())) or ["Unique reference scope"]
                 continue
-            if item.target_field == "virtual_router":
+            if item.target_field == "vsys" and context["workflow_mode"] == "OFFLINE_EXPORT":
+                values[key] = f"vsys{vdoms.index(item.source_vdom) + 1}"
+                evidence[key] = ["Proposed VDOM ownership; engineer must confirm the target VSYS"]
+            elif item.target_field == "virtual_router":
                 values[key] = "vr-" + item.source_vdom
                 evidence[key] = ["Source-derived virtual-router name"]
             elif item.target_field == "target_zone":
@@ -138,7 +151,7 @@ def build_deterministic_draft(config, derived, decisions, *, source_digest, targ
                 parent = values.get(make_decision_key(item.source_vdom, "interface", source.interface, "target_interface")) if source and source.interface else None
                 if source and source.vlanid is not None and parent and re.fullmatch(r"ethernet\d+/\d+", parent):
                     values[key] = f"{parent}.{source.vlanid}"
-                    evidence[key] = ["Source VLAN tag and proposed parent allocation"]
+                    evidence[key] = ["Proposed subinterface identifier using the VLAN tag as a suffix; identifier and tag are independent"]
         if previous == values:
             break
     provisional = PANMigrationDecisionSet(tuple(replace(item, value=values.get(item.key),
@@ -152,7 +165,7 @@ def build_deterministic_draft(config, derived, decisions, *, source_digest, targ
         plan = FortiGateToPaloAltoPlanner().plan(config, derived,
             replace(provisional.to_options(), service_names=service_names), include_configuration=True)
     # Discover additive deltas using proposed values, never the executable pipeline.
-    classifications = classify_target_object_reuse(plan, destination, target_device, allow_additive=True)
+    classifications = classify_target_object_reuse(plan, destination, target_device, allow_additive=True) if destination is not None else ()
     operations = {}
     classification_by_source = {(row["source_vdom"], row.get("source_kind"), row["source_name"], row["family"]): row
                                 for row in classifications}
@@ -179,6 +192,15 @@ def build_deterministic_draft(config, derived, decisions, *, source_digest, targ
         "target_name": row.get("target_name"), "evidence": row.get("evidence", [])}
         for row in classifications if row.get("status") == "ORDER_UNVERIFIED")
     decision_blockers = {key: [] for key in by_key}
+    if context["workflow_mode"] == "OFFLINE_EXPORT":
+        ownership = {}
+        for key, item in by_key.items():
+            if item.target_field in {"vsys", "virtual_router"} and values.get(key):
+                ownership.setdefault((item.target_field, values[key]), []).append(key)
+        for keys in ownership.values():
+            if len(keys) > 1:
+                for key in keys:
+                    decision_blockers[key].append("Conflicting VDOM ownership; allocate distinct target scopes")
     for finding in target_findings:
         if finding.severity == "error":
             decision_blockers[finding.decision_key].append(finding.message)
@@ -187,6 +209,9 @@ def build_deterministic_draft(config, derived, decisions, *, source_digest, targ
         if value and item.target_field == "target_zone":
             if issue := zone_name_issue(value):
                 decision_blockers[key].append(issue)
+        elif value and item.target_field == "virtual_router":
+            if len(value) > 31 or not re.fullmatch(r"[A-Za-z0-9_ -]+", value):
+                decision_blockers[key].append("Virtual-router name must contain 1 to 31 letters, numbers, spaces, hyphens or underscores")
         elif value and (len(value) > 63 or not re.fullmatch(r"[A-Za-z0-9_.:/-]+", value)):
             decision_blockers[key].append("Target name is invalid or exceeds 63 characters")
         classification = classification_by_source.get((item.source_vdom, item.source_kind, item.source_name,
@@ -214,6 +239,11 @@ def build_deterministic_draft(config, derived, decisions, *, source_digest, targ
             parents_by_item.setdefault(child, []).append("item:" + parent)
     dispositions, blockers = assess_target_plan(plan, classifications, target_findings, provisional, index)
     validation = validate_plan(plan)
+    naming_issues_by_source = {}
+    for issue in validation.issues:
+        if issue.code.startswith("duplicate_target") or issue.code == "invalid_target_object_name":
+            ref = issue.source
+            naming_issues_by_source.setdefault((ref.source_vdom or "root", ref.source_kind, ref.source_name), []).append(issue.message)
     configuration = []
     # Planned placeholders may omit unresolved target names. Keep source dependencies visible.
     source_refs = {}
@@ -241,6 +271,8 @@ def build_deterministic_draft(config, derived, decisions, *, source_digest, targ
         required = list(dict.fromkeys(required))
         item_dependencies = parents_by_item.get(key, [])
         reasons = list(item.warnings) if item.status.value != "SUPPORTED" else []
+        naming_issues = naming_issues_by_source.get((item.source_vdom or "root", item.source_kind, item.source_name), ())
+        reasons.extend(naming_issues)
         reasons.extend(blockers.get(key, ()))
         if any(rows[parent].status != "READY" for parent in required if parent in rows):
             reasons.append("Resolve the related mapping decisions")
@@ -257,7 +289,7 @@ def build_deterministic_draft(config, derived, decisions, *, source_digest, targ
             "operation": operation if operation != "BLOCK" else None,
             "status": "READY" if valid and operation != "BLOCK" and not reasons else
                 "UNSUPPORTED" if item.status.value == "UNSUPPORTED" or manual else
-                "CONFLICT" if any(code.startswith("TARGET_") for code in blockers.get(key, ())) else "NEEDS_INPUT",
+                "CONFLICT" if naming_issues or any(code.startswith("TARGET_") for code in blockers.get(key, ())) else "NEEDS_INPUT",
             "dependencies": list(required) + item_dependencies, "blocking_reasons": reasons,
             "configuration": asdict(item), "causes": causes})
         comparison = classification_by_source.get((item.source_vdom or "root", item.source_kind, item.source_name, item.source_object_type))

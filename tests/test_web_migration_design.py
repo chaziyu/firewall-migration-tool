@@ -122,6 +122,225 @@ def setup(target=TARGET, role='DESTINATION'):
     return client, payload
 
 
+def test_offline_source_upload_approval_and_identical_exports(monkeypatch):
+    import hashlib
+    import zipfile
+    import fwmigrate.web as web
+    from tests.test_web_candidate_sessions import CREDS
+
+    client, payload = setup(None)
+    payload['workflow_mode'] = 'OFFLINE_EXPORT'
+    data, payload = allocate(client, payload)
+    assert data['draft']['context']['workflow_mode'] == 'OFFLINE_EXPORT'
+    assert not data['draft']['destination_verified']
+    assert all(row['review_state'] == 'PENDING' for row in data['decisions']['decisions'])
+    assert not any(row['operation'] in {'REUSE', 'CONFIGURE'} for row in data['draft']['decisions'])
+    assert client.post('/api/migrate', json=payload).status_code == 400
+    approved = approve(client, payload, data)
+    assert approved.status_code == 200, approved.get_json()
+    payload['decision_document'] = approved.get_json()['decision_document']
+    response = client.post('/api/migrate', json=payload)
+    assert response.status_code == 200, response.get_json()
+    plan = response.get_json()
+    assert plan['plan_status'] == 'READY'
+    assert plan['report']['readiness']['migration']['complete']
+    assert not plan['report']['destination_verified']
+    assert not plan['report']['deployment_eligibility']['eligible']
+    assert plan['target_object_reuse'] == []
+    assert any('units ethernet1/1.10 tag 10' in command for command in plan['commands'])
+    artifact = plan['artifact']
+    request = {'source': payload['source'], 'artifact': artifact}
+    preview = client.post('/api/migration/command-preview', json=request)
+    download = client.post('/api/migration/download', json=request)
+    bundle = client.post('/api/migration/bundle', json=request)
+    assert preview.status_code == download.status_code == bundle.status_code == 200
+    expected = '\n'.join(plan['commands']).encode()
+    assert download.data == expected
+    assert hashlib.sha256(expected).hexdigest() == artifact['command_sha256']
+    assert preview.get_json()['commands'] == plan['commands']
+    with zipfile.ZipFile(io.BytesIO(bundle.data)) as archive:
+        commands = next(name for name in archive.namelist() if name.endswith('.set'))
+        assert archive.read(commands) == expected
+    monkeypatch.setattr(web, 'PANSSHDeployer', lambda *_: pytest.fail('Offline artifacts must not connect'))
+    for endpoint in ('deploy', 'validate-candidate', 'commit'):
+        assert client.post('/api/' + endpoint, json={**CREDS, 'artifact': artifact}).status_code == 400
+
+
+@pytest.mark.parametrize('change', ['mode', 'source', 'mapping', 'configuration'])
+def test_offline_approval_rejects_changed_context(change):
+    client, payload = setup(None)
+    payload['workflow_mode'] = 'OFFLINE_EXPORT'
+    data, payload = allocate(client, payload)
+    payload['decision_document'] = approve(client, payload, data).get_json()['decision_document']
+    if change == 'mode':
+        payload['workflow_mode'] = 'DESTINATION_AWARE'
+    elif change == 'source':
+        payload['source'] = {**payload['source'], 'source_text': SOURCE.replace('192.0.2.0', '203.0.113.0')}
+    elif change == 'mapping':
+        payload['draft_overrides'] = {key: 'ethernet1/2' for key in payload['draft_overrides']}
+    else:
+        payload['service_name_overrides'] = {'root': {'new': 'changed'}}
+    assert client.post('/api/migrate', json=payload).status_code == 400
+
+
+def test_offline_unallocated_ports_allow_independent_objects_and_stay_incomplete():
+    client, payload = setup(None)
+    data, payload = prepare(client, {**payload, 'workflow_mode': 'OFFLINE_EXPORT'})
+    port = next(row for row in data['draft']['decisions'] if row['source_name'] == 'port1'
+                and row['target_field'] == 'target_interface')
+    assert port['proposed_value'] is None and port['status'] == 'NEEDS_INPUT'
+    assert next(row for row in data['draft']['configuration'] if row['family'] == 'address')['status'] == 'READY'
+    selected = [row['decision_key'] for row in data['draft']['decisions'] if row['target_field'] == 'vsys']
+    selected += [row['group_key'] for row in data['draft']['configuration'] if row['family'] == 'address']
+    payload['decision_document'] = approve(client, payload, data, selected).get_json()['decision_document']
+    response = client.post('/api/migrate', json=payload)
+    assert response.status_code == 200, response.get_json()
+    plan = response.get_json()
+    assert plan['plan_status'] == 'NEEDS_MAPPING'
+    assert not plan['report']['readiness']['migration']['complete']
+    assert plan['commands'] == ['set vsys vsys1 address net ip-netmask 192.0.2.0/24']
+
+
+def test_offline_does_not_parse_or_discover_supplied_destination(monkeypatch):
+    import fwmigrate.web_api.migration as api
+    client, payload = setup(None)
+    analyze = api.analyze_request_source
+    def source_only(payload, vendor, **kwargs):
+        assert vendor == 'fortigate'
+        return analyze(payload, vendor, **kwargs)
+    monkeypatch.setattr(api, 'analyze_request_source', source_only)
+    data, _ = prepare(client, {**payload, 'workflow_mode': 'OFFLINE_EXPORT',
+                              'target_source': {'source_text': 'not XML'}, 'target_device': 'unused'})
+    assert not data['draft']['destination_verified']
+    assert data['target_evidence'] is None
+
+
+@pytest.mark.parametrize('offline', [True, False])
+def test_subinterface_identifier_is_independent_of_vlan_tag(offline):
+    client, payload = setup(None if offline else TARGET)
+    if offline:
+        payload['workflow_mode'] = 'OFFLINE_EXPORT'
+    data, payload = allocate(client, payload)
+    vlan = next(row['decision_key'] for row in data['draft']['decisions']
+                if row['source_name'] == 'vlan10' and row['target_field'] == 'target_interface')
+    data, payload = prepare(client, {**payload, 'draft_overrides': {**payload['draft_overrides'], vlan: 'ethernet1/1.200'}})
+    approved = approve(client, payload, data)
+    assert approved.status_code == 200, approved.get_json()
+    plan = client.post('/api/migrate', json={**payload, 'decision_document': approved.get_json()['decision_document']})
+    assert plan.status_code == 200, plan.get_json()
+    assert 'set network interface ethernet ethernet1/1 layer3 units ethernet1/1.200 tag 10' in plan.get_json()['commands']
+
+
+def test_offline_address_service_only_and_unsupported_coverage():
+    client, payload = setup(None)
+    source = '''config firewall address
+ edit Web_Server
+  set subnet 192.0.2.10 255.255.255.255
+ next
+end
+config firewall service custom
+ edit TCP_8443
+  set tcp-portrange 8443
+ next
+end
+'''
+    for unsupported in ('', 'config user local\n edit manual\n set type password\n next\nend\n'):
+        evidence = client.post('/api/preview', data={'source_vendor': 'fortigate',
+            'file': (io.BytesIO((source + unsupported).encode()), 'objects.conf')}).get_json()['source_evidence']
+        data, payload = prepare(client, {'source': evidence, 'workflow_mode': 'OFFLINE_EXPORT'})
+        scope = next(row for row in data['draft']['decisions'] if row['target_field'] == 'vsys')
+        assert scope['proposed_value'] == 'vsys1' and not scope['approved']
+        assert not any(row['target_field'] == 'target_interface' for row in data['draft']['decisions'])
+        approved = approve(client, payload, data)
+        assert approved.status_code == 200, approved.get_json()
+        plan = client.post('/api/migrate', json={**payload, 'decision_document': approved.get_json()['decision_document']}).get_json()
+        assert plan['plan_status'] == ('PARTIAL' if unsupported else 'READY')
+        assert any('address Web_Server ip-netmask' in command for command in plan['commands'])
+        assert any('service TCP_8443 protocol tcp port 8443' in command for command in plan['commands'])
+        if unsupported:
+            assert plan['report']['coverage']['unplanned']
+
+
+@pytest.mark.parametrize('mode', ['', 'unknown', False, [], {}])
+def test_invalid_workflow_mode_is_rejected(mode):
+    client, payload = setup(None)
+    assert client.post('/api/migration/design/prepare', json={**payload, 'workflow_mode': mode}).status_code == 400
+
+
+def test_offline_service_name_collisions_block_approval():
+    client, _ = setup(None)
+    source = '''config firewall service custom
+ edit source-service
+ set tcp-portrange 8443
+ next
+end
+config firewall service group
+ edit bundle
+ set member source-service
+ next
+end
+'''
+    evidence = client.post('/api/preview', data={'source_vendor': 'fortigate',
+        'file': (io.BytesIO(source.encode()), 'services.conf')}).get_json()['source_evidence']
+    data, payload = prepare(client, {'source': evidence, 'workflow_mode': 'OFFLINE_EXPORT',
+        'service_name_overrides': {'root': {'source-service': 'bundle'}}})
+    services = [row for row in data['draft']['configuration'] if row['family'] in {'service', 'service_group'}]
+    assert len(services) == 2 and all(row['status'] == 'CONFLICT' for row in services)
+    assert approve(client, payload, data, [row['group_key'] for row in services]).status_code == 409
+
+
+def test_offline_parent_allocation_unlocks_policy_nat_dhcp_and_routing():
+    client, _ = setup(None)
+    source = SOURCE + '''config firewall policy
+ edit 1
+  set name outbound
+  set srcintf port1
+  set dstintf vlan10
+  set srcaddr all
+  set dstaddr all
+  set service ALL
+  set schedule always
+  set action accept
+  set nat enable
+ next
+end
+config system dhcp server
+ edit 1
+  set interface vlan10
+  set status enable
+  set server-type regular
+  set ip-mode range
+  set default-gateway 198.51.100.1
+  set netmask 255.255.255.0
+  config ip-range
+   edit 1
+    set start-ip 198.51.100.10
+    set end-ip 198.51.100.50
+   next
+  end
+ next
+end
+'''
+    evidence = client.post('/api/preview', data={'source_vendor': 'fortigate',
+        'file': (io.BytesIO(source.encode()), 'forwarding.conf')}).get_json()['source_evidence']
+    data, payload = prepare(client, {'source': evidence, 'workflow_mode': 'OFFLINE_EXPORT'})
+    dependent_families = {'security_rule', 'nat_rule', 'dhcp_server', 'static_route', 'zone'}
+    assert all(row['status'] != 'READY' for row in data['draft']['configuration'] if row['family'] in dependent_families)
+    data, payload = allocate(client, payload)
+    rows = [row for row in data['draft']['configuration'] if row['family'] in dependent_families]
+    assert {row['family'] for row in rows} == dependent_families
+    assert all(row['status'] == 'READY' for row in rows), [(row['family'], row['status'], row['blocking_reasons']) for row in rows]
+    approved = approve(client, payload, data)
+    assert approved.status_code == 200, approved.get_json()
+    response = client.post('/api/migrate', json={**payload, 'decision_document': approved.get_json()['decision_document']})
+    assert response.status_code == 200, response.get_json()
+    plan = response.get_json()
+    assert plan['plan_status'] == 'READY'
+    for section in ('rulebase security rules', 'rulebase nat rules', 'network dhcp interface',
+                    'routing-table ip static-route', 'zone root-'):
+        assert any(section in command for command in plan['commands']), section
+
+
 def prepare(client, payload):
     response = client.post('/api/migration/design/prepare', json=payload)
     assert response.status_code == 200, response.get_json()

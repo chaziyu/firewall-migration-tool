@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { DraftRow, MigrationDraft } from '../types'
 import { draftDependencies, draftRowKey, portExceptionGroups } from '../reviewDrafts'
-import { draftReviewRows, draftStatusCounts } from '../reviewPresentation'
+import { draftReviewRows, draftStatusCounts, taskCategory } from '../reviewPresentation'
 
 export function MigrationDesignReview({ draft, busy, approvedItems, onPrepare, onApprove, onRenameService }: {
   draft: MigrationDraft
@@ -13,7 +13,7 @@ export function MigrationDesignReview({ draft, busy, approvedItems, onPrepare, o
   onRenameService?: (row: DraftRow, name: string) => void
 }) {
   const [selected, setSelected] = useState<string[]>([])
-  const [filter, setFilter] = useState('ACTIONABLE')
+  const [filter, setFilter] = useState('READY')
   const [family, setFamily] = useState('all')
   const [search, setSearch] = useState('')
   const [detailsKey, setDetailsKey] = useState('')
@@ -21,19 +21,21 @@ export function MigrationDesignReview({ draft, busy, approvedItems, onPrepare, o
   const [page, setPage] = useState(1)
   const keyFor = draftRowKey
   const approved = useMemo(() => new Set(approvedItems), [approvedItems])
-  const isApproved = (row: DraftRow) => row.approved || Boolean(row.item_key && approved.has(row.item_key))
+  const isApproved = (row: DraftRow) => row.approved || approved.has(row.item_key || row.decision_key || '')
   const rows = useMemo(() => [...draft.decisions, ...draft.configuration], [draft])
   const byKey = useMemo(() => new Map(rows.map((row) => [draftRowKey(row), row])), [rows])
-  const ready = useMemo(() => rows.filter((row) => row.status === 'READY' && !row.approved && !(row.item_key && approved.has(row.item_key))), [rows, approved])
+  const ready = useMemo(() => rows.filter((row) => row.status === 'READY' && !row.approved && !approved.has(row.item_key || row.decision_key || '')), [rows, approved])
   const portGroups = useMemo(() => portExceptionGroups(rows), [rows])
   const grouped = useMemo(() => new Set([...portGroups.values()].flat().map(draftRowKey)), [portGroups])
-  const filtered = useMemo(() => draftReviewRows(rows, filter, family, search, grouped), [rows, grouped, filter, family, search])
+  const filtered = useMemo(() => draftReviewRows(rows, filter, family, search, grouped, approved)
+    .sort((a, b) => (a.operation || '').localeCompare(b.operation || '') || (a.family || a.source_kind || '').localeCompare(b.family || b.source_kind || '')), [rows, grouped, filter, family, search, approved])
   const mappingCounts = draftStatusCounts(draft.decisions)
   const configurationCounts = draftStatusCounts(draft.configuration)
   const families = [...new Set(rows.map((row) => row.family || row.source_kind))].sort()
   const pages = Math.max(1, Math.ceil(filtered.length / 30))
   const currentPage = Math.min(page, pages)
   const preview = (keys: string[]) => setApprovalPreview(draftDependencies(byKey, keys, approvedItems))
+  const previewKeys = useMemo(() => new Set(approvalPreview), [approvalPreview])
   const approvalBlocked = approvalPreview.some((key) => !byKey.has(key) || (byKey.get(key)?.status !== 'READY' && !isApproved(byKey.get(key)!)))
   return <section aria-label="Deterministic design review" className="review-work-card">
     <h3>Proposed configuration</h3>
@@ -47,12 +49,14 @@ export function MigrationDesignReview({ draft, busy, approvedItems, onPrepare, o
       {(['CREATE', 'CONFIGURE', 'REUSE'] as const).map((operation) => <p key={operation}><strong>{operation === 'CREATE' ? 'Create' : operation === 'CONFIGURE' ? 'Configure' : 'Reuse'}</strong><br />{draft.configuration.filter((row) => row.operation === operation).length}</p>)}
       <p><strong>Blocked</strong><br />{draft.configuration.filter((row) => row.status !== 'READY' && row.status !== 'UNSUPPORTED' && !isApproved(row)).length}</p>
       <p><strong>Manual work</strong><br />{configurationCounts.UNSUPPORTED || 0}</p>
+      <p><strong>Approved</strong><br />{draft.configuration.filter(isApproved).length}</p>
+      <p><strong>Ready for approval</strong><br />{draft.configuration.filter((row) => taskCategory(row, byKey, approved) === 'Ready for review').length}</p>
     </div>
     <div className="migration-toolbar">
-      <button type="button" className="primary-button" disabled={busy || !ready.length} onClick={() => preview(ready.map(keyFor))}>Review ready items ({ready.length})</button>
+      <button type="button" className={approvalPreview.length ? 'secondary-button' : 'primary-button'} disabled={busy || !ready.length} onClick={() => preview(ready.map(keyFor))}>Review ready items ({ready.length})</button>
       <button type="button" disabled={busy || !selected.length} onClick={() => preview(selected)}>Review selected items and prerequisites</button>
       <label className="field">Show proposals<select value={filter} onChange={(event) => { setFilter(event.target.value); setPage(1) }}>
-        <option value="ACTIONABLE">Resolve exceptions first</option><option value="all">All proposals</option><option value="NEEDS_INPUT">Needs decision</option><option value="CONFLICT">Conflicts</option><option value="UNSUPPORTED">Manual work</option><option value="READY">Ready for review</option>
+        <option value="READY">Ready for review</option><option value="APPROVED">Approved</option><option value="BLOCKED">Blocked by prerequisites</option><option value="all">All proposals</option><option value="NEEDS_INPUT">Needs decision</option><option value="CONFLICT">Conflicts</option><option value="UNSUPPORTED">Manual work</option>
       </select></label>
       <label className="field">Family<select value={family} onChange={(event) => { setFamily(event.target.value); setPage(1) }}><option value="all">All families</option>{families.map((value) => <option key={value}>{value}</option>)}</select></label>
       <label className="field">Search proposals<input value={search} onChange={(event) => { setSearch(event.target.value); setPage(1) }} placeholder="Source or target name" /></label>
@@ -60,12 +64,13 @@ export function MigrationDesignReview({ draft, busy, approvedItems, onPrepare, o
     {!!approvalPreview.length && <section className="migration-approval-preview" aria-label="Approval preview">
       <h4>Review {approvalPreview.length} exact proposal groups</h4>
       <p>{approvalPreview.filter((key) => byKey.get(key)?.decision_key).length} mapping decisions · {approvalPreview.filter((key) => !byKey.get(key)?.decision_key).length} configuration items. Prerequisites are included.</p>
+      <p>{rows.filter((row) => !previewKeys.has(keyFor(row)) && !isApproved(row)).length} unselected or unresolved items remain excluded from this approval. Manual work stays excluded from commands.</p>
       <PagedList items={approvalPreview} render={(key) => { const row = byKey.get(key); return row ? <div><p>{row.source_vdom} / {row.source_name} · {row.target_field || row.family} → <strong>{row.proposed_value || row.target_name || 'Unresolved'}</strong> · {row.target_scope || 'Scope unresolved'} · {row.operation || row.status}</p>
         {row.configuration && <><p>{Object.entries(row.configuration).filter(([field, value]) => !['warnings', 'status', 'source_vdom', 'source_kind', 'source_name', 'source_object_type', 'target_vsys', 'target_name'].includes(field) && value != null).map(([field, value]) => `${field.replaceAll('_', ' ')}: ${Array.isArray(value) ? value.join(', ') : typeof value === 'object' ? JSON.stringify(value) : String(value)}`).join(' · ')}</p><LazyDetails summary="Exact configuration values">{() => <pre>{JSON.stringify(row.configuration, null, 2)}</pre>}</LazyDetails></>}
         <p>Prerequisites: {row.dependencies.map((key) => { const dependency = byKey.get(key); return dependency ? `${dependency.source_vdom} / ${dependency.source_name} · ${dependency.target_field || dependency.family}` : 'Unresolved prerequisite' }).join('; ') || 'None'}</p>
       </div> : 'Unresolved prerequisite'  }} />
       {approvalBlocked && <p role="alert">This selection contains unresolved prerequisites. Resolve them before approval.</p>}
-      <button type="button" className="primary-button" disabled={busy || approvalBlocked} onClick={() => onApprove(approvalPreview)}>Approve these changes and generate commands</button>
+      <button type="button" className="primary-button" disabled={busy || approvalBlocked} onClick={() => onApprove(approvalPreview)}>Approve selected changes</button>
       <button type="button" onClick={() => setApprovalPreview([])}>Cancel approval</button>
     </section>}
     <p className="report-count-note">Approval includes the shown values, operations, configuration and prerequisites. Unresolved groups stay blocked.</p>

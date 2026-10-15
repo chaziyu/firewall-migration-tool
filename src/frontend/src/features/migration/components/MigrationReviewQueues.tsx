@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { tabKeyboard } from '../../../components/common/tabKeyboard'
 import type { Decision, ReviewData, ReviewGroup, RuleSuggestion } from '../reviewTypes'
 import type { DraftRow } from '../types'
+import { orderedCandidates, reviewSourceSummary } from '../reviewPresentation'
 
 type RunAction = (action: () => Promise<void>, done?: string) => Promise<void>
 
@@ -114,14 +115,16 @@ export function MigrationReviewQueues({
               const source = decisions.find((item) => item.key === key)
               return prerequisiteGroup && source ? <button key={key} className="text-button review-prerequisite" type="button" onClick={() => { setSearch(''); setVdomFilter('all'); setActiveQueue(prerequisiteGroup.queue); setSelectedGroupKey(prerequisiteGroup.decision_keys[0]); requestAnimationFrame(() => { const input = document.getElementById(`decision-${key}`); if (input) { const details = input.closest('details'); if (details) details.open = true; input.scrollIntoView({ block: 'center' }); input.focus() } }) }}>Resolve prerequisite {source.source_name} · {source.target_field} first</button> : <p key={key}>Prerequisite details unavailable for {key}.</p>
             })}
-            {group.decisions.some((decision) => decision.mode !== 'UNSUPPORTED') && <div className="review-source-summary"><strong>Source configuration</strong><p>{[['IP address', group.source_evidence.source_ip ?? group.source_evidence.source_ip_address], ['Type', group.source_evidence.source_type], ['Parent', group.source_evidence.source_parent], ['VLAN', group.source_evidence.source_vlan]].filter(([, value]) => value !== undefined && value !== null && value !== '').map(([label, value]) => `${label}: ${String(value)}`).join(' · ') || 'IP address, type, parent and VLAN are not explicit in available source evidence.'}</p></div>}
+            {group.decisions.some((decision) => decision.mode !== 'UNSUPPORTED') && <div className="review-source-summary"><strong>Source configuration</strong><p>{reviewSourceSummary(group)}</p></div>}
             {(review.architecture_questions ?? []).filter((question) => question.source_vdom === group.source_vdom && question.source_name === group.source_name).map((question) => <div className="review-work-suggestion" key={`${question.type}:${question.source_name}`}>
               <p>{question.type === 'AGGREGATE_MAPPING' ? `Architecture question: Which PAN aggregate replaces this interface? ${question.affected_count ?? 0} VLAN mappings will be re-evaluated.` : question.type === 'VDOM_CONTEXT' ? 'Architecture question: Choose the target VSYS and virtual router for this VDOM.' : 'Architecture question: Choose the PAN zone for this source zone.'}</p>
-              {question.type === 'VDOM_CONTEXT' ? question.fields?.filter((item) => item.suggested_value).map((item) => <button className="secondary-button" type="button" key={item.key} onClick={() => setDrafts((current) => ({ ...current, [item.key]: item.suggested_value ?? '' }))}>{item.target_field === 'vsys' ? 'VSYS' : 'VR'}: {item.suggested_value}</button>) : (question.candidates ?? []).map((value) => <button className="secondary-button" type="button" key={value} onClick={() => question.decision_key && setDrafts((current) => ({ ...current, [question.decision_key as string]: value }))}>Use {value}</button>)}
+              {question.type === 'VDOM_CONTEXT' ? question.fields?.filter((item) => item.suggested_value).map((item) => <button className="secondary-button" type="button" disabled={busy} key={item.key} onClick={() => setDrafts((current) => ({ ...current, [item.key]: item.suggested_value ?? '' }))}>{item.target_field === 'vsys' ? 'VSYS' : 'VR'}: {item.suggested_value}</button>) : (question.candidates ?? []).map((value) => <button className="secondary-button" type="button" disabled={busy} key={value} onClick={() => question.decision_key && setDrafts((current) => ({ ...current, [question.decision_key as string]: value }))}>Use {value}</button>)}
             </div>)}
             {group.decisions.filter((item) => item.mode !== 'UNSUPPORTED').map((decision) => {
               const value = drafts[decision.key] ?? decision.value ?? decision.suggested_value ?? ''
-              const candidates = group.candidates[decision.key] ?? review.decision_candidates[decision.key] ?? []
+              const proposal = rowsByKey.get(decision.key)
+              const unchanged = value.trim() === (proposal?.proposed_value ?? '')
+              const candidates = orderedCandidates(group.candidates[decision.key] ?? review.decision_candidates[decision.key] ?? [])
               return <div className="review-work-field" key={decision.key}>
                 <label className="field">{decision.target_field.replaceAll('_', ' ')}
                   <select id={`decision-${decision.key}`} aria-label={`${decision.target_field} for ${group.source_vdom} / ${group.source_name}`} disabled={busy} value={customFields[decision.key] ? '__custom__' : value && candidates.filter((candidate) => candidate.value === value).length === 1 ? value : value ? '__custom__' : ''} onChange={(event) => {
@@ -136,7 +139,7 @@ export function MigrationReviewQueues({
                 </label>
                 {(customFields[decision.key] || !candidates.length || (value && !candidates.some((candidate) => candidate.value === value))) && <label className="field">{decision.target_field === 'target_zone' ? 'Proposed zone name' : 'Custom target value'}<input disabled={busy} aria-label={`Custom ${decision.target_field} for ${group.source_vdom} / ${group.source_name}`} value={value} onChange={(event) => setDrafts((current) => ({ ...current, [decision.key]: event.target.value }))} placeholder="Enter target value" /></label>}
                 {decision.target_field === 'target_zone' && value && <p>{candidates.some((candidate) => candidate.value === value) ? 'Use existing zone.' : 'Propose a new zone; requires validation and approval.'}</p>}
-                <p className="review-work-suggestion">{decisionLabel(decision, candidates, group.conflicts?.some((finding) => finding.decision_key === decision.key))}</p>
+                <p className="review-work-suggestion">{!unchanged ? 'Staged change — needs validation.' : proposal?.status === 'READY' && !proposal.approved ? 'Validated proposal — awaiting approval.' : decisionLabel(decision, candidates, group.conflicts?.some((finding) => finding.decision_key === decision.key))}</p>
                 <details className="review-custom-target"><summary>Why these choices?</summary>
                   <p>{decision.reason}{decision.evidence_source ? ` · ${decision.evidence_source}` : ''}{decision.evidence_type ? ` · ${decision.evidence_type}` : ''}</p>
                   {candidates.some((candidate) => candidates.filter((item) => item.value === candidate.value).length > 1) && <p>These options share a value across target scopes. This decision stores the target value only, so it cannot select between those scopes.</p>}
@@ -151,8 +154,7 @@ export function MigrationReviewQueues({
             {group.actions?.map((action) => <div key={`${action.type}:${action.source_key}`}><details><summary>Review member decision scope</summary><p>{group.source_vdom} · {action.source_key} → {action.value}</p><ul>{action.apply_to.map((key) => <li key={key}>{key}</li>)}</ul></details><button className="secondary-button" type="button" disabled={busy} onClick={() => void run(() => applyGroupAction(action))}>Apply {action.value} to {action.apply_to.length} member decisions</button></div>)}
             {(() => {
               const required = group.decisions.filter((item) => item.mode !== 'UNSUPPORTED' && item.mode !== 'AUTO')
-              const incomplete = required.some((item) => !(drafts[item.key] ?? item.value ?? item.suggested_value ?? '').trim())
-              return required.length > 0 && <><p>Saving validates this draft. Approval is a separate step.</p><button className="primary-button" type="button" disabled={busy || incomplete} onClick={() => void run(() => updateGroup(group))}>Save &amp; next</button>{incomplete && <><p>Choose the required target values to continue.</p><button type="button" disabled={busy} onClick={() => void run(() => updateGroup(group))}>Save draft</button></>}</>
+              return required.length > 0 && <><p>Edits are saved locally in this workspace. Blank fields stay unresolved. Validation and approval are separate steps.</p><button className="secondary-button" type="button" disabled={busy} onClick={() => void updateGroup(group)}>Review staged changes</button><button type="button" disabled={busy} onClick={() => setDrafts((current) => ({ ...current }))}>Save draft</button></>
             })()}
           </article>)}
           </div></div>

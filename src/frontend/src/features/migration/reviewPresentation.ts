@@ -1,14 +1,52 @@
-import type { Decision, ReviewGroup } from './reviewTypes'
+import type { Candidate, Decision, DecisionDocument, ReviewGroup } from './reviewTypes'
 import type { DraftRow } from './types'
+
+export const taskCategories = ['Needs decision', 'Ready for review', 'Blocked', 'Approved', 'Manual work'] as const
+
+export function approvedDraftKeys(document: DecisionDocument) {
+  const approval = document.design_approval as { configuration?: Record<string, unknown>; decisions?: Record<string, { review_state?: string; approved_operation?: string | null }> } | undefined
+  return [...Object.keys(approval?.configuration ?? {}), ...Object.entries(approval?.decisions ?? {})
+    .filter(([, row]) => row.review_state === 'CONFIRMED' && row.approved_operation).map(([key]) => key)]
+}
+
+export function taskCategory(row: DraftRow, byKey: Map<string, DraftRow>, approvedItems?: Set<string>): typeof taskCategories[number] {
+  if (row.approved || approvedItems?.has(row.item_key || row.decision_key || '')) return 'Approved'
+  if (row.status === 'UNSUPPORTED') return 'Manual work'
+  if ((row.dependencies ?? []).some((key) => {
+    const parent = byKey.get(key)
+    return !parent || (parent.status !== 'READY' && !parent.approved && !approvedItems?.has(parent.item_key || parent.decision_key || ''))
+  })) return 'Blocked'
+  return row.status === 'READY' ? 'Ready for review' : 'Needs decision'
+}
+
+export function orderedCandidates(candidates: Candidate[]) {
+  const rank = (candidate: Candidate) => candidate.available === false || candidate.contested ? 3
+    : candidate.class === 'STRONG' || candidate.strong_evidence?.length ? 0
+    : candidate.supporting_evidence?.some((fact) => !['INTERFACE_FAMILY_MATCH', 'physical interface family'].includes(fact)) ? 1 : 2
+  return [...candidates].sort((a, b) => rank(a) - rank(b))
+}
+
+export function reviewSourceSummary(group: ReviewGroup) {
+  if (group.source_kind === 'vdom') return 'Choose target VSYS and virtual-router ownership for this VDOM.'
+  if (group.source_kind === 'zone') return `Source zone: ${group.source_name}. Review its explicit member evidence below.`
+  return [['IP address', group.source_evidence.source_ip ?? group.source_evidence.source_ip_address],
+    ['Type', group.source_evidence.source_type], ['Parent', group.source_evidence.source_parent], ['VLAN', group.source_evidence.source_vlan]]
+    .filter(([, value]) => value !== undefined && value !== null && value !== '')
+    .map(([label, value]) => `${label}: ${String(value)}`).join(' · ') || 'No explicit interface details in available source evidence.'
+}
 
 export function draftStatusCounts(rows: DraftRow[]) {
   return rows.reduce((counts, row) => { counts[row.status] = (counts[row.status] ?? 0) + 1; return counts }, {} as Record<string, number>)
 }
 
-export function draftReviewRows(rows: DraftRow[], filter: string, family: string, search: string, grouped: Set<string>) {
+export function draftReviewRows(rows: DraftRow[], filter: string, family: string, search: string, grouped: Set<string>, approvedItems: Set<string> = new Set()) {
   const query = search.trim().toLowerCase()
+  const byKey = new Map(rows.map((row) => [row.decision_key || row.group_key!, row]))
   return rows.filter((row) => (filter === 'all' || (filter === 'ACTIONABLE'
     ? ['NEEDS_INPUT', 'CONFLICT'].includes(row.status) && !grouped.has(row.decision_key || row.group_key!)
+    : filter === 'APPROVED' ? taskCategory(row, byKey, approvedItems) === 'Approved'
+    : filter === 'BLOCKED' ? taskCategory(row, byKey, approvedItems) === 'Blocked'
+    : filter === 'READY' ? taskCategory(row, byKey, approvedItems) === 'Ready for review'
     : row.status === filter)) && (family === 'all' || (row.family || row.source_kind) === family)
     && `${row.source_vdom} ${row.source_name} ${row.target_name || row.proposed_value || ''}`.toLowerCase().includes(query))
 }

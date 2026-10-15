@@ -17,9 +17,12 @@ import { MigrationInterfaceMappings } from './components/MigrationInterfaceMappi
 import { useMigrationReviewActivity } from './hooks/useMigrationReviewActivity'
 import {
   buildBulkPreview,
+  approvedDraftKeys,
   reviewQueueNames,
   reviewSuggestions,
   reviewVdoms,
+  taskCategories,
+  taskCategory,
   visibleReviewDecisions,
   visibleReviewGroups,
 } from './reviewPresentation'
@@ -97,7 +100,7 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
     finishStandaloneAction,
     actionIsCurrent,
     invalidateActions,
-  } = useMigrationReviewActivity({ source, targetSource, targetDevice })
+  } = useMigrationReviewActivity({ source, targetSource, targetDevice, workflowMode })
   const manualToolsRef = useRef<HTMLDetailsElement>(null)
   const bulkMappingsRef = useRef<HTMLDetailsElement>(null)
   const focusNextGroupKey = useRef('')
@@ -107,18 +110,19 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
     updateDrafts(next)
     void saveWorkspace({ proposals: { ...workspace().proposals, ...next } })
     setBulkPreview([])
+    setStatus('Draft saved locally. Validate staged changes before approval.')
     onDecisionDocument?.(null)
     void saveWorkspace({ artifact: null })
   }
 
   async function prepareValues(values: Map<string, string>, serviceNames = deterministicDraft?.context.service_names) {
-    const overrides = { ...deterministicDraft?.context.overrides, ...Object.fromEntries(values) }
+    const overrides = { ...deterministicDraft?.context.overrides, ...Object.fromEntries([...values].filter(([, value]) => value.trim()).map(([key, value]) => [key, value.trim()])) }
     return loadReview(currentDocument(), targetSource, targetDevice, referenceRole, overrides, serviceNames)
   }
 
   async function loadReview(document?: DecisionDocument, targetId = targetSource, device = targetDevice,
                             role = referenceRole, overrides = deterministicDraft?.context.overrides,
-                            serviceNames = deterministicDraft?.context.service_names) {
+                            serviceNames = deterministicDraft?.context.service_names, mode = workflowMode) {
     if (!previewId) return null
     void saveWorkspace({ proposals: { ...workspace().proposals, ...overrides }, serviceNames: serviceNames ?? {} })
     retryReview.current = () => loadReview(document, targetId, device, role, overrides, serviceNames)
@@ -129,6 +133,7 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
       void saveWorkspace({ artifact: null })
       const result = await postJson<ReviewData & { draft: MigrationDraft }>('/api/migration/design/prepare', {
         source,
+        workflow_mode: mode === 'offline' ? 'OFFLINE_EXPORT' : 'DESTINATION_AWARE',
         ...(serviceNames ? { service_name_overrides: serviceNames } : {}),
         target_source: targetId, target_device: device, reference_role: role,
         ...(overrides ? { draft_overrides: overrides } : {}),
@@ -381,49 +386,42 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
   }
 
   async function updateGroup(group: ReviewGroup) {
-    const keys = new Set(group.decision_keys)
-    const values = new Map(decisions.filter((item) => keys.has(item.key) && item.mode !== 'UNSUPPORTED')
-      .map((item) => [item.key, (drafts[item.key] ?? item.value ?? item.suggested_value ?? '').trim()] as const))
+    reviewProposals([...new Set([...group.decision_keys, ...changedMappings.map((row) => row.decision_key!)])],
+      (item) => drafts[item.key] ?? item.value ?? item.suggested_value ?? '')
+  }
+
+  async function validateStagedChanges() {
+    const values = new Map(bulkPreview.map((item) => [item.key, item.value]))
     const result = await prepareValues(values)
     if (!result) return
-    const freshGroup = result.review_groups.find((item) => item.decision_keys.some((key) => group.decision_keys.includes(key)))
-    if (!freshGroup) {
-      setStatus('Proposal saved, but the current mapping is no longer present. Review the refreshed task list.')
-      return
-    }
-    const editable = freshGroup?.decisions.filter((item) => item.mode !== 'UNSUPPORTED' && item.mode !== 'AUTO') ?? []
     const rows = [...result.draft.decisions, ...result.draft.configuration]
-    const unfilled = editable.some((item) => !(rows.find((row) => row.decision_key === item.key)?.proposed_value ?? item.value ?? item.suggested_value ?? '').trim())
-    const conflicts = Boolean(freshGroup?.conflicts?.length)
-    const validated = editable.every((item) => {
-      const row = rows.find((candidate) => candidate.decision_key === item.key)
+    const byKey = new Map(rows.map((row) => [draftRowKey(row), row]))
+    const touchedKeys = result.review_groups.filter((group) => group.decision_keys.some((key) => values.has(key)))
+      .flatMap((group) => group.decisions.filter((item) => item.mode !== 'UNSUPPORTED').map((item) => item.key))
+    const validated = [...new Set([...values.keys(), ...touchedKeys])].every((key) => {
+      const row = byKey.get(key)
       return row && (row.status === 'READY' || row.approved)
     })
-    if (unfilled || conflicts || !validated) {
-      setStatus(unfilled ? 'Proposal saved, but required fields remain.' : conflicts ? 'Proposal saved, but this mapping still has conflicts.' : 'Proposal saved, but server validation still has unresolved prerequisites.')
-      return
-    }
-    setStatus('Proposal saved — awaiting approval.')
+    setStatus(validated ? 'Staged changes validated — awaiting approval.' : 'Draft prepared. Validation findings or unresolved prerequisites remain; review the root tasks.')
+    if (!validated) return
     const ordered = orderReviewGroups(result.review_groups, rows, result.decision_context ?? {})
-    const next = ordered.find((candidate) => reviewGroupActionable(candidate, rows) && !candidate.decision_keys.some((key) => group.decision_keys.includes(key)))
+    const next = ordered.find((candidate) => reviewGroupActionable(candidate, byKey) && !candidate.decision_keys.some((key) => values.has(key))
+      && candidate.decision_keys.some((key) => byKey.get(key)?.status !== 'READY' || !Object.hasOwn(result.draft.context.overrides, key)))
     if (next) {
       focusNextGroupKey.current = next.decision_keys[0]
       setActiveQueue(next.queue)
       setSelectedGroupKey(next.decision_keys[0])
       setSearch('')
       setVdomFilter('all')
-    } else if (!ordered.some((candidate) => candidate.queue !== 'COMPLETE')) {
-      setStatus('Proposal saved — awaiting approval.')
     }
   }
 
   async function applyGroupAction(action: NonNullable<ReviewGroup['actions']>[number]) {
-    if (action.value) await prepareValues(new Map(action.apply_to.map((key) => [key, action.value])))
-    else await loadReview(currentDocument())
+    if (action.value) setDrafts((current) => ({ ...current, ...Object.fromEntries(action.apply_to.map((key) => [key, action.value])) }))
   }
 
   async function applyRuleSuggestion(suggestion: ReviewData['rule_suggestions'][number]) {
-    await prepareValues(new Map(suggestion.apply_to.map((key) => [key, suggestion.target_zone])))
+    setDrafts((current) => ({ ...current, ...Object.fromEntries(suggestion.apply_to.map((key) => [key, suggestion.target_zone])) }))
   }
 
   const decisions = review?.decisions.decisions ?? []
@@ -435,9 +433,15 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
   const visibleDecisions = visibleReviewDecisions(decisions, decisionFilter, evidenceFilter, vdomFilter, pendingOnly, reviewGroups)
   const changedMappings = deterministicDraft?.decisions.filter((row) => row.decision_key && drafts[row.decision_key] !== undefined
     && drafts[row.decision_key].trim() !== (row.proposed_value ?? '')) ?? []
+  const approvedItems = changedMappings.length ? [] : approvedDraftKeys(review?.decision_document ?? {})
+  const approvedKeys = new Set(approvedItems)
+  const stagedKeys = new Set(bulkPreview.map((item) => item.key))
+  const stagedDependents = proposalRows.filter((row) => (row.dependencies ?? []).some((key) => stagedKeys.has(key)))
 
   function reviewProposals(keys: string[], valueFor: (decision: Decision) => string) {
-    setBulkPreview(buildBulkPreview(decisions, keys, valueFor))
+    const preview = buildBulkPreview(decisions, keys, valueFor)
+    setBulkPreview(preview)
+    if (!preview.length) setStatus('Enter at least one target value to validate. Blank fields remain local and unresolved.')
     setBulkPage(1)
     requestAnimationFrame(() => document.querySelector('[aria-label="Bulk proposal review"]')?.scrollIntoView({ block: 'start' }))
   }
@@ -455,22 +459,33 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
 
   return (
     <section className="panel migration-review" aria-labelledby="migration-review-title">
-      <h2 id="migration-review-title" tabIndex={-1}>{stage === 'load' ? 'Load configurations' : stage === 'exceptions' ? 'Resolve exceptions' : stage === 'review' ? 'Review changes' : 'Place configuration'}</h2>
-      <p className="migration-review-intro">Review the proposed configuration, resolve exceptions, then approve the ready groups.</p>
-      <p className="report-count-note">FortiGate → PAN-OS · Review VDOM, VSYS, and virtual router decisions before dependent mappings.</p>
+      <h2 id="migration-review-title" tabIndex={-1}>{stage === 'load' ? 'Setup' : stage === 'review' ? 'Review & approve' : 'Resolve mappings'}</h2>
 
       <div hidden={stage != null && stage !== 'load'}>
-      <label className="field">Migration intent<select aria-label="Migration intent" value={workflowMode} onChange={(event) => { const mode = event.target.value as 'offline' | 'destination'; setWorkflowMode(mode); void saveWorkspace({ workflowMode: mode }) }}>
-        <option value="offline">Plan offline</option><option value="destination">Prepare for a destination firewall</option>
+      <label className="field">Migration intent<select aria-label="Migration intent" value={workflowMode} disabled={busy} onChange={async (event) => {
+        const mode = event.target.value as 'offline' | 'destination'
+        setWorkflowMode(mode)
+        setReviewCurrent(false)
+        setDeterministicDraft(null)
+        setTargetSource(null); setTargetDevice(''); setTargetFilename(''); setTargetDevices([])
+        onDecisionDocument?.(null); onContextChange?.(null, '')
+        void saveWorkspace({ workflowMode: mode, targetSource: null, targetDevice: '', decisionDocument: null, artifact: null })
+        await run(async () => { await loadReview(currentDocument(), null, '', referenceRole, {}, {}, mode) })
+      }}>
+        <option value="offline">Offline .set export</option><option value="destination">Advanced: destination-aware migration</option>
       </select></label>
-      <p>{workflowMode === 'offline' ? 'Plan and export supported work. Destination compatibility remains unverified without actual destination evidence.' : 'Upload actual destination XML, select its device and serial, and approve its baseline before preparing a candidate.'}</p>
-      <details className="migration-target-evidence" open={targetSource ? undefined : true}>
-        <summary>PAN-OS evidence{targetFilename ? ` · ${targetFilename}` : ''}</summary>
+      <p>{workflowMode === 'offline' ? 'Review the source-derived proposals and allocate target ports, then approve and download PAN-OS commands. Destination compatibility remains unverified.' : 'Upload actual destination XML to check target mappings and reuse.'}</p>
+      <details key={workflowMode} hidden={workflowMode === 'offline'} className="migration-target-evidence" open={workflowMode === 'destination'}>
+        <summary>{workflowMode === 'offline' ? 'Optional PAN-OS reference' : 'PAN-OS destination XML'}{targetFilename ? ` · ${targetFilename}` : ''}</summary>
       <div className="migration-toolbar">
         <div className="target-xml-upload">
-          <h3>PAN-OS destination or template XML</h3>
+          {(!targetSource || replaceTarget) && <label className="field">Reference role<select aria-label="Reference role" value={referenceRole} disabled={busy}
+            onChange={(event) => { const role = event.target.value as ReferenceRole; setReferenceRole(role); void run(async () => { await loadReview(currentDocument(), targetSource, targetDevice, role) }) }}>
+            <option value="DESTINATION">Destination configuration</option><option value="TEMPLATE">Architecture template</option>
+          </select></label>}
           {(!targetSource || replaceTarget) && <FileUpload file={null} accept=".xml,application/xml,text/xml" disabled={actionBusy} title="Drop your target XML here" helpText="Supports .xml files · Select the evidence role explicitly" onChange={(file) => { if (file) void uploadTarget(file) }} />}
           {targetFilename && <p className="report-count-note">Loaded target: {targetFilename}</p>}
+          {targetSource && !replaceTarget && <p className="report-count-note">Reference role: {referenceRole === 'DESTINATION' ? 'Destination configuration' : 'Architecture template'}</p>}
         </div>
         {targetSource && <button className="secondary-button" type="button" disabled={busy} onClick={() => setReplaceTarget((value) => !value)}>Replace XML</button>}
         {targetSource && <button className="secondary-button" type="button" disabled={busy} onClick={() => void run(async () => {
@@ -484,17 +499,10 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
             {devices.map((device) => <option key={device} value={device}>{device}</option>)}
           </select>
         </label>}
-        {<label className="field">Reference role<select aria-label="Reference role" value={referenceRole} disabled={busy}
-          onChange={(event) => { const role = event.target.value as ReferenceRole; setReferenceRole(role); void run(async () => { await loadReview(currentDocument(), targetSource, targetDevice, role) }) }}>
-          <option value="DESTINATION">Destination configuration</option><option value="TEMPLATE">Architecture template</option>
-        </select></label>}
       </div>
 
       </details>
-      {deterministicDraft?.readiness && <p role="status">{deterministicDraft.readiness.coverage.supported} ready configuration proposals · {deterministicDraft.readiness.coverage.manual} require manual implementation.
-        {deterministicDraft.readiness.deployment.missing_prerequisites.length > 0 ? ` Candidate prerequisites missing: ${deterministicDraft.readiness.deployment.missing_prerequisites.map((field) => field.replaceAll('_', ' ')).join(', ')}.` : ' Destination evidence supplied. Final eligibility requires a current approved artifact and live preflight.'}
-        Hardware capacity and licensing require engineer verification.</p>}
-      <button className="primary-button" type="button" disabled={busy || !reviewCurrent} onClick={() => onStageChange?.('place')}>Place configuration</button>
+      <button className="primary-button" type="button" disabled={busy || !reviewCurrent} onClick={() => onStageChange?.('place')}>Resolve mappings</button>
       </div>
 
       {error && <div className="error-banner" role="alert">{error}<button type="button" disabled={busy} onClick={() => void run(async () => { await retryReview.current?.() })}>Retry intended draft update</button></div>}
@@ -503,19 +511,19 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
       {(status || busy) && <p role="status" aria-live="polite" className="migration-status">{busy ? 'Preparing and validating the design draft…' : status}{busy && <span aria-hidden="true"> · {elapsedSeconds}s elapsed</span>}</p>}
       {review && <>
         {!stage && <nav className="migration-view-nav" aria-label="Design review stages">
-          <button type="button" aria-pressed={reviewSection === 'mappings'} onClick={() => setReviewSection('mappings')}>Place configuration</button>
-          <button type="button" aria-pressed={reviewSection === 'configuration'} onClick={() => setReviewSection('configuration')}>Review changes</button>
+          <button type="button" aria-pressed={reviewSection === 'mappings'} onClick={() => setReviewSection('mappings')}>Resolve mappings</button>
+          <button type="button" aria-pressed={reviewSection === 'configuration'} onClick={() => setReviewSection('configuration')}>Review &amp; approve</button>
           <button type="button" disabled={busy || !!changedMappings.length} onClick={() => void run(async () => { await loadReview(currentDocument()) }, 'Design revalidated.')}>Revalidate design</button>
         </nav>}
-        {!!changedMappings.length && <div className="review-work-card" role="status"><p>{changedMappings.length} staged mapping edits. Update the draft before approving configuration.</p><button type="button" className="primary-button" disabled={busy} onClick={() => reviewProposals(changedMappings.map((row) => row.decision_key!), (decision) => drafts[decision.key])}>Review staged mappings</button></div>}
+        {!!changedMappings.length && <div className="review-work-card" role="status"><p>{changedMappings.length} staged mapping edits. Blank fields stay local and unresolved.</p><button type="button" className="secondary-button" disabled={busy || !changedMappings.some((row) => drafts[row.decision_key!].trim())} onClick={() => reviewProposals(changedMappings.map((row) => row.decision_key!), (decision) => drafts[decision.key])}>Review staged mappings</button></div>}
         {deterministicDraft && <div hidden={stage ? stage !== 'review' : reviewSection !== 'configuration'}><MigrationDesignReview draft={deterministicDraft} busy={busy || !reviewCurrent || !!changedMappings.length}
-          approvedItems={Object.keys((review.decision_document.design_approval as { configuration?: Record<string, unknown> } | undefined)?.configuration || {})}
+          approvedItems={approvedItems}
           onPrepare={(overrides) => void run(async () => { await loadReview(currentDocument(), targetSource, targetDevice, referenceRole, overrides) }, 'Draft updated. Review the changed configuration.')}
           onApprove={(groups) => void run(() => approveDesign(groups), 'Selected design groups approved.')}
           onRenameService={(row, name) => { const names = deterministicDraft.context.service_names ?? {}; void run(async () => { await loadReview(currentDocument(), targetSource, targetDevice, referenceRole, deterministicDraft.context.overrides, { ...names, [row.source_vdom]: { ...names[row.source_vdom], [row.source_name]: name } }) }, 'Service name proposed. Review and approve the rebuilt configuration.') }} /></div>}
         <section hidden={stage ? stage !== 'place' : reviewSection !== 'mappings'} aria-label="Resolve mappings">
-        <p>Choose VSYS and virtual-router ownership, then allocate parent ports. Changes remain proposals until design approval.</p>
-         <p className="migration-counts"><strong>{reviewGroups.filter((item) => item.queue !== 'COMPLETE').length} mappings need review</strong> · {reviewGroups.filter((item) => item.queue === 'CONFLICT').length} conflicts</p>
+        <p>Review VDOM, VSYS, and virtual-router ownership, then allocate parent ports. Changes remain proposals until design approval.</p>
+         <div className="migration-summary" aria-label="Mapping task dashboard">{taskCategories.map((category) => <p key={category}><strong>{category}</strong><br />{(deterministicDraft?.decisions ?? []).filter((row) => taskCategory(row, proposalByKey, approvedKeys) === category).length} mapping fields · {(deterministicDraft?.configuration ?? []).filter((row) => taskCategory(row, proposalByKey, approvedKeys) === category).length} configuration items</p>)}</div>
          {actionableGroups[0] && <button className="secondary-button" type="button" onClick={() => {
            const group = actionableGroups[0]
            setMappingView('guided')
@@ -554,9 +562,8 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
           proposals={deterministicDraft?.decisions}
           selectedKeys={selectedKeys} setSelectedKeys={(keys) => { setSelectedKeys(keys); setBulkPreview([]) }} busy={busy || !reviewCurrent} reviewSelected={reviewProposals}
           openDetails={(key) => { const group = reviewGroups.find((item) => item.decision_keys.includes(key)); if (group) { setMappingView('guided'); if (manualToolsRef.current) manualToolsRef.current.open = true; if (bulkMappingsRef.current) bulkMappingsRef.current.open = true; setActiveQueue(group.queue); setSelectedGroupKey(group.decision_keys[0]); setSearch(''); setVdomFilter('all'); manualToolsRef.current?.scrollIntoView({ block: 'start' }); focusMappingInput(key) } }} /></details></div>
-        <button className="secondary-button" type="button" disabled={busy || !deterministicDraft} onClick={() => onStageChange?.('exceptions')}>Resolve exceptions</button>
-        </section>
-        {stage === 'exceptions' && <section aria-label="Migration exceptions">
+        <section aria-label="Migration exceptions">
+          <h3>Root-cause exceptions and manual work</h3>
           <p>Tasks retain source scope. Affected counts are deduplicated within each task and may overlap between tasks.</p>
           {(deterministicDraft?.issues ?? []).slice((issuePage - 1) * 30, issuePage * 30).map((issue) => <article className="review-work-card" key={issue.id}>
             <h3>{({ CHOICE: 'Needs your choice', PREREQUISITE: 'Blocked by a prerequisite', CONFLICT: 'Conflict', MANUAL: 'Requires manual implementation' })[issue.category]} · {issue.source_vdom} / {issue.source_name}</h3>
@@ -566,9 +573,10 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
             {issue.action && <button type="button" disabled={busy || !reviewCurrent} onClick={() => { onStageChange?.('place'); setMappingView('guided'); const group = reviewGroups.find((group) => group.decision_keys.includes(issue.action!.decision_key)); if (group) { setActiveQueue(group.queue); setSelectedGroupKey(group.decision_keys[0]); setSearch(''); setVdomFilter('all') }; focusMappingInput(issue.action!.decision_key) }}>Resolve placement</button>}
           </article>)}
           {(deterministicDraft?.issues?.length ?? 0) > 30 && <div className="report-pager"><button type="button" disabled={issuePage <= 1} onClick={() => setIssuePage((page) => page - 1)}>Previous tasks</button><span>Page {issuePage}</span><button type="button" disabled={issuePage * 30 >= (deterministicDraft?.issues?.length ?? 0)} onClick={() => setIssuePage((page) => page + 1)}>Next tasks</button></div>}
-          <button type="button" className="primary-button" onClick={() => onStageChange?.('review')}>Review supported changes</button>
-        </section>}
-        <details className="migration-review-tools"><summary>Advanced tools and mapping files</summary>
+        </section>
+        <button type="button" className="primary-button" disabled={busy || !deterministicDraft || !!changedMappings.length} onClick={() => setReviewSection('configuration')}>Review supported changes</button>
+        </section>
+        <details className="migration-review-tools" hidden={stage ? stage !== 'place' : reviewSection !== 'mappings'}><summary>Advanced tools and mapping files</summary>
         <button type="button" disabled={busy || !!changedMappings.length} onClick={() => void run(async () => { await loadReview(currentDocument()) }, 'Design revalidated.')}>Revalidate design</button>
         <details className="migration-review-tools"><summary>Import / export target intent</summary><div className="migration-toolbar">
           <label className="field">Import target intent YAML
@@ -622,12 +630,12 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
         </details>
         {!!bulkPreview.length && <section className="review-work-card" aria-label="Bulk proposal review">
           <h3>Review {bulkPreview.length} proposed mappings</h3>
+          <p>Only these nonempty values will be submitted. Related configuration and dependent mappings will be re-evaluated. Approval is separate.</p>
+          <p>{stagedDependents.filter((row) => row.decision_key).length} directly dependent mapping fields · {stagedDependents.filter((row) => !row.decision_key).length} directly dependent configuration items in the current draft.</p>
+          {!!stagedDependents.length && <details><summary>Review direct dependents</summary><ul>{stagedDependents.slice(0, 30).map((row) => <li key={draftRowKey(row)}>{row.source_vdom} / {row.source_name} · {row.target_field || row.family} · {row.status}</li>)}</ul>{stagedDependents.length > 30 && <p>{stagedDependents.length - 30} more direct dependents. Review the full configuration after validation.</p>}</details>}
           <ul>{bulkPreview.slice((bulkPage - 1) * 50, bulkPage * 50).map((item) => <li key={item.key}>{item.scope} → <strong>{item.value}</strong></li>)}</ul>
           <div className="report-pager"><button type="button" disabled={bulkPage <= 1} onClick={() => setBulkPage((page) => page - 1)}>Previous values</button><span>Page {bulkPage} of {Math.ceil(bulkPreview.length / 50)}</span><button type="button" disabled={bulkPage * 50 >= bulkPreview.length} onClick={() => setBulkPage((page) => page + 1)}>Next values</button></div>
-          <button type="button" className="primary-button" disabled={busy} onClick={() => void run(async () => {
-            const values = new Map(bulkPreview.map((item) => [item.key, item.value]))
-            await prepareValues(values)
-          }, 'Draft updated. Review and approve the proposed configuration.')}>Update design draft</button>
+          <button type="button" className="primary-button" disabled={busy} onClick={() => run(validateStagedChanges)}>Validate staged changes</button>
           <button type="button" className="secondary-button" onClick={() => setBulkPreview([])}>Cancel proposal review</button>
         </section>}
       </>}

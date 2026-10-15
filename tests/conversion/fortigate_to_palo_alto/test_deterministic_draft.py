@@ -1,6 +1,5 @@
 from copy import deepcopy
 from types import SimpleNamespace
-from types import SimpleNamespace
 from dataclasses import replace
 import pytest
 
@@ -34,6 +33,19 @@ def test_source_only_coverage_is_visible_and_cannot_be_approved():
     assert result.to_dict()['digest'] != without_gap.to_dict()['digest']
 
 
+def test_missing_vsys_mapping_is_not_counted_as_manual_work():
+    config = FGConfig(addresses=[FGAddress(name='net', subnet='192.0.2.0 255.255.255.0'),
+                                FGAddress(name='manual', wildcard_fqdn='*.example.com')])
+    result, decisions = draft(config)
+    address = next(row for row in result.configuration if row['source_name'] == 'net')
+    manual = next(row for row in result.configuration if row['source_name'] == 'manual')
+    assert address['status'] == 'NEEDS_INPUT'
+    assert manual['status'] == 'UNSUPPORTED'
+    assert result.to_dict()['readiness']['coverage'] == {'supported': 0, 'manual': 1}
+    with pytest.raises(ValueError, match='blocked'):
+        approve_draft(decisions, result, [address['group_key']])
+
+
 def test_recommendation_only_work_is_visible_as_manual_work_before_approval():
     from fwmigrate.vendors.fortigate.source_report import FortiGateSourceReporter
     analysis = FortiGateSourceReporter().analyze_source('''config user local
@@ -57,6 +69,40 @@ def draft(config, overrides=None, **kwargs):
     state = build_review_state(config, views, 'source', include_configuration=True)
     return build_deterministic_draft(config, views, state['decisions'], source_digest='source',
                                      overrides=overrides, **kwargs), state['decisions']
+
+
+def test_offline_proposals_preserve_vdoms_and_do_not_confirm_ownership():
+    config = FGConfig(interfaces=[FGInterface(name='port', vdom=name, type='physical') for name in ('b', 'a')])
+    result, decisions = draft(config, workflow_mode='OFFLINE_EXPORT')
+    assert result.to_dict() == draft(config, workflow_mode='OFFLINE_EXPORT')[0].to_dict()
+    scopes = {row.source_vdom: row.proposed_value for row in result.decisions if row.target_field == 'vsys'}
+    assert scopes == {'a': 'vsys1', 'b': 'vsys2'}
+    assert not decisions.to_options().vdoms
+    assert all(not row.approved for row in result.decisions)
+    assert all(row.proposed_value is None for row in result.decisions if row.target_field == 'target_interface')
+    conflict, _ = draft(config, {make_decision_key(vdom, 'vdom', vdom, 'vsys'): 'vsys1'
+                                  for vdom in ('a', 'b')}, workflow_mode='OFFLINE_EXPORT')
+    assert all(row.status == 'CONFLICT' for row in conflict.decisions if row.target_field == 'vsys')
+
+
+def test_offline_invalid_object_names_are_not_approvable():
+    config = FGConfig(addresses=[FGAddress(name='x' * 64, subnet='192.0.2.1 255.255.255.255')])
+    result, decisions = draft(config, workflow_mode='OFFLINE_EXPORT')
+    row = next(row for row in result.configuration if row['family'] == 'address')
+    assert row['status'] == 'CONFLICT'
+    assert any('target object name' in reason for reason in row['blocking_reasons'])
+    with pytest.raises(ValueError, match='blocked'):
+        approve_draft(decisions, result, [row['group_key']])
+
+
+def test_offline_virtual_router_name_constraints_block_dependent_topology():
+    config = FGConfig(interfaces=[FGInterface(name='port1', type='physical')])
+    result, _ = draft(config, {
+        make_decision_key('root', 'interface', 'port1', 'target_interface'): 'ethernet1/1',
+        make_decision_key('root', 'vdom', 'root', 'virtual_router'): 'x' * 32,
+    }, workflow_mode='OFFLINE_EXPORT')
+    assert next(row.status for row in result.decisions if row.target_field == 'virtual_router') == 'CONFLICT'
+    assert next(row.status for row in result.decisions if row.target_field == 'target_interface') == 'NEEDS_INPUT'
 
 
 def test_source_only_draft_is_repeatable_serializable_and_keeps_options_empty():
