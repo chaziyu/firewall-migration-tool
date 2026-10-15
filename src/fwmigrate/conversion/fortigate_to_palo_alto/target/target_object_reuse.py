@@ -342,7 +342,7 @@ def _interface_collisions(planned, target, device, *, allow_additive=False):
                 contradictions.append("target VLAN tag differs")
             else:
                 evidence.append("same explicit VLAN tag")
-        else:
+        elif source.interface_family != "loopback":
             mode = getattr(target_item, "mode", None)
             if "mode" not in explicit:
                 supporting.append("target interface mode is not explicit")
