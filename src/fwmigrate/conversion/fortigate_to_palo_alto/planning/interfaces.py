@@ -32,7 +32,7 @@ def _explicit_ipv4(value: str | None) -> str | None:
         return None
     parts = str(value).split()
     try:
-        if len(parts) == 1:
+        if len(parts) == 1 and "/" in parts[0]:
             return str(IPv4Interface(parts[0]))
         if len(parts) == 2:
             return str(IPv4Interface(f"{parts[0]}/{parts[1]}"))
@@ -58,6 +58,16 @@ def plan_interfaces(source: Any, options: Any) -> tuple[PlannedInterface, ...]:
     for item in getattr(source, "interfaces", ()):
         vdom = item.vdom or "root"
         if (vdom, item.name) in member_owners:
+            owners = member_owners[(vdom, item.name)]
+            if not any(getattr(mappings_by_vdom.get(vdom, {}).get(owner.name), "target_interface", None) for owner in owners):
+                member_mapping = mappings_by_vdom.get(vdom, {}).get(item.name)
+                member_target = getattr(member_mapping, "target_interface", None)
+                if member_target:
+                    result.append(PlannedInterface(source_vdom=vdom, source_kind="interface", source_object_type="interface",
+                        source_name=item.name, target_name=member_target,
+                        target_vsys=getattr(vdom_mappings.get(vdom), "vsys", None),
+                        virtual_router=getattr(vdom_mappings.get(vdom), "virtual_router", None), interface_family="ethernet",
+                        warnings=("Aggregate or redundant member requires its parent mapping; standalone rendering is blocked",)))
             continue
         mapping = mappings_by_vdom.get(vdom, {}).get(item.name)
         target = getattr(mapping, "target_interface", None) if mapping else None
