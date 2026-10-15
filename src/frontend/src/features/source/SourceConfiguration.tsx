@@ -50,6 +50,7 @@ export function SourceConfiguration({ view, onViewChange }: {
   const [generationRequest, setGenerationRequest] = useState(0)
   const [requestedDecision, setRequestedDecision] = useState<{ key: string; request: number } | null>(null)
   const analysisRequest = useRef(0)
+  const projectFileInput = useRef<HTMLInputElement>(null)
 
   if ((view === 'migration' || view === 'live') && !migrationVisited) setMigrationVisited(true)
 
@@ -232,10 +233,11 @@ export function SourceConfiguration({ view, onViewChange }: {
 
   if (!workspaceReady) return <LoadingState label="Restoring browser workspace…" />
   return <main className="feature-content">
-    {(view === 'migration' || view === 'live') && <section className="panel" aria-label="Migration project files">
-      <p>Work stays in memory. Refresh closes this project; download it to resume later. Project files contain sanitized customer topology.</p>
-      <div className="migration-toolbar"><Button disabled={projectBusy || !preview?.source_evidence || vendor !== 'fortigate'} onClick={() => void downloadProject()}>Download project</Button>
-      <label className="field">Resume project<input type="file" accept=".json,application/json" disabled={projectBusy} onChange={(event) => { const selected = event.currentTarget.files?.[0]; event.currentTarget.value = ''; void resumeProject(selected) }} /></label></div>
+    {(view === 'migration' || view === 'live') && <section className="panel migration-project-files" aria-label="Migration project files">
+      <div className="migration-project-copy"><p>Work stays in memory. Download this project before refreshing to resume later.</p><p className="report-count-note">Project files contain sanitized customer topology.</p></div>
+      <div className="migration-project-actions"><Button className="secondary-button" disabled={projectBusy || !preview?.source_evidence || vendor !== 'fortigate'} onClick={() => void downloadProject()}>Download project</Button>
+      <Button className="secondary-button" disabled={projectBusy} onClick={() => projectFileInput.current?.click()}>Resume project</Button>
+      <input ref={projectFileInput} hidden aria-label="Resume project" type="file" accept=".json,application/json" disabled={projectBusy} onChange={(event) => { const selected = event.currentTarget.files?.[0]; event.currentTarget.value = ''; void resumeProject(selected) }} /></div>
       {projectNotice && <p role="status">{projectNotice}</p>}
     </section>}
     <section id="source-configuration" className="panel source-configuration" hidden={view !== 'collect' && Boolean(preview) && !(file && view === 'report')} aria-labelledby="source-title">
@@ -283,7 +285,7 @@ export function SourceConfiguration({ view, onViewChange }: {
         </div>}
         {view === 'migration' && <div className="report-source-context"><strong>FortiGate → PAN-OS</strong><span>{preview.source_evidence?.source_name || file?.name || 'Loaded source configuration'}</span><span>Destination: {targetDevice || 'Not selected'}</span></div>}
         {view === 'migration' && <nav className="migration-view-nav" aria-label="Migration workspace">
-          {([['load', 'Load configurations'], ['place', 'Place configuration'], ['exceptions', 'Resolve exceptions'], ['review', 'Review changes'], ['export', 'Export or deploy']] as const).map(([stage, label], index) =>
+          {([['load', 'Setup'], ['place', 'Resolve mappings'], ['review', 'Review & approve'], ['export', 'Export']] as const).map(([stage, label], index) =>
             <button key={stage} type="button" aria-current={migrationView === stage ? 'step' : undefined} onClick={() => setMigrationView(stage)}>{index + 1}. {label}</button>)}
         </nav>}
         <section hidden={view !== 'migration' || migrationView === 'export'}>

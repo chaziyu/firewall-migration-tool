@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 from graphlib import CycleError, TopologicalSorter
 from ipaddress import IPv4Address, IPv4Network
+import re
 
 from .models import MigrationIssue, MigrationSourceRef, PANMigrationPlan, PANMigrationStatus
 from .planning.services import PAN_BUILTIN_SERVICES
@@ -62,6 +63,13 @@ def validate_plan(plan: PANMigrationPlan) -> MigrationValidationResult:
         if len(owners) > 1:
             for item in owners:
                 add("duplicate_target_address_name", "address and address-group target names must be unique", item)
+    service_assignments = {}
+    for item in (*plan.services, *plan.service_groups):
+        service_assignments.setdefault((item.target_vsys, item.target_name or item.source_name), []).append(item)
+    for owners in service_assignments.values():
+        if len(owners) > 1:
+            for item in owners:
+                add("duplicate_target_service_name", "service and service-group target names must be unique", item)
     for item in plan.interfaces:
         if item.target_name:
             interface_assignments.setdefault(item.target_name, []).append(item)
@@ -74,6 +82,10 @@ def validate_plan(plan: PANMigrationPlan) -> MigrationValidationResult:
 
     for item in _items(plan):
         key = _key(item)
+        if item.source_object_type in {"address", "address_group", "service", "service_group"}:
+            name = item.target_name or item.source_name
+            if not isinstance(name, str) or not name.strip() or not re.fullmatch(r"[A-Za-z0-9_. -]{1,63}", name):
+                add("invalid_target_object_name", "target object name must contain 1 to 63 letters, numbers, spaces, hyphens, periods or underscores", item)
         if item.source_object_type == "zone":
             if issue := zone_name_issue(item.target_name or item.source_name):
                 add("invalid_zone_name", issue, item)

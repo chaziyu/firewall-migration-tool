@@ -26,7 +26,7 @@ export type DraftRow = {
 export type MigrationDraft = {
   digest: string
   signature: string
-  context: { reference_role: ReferenceRole | null; overrides: Record<string, string>; service_names?: Record<string, Record<string, string>> }
+  context: { reference_role: ReferenceRole | null; workflow_mode?: 'OFFLINE_EXPORT' | 'DESTINATION_AWARE'; overrides: Record<string, string>; service_names?: Record<string, Record<string, string>> }
   destination_verified: boolean
   decisions: DraftRow[]
   configuration: DraftRow[]
@@ -63,7 +63,7 @@ export interface MigrationDecisionDocument {
   [key: string]: unknown
 }
 
-export type MigrationStage = 'load' | 'place' | 'exceptions' | 'review' | 'export'
+export type MigrationStage = 'load' | 'place' | 'review' | 'export'
 export type MigrationIssue = {
   id: string; code: string; category: 'CHOICE' | 'PREREQUISITE' | 'CONFLICT' | 'MANUAL'
   source_vdom: string; source_kind: string; source_name: string

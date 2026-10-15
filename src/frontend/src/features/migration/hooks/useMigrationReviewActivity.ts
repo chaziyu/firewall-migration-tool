@@ -6,10 +6,12 @@ export function useMigrationReviewActivity({
   source,
   targetSource,
   targetDevice,
+  workflowMode = 'destination',
 }: {
   source: SourceEvidence | undefined
   targetSource: SourceEvidence | null
   targetDevice: string
+  workflowMode?: 'offline' | 'destination'
 }) {
   const requestVersion = useRef(0)
   const actionVersion = useRef(0)
@@ -32,6 +34,7 @@ export function useMigrationReviewActivity({
       source,
       target_source: targetSource,
       target_device: targetDevice,
+      workflow_mode: workflowMode === 'offline' ? 'OFFLINE_EXPORT' : 'DESTINATION_AWARE',
       ...payload,
     }).catch((cause: unknown) => {
       if (version !== requestVersion.current) throw new DOMException('Review context changed', 'AbortError')
