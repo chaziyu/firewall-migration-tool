@@ -12,6 +12,7 @@ import re
 from typing import Any
 
 from fwmigrate.conversion.fortigate_to_palo_alto.models import PANMigrationStatus, PlannedInterface
+from ..target.profile import MODEL_PORTS, site_to_site_phase1
 
 
 _ETHERNET = re.compile(r"^ethernet\d+/\d+$")
@@ -54,9 +55,16 @@ def plan_interfaces(source: Any, options: Any) -> tuple[PlannedInterface, ...]:
     vdom_mappings = getattr(options, "vdoms", {}) or {}
     source_interfaces = {(item.vdom or "root", item.name): item for item in getattr(source, "interfaces", ())}
     member_owners = aggregate_member_owners(source)
+    vpns = site_to_site_phase1(source)
 
     for item in getattr(source, "interfaces", ()):
         vdom = item.vdom or "root"
+        settings = getattr(options, 'conversion_settings', {})
+        if f'{vdom}/{item.name}' in settings.get('excluded_interfaces', ()):
+            result.append(PlannedInterface(source_vdom=vdom, source_kind='interface', source_object_type='interface',
+                source_name=item.name, status=PANMigrationStatus.UNSUPPORTED,
+                warnings=('Explicitly excluded from conversion; source evidence is retained',)))
+            continue
         if (vdom, item.name) in member_owners:
             owners = member_owners[(vdom, item.name)]
             if not any(getattr(mappings_by_vdom.get(vdom, {}).get(owner.name), "target_interface", None) for owner in owners):
@@ -79,6 +87,9 @@ def plan_interfaces(source: Any, options: Any) -> tuple[PlannedInterface, ...]:
         virtual_router = getattr(ownership, "virtual_router", None) if ownership else None
         blockers: list[str] = []
         notes: list[str] = []
+        pool = MODEL_PORTS.get(settings.get('target_model'))
+        if pool is not None and target.startswith('ethernet') and target.split('.', 1)[0] not in pool:
+            blockers.append('Target interface is outside the selected hardware port pool')
 
         if not target_vsys:
             blockers.append(f"missing Palo Alto vsys mapping for VDOM {vdom!r}")
@@ -152,6 +163,14 @@ def plan_interfaces(source: Any, options: Any) -> tuple[PlannedInterface, ...]:
                     blockers.append(f"aggregate member {name!r} cannot have standalone zone ownership")
             if len(set(aggregate_members)) != len(aggregate_members):
                 blockers.append("aggregate members must have distinct physical target allocations")
+        elif kind == 'tunnel' and (vdom, item.name) in vpns:
+            interface_family = 'tunnel'
+            if not re.fullmatch(r'tunnel\.(?:[1-9][0-9]{0,3})', target):
+                blockers.append('Target tunnel identifier must be between 1 and 9999')
+            if item.interface != vpns[(vdom, item.name)].interface:
+                blockers.append('Tunnel parent differs from the explicit Phase 1 egress interface')
+            if f'{vdom}/{item.name}' not in settings.get('existing_vpns', ()):
+                blockers.append('VPN gateway, credentials and selectors require an explicitly reviewed existing-target prerequisite')
         elif kind == "loopback":
             interface_family = "loopback"
             if item.interface:
@@ -188,16 +207,31 @@ def plan_interfaces(source: Any, options: Any) -> tuple[PlannedInterface, ...]:
             notes.append("source IPv4 address is not explicit; no target IP command is emitted")
 
         if item.secondary_ips:
-            blockers.append("secondary interface IPv4 addresses are not rendered")
+            if item.raw_extra.get('secondary-IP') != 'enable':
+                blockers.append('Secondary IPv4 activation must be explicitly enabled')
+            for secondary in item.secondary_ips:
+                address = _explicit_ipv4(secondary.ip)
+                if address is None or secondary.raw_extra or secondary.ha_priority is not None or secondary.allowaccess:
+                    blockers.append('Secondary IPv4 contains unsupported addressing or administrative access semantics')
+                elif address not in ipv4_addresses:
+                    if interface_family == 'loopback' and IPv4Interface(address).network.prefixlen != 32:
+                        blockers.append('PAN-OS loopback secondary IPv4 requires an explicit /32 mask')
+                    ipv4_addresses += (address,)
         if item.members and kind != "aggregate":
             blockers.append("aggregate or redundant member semantics are not rendered")
-        if item.allowaccess:
+        management_profile = settings.get('management_profiles', {}).get(f'{vdom}/{item.name}')
+        if item.allowaccess and not management_profile:
             blockers.append("FortiGate administrative access requires a PAN-OS management-profile decision")
+        if item.allowaccess and set(item.allowaccess) - {'ping', 'https', 'ssh', 'snmp', 'http', 'telnet'}:
+            blockers.append('Administrative access protocols have no verified target management-profile equivalent')
         if item.vrf not in (None, 0):
             blockers.append("non-default FortiGate VRF requires explicit target routing design")
         if (item.status or "").casefold() in {"disable", "disabled", "down"}:
             blockers.append("disabled source interface state is not rendered")
-        if set(item.raw_extra) - ({"lacp-mode"} if kind == "aggregate" else set()):
+        known_metadata = {'snmp-index'}
+        if item.raw_extra.get('secondary-IP') == 'enable' and item.secondary_ips:
+            known_metadata.add('secondary-IP')
+        if set(item.raw_extra) - known_metadata - ({"lacp-mode"} if kind == "aggregate" else set()):
             blockers.append("interface contains preserved unsupported source semantics")
 
         for field, value in (
@@ -224,6 +258,7 @@ def plan_interfaces(source: Any, options: Any) -> tuple[PlannedInterface, ...]:
             virtual_router=virtual_router,
             aggregate_members=tuple(aggregate_members),
             lacp_mode=lacp_mode,
+            management_profile=management_profile,
         ))
 
     return tuple(result)

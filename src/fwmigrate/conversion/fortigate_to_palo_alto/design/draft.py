@@ -45,6 +45,14 @@ class PANMigrationDraft:
                 "destination_verified": self.context["reference_role"] == "DESTINATION"
                     and bool(self.context["reference_digest"] and self.context["target_device"])}
         body["issues"] = draft_issues(body["decisions"], body["configuration"])
+        body['source_issues'] = [row for row in self.findings if row['code'].startswith('SOURCE_')]
+        body['task_summary'] = {
+            'choices': sum(row['category'] == 'CHOICE' for row in body['issues']),
+            'prerequisites': sum(row['category'] == 'PREREQUISITE' for row in body['issues']),
+            'conflicts': sum(row['category'] == 'CONFLICT' for row in body['issues']),
+            'manual_items': sum(row['status'] == 'UNSUPPORTED' for row in self.configuration),
+            'manual_issues': sum(row['category'] == 'MANUAL' for row in body['issues']),
+        }
         missing = []
         for field in ("reference_digest", "target_device", "target_serial", "baseline_sha256", "baseline_format"):
             if not self.context.get(field):
@@ -84,10 +92,16 @@ def draft_issues(decisions, configuration):
         root = rows.get(decision, row)
         if decision in rows:
             category = "MANUAL" if root["status"] == "UNSUPPORTED" else "CONFLICT" if root["status"] == "CONFLICT" else "CHOICE"
+        summary = explanation
+        if decision in rows and category != "MANUAL":
+            field = {"vsys": "VSYS", "virtual_router": "virtual router",
+                     "target_interface": "interface", "target_zone": "zone"}.get(root["target_field"], "value")
+            summary = (f"Resolve the target {field} conflict for {root['source_name']}."
+                       if category == "CONFLICT" else f"Assign a target {field} for {root['source_name']}.")
         issue = result.setdefault(key, {"id": key, "code": code, "category": category,
             "source_vdom": root.get("source_vdom"), "source_kind": root.get("source_kind"),
             "source_name": root.get("source_name"), "affected_keys": [], "affected_sources": [],
-            "prerequisite_keys": list(prerequisites), "explanation": explanation, "explanations": [],
+            "prerequisite_keys": list(prerequisites), "explanation": summary, "explanations": [],
             "resolution_kind": resolution,
             "action": {"kind": "EDIT_MAPPING", "decision_key": decision}
                 if category != "MANUAL" and decision in rows and rows[decision]["status"] != "UNSUPPORTED" else None})

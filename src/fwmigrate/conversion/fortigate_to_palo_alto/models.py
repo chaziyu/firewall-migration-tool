@@ -73,6 +73,7 @@ class PlannedSchedule(PlannedPANItem):
 
 @dataclass(frozen=True, slots=True)
 class PlannedInterface(PlannedPANItem):
+    management_profile: str | None = None
     interface_family: str | None = None
     parent: str | None = None
     tag: int | None = None
@@ -116,6 +117,7 @@ class PlannedDHCPServer(PlannedPANItem):
 
 @dataclass(frozen=True, slots=True)
 class PlannedSecurityRule(PlannedPANItem):
+    profile_group: str | None = None
     from_zones: tuple[str, ...] = ()
     to_zones: tuple[str, ...] = ()
     sources: tuple[str, ...] = ()
@@ -177,6 +179,34 @@ class PlannedIPsecCryptoProfile(PlannedPANItem):
 
 
 @dataclass(frozen=True, slots=True)
+class PlannedIKEGateway(PlannedPANItem):
+    interface: str | None = None
+    local_address: str | None = None
+    peer_address: str | None = None
+    ike_version: str | None = None
+    crypto_profile: str | None = None
+    authentication_method: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class PlannedVPNProxyID:
+    source_name: str
+    local: str | None = None
+    remote: str | None = None
+    protocol: str | None = None
+    local_port: str | None = None
+    remote_port: str | None = None
+    crypto_profile: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class PlannedIPsecTunnel(PlannedPANItem):
+    interface: str | None = None
+    ike_gateway: str | None = None
+    proxy_ids: tuple[PlannedVPNProxyID, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
 class PANMigrationPlan:
     addresses: tuple[PlannedAddress, ...] = ()
     address_groups: tuple[PlannedAddressGroup, ...] = ()
@@ -192,3 +222,5 @@ class PANMigrationPlan:
     issues: tuple[MigrationIssue, ...] = field(default_factory=tuple)
     ike_crypto_profiles: tuple[PlannedIKECryptoProfile, ...] = ()
     ipsec_crypto_profiles: tuple[PlannedIPsecCryptoProfile, ...] = ()
+    ike_gateways: tuple[PlannedIKEGateway, ...] = ()
+    ipsec_tunnels: tuple[PlannedIPsecTunnel, ...] = ()

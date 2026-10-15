@@ -218,10 +218,14 @@ def run_migration_pipeline(
     final_options = current.to_options()
     if options is not None:
         final_options = replace(final_options, service_names=(options.service_names
-            if isinstance(options, PANMigrationOptions) else options.get("service_names", {})))
+            if isinstance(options, PANMigrationOptions) else options.get("service_names", {})),
+            conversion_settings=(options.conversion_settings if isinstance(options, PANMigrationOptions) else options.get('conversion_settings', {})))
     actual_planner = planner or FortiGateToPaloAltoPlanner()
     plan = actual_planner.plan(source, derived, options=final_options,
                                **({"include_configuration": True} if approved_item_keys is not None else {}))
+    if approved_item_keys is not None:
+        from .planning.naming import allocate_plan_names
+        plan = allocate_plan_names(plan, target, target_device, final_options.service_names)
 
     reuse_classifier = target_object_reuse_classifier or classify_target_object_reuse
     if workflow_mode == "OFFLINE_EXPORT":
@@ -247,7 +251,8 @@ def run_migration_pipeline(
     validation = validate_plan(plan)
     support_guidance = build_support_guidance(plan, validation, current, target_findings)
     recommendations = build_recommendations(source, derived, current, target, target_device)
-    coverage = build_migration_coverage(source, recommendations)
+    from .planning.vpn import represented_vpn_sources
+    coverage = build_migration_coverage(source, recommendations, planned_vpn_sources=represented_vpn_sources(plan))
     rendered = PANSetRenderer().render(
         plan,
         validation,

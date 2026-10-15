@@ -1,11 +1,34 @@
 """FortiGate security-policy planning for Palo Alto."""
 
 from typing import Any
+import hashlib
+import json
 
 from fwmigrate.conversion.fortigate_to_palo_alto.models import PANMigrationStatus, PlannedSecurityRule
 from fwmigrate.conversion.fortigate_to_palo_alto.planning.services import service_target
 from fwmigrate.vendors.fortigate.fortios.predefined_services import is_predefined_service_reference
 from .addresses import address_references
+
+
+INSPECTION_FIELDS = ('utm_status', 'profile_group', 'av_profile', 'ips_sensor', 'webfilter_profile',
+    'ssl_ssh_profile', 'inspection_mode', 'profile_type', 'profile_protocol_options', 'application_list', 'dnsfilter_profile')
+
+
+def inspection_design_groups(source):
+    groups = {}
+    for policy in source.policies:
+        if policy.utm_status in {None, 'disable'} and not any(getattr(policy, field, None) for field in INSPECTION_FIELDS[1:]):
+            continue
+        facts = {field: getattr(policy, field, None) for field in INSPECTION_FIELDS if getattr(policy, field, None) is not None}
+        identity = f'{policy.vdom or "root"}/' + hashlib.sha256(json.dumps(facts, sort_keys=True).encode()).hexdigest()[:16]
+        group = groups.setdefault(identity, {'identity': identity, 'message': '; '.join(f'{key}={value}' for key, value in facts.items()), 'member_keys': []})
+        group['member_keys'].append(str(policy.policy_id) if policy.policy_id is not None else policy.name)
+    return list(groups.values())
+
+
+def policy_inspection_key(policy):
+    facts = {field: getattr(policy, field, None) for field in INSPECTION_FIELDS if getattr(policy, field, None) is not None}
+    return f'{policy.vdom or "root"}/' + hashlib.sha256(json.dumps(facts, sort_keys=True).encode()).hexdigest()[:16]
 
 
 def ipv6_match_warnings(policy):
@@ -63,11 +86,16 @@ def plan_policies(source: Any, options: Any, derived: Any = None):
             warnings.append("Internet Service matching is unsupported")
         if policy.vpntunnel:
             warnings.append("VPN policy action requires manual review")
-        if policy.utm_status not in {None, "disable"} or any(getattr(policy, field, None) for field in (
+        profile_group = getattr(options, 'conversion_settings', {}).get('security_profiles', {}).get(policy_inspection_key(policy))
+        if (policy.utm_status not in {None, "disable"} or any(getattr(policy, field, None) for field in (
             "profile_group", "av_profile", "ips_sensor", "webfilter_profile", "ssl_ssh_profile",
             "inspection_mode", "profile_type", "profile_protocol_options", "application_list", "dnsfilter_profile",
-        )):
+        ))) and not profile_group:
             warnings.append("FortiGate inspection settings are not mapped")
+        if policy.ssl_ssh_profile and policy.ssl_ssh_profile != 'no-inspection':
+            warnings.append('SSL/SSH inspection requires a separate target decryption design; a security profile group does not replace it')
+        if policy.profile_protocol_options:
+            warnings.append('Protocol options require separate verified target semantics')
         if policy.per_ip_shaper:
             warnings.append("FortiGate traffic shaping is not mapped")
         if policy.srcaddr6_negate not in {None, "disable"} or policy.dstaddr6_negate not in {None, "disable"}:
@@ -104,6 +132,7 @@ def plan_policies(source: Any, options: Any, derived: Any = None):
             disabled=getattr(policy, "status", None) in {"disable", "disabled"},
             description=getattr(policy, "comments", None),
             log_start=log_start, log_end=log_end,
+            profile_group=profile_group,
         ))
     return tuple(result)
 

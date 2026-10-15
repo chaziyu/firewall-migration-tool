@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { draftReviewRows, draftStatusCounts, groupPlanBlockers, planFamilySummary, taskCategory } from '../src/features/migration/reviewPresentation.ts'
+import { draftReviewRows, draftStatusCounts, groupPlanBlockers, planFamilySummary, taskCategory, mappingReviewGroups } from '../src/features/migration/reviewPresentation.ts'
 import { orderInterfaceMappings } from '../src/features/migration/reviewDrafts.ts'
 
 test('actionable view hides parent-dependent noise while full and manual views preserve evidence', () => {
@@ -52,4 +52,24 @@ test('task categories distinguish unresolved parents, scoped children, ready, ap
   assert.deepEqual(draftReviewRows(rows, 'APPROVED', 'all', '', new Set(), approved), [rows[5]])
   assert.deepEqual(draftReviewRows(rows, 'BLOCKED', 'all', '', new Set(), approved), [rows[1], rows[3]])
   assert.equal(taskCategory({ ...rows[6], approved: false }, byKey, approved), 'Manual work')
+})
+
+test('offline queues follow draft readiness without confirming pending decisions', () => {
+  const groups = ['ownership', 'port', 'vlan', 'conflict', 'missing', 'manual'].map((key) => ({
+    source_vdom: 'root', source_name: key, decision_keys: [key], queue: 'NEEDS_INPUT',
+    decisions: [{ key, review_state: 'PENDING' }],
+  }))
+  const rows = [
+    { decision_key: 'ownership', status: 'READY', dependencies: [] },
+    { decision_key: 'port', status: 'NEEDS_INPUT', dependencies: ['ownership'] },
+    { decision_key: 'vlan', status: 'NEEDS_INPUT', dependencies: ['port'] },
+    { decision_key: 'conflict', status: 'CONFLICT', dependencies: [] },
+    { decision_key: 'manual', status: 'UNSUPPORTED', dependencies: [] },
+  ]
+  const projected = mappingReviewGroups(groups, rows, true)
+  assert.deepEqual(projected.map((group) => group.queue), ['READY_TO_CONFIRM', 'NEEDS_INPUT', 'NEEDS_INPUT', 'CONFLICT', 'NEEDS_INPUT', 'COMPLETE'])
+  assert.ok(projected.every((group) => group.decisions[0].review_state === 'PENDING'))
+  assert.ok(groups.every((group) => group.queue === 'NEEDS_INPUT'))
+  assert.equal(mappingReviewGroups(groups, rows, false), groups)
+  assert.equal(mappingReviewGroups(groups, rows, true, ['ownership'])[0].queue, 'COMPLETE')
 })

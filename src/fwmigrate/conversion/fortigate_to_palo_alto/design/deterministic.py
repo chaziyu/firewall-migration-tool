@@ -14,16 +14,20 @@ from ..target.name_validation import zone_name_issue
 from ..target.target_object_reuse import classify_target_object_reuse
 from ..target.target_plan_validation import assess_target_plan, _items, item_key
 from ..plan_dependencies import build_plan_dependency_index
-from ..validation import validate_plan
+from ..validation import validate_plan, validate_source_interfaces
 from ..requirements import build_mapping_requirements
 from ..coverage import build_migration_coverage
 from ..recommendations.recommendation_engine import build_recommendations
 from ..recommendations.support_guidance import _warning_guidance
 from ..options import PANMigrationOptions
+from ..target.profile import MODEL_PORTS, parse_conversion_settings, interface_scope_suggestions, interface_consumers, site_to_site_phase1
+from ..planning.naming import allocate_plan_names
+from ..planning.vpn import vpn_parameter_requirements, represented_vpn_sources, validate_vpn_parameters
+from ..planning.policies import inspection_design_groups
 
 
 def draft_context(source_digest, reference=None, reference_role=None, target_device=None, intent=None,
-                  workflow_mode=None):
+                  workflow_mode=None, conversion_settings=None):
     mode = "DESTINATION_AWARE" if workflow_mode is None else workflow_mode
     if not isinstance(mode, str):
         raise ValueError("workflow_mode must be OFFLINE_EXPORT or DESTINATION_AWARE")
@@ -33,11 +37,16 @@ def draft_context(source_digest, reference=None, reference_role=None, target_dev
     role = reference_role or ("DESTINATION" if reference else None)
     if role not in {None, "DESTINATION", "TEMPLATE"}:
         raise ValueError("reference_role must be DESTINATION, TEMPLATE, or null")
-    return {"source_digest": source_digest, "reference_digest": (reference or {}).get("config_digest"),
+    context = {"source_digest": source_digest, "reference_digest": (reference or {}).get("config_digest"),
             "reference_role": role, "target_device": target_device, "target_serial": (reference or {}).get("serial"),
             "baseline_sha256": (reference or {}).get("baseline_sha256"),
             "baseline_format": (reference or {}).get("baseline_format"),
             "intent": parse_target_intent(intent), "workflow_mode": mode, "schema_version": 1}
+    if conversion_settings:
+        context['conversion_settings'] = parse_conversion_settings(conversion_settings)
+    elif conversion_settings is not None:
+        parse_conversion_settings(conversion_settings)
+    return context
 
 
 def _intent_values(context, decisions):
@@ -61,8 +70,12 @@ def _intent_values(context, decisions):
 
 def build_deterministic_draft(config, derived, decisions, *, source_digest, target=None,
                               target_device=None, reference=None, reference_role=None,
-                              intent=None, overrides=None, service_names=None, workflow_mode=None):
-    context = draft_context(source_digest, reference, reference_role, target_device, intent, workflow_mode)
+                              intent=None, overrides=None, service_names=None, workflow_mode=None, conversion_settings=None):
+    context = draft_context(source_digest, reference, reference_role, target_device, intent, workflow_mode, conversion_settings)
+    settings = context.get('conversion_settings', {})
+    excluded = set(settings.get('excluded_interfaces', ()))
+    if excluded - {f'{item.vdom or "root"}/{item.name}' for item in config.interfaces}:
+        raise ValueError('Excluded interfaces must select current source interfaces')
     if context["workflow_mode"] == "OFFLINE_EXPORT" and (reference or target is not None or target_device):
         raise ValueError("Offline export cannot use destination or template evidence")
     overrides = overrides or {}
@@ -83,6 +96,16 @@ def build_deterministic_draft(config, derived, decisions, *, source_digest, targ
             if vsys_key in by_key:
                 dependencies[item.key].add(vsys_key)
     interfaces = {(item.vdom or "root", item.name): item for item in config.interfaces}
+    vpns = site_to_site_phase1(config)
+    tunnel_sources = sorted(identity for identity, item in interfaces.items() if (item.type or '').lower() == 'tunnel' and identity in vpns)
+    validate_vpn_parameters(config, settings)
+    inspection_groups = inspection_design_groups(config)
+    if set(settings.get('security_profiles', {})) - {row['identity'] for row in inspection_groups}:
+        raise ValueError('Security profile assignments must select current source inspection groups')
+    if set(settings.get('existing_vpns', ())) - {f'{vdom}/{name}' for vdom, name in tunnel_sources}:
+        raise ValueError('Existing VPN prerequisites must select supported explicit site-to-site tunnel interfaces')
+    if set(settings.get('management_profiles', {})) - {f'{vdom}/{name}' for vdom, name in interfaces}:
+        raise ValueError('Management profiles must select current source interfaces')
     loopbacks = sorted(identity for identity, item in interfaces.items() if (item.type or "").casefold() == "loopback")
     aggregates = sorted(identity for identity, item in interfaces.items() if (item.type or "").casefold() == "aggregate")
     zone_parents = {}
@@ -110,6 +133,32 @@ def build_deterministic_draft(config, derived, decisions, *, source_digest, targ
     vdoms = sorted({item.source_vdom for item in decisions.decisions})
     destination = target if context["reference_role"] == "DESTINATION" and target_device else None
     evidence = {key: ["Explicit engineer allocation" if key in explicit else "Existing engineer decision"] for key in values}
+    if context["workflow_mode"] == "OFFLINE_EXPORT":
+        reserved_ports = {value.split(".", 1)[0] for key, value in values.items()
+                          if by_key[key].target_field == "target_interface"}
+        number = 1
+        port_pool = MODEL_PORTS.get(settings.get('target_model'))
+        consumers = interface_consumers(config)
+        for identity, source in sorted(interfaces.items(), key=lambda row: (
+                bool(port_pool) and not (row[0] in consumers or row[1].ip or row[1].allowaccess),
+                row[0][0], [int(part) if part.isdigit() else part
+                            for part in re.split(r"(\d+)", row[0][1])])):
+            key = make_decision_key(identity[0], "interface", identity[1], "target_interface")
+            if (key not in by_key or key in values or by_key[key].mode is PANDecisionMode.UNSUPPORTED
+                    or (source.type or "").casefold() not in {"physical", "ethernet"}
+                    or source.interface or source.vlanid is not None or source.members):
+                continue
+            if f'{identity[0]}/{identity[1]}' in excluded:
+                continue
+            while f"ethernet1/{number}" in reserved_ports:
+                number += 1
+            if port_pool is not None and f'ethernet1/{number}' not in port_pool:
+                evidence[key] = ['Target port pool exhausted. Review migration scope or provide a different supported target design.']
+                continue
+            values[key] = f"ethernet1/{number}"
+            reserved_ports.add(values[key])
+            evidence[key] = ["Automatic offline port allocation proposal; target port availability, hardware and cabling are unverified. Engineer approval is required."]
+            number += 1
     # Draft parents unlock evidence discovery; authoritative decisions never change.
     for _ in range(len(by_key) + 1):
         previous = dict(values)
@@ -132,6 +181,8 @@ def build_deterministic_draft(config, derived, decisions, *, source_digest, targ
                 compatible = list(options) if len({row.source_vdom for row in decisions.decisions}) == 1 else compatible
             if item.target_field == "virtual_router":
                 compatible = [row for row in options if row.get("class") == "STRONG"]
+                if not compatible and len(options) == 1 and len(vdoms) == 1:
+                    compatible = list(options)
             if len(compatible) == 1:
                 values[key] = compatible[0]["value"]
                 evidence[key] = list(compatible[0].get("strong_evidence", ())) or ["Unique reference scope"]
@@ -158,6 +209,15 @@ def build_deterministic_draft(config, derived, decisions, *, source_digest, targ
                         number += 1
                     values[key] = f"loopback.{number}"
                     evidence[key] = ["Proposed loopback identifier; engineer must confirm identifier and ownership"]
+                elif (item.source_vdom, item.source_name) in tunnel_sources:
+                    used = set(values.values())
+                    if destination is not None:
+                        used.update(row.name for row in (*destination.config.interfaces, *destination.config.interface_units) if _device(row) == target_device)
+                    number = tunnel_sources.index((item.source_vdom, item.source_name)) + 1
+                    while f'tunnel.{number}' in used:
+                        number += 1
+                    values[key] = f'tunnel.{number}'
+                    evidence[key] = ['Proposed site-to-site IPsec tunnel identifier. Gateway, credentials and selectors remain separate prerequisites.']
                 elif source and (source.type or "").casefold() == "aggregate":
                     number = aggregates.index((item.source_vdom, item.source_name)) + 1
                     while f"ae{number}" in values.values():
@@ -172,18 +232,21 @@ def build_deterministic_draft(config, derived, decisions, *, source_digest, targ
     provisional = PANMigrationDecisionSet(tuple(replace(item, value=values.get(item.key),
             review_state=PANDecisionReviewState.CONFIRMED if values.get(item.key) else PANDecisionReviewState.PENDING,
             approved_operation="CREATE") for item in decisions.decisions))
-    plan = FortiGateToPaloAltoPlanner().plan(config, derived, provisional.to_options(), include_configuration=True)
+    planner_options = replace(provisional.to_options(), conversion_settings=settings)
+    plan = FortiGateToPaloAltoPlanner().plan(config, derived, planner_options, include_configuration=True)
     if service_names:
         eligible = {(item.source_vdom or "root", item.source_name) for item in plan.services if item.status.value == "SUPPORTED"}
         if any((vdom, name) not in eligible for vdom, names in service_names.items() for name in names):
             raise ValueError("Service name overrides must select current supported services")
         plan = FortiGateToPaloAltoPlanner().plan(config, derived,
-            replace(provisional.to_options(), service_names=service_names), include_configuration=True)
+            replace(planner_options, service_names=service_names), include_configuration=True)
+    plan = allocate_plan_names(plan, destination, target_device, service_names)
     # Discover additive deltas using proposed values, never the executable pipeline.
     classifications = classify_target_object_reuse(plan, destination, target_device, allow_additive=True) if destination is not None else ()
     operations = {}
     classification_by_source = {(row["source_vdom"], row.get("source_kind"), row["source_name"], row["family"]): row
                                 for row in classifications}
+    classification_by_item = {(row['source_vdom'], row.get('source_kind'), row['source_name'], row['family'], row.get('target_name')): row for row in classifications}
     for key, item in by_key.items():
         operation = None if item.target_field == "vsys" and destination is None else "CREATE"
         family = "interface" if item.target_field == "target_interface" else "zone" if item.target_field == "target_zone" else item.target_field
@@ -201,6 +264,20 @@ def build_deterministic_draft(config, derived, decisions, *, source_digest, targ
     provisional = PANMigrationDecisionSet(tuple(replace(item, approved_operation=operations[item.key]) for item in provisional.decisions))
     target_findings = validate_against_target(config, provisional, destination, target_device)
     findings = [row.to_dict() for row in target_findings]
+    findings.extend(validate_source_interfaces(config))
+    findings.extend({'code': 'SECURITY_PROFILE_REQUIRED', **group} for group in inspection_groups)
+    findings.extend({'code': 'VPN_PARAMETERS_REQUIRED', 'message': 'Supply reviewed target values for absent source parameters; no defaults are inferred.',
+        **group} for group in vpn_parameter_requirements(config))
+    findings.extend({'code': 'VPN_PREREQUISITE', 'identity': f'{vdom}/{name}',
+        'message': 'Existing target VPN must use the reviewed tunnel identifier, gateway, credentials, selectors and crypto settings.'}
+        for vdom, name in tunnel_sources)
+    findings.extend({'code': 'SOURCE_INTERFACE_MISSING', 'source_vdom': row.source_vdom, 'source_kind': 'interface',
+        'source_name': row.source_name, 'message': f'{row.source_name} is referenced but has no explicit source interface. Review the incomplete source relationship.'}
+        for row in decisions.decisions if row.source_kind == 'interface' and row.target_field == 'target_interface'
+        and (row.source_vdom, row.source_name) not in interfaces)
+    findings.extend({'code': 'MANAGEMENT_PROFILE_REQUIRED', 'identity': f'{item.vdom or "root"}/{item.name}',
+        'message': 'Explicit source administrative protocols: ' + ', '.join(item.allowaccess)}
+        for item in config.interfaces if item.allowaccess)
     findings.extend({"code": "TARGET_RULE_PLACEMENT_UNVERIFIED",
         "message": f"Target {row['family'].replace('_', ' ')} placement for {row['target_name']!r} is unverified because the applicable rulebase is populated.",
         "source_vdom": row.get("source_vdom"), "source_name": row.get("source_name"),
@@ -221,6 +298,9 @@ def build_deterministic_draft(config, derived, decisions, *, source_digest, targ
             decision_blockers[finding.decision_key].append(finding.message)
     for key, item in by_key.items():
         value = values.get(key)
+        if (value and item.target_field == 'target_interface' and settings.get('target_model')
+                and value.split('.', 1)[0].startswith('ethernet') and value.split('.', 1)[0] not in MODEL_PORTS[settings['target_model']]):
+            decision_blockers[key].append('Target interface is outside the selected hardware port pool')
         if value and item.target_field == "target_zone":
             if issue := zone_name_issue(value):
                 decision_blockers[key].append(issue)
@@ -241,7 +321,13 @@ def build_deterministic_draft(config, derived, decisions, *, source_digest, targ
                    or decision_blockers.get(parent) or (parent in rows and rows[parent].status != "READY")]
         if missing:
             blocked.append("Unresolved prerequisite: " + ", ".join(missing))
-        status = "UNSUPPORTED" if item.mode is PANDecisionMode.UNSUPPORTED else "CONFLICT" if decision_blockers[key] else "NEEDS_INPUT" if not values.get(key) or missing else "READY"
+        source = interfaces.get((item.source_vdom, item.source_name)) if item.source_kind == 'interface' else None
+        unsupported_tunnel = source and (source.type or '').lower() == 'tunnel' and (item.source_vdom, item.source_name) not in vpns
+        status = "UNSUPPORTED" if item.mode is PANDecisionMode.UNSUPPORTED or unsupported_tunnel or (item.source_kind == 'interface' and f'{item.source_vdom}/{item.source_name}' in excluded) else "CONFLICT" if decision_blockers[key] else "NEEDS_INPUT" if not values.get(key) or missing else "READY"
+        if unsupported_tunnel:
+            blocked.append('Special or remote-access tunnel requires a separate target VPN design')
+        if status == 'UNSUPPORTED' and f'{item.source_vdom}/{item.source_name}' in excluded:
+            blocked.append('Explicitly excluded from this conversion; dependent configuration remains blocked')
         rows[key] = PANDraftDecision(key, item.source_vdom, item.source_kind, item.source_name,
             item.target_field, values.get(key), operations[key] if values.get(key) else None,
             status, values.get(make_decision_key(item.source_vdom, "vdom", item.source_vdom, "vsys")),
@@ -307,11 +393,11 @@ def build_deterministic_draft(config, derived, decisions, *, source_digest, targ
                 "CONFLICT" if naming_issues or any(code.startswith("TARGET_") for code in blockers.get(key, ())) else "NEEDS_INPUT",
             "dependencies": list(required) + item_dependencies, "blocking_reasons": reasons,
             "configuration": asdict(item), "causes": causes})
-        comparison = classification_by_source.get((item.source_vdom or "root", item.source_kind, item.source_name, item.source_object_type))
+        comparison = classification_by_item.get((item.source_vdom or "root", item.source_kind, item.source_name, item.source_object_type, item.target_name))
         if comparison and comparison['status'] != 'NO_MATCH':
             configuration[-1]['target_comparison'] = comparison
     coverage = build_migration_coverage(config,
-        build_recommendations(config, derived, provisional, destination, target_device))
+        build_recommendations(config, derived, provisional, destination, target_device), planned_vpn_sources=represented_vpn_sources(plan))
     for number, gap in enumerate(coverage["unplanned"]):
         configuration.append({"group_key": f"coverage:{number}",
             "source_vdom": gap["source_vdom"], "source_kind": gap["source_kind"],
@@ -320,10 +406,15 @@ def build_deterministic_draft(config, derived, decisions, *, source_digest, targ
             "status": "UNSUPPORTED", "dependencies": [],
             "blocking_reasons": [gap["reason"], "Manual implementation required; approving supported groups leaves a partial migration."]})
     findings.extend({"code": row.code, "message": row.message} for row in validation.issues)
+    findings.extend({'code': 'SCOPE_SUGGESTION', 'message': row['reason'], 'identity': row['identity']} for row in interface_scope_suggestions(config))
     if destination is None:
         findings.append({"code": "DESTINATION_UNVERIFIED", "message": "Destination compatibility, collisions, hardware capacity and licensing are unverified."})
     else:
         findings.append({"code": "CAPABILITY_UNVERIFIED", "message": "XML establishes configured objects. Hardware capacity and licensing need engineer verification."})
+    for finding in findings:
+        if finding['code'].startswith('SOURCE_'):
+            mapping_key = make_decision_key(finding['source_vdom'], 'interface', finding['source_name'], 'target_interface')
+            finding['affected_keys'] = [row['group_key'] for row in configuration if mapping_key in row['dependencies']]
     return PANMigrationDraft(context, tuple(rows[key] for key in sorted(rows)), tuple(configuration), tuple(findings),
                              design_digest(decisions.to_dict()))
 

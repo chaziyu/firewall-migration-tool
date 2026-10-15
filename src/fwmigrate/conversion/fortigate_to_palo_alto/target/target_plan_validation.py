@@ -38,7 +38,7 @@ class PANTargetPlanFinding:
 
 def _items(plan):
     for family in ("addresses", "address_groups", "services", "service_groups", "schedules", "interfaces", "zones",
-                   "static_routes", "dhcp_servers", "security_rules", "nat_rules", "ike_crypto_profiles", "ipsec_crypto_profiles"):
+                   "static_routes", "dhcp_servers", "security_rules", "nat_rules", "ike_crypto_profiles", "ipsec_crypto_profiles", 'ike_gateways', 'ipsec_tunnels'):
         yield from getattr(plan, family)
 
 
@@ -71,7 +71,8 @@ def validate_target_plan(plan: PANMigrationPlan, classifications, target_finding
                    and (planned.source_vdom or "root") == (item.get("source_vdom") or "root")
                    and planned.source_kind == item.get("source_kind")
                    and planned.target_vsys == item.get("target_vsys")
-                   and planned.source_name == item.get("source_name")]
+                   and planned.source_name == item.get("source_name")
+                   and (name is None or planned.target_name == name)]
         affected = expand_plan_dependents(dependency_index, (item_key(planned) for planned in matches))
         result.append(PANTargetPlanFinding(
             _reuse_code(status), _reuse_message(status, family or "target object", name),
@@ -102,12 +103,12 @@ def assess_target_plan(plan: PANMigrationPlan, classifications, target_findings,
     dispositions = {item_key(item): PANRenderDisposition.CREATE for item in items}
     blockers = {item_key(item): [] for item in items}
     by_identity = {(entry["family"], entry.get("source_vdom", "root"), entry.get("source_kind"),
-                    entry.get("target_vsys"), entry.get("source_name")): entry
+                    entry.get("target_vsys"), entry.get("source_name"), entry.get('target_name')): entry
                    for entry in classifications}
     for item in items:
         family = item.source_object_type
-        result = by_identity.get((family, item.source_vdom or "root", item.source_kind,
-                                  item.target_vsys, item.source_name))
+        identity = (family, item.source_vdom or 'root', item.source_kind, item.target_vsys, item.source_name)
+        result = by_identity.get((*identity, item.target_name)) or by_identity.get((*identity, None))
         if result:
             status = result.get("status")
             if status == "EXACT_MATCH" and family in _REUSABLE:

@@ -221,17 +221,11 @@
 .excel-profile { display: inline-flex; align-items: center; gap: 8px; color: var(--text-muted); font-size: 13px; }
 .excel-profile select { padding: 8px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--bg-input); color: var(--text-main); }
 .page-description { display: block; max-width: 72ch; margin-top: 4px; color: var(--text-muted); font-size: 14px; line-height: 1.6; }
-.migration-workflow, .migration-review { display: grid; gap: 14px; }
+.workflow-panel { min-width: 0; }
+.migration-workflow, .migration-review { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
 .migration-workflow h2, .migration-review h2 { margin-bottom: 0; }
 .action-row, .migration-toolbar { display: flex; flex-wrap: wrap; align-items: end; gap: 10px; }
 .action-row .field, .migration-toolbar .field { min-width: 210px; margin: 0; }
-.migration-project-files { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px 24px; padding: 16px 20px; }
-.migration-project-files p { margin: 0; }
-.migration-project-copy { display: grid; gap: 4px; font-size: 13px; line-height: 1.5; }
-.migration-project-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.migration-project-actions .primary-button { min-height: 40px; padding: 9px 14px; border: 1px solid var(--line); background: var(--surface); color: var(--text-main); font-size: 13px; line-height: 20px; white-space: nowrap; box-shadow: none; }
-.migration-project-files > [role='status'] { grid-column: 1 / -1; color: var(--text-muted); font-size: 13px; overflow-wrap: anywhere; }
-@media (max-width: 900px) { .migration-project-files { grid-template-columns: minmax(0, 1fr); } .migration-project-actions .primary-button { flex: 1 1 auto; } }
 .review-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(125px, 1fr)); gap: 9px; margin: 12px 0; }
 .review-work-card p { color: var(--text-muted); font-size: 13px; }
 .review-workflow, .review-work-card { display: grid; gap: 12px; }
@@ -244,6 +238,21 @@
 .review-work-heading { display: flex; align-items: start; justify-content: space-between; gap: 12px; }
 .review-work-heading p { margin: 4px 0 0; }
 .review-work-field { display: grid; gap: 7px; max-width: 680px; }
+.target-setup { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+.target-setup h3 { margin: 0 0 8px; }
+.target-setup p { color: var(--text-muted); }
+.target-setup .migration-summary p { margin: 0; }
+.target-setup-actions { position: sticky; top: 0; z-index: 1; padding: 12px 0; background: var(--surface); }
+.target-setup-actions span { flex-basis: 100%; color: var(--text-muted); font-size: 13px; }
+.target-ownership { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: 16px; margin-top: 12px; }
+.target-ownership fieldset { min-width: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin: 0; padding: 16px; border: 1px solid var(--line); border-radius: var(--radius-sm); }
+.target-ownership legend { padding: 0 6px; font-weight: 600; }
+.target-ownership .field:last-child { margin-bottom: 0; }
+.target-setup-search { max-width: 360px; }
+.target-setup-table input { box-sizing: border-box; width: 100%; min-width: 150px; padding: 9px 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--bg-input); color: var(--text-main); }
+.migration-exceptions .review-work-card { margin-top: 12px; }
+.migration-technical-reasons { max-height: 280px; overflow: auto; overflow-wrap: anywhere; }
+@media (max-width: 600px) { .target-ownership fieldset { grid-template-columns: 1fr; } }
 .review-work-field label { display: grid; gap: 6px; color: var(--text-muted); font-size: 13px; font-weight: 600; }
 .review-work-field input { width: 100%; box-sizing: border-box; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--bg-input); color: var(--text-main); font: inherit; }
 .review-work-suggestion, .review-work-impact { color: var(--text-muted); font-size: 13px; }

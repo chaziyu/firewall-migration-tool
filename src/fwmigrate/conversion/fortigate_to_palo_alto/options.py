@@ -3,6 +3,7 @@
 from dataclasses import dataclass, field
 from typing import Mapping
 import re
+from .target.profile import parse_conversion_settings
 
 
 @dataclass(frozen=True, slots=True)
@@ -30,8 +31,10 @@ class PANMigrationOptions:
     interfaces: Mapping[str, Mapping[str, InterfaceMapping | Mapping[str, str | None]]] = field(default_factory=dict)
     zones: Mapping[str, Mapping[str, ZoneMapping | Mapping[str, str | None]]] | None = None
     service_names: Mapping[str, Mapping[str, str]] = field(default_factory=dict)
+    conversion_settings: dict = field(default_factory=dict)
 
     def __post_init__(self) -> None:
+        object.__setattr__(self, 'conversion_settings', parse_conversion_settings(self.conversion_settings))
         if not isinstance(self.service_names, Mapping) or any(
             not isinstance(vdom, str) or not vdom or not isinstance(names, Mapping)
             or any(not isinstance(name, str) or not name or not isinstance(value, str)

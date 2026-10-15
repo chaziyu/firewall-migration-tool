@@ -10,6 +10,45 @@ from .addresses import address_references
 from .vips import vip_policy_consumers, vip_translation
 
 
+def _service_matches(names, vdom, views):
+    """Expand an explicit union into adjacent single-service NAT rules."""
+    services = {item.name: item for item in getattr(views, 'services', ()) if (item.vdom or 'root') == vdom}
+    groups = {item.name: item for item in getattr(views, 'groups', ()) if (item.vdom or 'root') == vdom}
+    def visit(name, seen):
+        if name in seen or len(seen) > 64 or name in groups and name in services:
+            return None
+        if name in groups:
+            members = groups[name].members
+            if not members:
+                return None
+            result = []
+            for member in members:
+                values = visit(member, seen | {name})
+                if values is None:
+                    return None
+                result.extend(values)
+                if len(result) > 256:
+                    return None
+            return result
+        if name in services:
+            item = services[name]
+            return [name] if item.protocol in {'tcp', 'udp'} and item.port is not None else None
+        if name == 'DNS':
+            return ['FG-DNS-TCP', 'FG-DNS-UDP']
+        return [name] if name in {'ALL', 'HTTP', 'HTTPS'} else None
+    result = []
+    for name in names or ():
+        values = visit(name, set())
+        if values is None:
+            return None
+        result.extend(values)
+        if len(result) > 256:
+            return None
+    if 'ALL' in result and 'ALL' not in services and 'ALL' not in groups:
+        return ('ALL',)
+    return tuple(dict.fromkeys(result)) or None
+
+
 def plan_nat(source: Any, derived: Any, options: Any):
     service_names = {}
     service_views = getattr(derived, "services", None)
@@ -22,6 +61,7 @@ def plan_nat(source: Any, derived: Any, options: Any):
     for item in getattr(derived, "nat", ()):
         vdom = item.vdom or "root"
         policy = policies.get((vdom, item.policy_id))
+        matches = _service_matches(policy.service, vdom, service_views) if policy else None
         egress_mapping = (
             getattr(options, "interfaces", {}).get(vdom, {}).get(item.egress_interfaces[0])
             if len(item.egress_interfaces) == 1 else None
@@ -67,6 +107,10 @@ def plan_nat(source: Any, derived: Any, options: Any):
             source_translation_type, source_interface_address = "dynamic-ip-and-port", True
         if not source_translation_type:
             warnings.append("unsafe source NAT was not rendered")
+        if matches:
+            warnings = [warning for warning in warnings if warning not in {
+                'source NAT policy has multiple services; service-group semantics are not verified',
+                'NAT service-group matching has no verified PAN-OS service mapping'}]
         result.append(PlannedNATRule(
             source_vdom=item.vdom, source_kind="source_nat", source_object_type="nat_rule",
             source_name=item.policy_name or str(item.policy_id), source_policy_id=item.policy_id,
@@ -78,9 +122,15 @@ def plan_nat(source: Any, derived: Any, options: Any):
             to_zones=_policy_zones(policy, item.egress_interfaces, options, zone_names),
             source_addresses=address_references(source, vdom, policy.srcaddr or ()) if policy else (),
             destination_addresses=address_references(source, vdom, policy.dstaddr or ()) if policy else (),
-            service=(service_target(policy.service[0], service_names.get(vdom, ()), getattr(options, "service_names", {}).get(vdom, {})) if policy and policy.service and len(policy.service) == 1 else None),
+            service=(service_target(matches[0], service_names.get(vdom, ()), getattr(options, "service_names", {}).get(vdom, {})) if matches and len(matches) == 1 else
+                     service_target(policy.service[0], service_names.get(vdom, ()), getattr(options, "service_names", {}).get(vdom, {})) if policy and policy.service and len(policy.service) == 1 else None),
             to_interface=getattr(egress_mapping, "target_interface", None),
         ))
+        if matches and len(matches) > 1 and not warnings:
+            original = result.pop()
+            result.extend(replace(original, target_name=f'{original.target_name}-svc-{number}',
+                service=service_target(name, service_names.get(vdom, ()), getattr(options, 'service_names', {}).get(vdom, {})))
+                for number, name in enumerate(matches, 1))
     vip_consumers = vip_policy_consumers(source, derived)
     for vip in getattr(source, "vips", ()):
         vdom = vip.vdom or "root"

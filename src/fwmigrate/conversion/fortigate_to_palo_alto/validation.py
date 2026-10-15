@@ -8,9 +8,29 @@ import re
 from .models import MigrationIssue, MigrationSourceRef, PANMigrationPlan, PANMigrationStatus
 from .planning.services import PAN_BUILTIN_SERVICES
 from .target.name_validation import zone_name_issue
+from .planning.vpn import crypto_lifetime
 
 
 ItemKey = tuple[str | None, str | None, str | None]
+
+
+def validate_source_interfaces(source):
+    """Report explicit malformed addresses without repairing vendor source state."""
+    result = []
+    for interface in source.interfaces:
+        if not interface.ip:
+            continue
+        try:
+            parts = interface.ip.split()
+            if len(parts) not in {1, 2} or len(parts) == 1 and '/' not in parts[0]:
+                raise ValueError('An explicit prefix or mask is required')
+            IPv4Interface('/'.join(parts))
+        except ValueError:
+            result.append({'code': 'SOURCE_INTERFACE_IPV4_INVALID',
+                'source_vdom': interface.vdom or 'root', 'source_kind': 'interface',
+                'source_name': interface.name,
+                'message': f'Correct the malformed primary IPv4 address for {interface.name} in the source configuration. Secondary addresses are not substitutes.'})
+    return result
 
 
 @dataclass(frozen=True, slots=True)
@@ -103,24 +123,30 @@ def validate_plan(plan: PANMigrationPlan) -> MigrationValidationResult:
             issues.append(MigrationIssue("planned_item_warning", warning, PANMigrationStatus.MANUAL_REVIEW, _ref(item)))
         if item.source_object_type == "security_rule" and item.status is PANMigrationStatus.UNSUPPORTED:
             add("unsupported_security_rule", "security rule source semantics require manual design", item)
+        if item.source_object_type == 'security_rule' and item.profile_group and not re.fullmatch(r'[A-Za-z0-9_. -]{1,63}', item.profile_group):
+            add('invalid_security_profile_group', 'Invalid target security profile group name', item)
         if item.source_name and key in seen:
             add("duplicate_target_name", "duplicate target name", item)
         seen.add(key)
 
-        if item.source_object_type in {"ike_crypto_profile", "ipsec_crypto_profile"}:
+        if item.source_object_type in {'ike_gateway', 'ipsec_tunnel'}:
+            add('vpn_manual_completion_required', 'Gateway credentials and tunnel semantics require secure target completion; no executable VPN commands are available', item)
+        elif item.source_object_type in {"ike_crypto_profile", "ipsec_crypto_profile"}:
             if not re.fullmatch(r"[A-Za-z0-9_.-]{1,31}", item.target_name or ""):
                 add("invalid_target_object_name", "crypto profile name must contain 1 to 31 letters, numbers, periods, hyphens or underscores", item)
-            if (item.encryption not in {"aes-128-cbc", "aes-256-cbc"} or item.authentication != "sha256"
+            if (item.encryption not in {"aes-128-cbc", "aes-256-cbc"} or item.authentication not in {'sha256', 'sha384', 'sha512'}
                     or item.dh_group not in {"group14", "group15", "group16", "group19", "group20", "group21"}
                        | ({"no-pfs"} if item.source_object_type == "ipsec_crypto_profile" else set())
-                    or not isinstance(item.lifetime_seconds, int) or not 180 <= item.lifetime_seconds <= 65535):
+                    or crypto_lifetime(item.lifetime_seconds) is None):
                 add("invalid_crypto_profile", "crypto profile algorithms, DH group or lifetime are unsupported", item)
             if not item.target_vsys:
                 add("missing_target_vsys", "missing target VSYS mapping", item)
         elif item.source_object_type == "interface":
+            if item.management_profile and not re.fullmatch(r'[A-Za-z0-9_.-]{1,31}', item.management_profile):
+                add('invalid_management_profile', 'Invalid target management profile name', item)
             if not item.target_name:
                 add("missing_target_interface", "interface has no mapped target name", item)
-            if item.interface_family not in {"ethernet", "loopback", "aggregate-ethernet"}:
+            if item.interface_family not in {"ethernet", "loopback", "aggregate-ethernet", 'tunnel'}:
                 add("unsupported_interface_family", "interface has no supported target family", item)
             if item.interface_family == "aggregate-ethernet":
                 if not re.fullmatch(r"ae(?:[1-9]|1[0-6])(?:\.[1-9][0-9]{0,3})?", item.target_name or ""):
@@ -132,6 +158,8 @@ def validate_plan(plan: PANMigrationPlan) -> MigrationValidationResult:
                         or len(set(item.aggregate_members)) != len(item.aggregate_members)
                         or any(not re.fullmatch(r"ethernet[0-9]+/[0-9]+", name) for name in item.aggregate_members)):
                     add("invalid_aggregate_members", "aggregate physical members are invalid or duplicated", item)
+            if item.interface_family == 'tunnel' and (not re.fullmatch(r'tunnel\.[1-9][0-9]{0,3}', item.target_name or '') or item.parent or item.tag is not None):
+                add('invalid_tunnel_interface', 'Tunnel unit requires a valid identifier without a VLAN parent or tag', item)
             if item.interface_family == "loopback":
                 if not re.fullmatch(r"loopback\.[1-9][0-9]{0,3}", item.target_name or "") or item.parent or item.tag is not None:
                     add("invalid_loopback_interface", "loopback requires an identifier from 1 to 9999 and no VLAN parent or tag", item)
@@ -202,7 +230,8 @@ def validate_plan(plan: PANMigrationPlan) -> MigrationValidationResult:
                 add("missing_virtual_router", "missing target virtual-router mapping", item)
             if not getattr(item, "destination", None):
                 add("missing_route_destination", "route has no explicit destination", item)
-            if getattr(item, "nexthop_type", None) not in {None, "ip-address", "discard"} or (not item.nexthop and item.nexthop_type != "discard"):
+            valid_tunnel_none = item.nexthop_type == 'none' and not item.nexthop and any(interface.target_name == item.interface and interface.interface_family == 'tunnel' and interface.target_vsys == item.target_vsys for interface in plan.interfaces)
+            if not valid_tunnel_none and (getattr(item, "nexthop_type", None) not in {None, "ip-address", "discard"} or (not item.nexthop and item.nexthop_type != "discard")):
                 add("unsupported_route_nexthop", "route has no supported nexthop", item)
             if getattr(item, "interface", None) is None and any("interface mapping" in warning for warning in item.warnings):
                 add("missing_route_interface", "missing target interface mapping", item)
@@ -354,7 +383,7 @@ def validate_plan(plan: PANMigrationPlan) -> MigrationValidationResult:
             for name in rule.destinations:
                 address = find(("addresses",), name, rule.target_vsys)
                 if address is not None and address.source_kind == "vip":
-                    nat = find(("nat_rules",), address.source_name, rule.target_vsys)
+                    nat = next((item for item in plan.nat_rules if item.source_kind == 'vip' and item.source_name == address.source_name and item.target_vsys == rule.target_vsys and item.source_vdom == address.source_vdom), None)
                     if nat is None or nat.source_kind != "vip" or nat.source_vdom != address.source_vdom:
                         add("missing_vip_nat", "VIP security match has no corresponding scoped DNAT rule", rule)
                     elif _key(nat) not in renderable:
@@ -457,5 +486,5 @@ def _issue(code, message, item):
 def _items(plan):
     if plan is None:
         return
-    for name in ("addresses", "address_groups", "services", "service_groups", "schedules", "interfaces", "zones", "static_routes", "dhcp_servers", "security_rules", "nat_rules", "ike_crypto_profiles", "ipsec_crypto_profiles"):
+    for name in ("addresses", "address_groups", "services", "service_groups", "schedules", "interfaces", "zones", "static_routes", "dhcp_servers", "security_rules", "nat_rules", "ike_crypto_profiles", "ipsec_crypto_profiles", 'ike_gateways', 'ipsec_tunnels'):
         yield from getattr(plan, name)
