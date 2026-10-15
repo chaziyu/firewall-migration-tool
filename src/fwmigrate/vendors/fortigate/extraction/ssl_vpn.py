@@ -24,9 +24,11 @@ from ..nodes import (
 from .common import (
     evaluate_config,
     evaluate_edit,
+    evaluate_edit_sequence,
     get_child_config,
     iter_section_configs,
     iter_section_edits,
+    iter_grouped_section_edits,
     source_model_kwargs,
 )
 from .section_index import SectionIndex
@@ -108,16 +110,19 @@ def _extract_realms(tree: SectionIndex, config: SSLVPNConfig) -> None:
 
 def _extract_clients(tree: SectionIndex, config: SSLVPNConfig) -> None:
     section_path = "vpn ssl client"
-    for source in iter_section_edits(tree, section_path):
-        evaluation = evaluate_edit(section_path, source.edit)
+    for source, edits in iter_grouped_section_edits(tree, section_path):
+        evaluation = evaluate_edit_sequence(section_path, edits)
         attributes = source_model_kwargs(
             evaluation, model_type=FGSSLVPNClient,
             name=source.edit.name, vdom=source.vdom,
         )
-        psk_configured = False
-        for command in source.edit.commands:
+        psk_configured = None
+        for command in (command for edit in edits for command in edit.commands):
             if isinstance(command, CommandNode) and command.key == "psk":
-                psk_configured = command.operation.lower() in {"set", "append"}
+                if command.operation.lower() in {"set", "append"}:
+                    psk_configured = True
+                elif command.operation.lower() == "unset":
+                    psk_configured = False
         attributes["psk_configured"] = psk_configured
         attributes["raw_extra"].pop("psk", None)
         config.ssl_vpn_clients.append(FGSSLVPNClient(**attributes))

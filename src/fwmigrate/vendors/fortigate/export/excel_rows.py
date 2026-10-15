@@ -15,7 +15,7 @@ from fwmigrate.source_reporting import ExcelExportProfile
 from ..extraction.coverage import extraction_status, find_typed_source_object, supports_path
 from ..security.extraction import sanitize_source_attributes
 from ..transform.policies import effective_policy_action
-from ..report_values import address_value, policy_nat_entries, policy_nat_review
+from ..report_values import address_value, credential_presence, policy_nat_entries, policy_nat_review
 from .excel_schema import SHEET_ORDER
 from .excel_common import (
     _POLICY_ACTION_NOTE,
@@ -56,6 +56,11 @@ def rows_for_sheet(
         "Address Groups": _address_group_rows,
         "Services": _service_rows,
         "Service Groups": _service_group_rows,
+        "Service Categories": _service_category_rows,
+        "Derived Service Expansions": _derived_service_rows,
+        "One-Time Schedules": _one_time_schedule_rows,
+        "Recurring Schedules": _recurring_schedule_rows,
+        "Schedule Groups": _schedule_group_rows,
         "Policies": _policy_rows,
         "Security Policies": _security_policy_rows,
         "IP Pools": _ip_pool_rows,
@@ -348,6 +353,7 @@ def _address_rows(context: _ExcelContext, headers: Sequence[str]) -> Iterator[di
             "Name": item.name,
             "Type": item.type,
             "Value": value,
+            "Source Explicit Fields": sorted(item.explicit_fields),
             "Address Family": item.address_family,
             "Associated Interface": item.associated_interface,
             "Allow Routing": item.allow_routing,
@@ -366,6 +372,7 @@ def _address_rows(context: _ExcelContext, headers: Sequence[str]) -> Iterator[di
             vdom=item.vdom,
             names=(item.name,),
             domains=("address6",) if item.address_family == "ipv6" else ("address",),
+            extra_reasons=(value,) if value and value.startswith(("Unknown:", "Unsupported address type:", "Ambiguous:")) else (),
         )
         _overlay_safe_raw(row, row["Additional Settings"], headers)
         yield row
@@ -413,12 +420,59 @@ def _address_group_rows(context: _ExcelContext, headers: Sequence[str]) -> Itera
 
 
 def _service_rows(context: _ExcelContext, headers: Sequence[str]) -> Iterator[dict[str, Any]]:
+    yield from _model_rows(context, context.config.services, headers, {
+        "Name": "name", "Protocol": "protocol", "TCP Port Range": "tcp_portrange",
+        "UDP Port Range": "udp_portrange", "SCTP Port Range": "sctp_portrange",
+        "Protocol Number": "protocol_number", "ICMP Type": "icmptype", "ICMP Code": "icmpcode",
+        "Category": "category", "Proxy": "proxy", "Session TTL": "session_ttl",
+        "Description": "comment", "VDOM": "vdom",
+    }, domains=("service",))
+
+
+def _service_group_rows(context: _ExcelContext, headers: Sequence[str]) -> Iterator[dict[str, Any]]:
+    yield from _model_rows(context, context.config.service_groups, headers, {
+        "Name": "name", "Members": "members", "Proxy": "proxy",
+        "Description": "comment", "VDOM": "vdom",
+    }, domains=("service_group",))
+
+
+def _service_category_rows(context: _ExcelContext, headers: Sequence[str]) -> Iterator[dict[str, Any]]:
+    yield from _model_rows(context, context.config.service_categories, headers, {
+        "Name": "name", "Description": "comment", "VDOM": "vdom",
+    }, domains=("service_category",))
+
+
+def _one_time_schedule_rows(context: _ExcelContext, headers: Sequence[str]) -> Iterator[dict[str, Any]]:
+    yield from _model_rows(context, context.config.one_time_schedules, headers, {
+        "Name": "name", "Start": "start", "End": "end", "Start UTC": "start_utc",
+        "End UTC": "end_utc", "Expiration Days": "expiration_days", "Color": "color",
+        "Fabric Object": "fabric_object", "VDOM": "vdom",
+    }, domains=("schedule", "schedule_onetime"))
+
+
+def _recurring_schedule_rows(context: _ExcelContext, headers: Sequence[str]) -> Iterator[dict[str, Any]]:
+    yield from _model_rows(context, context.config.recurring_schedules, headers, {
+        "Name": "name", "Days": "days", "Start": "start", "End": "end",
+        "Color": "color", "Fabric Object": "fabric_object", "VDOM": "vdom",
+    }, domains=("schedule", "schedule_recurring"))
+
+
+def _schedule_group_rows(context: _ExcelContext, headers: Sequence[str]) -> Iterator[dict[str, Any]]:
+    yield from _model_rows(context, context.config.schedule_groups, headers, {
+        "Name": "name", "Members": "members", "Color": "color",
+        "Fabric Object": "fabric_object", "VDOM": "vdom",
+    }, domains=("schedule_group",))
+
+
+def _derived_service_rows(context: _ExcelContext, headers: Sequence[str]) -> Iterator[dict[str, Any]]:
     source = {(item.vdom, item.name): item for item in context.config.services}
     for item in context.derived.services.services:
         source_item = source.get((item.vdom, item.source_name or item.name))
         row = {
             "Name": item.name,
             "Source Service": item.source_name,
+            "Object Type": "Service",
+            "Origin": "Derived",
             "Protocol": item.protocol,
             "Destination Port": item.port,
             "Source Port": item.source_port,
@@ -440,13 +494,13 @@ def _service_rows(context: _ExcelContext, headers: Sequence[str]) -> Iterator[di
             _overlay_raw(row, source_item.raw_extra, headers)
         yield row
 
-
-def _service_group_rows(context: _ExcelContext, headers: Sequence[str]) -> Iterator[dict[str, Any]]:
     source = {(item.vdom, item.name): item for item in context.config.service_groups}
     for item in context.derived.services.groups:
         source_item = source.get((item.vdom, item.name))
         row = {
             "Name": item.name,
+            "Object Type": "Service Group",
+            "Origin": "Derived",
             "Members": list(item.members) if item.members is not None else None,
             "Generated": item.generated,
             "Description": item.comment,
@@ -550,6 +604,7 @@ def _ip_pool_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[s
             "Source End IP": "source_endip",
             "Start Port": "startport",
             "End Port": "endport",
+            "VDOM": "vdom",
             "Associated Interface": "associated_interface",
             "ARP Reply": "arp_reply",
             "ARP Interface": "arp_intf",
@@ -804,10 +859,10 @@ def _vpn_phase1_rows(
             "IKE Mode": item.mode,
             "Authentication Method": item.authmethod,
             "Remote Authentication Method": item.authmethod_remote,
-            "PSK Configured": "Yes" if item.psk_configured else "No",
-            "PPK Secret Configured": "Yes" if item.ppk_secret_configured else "No",
-            "Auth Password Configured": "Yes" if item.auth_password_configured else "No",
-            "Group Authentication Secret Configured": "Yes" if item.group_authentication_secret_configured else "No",
+            "PSK Configured": credential_presence(item.psk_configured),
+            "PPK Secret Configured": credential_presence(item.ppk_secret_configured),
+            "Auth Password Configured": credential_presence(item.auth_password_configured),
+            "Group Authentication Secret Configured": credential_presence(item.group_authentication_secret_configured),
             "Phase 1 Proposal": item.proposal,
             "Phase 1 DH Groups": item.dhgrp,
             "Key Lifetime (Seconds)": item.keylife,
@@ -879,10 +934,10 @@ def _policy_vpn_phase1_rows(context: _ExcelContext, headers: Sequence[str]) -> I
             "IKE Mode": "mode",
             "Authentication Method": "authmethod",
             "Remote Authentication Method": "authmethod_remote",
-            "PSK Configured": lambda item: "Yes" if item.psk_configured else "No",
-            "PPK Secret Configured": lambda item: "Yes" if item.ppk_secret_configured else "No",
-            "Auth Password Configured": lambda item: "Yes" if item.auth_password_configured else "No",
-            "Group Authentication Secret Configured": lambda item: "Yes" if item.group_authentication_secret_configured else "No",
+            "PSK Configured": lambda item: credential_presence(item.psk_configured),
+            "PPK Secret Configured": lambda item: credential_presence(item.ppk_secret_configured),
+            "Auth Password Configured": lambda item: credential_presence(item.auth_password_configured),
+            "Group Authentication Secret Configured": lambda item: credential_presence(item.group_authentication_secret_configured),
             "Phase 1 Proposal": "proposal",
             "Phase 1 DH Groups": "dhgrp",
             "Key Lifetime (Seconds)": "keylife",
@@ -1212,7 +1267,7 @@ def _ssl_client_rows(context: _ExcelContext, headers: Sequence[str]) -> Iterator
         "Name": "name", "Certificate": "certificate", "Class ID": "class_id", "Comment": "comment",
         "Distance": "distance", "Interface": "interface", "IPv4 Subnets": "ipv4_subnets",
         "IPv6 Subnets": "ipv6_subnets", "Peer": "peer", "Port": "port", "Priority": "priority",
-        "PSK Configured": lambda item: "Yes" if item.psk_configured else "No",
+        "PSK Configured": lambda item: credential_presence(item.psk_configured),
         "Realm": "realm", "Server": "server", "Source IP": "source_ip", "Status": "status",
         "User": "user", "VDOM": "vdom",
     }, domains=("ssl_vpn_client",))

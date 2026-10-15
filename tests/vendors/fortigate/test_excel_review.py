@@ -92,6 +92,89 @@ end
     assert rows[2][headers.index("Analysis Status")] == "EXTRACTED"
 
 
+def test_cli_constraint_warnings_reach_scoped_source_rows_and_review_sheets():
+    from copy import deepcopy
+    from fwmigrate.source_reporting import ExcelExportProfile
+
+    reporter = FortiGateSourceReporter()
+    source = '''config vdom
+edit invalid
+config firewall ippool
+edit pool
+set startport 5116
+set endport 65534
+next
+end
+config firewall schedule onetime
+edit schedule
+set expiration-days 101
+next
+end
+config firewall schedule recurring
+edit recurring
+set day everyday
+next
+end
+next
+edit valid
+config firewall ippool
+edit pool
+set startport 5117
+set endport 65533
+next
+end
+config firewall schedule onetime
+edit schedule
+set expiration-days 0
+next
+end
+config firewall schedule recurring
+edit recurring
+set day none
+next
+end
+next
+end
+'''
+    analysis = reporter.analyze_source(source)
+    before = deepcopy(analysis.extracted.config)
+    preview = reporter.build_preview(analysis)
+    assert all('FortiOS 7.4.6' in row['review'] for row in preview['sections']['schedules'] if row['vdom'] == 'invalid')
+    assert all(row['review'] is None for row in preview['sections']['schedules'] if row['vdom'] == 'valid')
+    shared = {}
+    for profile in ExcelExportProfile:
+        output = io.BytesIO()
+        reporter.export_excel(analysis, output, profile=profile)
+        workbook = load_workbook(output, data_only=True)
+        for name in ('IP Pools', 'One-Time Schedules', 'Recurring Schedules', 'Review Required'):
+            sheet = workbook[name]
+            headers = [cell.value for cell in sheet[3]]
+            rows = [dict(zip(headers, row)) for row in sheet.iter_rows(min_row=4, values_only=True)]
+            if name in shared:
+                assert rows == shared[name]
+            shared[name] = rows
+            if name == 'Review Required':
+                assert len(rows) == 4
+                assert {row['Source Sheet'] for row in rows} == {'IP Pools', 'One-Time Schedules', 'Recurring Schedules'}
+                assert all(row['VDOM'] == 'invalid' for row in rows)
+            else:
+                scoped = {row['VDOM']: row for row in rows}
+                assert scoped['invalid']['Analysis Status'] == 'REVIEW_REQUIRED'
+                assert 'FortiOS 7.4.6' in scoped['invalid']['Review Reasons']
+                assert scoped['valid']['Analysis Status'] == 'EXTRACTED'
+        assert shared['IP Pools'][0]['Start Port'] == 5116
+        assert shared['IP Pools'][0]['End Port'] == 65534
+        assert shared['One-Time Schedules'][0]['Expiration Days'] == 101
+        assert shared['Recurring Schedules'][0]['Days'] == 'everyday'
+        if profile == ExcelExportProfile.FULL:
+            assert 'FortiGate Source Inventory' in workbook.sheetnames
+            assert 'Extraction Coverage' in workbook.sheetnames
+        else:
+            assert 'FortiGate Source Inventory' not in workbook.sheetnames
+            assert 'Extraction Coverage' not in workbook.sheetnames
+    assert analysis.extracted.config == before
+
+
 class ExcelReportTest(unittest.TestCase):
     def _workbook(self, config_text: str = ""):
         extracted = extract_fortigate_config(

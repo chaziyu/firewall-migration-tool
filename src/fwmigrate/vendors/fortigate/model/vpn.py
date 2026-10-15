@@ -42,10 +42,10 @@ class FGIPsecPhase1(BaseModel):
     certificate: list[str] = Field(default_factory=list)
 
     # Credential presence metadata; the credential itself is never retained.
-    psk_configured: bool = False
-    ppk_secret_configured: bool = False
-    auth_password_configured: bool = False
-    group_authentication_secret_configured: bool = False
+    psk_configured: bool | None = None
+    ppk_secret_configured: bool | None = None
+    auth_password_configured: bool | None = None
+    group_authentication_secret_configured: bool | None = None
 
     # Metadata
     comments: str | None = None

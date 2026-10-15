@@ -1,11 +1,13 @@
 import io
 import json
 import unittest
+import pytest
 from openpyxl import load_workbook
 from fwmigrate.source_reporting import source_reporters
 from fwmigrate.web import create_app
 from fwmigrate.vendors.fortigate.security.extraction import sanitize_source_attributes, sanitize_source_value
 from fwmigrate.vendors.fortigate.source_report import FortiGateSourceReporter, FortiGateSourceResult
+from fwmigrate.source_reporting import ExcelExportProfile
 
 SECRET_SOURCE = """config vpn ipsec phase1-interface
     edit VPN-HQ
@@ -19,6 +21,73 @@ config user local
     next
 end
 """
+
+
+@pytest.mark.parametrize('section,collection,sheet,key', [
+    ('vpn ipsec phase1-interface', 'ipsec_phase1', 'VPN Tunnels', 'psksecret'),
+    ('vpn ipsec phase1', 'ipsec_policy_phase1', 'Policy IPsec Phase 1', 'psksecret'),
+    ('vpn ssl client', 'ssl_vpn_clients', 'SSL VPN Clients', 'psk'),
+])
+def test_vpn_credential_presence_preserves_absent_set_and_unset(section, collection, sheet, key):
+    reporter = FortiGateSourceReporter()
+    source = f'''config {section}
+edit absent
+next
+edit configured
+set {key} do-not-export-credential
+next
+edit unset
+set {key} do-not-export-credential
+next
+edit unset
+unset {key}
+next
+edit reset
+set {key} do-not-export-credential
+next
+edit reset
+unset {key}
+set {key} do-not-export-replacement
+next
+end
+'''
+    analysis = reporter.analyze_source(source)
+    items = getattr(analysis.extracted.config, collection)
+    assert [(item.name, item.psk_configured) for item in items] == [
+        ('absent', None), ('configured', True), ('unset', False), ('reset', True),
+    ]
+    if collection != 'ssl_vpn_clients':
+        assert all(item.auth_password_configured is None for item in items)
+        assert all(item.ppk_secret_configured is None for item in items)
+        assert all(item.group_authentication_secret_configured is None for item in items)
+    preview = reporter.build_preview(analysis)
+    assert 'do-not-export' not in repr((analysis, preview))
+    if collection == 'ipsec_policy_phase1':
+        assert [item['psk_configured'] for item in preview['sections']['policy_vpn_phase1']] == [None, True, False, True]
+    for profile in ExcelExportProfile:
+        output = io.BytesIO()
+        reporter.export_excel(analysis, output, profile=profile)
+        workbook = load_workbook(output, data_only=True)
+        headers = [cell.value for cell in workbook[sheet][3]]
+        values = [row[headers.index('PSK Configured')] for row in workbook[sheet].iter_rows(min_row=4, values_only=True)]
+        assert values == ['Not explicitly configured', 'Yes', 'Explicitly unset', 'Yes']
+        assert all('do-not-export' not in str(row) for tab in workbook for row in tab.values)
+
+
+@pytest.mark.parametrize('commands,expected', [
+    ('', None),
+    ('unset psksecret', False),
+    ('unset psksecret-remote', False),
+    ('set psksecret do-not-export-local\nunset psksecret-remote', True),
+    ('set psksecret-remote do-not-export-remote\nunset psksecret', True),
+    ('set psksecret-remote do-not-export-remote\nunset psksecret-remote', False),
+])
+def test_local_and_remote_psk_presence_are_evaluated_independently(commands, expected):
+    analysis = FortiGateSourceReporter().analyze_source(
+        f'config vpn ipsec phase1-interface\nedit tunnel\n{commands}\nnext\nend\n'
+    )
+    assert analysis.extracted.config.ipsec_phase1[0].psk_configured is expected
+    assert 'do-not-export' not in repr(analysis)
 
 def test_fortigate_analysis_does_not_retain_parser_tree_or_secrets():
     analysis = source_reporters.get("fortigate").analyze_source(SECRET_SOURCE)

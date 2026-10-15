@@ -1036,7 +1036,7 @@ end
             "DPD Retry Count",
         ):
             self.assertIsNone(row[headers.index(header)])
-        self.assertEqual("No", row[headers.index("PSK Configured")])
+        self.assertEqual("Not explicitly configured", row[headers.index("PSK Configured")])
 
     def test_ips_source_fields_and_nested_exemptions(self):
         source = r'''
@@ -1320,14 +1320,14 @@ end
 
     def test_semantics_and_source_preservation(self):
         workbook = self._workbook()
-        services, rows = self._rows(workbook["Services"])
+        services, rows = self._rows(workbook["Derived Service Expansions"])
         service_rows = {row[services.index("Name")]: row for row in rows}
         generated = [row for row in rows if row[services.index("Source Service")] == "multi-port"]
         self.assertTrue(all(row[services.index("Generated")] == "Yes" for row in generated))
         self.assertIn("80", str(service_rows["multi-port-1"][services.index("Destination Port")]))
 
-        groups, rows = self._rows(workbook["Service Groups"])
-        group = {row[groups.index("Name")]: row for row in rows}
+        groups, rows = self._rows(workbook["Derived Service Expansions"])
+        group = {row[groups.index("Name")]: row for row in rows if row[groups.index("Object Type")] == "Service Group"}
         self.assertEqual("Yes", group["multi-port"][groups.index("Generated")])
         self.assertEqual("No", group["web-services"][groups.index("Generated")])
 
@@ -1638,6 +1638,117 @@ end
         values = {row[headers.index('Name')]: row[headers.index('Value')]
                   for row in sheet.iter_rows(min_row=4, values_only=True)}
         assert values == preview
+    assert analysis.extracted.config == before
+
+
+def test_native_service_rows_are_separate_from_derived_expansions():
+    from fwmigrate.vendors.fortigate.source_report import FortiGateSourceReporter
+
+    reporter = FortiGateSourceReporter()
+    analysis = reporter.analyze_source('''config firewall service category
+edit custom-category
+set comment category-comment
+set future-category retained
+next
+end
+config firewall service custom
+edit mixed
+set protocol TCP/UDP/SCTP
+set tcp-portrange 80:1024-65535 443
+set udp-portrange 53
+set sctp-portrange 123
+set category custom-category
+set proxy disable
+set fqdn example.com
+set iprange 192.0.2.1-192.0.2.2
+set application 123
+set future-service retained
+next
+edit ping
+set protocol ICMP
+set icmptype 8
+set icmpcode 0
+next
+end
+config firewall service group
+edit native-group
+set member mixed ping
+set proxy disable
+next
+end
+''')
+    before = deepcopy(analysis.extracted.config)
+    shared = {}
+    for profile in ExcelExportProfile:
+        output = io.BytesIO()
+        reporter.export_excel(analysis, output, profile=profile)
+        workbook = load_workbook(output, data_only=True)
+        for name in ('Services', 'Service Groups', 'Service Categories', 'Derived Service Expansions'):
+            sheet = workbook[name]
+            headers = [cell.value for cell in sheet[3]]
+            rows = [dict(zip(headers, row)) for row in sheet.iter_rows(min_row=4, values_only=True)]
+            if name in shared:
+                assert rows == shared[name]
+            shared[name] = rows
+        services = {row['Name']: row for row in shared['Services']}
+        assert set(services) == {'mixed', 'ping'}
+        assert services['mixed']['TCP Port Range'] == '80:1024-65535 443'
+        assert services['mixed']['UDP Port Range'] == '53'
+        assert services['mixed']['SCTP Port Range'] == '123'
+        assert services['mixed']['Category'] == 'custom-category'
+        assert services['mixed']['Proxy'] == 'disable'
+        assert 'tcp_portrange' in services['mixed']['Source Explicit Fields']
+        for value in ('example.com', '192.0.2.1-192.0.2.2', '123', 'retained'):
+            assert value in services['mixed']['Additional Settings']
+        assert services['ping']['ICMP Type'] == 8
+        assert services['ping']['ICMP Code'] == 0
+        assert [row['Name'] for row in shared['Service Groups']] == ['native-group']
+        assert 'mixed' in shared['Service Groups'][0]['Members']
+        assert shared['Service Categories'][0]['Description'] == 'category-comment'
+        assert 'retained' in shared['Service Categories'][0]['Additional Settings']
+        derived = shared['Derived Service Expansions']
+        assert all(row['Origin'] == 'Derived' for row in derived)
+        assert any(row['Object Type'] == 'Service Group' and row['Generated'] == 'Yes' for row in derived)
+        assert any(row['Source Service'] == 'mixed' and row['Generated'] == 'Yes' for row in derived)
+        if profile == ExcelExportProfile.FULL:
+            assert 'Native FortiGate source objects' in workbook['Services']['A2'].value
+            assert 'Derived FortiGate service transformation output' in workbook['Derived Service Expansions']['A2'].value
+    assert analysis.extracted.config == before
+
+
+def test_explicit_address_selectors_match_preview_and_both_workbooks():
+    from fwmigrate.vendors.fortigate.source_report import FortiGateSourceReporter
+
+    reporter = FortiGateSourceReporter()
+    selectors = {
+        'geo': ('geography', 'set country MY', 'country=MY'),
+        'dynamic': ('dynamic', 'set sub-type sdn\nset sdn connector\nset filter tag=web', 'sdn=connector'),
+        'interface': ('interface-subnet', 'set interface port1', 'interface=port1'),
+        'mac': ('mac', 'set macaddr 00:11:22:33:44:55', '00:11:22:33:44:55'),
+        'tag': ('route-tag', 'set route-tag 0', 'route-tag=0'),
+        'missing': ('geography', 'set subnet 192.0.2.0 255.255.255.0', 'Unknown:'),
+        'future': ('future-type', 'set future-selector retained', 'Unsupported address type:'),
+    }
+    source = 'config firewall address\n' + ''.join(
+        f'edit {name}\nset type {kind}\n{commands}\nnext\n'
+        for name, (kind, commands, _) in selectors.items()
+    ) + 'end\n'
+    analysis = reporter.analyze_source(source)
+    before = deepcopy(analysis.extracted.config)
+    preview = {item['name']: item['value'] for item in reporter.build_preview(analysis)['sections']['addresses']}
+    for name, (_, _, expected) in selectors.items():
+        assert expected in preview[name]
+    for profile in ExcelExportProfile:
+        output = io.BytesIO()
+        reporter.export_excel(analysis, output, profile=profile)
+        sheet = load_workbook(output, data_only=True)['Addresses']
+        headers = [cell.value for cell in sheet[3]]
+        rows = {row[0]: dict(zip(headers, row)) for row in sheet.iter_rows(min_row=4, values_only=True)}
+        assert {name: row['Value'] for name, row in rows.items()} == preview
+        assert all('type' in row['Source Explicit Fields'] for row in rows.values())
+        assert 'retained' in rows['future']['Additional Settings']
+        assert rows['missing']['Analysis Status'] == 'REVIEW_REQUIRED'
+        assert rows['future']['Analysis Status'] == 'REVIEW_REQUIRED'
     assert analysis.extracted.config == before
 
 

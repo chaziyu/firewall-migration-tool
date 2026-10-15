@@ -93,9 +93,9 @@ def _extract_phase1(
         attributes["raw_extra"] = raw_extra
 
         # Preserve only whether a credential was configured.
+        psk_states = (secret_state["psksecret"], secret_state["psksecret-remote"])
         attributes["psk_configured"] = (
-            secret_state["psksecret"]
-            or secret_state["psksecret-remote"]
+            True if True in psk_states else False if False in psk_states else None
         )
 
         attributes["ppk_secret_configured"] = (
@@ -138,11 +138,12 @@ def _extract_phase2(
 
 def _evaluate_secret_state(
     commands,
-) -> dict[str, bool]:
+) -> dict[str, bool | None]:
     """
     Track only whether sensitive Phase-1 fields are configured.
 
     Secret values themselves are never returned or stored.
+    None means absent; False means explicitly unset.
 
     State follows FortiGate source order:
 
@@ -153,7 +154,7 @@ def _evaluate_secret_state(
     """
 
     state = {
-        key: False
+        key: None
         for key in _PHASE1_SECRET_FIELDS
     }
 
