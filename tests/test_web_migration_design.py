@@ -406,6 +406,50 @@ def allocate(client, payload):
     return prepare(client, {**payload, 'draft_overrides': {key: 'ethernet1/1'}})
 
 
+def test_offline_aggregate_member_allocations_are_signed_dependencies_of_vlan_export():
+    source = '''config system interface
+edit port1
+set type physical
+next
+edit port2
+set type physical
+next
+edit bond
+set type aggregate
+set member port1 port2
+set lacp-mode active
+next
+edit vlan10
+set interface bond
+set vlanid 10
+set ip 198.51.100.1 255.255.255.0
+next
+end
+'''
+    client, payload = setup(None, source=source)
+    data, payload = prepare(client, {**payload, 'workflow_mode': 'OFFLINE_EXPORT'})
+    values = {row['decision_key']: 'ethernet1/' + row['source_name'][-1]
+              for row in data['draft']['decisions'] if row['source_name'] in {'port1', 'port2'}}
+    data, payload = prepare(client, {**payload, 'draft_overrides': values})
+    aggregate = next(row for row in data['draft']['configuration'] if row['source_name'] == 'bond' and row['family'] == 'interface')
+    assert aggregate['status'] == 'READY', aggregate
+    assert set(values) <= set(aggregate['dependencies'])
+    assert aggregate['configuration']['lacp_mode'] == 'active'
+    assert not any(row['target_field'] == 'target_zone' and row['source_name'] in {'port1', 'port2'} for row in data['draft']['decisions'])
+    approval = approve(client, payload, data)
+    assert approval.status_code == 200, approval.get_json()
+    payload['decision_document'] = approval.get_json()['decision_document']
+    response = client.post('/api/migrate', json=payload)
+    assert response.status_code == 200, response.get_json()
+    plan = response.get_json()
+    assert 'set network interface ethernet ethernet1/1 aggregate-group ae1' in plan['commands']
+    assert any('aggregate-ethernet ae1 layer3 units ae1.10 tag 10' in command for command in plan['commands'])
+    assert not plan['report']['deployment_eligibility']['eligible']
+    # Stale member allocations cannot reuse the signed design.
+    payload['draft_overrides'][next(iter(values))] = 'ethernet1/9'
+    assert client.post('/api/migrate', json=payload).status_code == 400
+
+
 def approve(client, payload, data, groups=None):
     draft = data['draft']
     keys = groups if groups is not None else [row['decision_key'] for row in draft['decisions'] if row['status'] == 'READY'] + [

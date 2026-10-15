@@ -3,6 +3,7 @@
 from typing import Any
 
 from fwmigrate.conversion.fortigate_to_palo_alto.models import PANMigrationStatus, PlannedZone
+from .interfaces import aggregate_member_owners
 
 
 def plan_topology(source: Any, derived: Any, options: Any, required_zone_keys=None, *, include_configuration=False):
@@ -41,8 +42,11 @@ def plan_topology(source: Any, derived: Any, options: Any, required_zone_keys=No
     if include_configuration:
         memberships = {(zone.vdom or "root", member) for zone in source.zones for member in zone.members or ()}
         proposed = {}
+        aggregate_members = aggregate_member_owners(source)
         for interface in source.interfaces:
             vdom = interface.vdom or "root"
+            if (vdom, interface.name) in aggregate_members:
+                continue
             if (vdom, interface.name) in memberships:
                 continue
             mapping = getattr(options, "interfaces", {}).get(vdom, {}).get(interface.name)

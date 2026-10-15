@@ -82,7 +82,8 @@ def validate_against_target(source, decisions: PANMigrationDecisionSet, target, 
             scopes = {pan_scope_identity(item.scope) for item in records if item.scope}
             if not records:
                 if (decision.approved_operation == "CREATE" and source_item is not None
-                        and source_item.type == "loopback" and re.fullmatch(r"loopback\.[1-9][0-9]{0,3}", decision.value)):
+                        and ((source_item.type == "loopback" and re.fullmatch(r"loopback\.[1-9][0-9]{0,3}", decision.value))
+                             or (source_item.type == "aggregate" and re.fullmatch(r"ae(?:[1-9]|1[0-6])", decision.value)))):
                     continue
                 if (decision.approved_operation == "CREATE" and source_item is not None
                         and source_item.vlanid is not None and source_item.interface):
@@ -90,7 +91,7 @@ def validate_against_target(source, decisions: PANMigrationDecisionSet, target, 
                     parent_records = _records(target, device, parent) if parent else []
                     if (parent and re.fullmatch(re.escape(parent) + r"\.[0-9]+", decision.value)
                             and 1 <= int(decision.value.rsplit('.', 1)[1]) <= 9999
-                            and len(parent_records) == 1 and parent_records[0].interface_family == "ethernet"
+                            and len(parent_records) == 1 and parent_records[0].interface_family in {"ethernet", "aggregate-ethernet"}
                             and getattr(parent_records[0], "mode", None) in (None, "layer3")):
                         continue
                 findings.append(_finding(decision, "TARGET_INTERFACE_NOT_FOUND", "error",

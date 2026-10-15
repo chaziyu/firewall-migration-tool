@@ -15,6 +15,16 @@ from fwmigrate.conversion.fortigate_to_palo_alto.models import PANMigrationStatu
 
 
 _ETHERNET = re.compile(r"^ethernet\d+/\d+$")
+_AGGREGATE = re.compile(r"^ae(?:[1-9]|1[0-6])$")
+
+
+def aggregate_member_owners(source):
+    owners = {}
+    for item in getattr(source, "interfaces", ()):
+        if (getattr(item, "type", None) or "").casefold() in {"aggregate", "redundant"}:
+            for member in item.members:
+                owners.setdefault((item.vdom or "root", member), []).append(item)
+    return owners
 
 
 def _explicit_ipv4(value: str | None) -> str | None:
@@ -42,9 +52,13 @@ def plan_interfaces(source: Any, options: Any) -> tuple[PlannedInterface, ...]:
     result = []
     mappings_by_vdom = getattr(options, "interfaces", {}) or {}
     vdom_mappings = getattr(options, "vdoms", {}) or {}
+    source_interfaces = {(item.vdom or "root", item.name): item for item in getattr(source, "interfaces", ())}
+    member_owners = aggregate_member_owners(source)
 
     for item in getattr(source, "interfaces", ()):
         vdom = item.vdom or "root"
+        if (vdom, item.name) in member_owners:
+            continue
         mapping = mappings_by_vdom.get(vdom, {}).get(item.name)
         target = getattr(mapping, "target_interface", None) if mapping else None
         if not target:
@@ -66,6 +80,8 @@ def plan_interfaces(source: Any, options: Any) -> tuple[PlannedInterface, ...]:
         parent_target = None
         interface_family = None
         tag = None
+        aggregate_members = []
+        lacp_mode = None
 
         if is_vlan:
             if not item.interface:
@@ -75,9 +91,9 @@ def plan_interfaces(source: Any, options: Any) -> tuple[PlannedInterface, ...]:
                 parent_target = getattr(parent_mapping, "target_interface", None) if parent_mapping else None
                 if not parent_target:
                     blockers.append(f"missing target interface mapping for parent {item.interface!r}")
-                elif not _ETHERNET.fullmatch(parent_target):
+                elif not (_ETHERNET.fullmatch(parent_target) or _AGGREGATE.fullmatch(parent_target)):
                     blockers.append(
-                        "automated VLAN rendering currently supports only ethernet parents"
+                        "automated VLAN rendering requires an ethernet or aggregate parent"
                     )
             if item.vlanid is None:
                 blockers.append("VLAN interface has no explicit VLAN ID")
@@ -93,7 +109,39 @@ def plan_interfaces(source: Any, options: Any) -> tuple[PlannedInterface, ...]:
                 suffix = target[len(parent_target) + 1:]
                 if not re.fullmatch(r"[0-9]+", suffix) or not 1 <= int(suffix) <= 9999:
                     blockers.append("target subinterface identifier must be between 1 and 9999")
-            interface_family = "ethernet"
+            interface_family = "aggregate-ethernet" if parent_target and _AGGREGATE.fullmatch(parent_target) else "ethernet"
+        elif kind == "aggregate":
+            interface_family = "aggregate-ethernet"
+            if not _AGGREGATE.fullmatch(target):
+                blockers.append("target aggregate identifier must be ae1 through ae16")
+            if item.interface:
+                blockers.append("aggregate interface cannot have a source parent")
+            lacp_mode = item.raw_extra.get("lacp-mode")
+            if lacp_mode not in ("active", "passive", "static"):
+                blockers.append("aggregate requires an explicit supported lacp-mode; absent mode is not a default")
+                lacp_mode = None
+            if not item.members:
+                blockers.append("aggregate requires explicit physical members")
+            for name in item.members:
+                member = source_interfaces.get((vdom, name))
+                member_mapping = mappings_by_vdom.get(vdom, {}).get(name)
+                member_target = getattr(member_mapping, "target_interface", None)
+                if not member_target or not _ETHERNET.fullmatch(member_target):
+                    blockers.append(f"missing physical target interface mapping for aggregate member {name!r}")
+                else:
+                    aggregate_members.append(member_target)
+                if len(member_owners.get((vdom, name), ())) != 1:
+                    blockers.append(f"aggregate member {name!r} has conflicting source ownership")
+                if member is None or (member.type or "").casefold() not in {"physical", "ethernet"}:
+                    blockers.append(f"aggregate member {name!r} is not an explicit physical source interface")
+                elif (member.ip or member.secondary_ips or member.allowaccess or member.interface or member.members
+                        or member.vlanid is not None or member.raw_extra or member.vrf not in (None, 0)
+                        or member.mode not in (None, "static") or member.status not in (None, "up", "enable")):
+                    blockers.append(f"aggregate member {name!r} has unsupported standalone source settings")
+                if getattr(member_mapping, "target_zone", None):
+                    blockers.append(f"aggregate member {name!r} cannot have standalone zone ownership")
+            if len(set(aggregate_members)) != len(aggregate_members):
+                blockers.append("aggregate members must have distinct physical target allocations")
         elif kind == "loopback":
             interface_family = "loopback"
             if item.interface:
@@ -131,7 +179,7 @@ def plan_interfaces(source: Any, options: Any) -> tuple[PlannedInterface, ...]:
 
         if item.secondary_ips:
             blockers.append("secondary interface IPv4 addresses are not rendered")
-        if item.members:
+        if item.members and kind != "aggregate":
             blockers.append("aggregate or redundant member semantics are not rendered")
         if item.allowaccess:
             blockers.append("FortiGate administrative access requires a PAN-OS management-profile decision")
@@ -139,7 +187,7 @@ def plan_interfaces(source: Any, options: Any) -> tuple[PlannedInterface, ...]:
             blockers.append("non-default FortiGate VRF requires explicit target routing design")
         if (item.status or "").casefold() in {"disable", "disabled", "down"}:
             blockers.append("disabled source interface state is not rendered")
-        if item.raw_extra:
+        if set(item.raw_extra) - ({"lacp-mode"} if kind == "aggregate" else set()):
             blockers.append("interface contains preserved unsupported source semantics")
 
         for field, value in (
@@ -164,6 +212,8 @@ def plan_interfaces(source: Any, options: Any) -> tuple[PlannedInterface, ...]:
             tag=tag,
             ipv4_addresses=ipv4_addresses,
             virtual_router=virtual_router,
+            aggregate_members=tuple(aggregate_members),
+            lacp_mode=lacp_mode,
         ))
 
     return tuple(result)

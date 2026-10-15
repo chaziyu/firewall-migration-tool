@@ -305,6 +305,15 @@ def _interface_collisions(planned, target, device, *, allow_additive=False):
     result = []
     for source in planned:
         matches = [item for item in records if item.name == source.target_name]
+        if source.aggregate_members:
+            member_records = [item for item in records if item.name in source.aggregate_members]
+            # Existing member allocations and LACP semantics need a separate reuse implementation.
+            if matches or member_records:
+                result.append({"status": "AMBIGUOUS", "family": "interface", "source_name": source.source_name,
+                    "source_vdom": source.source_vdom or "root", "source_kind": source.source_kind,
+                    "target_vsys": source.target_vsys, "target_name": source.target_name,
+                    "evidence": ["Existing aggregate or member configuration requires manual reuse review"]})
+                continue
         if not matches:
             continue
         evidence = []
