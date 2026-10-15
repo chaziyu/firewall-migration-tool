@@ -104,6 +104,56 @@ config router static
     next
 end
 '''
+
+
+def test_conversion_settings_are_bound_to_approval_and_rechecked_at_export():
+    client, payload = setup(None)
+    data, payload = allocate(client, {**payload, 'workflow_mode': 'OFFLINE_EXPORT',
+        'conversion_settings': {'target_model': 'PA-820', 'panos_version': '11.1'}})
+    response = approve(client, payload, data)
+    assert response.status_code == 200, response.get_json()
+    approved = {**payload, 'decision_document': response.get_json()['decision_document']}
+    assert client.post('/api/migrate', json=approved).status_code == 200
+    changed = {**approved, 'conversion_settings': {'panos_version': '11.1'}}
+    assert client.post('/api/migrate', json=changed).status_code == 400
+    rebuilt = client.post('/api/migration/design/prepare', json=changed).get_json()
+    assert not rebuilt['approval_readiness']['current']
+    assert all(not row['approved'] for row in rebuilt['draft']['decisions'])
+
+
+def test_automatic_names_profile_mapping_and_split_nat_export_the_approved_values():
+    from tests.conversion.fortigate_to_palo_alto.test_policy_nat_automation import SOURCE as NAT_SOURCE
+    source = NAT_SOURCE.replace('web', 'web/8443')
+    client, payload = setup(None, source=source)
+    data, payload = prepare(client, {**payload, 'workflow_mode': 'OFFLINE_EXPORT'})
+    group = next(row for row in data['draft']['findings'] if row['code'] == 'SECURITY_PROFILE_REQUIRED')
+    data, payload = prepare(client, {**payload, 'conversion_settings': {'panos_version': '11.1',
+        'security_profiles': {group['identity']: 'reviewed-protection'}}})
+    service = next(row for row in data['draft']['configuration'] if row['source_name'] == 'web/8443')
+    assert service['status'] == 'READY' and '/' not in service['target_name']
+    nat = [row for row in data['draft']['configuration'] if row['family'] == 'nat_rule']
+    assert len(nat) == 2 and all(row['status'] == 'READY' for row in nat)
+    response = approve(client, payload, data)
+    assert response.status_code == 200, response.get_json()
+    payload['decision_document'] = response.get_json()['decision_document']
+    response = client.post('/api/migrate', json=payload)
+    assert response.status_code == 200, response.get_json()
+    result = response.get_json()
+    assert any(command.endswith('profile-setting group [ reviewed-protection ]') for command in result['commands'])
+    assert any(command.endswith('service ' + service['target_name']) for command in result['commands'])
+    downloaded = client.post('/api/migration/download', json={'source': payload['source'], 'artifact': result['artifact']})
+    assert downloaded.status_code == 200
+    assert downloaded.data == '\n'.join(result['commands']).encode()
+
+
+@pytest.mark.parametrize('settings', [{'target_model': 'guessed'}, {'panos_version': '99'},
+    {'vpn_parameters': {'root/ipsec_phase1/site': {'psk': 'must-not-be-accepted'}}},
+    {'existing_vpns': ['root/missing']}, {'excluded_interfaces': ['root/missing']},
+    {'security_profiles': {'root/missing': 'unreviewed'}}])
+def test_conversion_settings_reject_unsupported_fields_and_stale_source_identities(settings):
+    client, payload = setup(None)
+    response = client.post('/api/migration/design/prepare', json={**payload, 'workflow_mode': 'OFFLINE_EXPORT', 'conversion_settings': settings})
+    assert response.status_code == 400
 TARGET = '''<config><devices><entry name="fw"><network><interface><ethernet>
 <entry name="ethernet1/1"><layer3/></entry></ethernet></interface></network>
 <vsys><entry name="vsys1"/></vsys></entry></devices></config>'''
@@ -183,12 +233,13 @@ def test_offline_approval_rejects_changed_context(change):
     assert client.post('/api/migrate', json=payload).status_code == 400
 
 
-def test_offline_unallocated_ports_allow_independent_objects_and_stay_incomplete():
+def test_offline_unapproved_port_proposals_allow_only_independently_approved_objects():
     client, payload = setup(None)
     data, payload = prepare(client, {**payload, 'workflow_mode': 'OFFLINE_EXPORT'})
     port = next(row for row in data['draft']['decisions'] if row['source_name'] == 'port1'
                 and row['target_field'] == 'target_interface')
-    assert port['proposed_value'] is None and port['status'] == 'NEEDS_INPUT'
+    assert port['proposed_value'] == 'ethernet1/1' and port['status'] == 'READY'
+    assert not port['approved']
     assert next(row for row in data['draft']['configuration'] if row['family'] == 'address')['status'] == 'READY'
     selected = [row['decision_key'] for row in data['draft']['decisions'] if row['target_field'] == 'vsys']
     selected += [row['group_key'] for row in data['draft']['configuration'] if row['family'] == 'address']
@@ -289,7 +340,7 @@ end
     assert approve(client, payload, data, [row['group_key'] for row in services]).status_code == 409
 
 
-def test_offline_parent_allocation_unlocks_policy_nat_dhcp_and_routing():
+def test_offline_parent_proposal_unlocks_policy_nat_dhcp_and_routing_but_requires_approval():
     client, _ = setup(None)
     source = SOURCE + '''config firewall policy
  edit 1
@@ -325,8 +376,9 @@ end
         'file': (io.BytesIO(source.encode()), 'forwarding.conf')}).get_json()['source_evidence']
     data, payload = prepare(client, {'source': evidence, 'workflow_mode': 'OFFLINE_EXPORT'})
     dependent_families = {'security_rule', 'nat_rule', 'dhcp_server', 'static_route', 'zone'}
-    assert all(row['status'] != 'READY' for row in data['draft']['configuration'] if row['family'] in dependent_families)
-    data, payload = allocate(client, payload)
+    assert client.post('/api/migrate', json=payload).status_code == 400
+    assert all(row['review_state'] == 'PENDING' for row in data['decisions']['decisions'])
+    assert not data['draft']['context']['overrides']
     rows = [row for row in data['draft']['configuration'] if row['family'] in dependent_families]
     assert {row['family'] for row in rows} == dependent_families
     assert all(row['status'] == 'READY' for row in rows), [(row['family'], row['status'], row['blocking_reasons']) for row in rows]
@@ -807,6 +859,26 @@ def test_missing_parent_is_one_task_with_deduplicated_dependent_scope():
     assert len(tasks[0]['affected_keys']) == len(set(tasks[0]['affected_keys']))
     assert any(row['source_name'] == 'vlan10' for row in tasks[0]['affected_sources'])
     assert any(row['source_name'] == '1' for row in tasks[0]['affected_sources'])
+    assert tasks[0]['explanation'] == 'Assign a target interface for port1.'
+    assert any('Unresolved prerequisite:' in reason for reason in tasks[0]['explanations'])
+
+
+def test_many_dependent_vlans_keep_one_short_instruction_and_all_evidence():
+    source = 'config system interface\nedit port1\nset type physical\nnext\n' + ''.join(
+        f'edit vlan{number}\nset interface port1\nset vlanid {number}\nnext\n'
+        for number in range(10, 110)) + 'end\n'
+    client, payload = setup(None, source=source)
+    data, payload = prepare(client, {**payload, 'workflow_mode': 'DESTINATION_AWARE'})
+    payload['draft_overrides'] = {row['decision_key']: 'vsys1' for row in data['draft']['decisions'] if row['target_field'] == 'vsys'}
+    data, _ = prepare(client, payload)
+    tasks = data['draft']['issues']
+    assert len(tasks) == 1
+    task = tasks[0]
+    assert task['explanation'] == 'Assign a target interface for port1.'
+    assert len(task['explanations']) > 100
+    assert len(task['affected_sources']) == 101
+    assert len(task['affected_keys']) == len(set(task['affected_keys']))
+    assert data['draft'] == prepare(client, payload)[0]['draft']
 
 
 def test_offline_supported_objects_export_without_destination_eligibility():

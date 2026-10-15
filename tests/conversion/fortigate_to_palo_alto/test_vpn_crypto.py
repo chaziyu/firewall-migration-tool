@@ -41,6 +41,23 @@ def test_crypto_profiles_render_exact_non_secret_pan_os_11_1_paths():
     assert config == before
 
 
+def test_reviewed_missing_values_sha512_and_day_lifetime_do_not_modify_source():
+    config = source()
+    config.ipsec_phase2[0].pfs = None
+    config.ipsec_phase2[0].keylifeseconds = None
+    config.ipsec_phase2[0].proposal = ['aes256-sha512']
+    config.ipsec_phase1[0].raw_extra = {'peertype': 'any', 'net-device': 'disable'}
+    before = deepcopy(config)
+    options = PANMigrationOptions(vdoms={'root': {'vsys': 'vsys1'}}, conversion_settings={'vpn_parameters': {
+        'root/ipsec_phase2/traffic': {'pfs': 'disable', 'lifetime_seconds': 86400}}})
+    ike, ipsec = plan_vpn_crypto(config, options)
+    assert ipsec[0].status is PANMigrationStatus.SUPPORTED
+    commands = PANSetRenderer().render(PANMigrationPlan(ike_crypto_profiles=ike, ipsec_crypto_profiles=ipsec)).commands
+    assert any(command.endswith('lifetime hours 24') for command in commands)
+    assert any(command.endswith('authentication [ sha512 ]') for command in commands)
+    assert config == before
+
+
 @pytest.mark.parametrize('change', ['proposal', 'multiple', 'lifetime', 'dh', 'pfs', 'bytes', 'reference', 'policy_namespace', 'vdom', 'unknown'])
 def test_crypto_subset_never_fills_defaults_or_crosses_vpn_namespaces(change):
     config = source()

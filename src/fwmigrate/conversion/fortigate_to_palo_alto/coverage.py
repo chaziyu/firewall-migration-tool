@@ -46,7 +46,7 @@ def _identity(item, index):
     return vdom, str(index)
 
 
-def build_migration_coverage(source, recommendations=()):
+def build_migration_coverage(source, recommendations=(), *, planned_vpn_sources=()):
     """Return migration work that is preserved but not executable yet.
 
     This is deliberately FortiGate -> PAN-OS specific. It does not create a
@@ -55,6 +55,8 @@ def build_migration_coverage(source, recommendations=()):
     unplanned = []
 
     for recommendation in recommendations:
+        if recommendation.family == 'VPN' and (recommendation.source_vdom or 'root', recommendation.source_kind, recommendation.source_name) in planned_vpn_sources:
+            continue
         unplanned.append({
             "status": "RECOMMENDATION_ONLY",
             "source_vdom": recommendation.source_vdom,

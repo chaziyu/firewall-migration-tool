@@ -351,7 +351,7 @@ def _interface_collisions(planned, target, device, *, allow_additive=False):
                 contradictions.append("target VLAN tag differs")
             else:
                 evidence.append("same explicit VLAN tag")
-        elif source.interface_family != "loopback":
+        elif source.interface_family not in {"loopback", 'tunnel'}:
             mode = getattr(target_item, "mode", None)
             if "mode" not in explicit:
                 supporting.append("target interface mode is not explicit")
@@ -375,6 +375,11 @@ def _interface_collisions(planned, target, device, *, allow_additive=False):
             contradictions.append("target has explicit IPv4 addresses absent from the planned source state")
 
         allowed_fields = {"tag", "ipv4_addresses"} if source.parent else {"mode", "ipv4_addresses"}
+        if source.management_profile:
+            if getattr(target_item, 'management_profile', None) != source.management_profile:
+                contradictions.append('target management profile differs or is not configured')
+            else:
+                allowed_fields.add('management_profile')
         extras = sorted(explicit - allowed_fields)
         if extras:
             supporting.append("target has additional explicit interface semantics: " + ", ".join(extras))
@@ -585,10 +590,19 @@ def classify_target_object_reuse(plan: PANMigrationPlan, target, device: str | N
         ("service", "service", rule.services), ("schedule", "schedule", rule.schedule), ("action", "action", rule.action),
         ("log_start", "log_start", rule.log_start), ("log_end", "log_end", rule.log_end)))
     result.extend(security_collision_results)
-    conflicted = {(item["family"], item["source_vdom"], item["source_name"])
+    for rule in plan.security_rules:
+        if rule.profile_group and not any(item.name == rule.profile_group and
+                (getattr(getattr(item, 'scope', None), 'kind', None) == 'shared' or
+                 _device(item) == device and getattr(getattr(item, 'scope', None), 'vsys', None) == rule.target_vsys)
+                for item in getattr(target.config, 'security_profile_groups', ())):
+            result.append({'status': 'NAME_CONFLICT', 'family': 'security_rule', 'source_name': rule.source_name,
+                'source_vdom': rule.source_vdom or 'root', 'source_kind': rule.source_kind,
+                'target_vsys': rule.target_vsys, 'target_name': rule.target_name,
+                'evidence': ['Assigned security profile group is absent from the selected target scope']})
+    conflicted = {(item["family"], item["source_vdom"], item["source_name"], item.get('target_name'))
                   for item in result if item.get("status") in {"NAME_CONFLICT", "AMBIGUOUS", "EXACT_MATCH"}}
     for family, attribute, items in (("nat_rule", "nat_rules", plan.nat_rules),
                                      ("security_rule", "security_rules", plan.security_rules)):
         result.extend(item for item in _placement_classifications(items, target, device, family, attribute)
-                      if (family, item["source_vdom"], item["source_name"]) not in conflicted)
+                       if (family, item["source_vdom"], item["source_name"], item.get('target_name')) not in conflicted)
     return tuple(sorted(result, key=lambda item: (item["family"], item["source_vdom"], item["source_name"])))

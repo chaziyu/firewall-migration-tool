@@ -1,6 +1,7 @@
 """FortiGate static-route planning for Palo Alto."""
 
 import ipaddress
+import re
 from typing import Any
 
 from fwmigrate.conversion.fortigate_to_palo_alto.models import PANMigrationStatus, PlannedStaticRoute
@@ -51,12 +52,14 @@ def plan_routes(source: Any, options: Any, derived: Any = None):
         status = PANMigrationStatus.SUPPORTED if not warnings else PANMigrationStatus.MANUAL_REVIEW
         blackhole = getattr(route, "blackhole", None) in {"enable", "yes", "1"}
         nexthop = None if blackhole else route.gateway
+        tunnel_route = (not nexthop and interface and re.fullmatch(r'tunnel\.[1-9][0-9]{0,3}', interface)
+            and any((item.vdom or 'root') == (route.vdom or 'root') and item.name == route.device and item.type == 'tunnel' for item in source.interfaces))
         result.append(PlannedStaticRoute(
             source_vdom=route.vdom, source_kind="static_route", source_object_type="static_route",
             source_name=str(route.seq_num) if route.seq_num is not None else destination,
             source_policy_id=route.seq_num, status=status, warnings=tuple(warnings),
             target_vsys=getattr(mapping, "vsys", None), target_name=str(route.seq_num) if route.seq_num is not None else destination,
-            destination=destination, nexthop_type="discard" if blackhole else ("ip-address" if nexthop else None),
+            destination=destination, nexthop_type="discard" if blackhole else ("ip-address" if nexthop else 'none' if tunnel_route else None),
             nexthop=nexthop, admin_distance=getattr(route, "distance", None), priority=route.priority, interface=interface,
             virtual_router=virtual_router, disabled=str(getattr(route, "status", "")).strip().lower() in {"disable", "disabled"},
             description=getattr(route, "comment", None),

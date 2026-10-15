@@ -1,4 +1,4 @@
-import { restoreWorkspace, saveWorkspace, workspace } from '../../storage/workspaceStore'
+import { restoreWorkspace, saveWorkspace } from '../../storage/workspaceStore'
 import type { SourceEvidence } from '../../storage/workspaceTypes'
 import { useEffect, useRef, useState } from 'react'
 import { Button } from '../../components/common/Button'
@@ -14,9 +14,6 @@ import { LiveCollection, type CollectionResult } from './LiveCollection'
 import { MigrationWorkflow } from '../migration/MigrationWorkflow'
 import { MigrationReview } from '../migration/MigrationReview'
 import type { MigrationStage, MigrationDecisionDocument } from '../migration/types'
-import { postJson } from '../../api/client'
-import { download } from '../migration/download'
-import type { MigrationDraft } from '../migration/types'
 import { asRecord } from '../report/reportPresentation'
 
 export type WorkflowView = 'report' | 'collect' | 'migration' | 'live'
@@ -42,15 +39,11 @@ export function SourceConfiguration({ view, onViewChange }: {
   const [excelProfile, setExcelProfile] = useState<'fast' | 'full'>('fast')
   const [ingestMode, setIngestMode] = useState<'config' | 'snapshot'>('config')
   const [error, setError] = useState<string | null>(null)
-  const [projectBusy, setProjectBusy] = useState(false)
-  const [projectNotice, setProjectNotice] = useState('')
-  const [projectRevision, setProjectRevision] = useState(0)
   const [migrationVisited, setMigrationVisited] = useState(false)
   const [migrationView, setMigrationView] = useState<MigrationStage>('load')
   const [generationRequest, setGenerationRequest] = useState(0)
   const [requestedDecision, setRequestedDecision] = useState<{ key: string; request: number } | null>(null)
   const analysisRequest = useRef(0)
-  const projectFileInput = useRef<HTMLInputElement>(null)
 
   if ((view === 'migration' || view === 'live') && !migrationVisited) setMigrationVisited(true)
 
@@ -70,7 +63,7 @@ export function SourceConfiguration({ view, onViewChange }: {
     let active = true
     restoreWorkspace().then((saved) => {
       if (!active) return
-      if (saved.preview) { setPreview(saved.preview); setVendor(saved.preview.vendor || ''); setExcelProfile(saved.preview.vendor === 'palo_alto' ? 'full' : 'fast'); setDecisionDocument(saved.decisionDocument); setTargetSource(saved.targetSource); setTargetDevice(saved.targetDevice) }
+      if (saved.preview) { setPreview(saved.preview); setVendor(saved.preview.vendor || ''); setExcelProfile(saved.preview.vendor === 'palo_alto' ? 'full' : 'fast'); setDecisionDocument(saved.decisionDocument); setTargetSource(saved.targetSource); setTargetDevice(saved.targetDevice); setMigrationView(saved.workflowMode === 'destination' ? 'load' : 'place') }
     }).catch((cause) => { if (active) setError(`Workspace restore failed: ${String(cause)}`) })
       .finally(() => { if (active) setWorkspaceReady(true) })
     return () => { active = false }
@@ -89,6 +82,7 @@ export function SourceConfiguration({ view, onViewChange }: {
       const result = await previewSource(sourceFile, vendor)
       if (request !== analysisRequest.current) return
       setPreview({ ...result, vendor: result.vendor || vendor, acquisition: 'Uploaded configuration' })
+      setMigrationView('place')
       setDecisionDocument(null)
       setTargetSource(null)
       setTargetDevice('')
@@ -182,65 +176,11 @@ export function SourceConfiguration({ view, onViewChange }: {
     }
   }
 
-  async function downloadProject() {
-    if (!preview?.source_evidence) return
-    setProjectBusy(true); setError(null)
-    try {
-      const saved = workspace()
-      const proposed = { ...Object.fromEntries((saved.deterministicDraft?.decisions ?? []).filter((row) => row.proposed_value).map((row) => [row.decision_key!, row.proposed_value!])), ...saved.proposals }
-      const result = await postJson<{ project: unknown }>('/api/migration/project/export', {
-        source: preview.source_evidence, target_source: saved.targetSource,
-        target_device: saved.targetDevice, reference_role: saved.referenceRole,
-        workflow_mode: saved.workflowMode ?? 'offline',
-        proposals: Object.fromEntries(Object.entries(proposed).filter(([, value]) => value.trim())),
-        service_names: saved.serviceNames ?? saved.deterministicDraft?.context.service_names ?? {},
-      })
-      download(JSON.stringify(result.project, null, 2), 'migration-project.json', 'application/json')
-      setProjectNotice('Project downloaded. It contains sanitized customer topology and proposals; keep it secure. Approval and candidate authority are excluded.')
-    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Project export failed') }
-    finally { setProjectBusy(false) }
-  }
-
-  async function resumeProject(file: File | undefined) {
-    if (!file) return
-    const request = ++analysisRequest.current
-    setProjectBusy(true); setError(null)
-    try {
-      if (file.size > 51_000_000) throw new Error('Project exceeds the 51 MB size limit.')
-      const result = await postJson<{
-        project: { target_source: SourceEvidence | null; target_device: string; reference_role: 'DESTINATION' | 'TEMPLATE'; workflow_mode: 'offline' | 'destination'; proposals: Record<string, string>; service_names: Record<string, Record<string, string>> }
-        preview: SourcePreviewData; review: { draft: MigrationDraft; decision_document: MigrationDecisionDocument }
-        unmatched_entries: string[]; notice: string
-      }>('/api/migration/project/import', JSON.parse(await file.text()))
-      if (request !== analysisRequest.current) return
-      // Publish only after backend schema validation, redaction and reparsing succeed.
-      await saveWorkspace({ preview: result.preview, targetSource: result.project.target_source,
-        targetDevice: result.project.target_device, referenceRole: result.project.reference_role,
-        workflowMode: result.project.workflow_mode, proposals: result.project.proposals,
-        serviceNames: result.project.service_names, decisionDocument: result.review.decision_document,
-        deterministicDraft: result.review.draft, artifact: null })
-      setPreview(result.preview); setVendor('fortigate'); setFile(null)
-      setTargetSource(result.project.target_source); setTargetDevice(result.project.target_device)
-      setDecisionDocument(result.review.decision_document); setGenerationRequest(0)
-      setProjectRevision((value) => value + 1); setMigrationView('load'); setMigrationVisited(true)
-      setProjectNotice(`${result.notice} ${result.unmatched_entries.length} unmatched entries excluded.${result.unmatched_entries.length ? ` ${result.unmatched_entries.slice(0, 10).join(', ')}` : ''}`)
-      onViewChange('migration')
-    } catch (cause) { if (request === analysisRequest.current) setError(cause instanceof Error ? cause.message : 'Project import failed; current workspace is unchanged.') }
-    finally { setProjectBusy(false) }
-  }
-
   const selectedVendor = vendors.find((item) => item.vendor_id === vendor)
 
   if (!workspaceReady) return <LoadingState label="Restoring browser workspace…" />
   return <main className="feature-content">
-    {(view === 'migration' || view === 'live') && <section className="panel migration-project-files" aria-label="Migration project files">
-      <div className="migration-project-copy"><p>Work stays in memory. Download this project before refreshing to resume later.</p><p className="report-count-note">Project files contain sanitized customer topology.</p></div>
-      <div className="migration-project-actions"><Button className="secondary-button" disabled={projectBusy || !preview?.source_evidence || vendor !== 'fortigate'} onClick={() => void downloadProject()}>Download project</Button>
-      <Button className="secondary-button" disabled={projectBusy} onClick={() => projectFileInput.current?.click()}>Resume project</Button>
-      <input ref={projectFileInput} hidden aria-label="Resume project" type="file" accept=".json,application/json" disabled={projectBusy} onChange={(event) => { const selected = event.currentTarget.files?.[0]; event.currentTarget.value = ''; void resumeProject(selected) }} /></div>
-      {projectNotice && <p role="status">{projectNotice}</p>}
-    </section>}
-    <section id="source-configuration" className="panel source-configuration" hidden={view !== 'collect' && Boolean(preview) && !(file && view === 'report')} aria-labelledby="source-title">
+    <section id="source-configuration" className="panel source-configuration" hidden={view !== 'collect' && Boolean(preview) && !(file && view === 'report') && !(view === 'migration' && migrationView === 'load')} aria-labelledby="source-title">
       <h2 id="source-title"><span className="step-num">01</span> Source configuration</h2>
       <div className={`source-vendor-grid${view === 'migration' || view === 'live' ? ' with-target' : ''}`}>
         <VendorSelect value={vendor} onChange={changeVendor} vendors={vendors} />
@@ -283,20 +223,20 @@ export function SourceConfiguration({ view, onViewChange }: {
           <span>{String(preview.acquisition ?? 'Uploaded configuration')}</span>
           {preview.collection != null && <span>Collection: {String(asRecord(preview.collection).status ?? 'Unknown')}</span>}
         </div>}
-        {view === 'migration' && <div className="report-source-context"><strong>FortiGate → PAN-OS</strong><span>{preview.source_evidence?.source_name || file?.name || 'Loaded source configuration'}</span><span>Destination: {targetDevice || 'Not selected'}</span></div>}
+        {view === 'migration' && <div className="report-source-context"><strong>FortiGate → PAN-OS</strong><span>{preview.source_evidence?.source_name || file?.name || 'Loaded source configuration'}</span><span>{targetDevice ? `Destination: ${targetDevice}` : 'Destination checks optional for offline export'}</span></div>}
         {view === 'migration' && <nav className="migration-view-nav" aria-label="Migration workspace">
-          {([['load', 'Setup'], ['place', 'Resolve mappings'], ['review', 'Review & approve'], ['export', 'Export']] as const).map(([stage, label], index) =>
+          {([['load', 'Source'], ['place', 'Target setup'], ['review', 'Review conversion'], ['export', 'Download']] as const).map(([stage, label], index) =>
             <button key={stage} type="button" aria-current={migrationView === stage ? 'step' : undefined} onClick={() => setMigrationView(stage)}>{index + 1}. {label}</button>)}
         </nav>}
         <section hidden={view !== 'migration' || migrationView === 'export'}>
-        <MigrationReview key={`${previewId}:${projectRevision}`} preview={preview} vendor={vendor} requestedDecision={requestedDecision}
+        <MigrationReview key={previewId} preview={preview} vendor={vendor} requestedDecision={requestedDecision}
           stage={migrationView} onStageChange={setMigrationView}
           onApproved={() => { setGenerationRequest((value) => value + 1); setMigrationView('export') }}
           onDecisionDocument={setDecisionDocument}
           onContextChange={(nextSource, nextDevice) => { setTargetSource(nextSource); setTargetDevice(nextDevice) }} />
         </section>
         <div hidden={view === 'migration' && migrationView !== 'export'}>
-        <MigrationWorkflow key={`${previewId}:${projectRevision}`}
+        <MigrationWorkflow key={previewId}
           preview={preview} decisionDocument={decisionDocument}
           targetSource={targetSource} targetDevice={targetDevice} generationRequest={generationRequest} activeSection={view === 'live' ? 'live' : 'plan'}
           onReviewDecision={(key) => { setRequestedDecision({ key, request: Date.now() }); setMigrationView('place'); onViewChange('migration'); requestAnimationFrame(() => document.getElementById('migration-review-title')?.scrollIntoView({ block: 'start' })) }}

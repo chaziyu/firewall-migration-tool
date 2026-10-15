@@ -407,9 +407,13 @@ visible as manual work, so partial approval is not a complete migration.
 Unimplemented migration pairs fail closed.
 
 The browser defaults to offline `.set` export. Upload one FortiGate configuration,
-review automatic proposals and allocate physical target ports, review conversion
+review automatic proposals for physical target ports, review conversion
 coverage, then approve and download the commands and report. PAN-OS XML is not
 required. VSYS and virtual-router proposals require engineer confirmation.
+Explicit physical/ethernet source interfaces receive deterministic, distinct
+`ethernet1/N` proposals across VDOMs. Existing engineer allocations are preserved;
+generated names do not verify hardware port availability or cabling. Missing or
+unsupported source interface types are not treated as physical ports.
 VLAN subinterface identifiers are editable independently of their VLAN tags.
 
 Offline readiness describes the approved export only. Destination collisions,
@@ -464,24 +468,27 @@ one reviewed plan
 ## Guided migration workspace
 
 Open **Plan migration** after loading a FortiGate configuration. The workspace follows
-**Load configurations → Place configuration → Resolve exceptions → Review changes → Export or deploy**.
+**Source → Target setup → Review conversion → Download**.
 Navigation does not approve or change the design.
 
-1. Choose **Plan offline** or **Prepare for a destination firewall**. Intent changes
-   guidance. Evidence starts as an **Architecture template**; explicitly choose
+1. Upload a FortiGate configuration. Offline conversion opens **Target setup**
+   automatically. For destination checks, open **Source** and select the advanced
+   destination-aware migration intent. Evidence starts as an **Architecture template**; explicitly choose
    **Destination configuration** only for XML from the intended firewall. Destination
    mode needs the selected device, real serial and reviewed baseline before candidate
    preparation. XML cannot verify hardware capacity or licensing.
-2. Review VDOM ownership (VSYS and virtual router), then parent ports and derived
-   VLANs, then zones. Save validates proposals; approval remains separate. Bulk
-   editors and legacy mapping YAML, target-intent YAML and decisions JSON remain
-   under Advanced tools.
-3. Resolve the grouped exceptions. Placement actions apply only to editable
+2. Review VDOM ownership (VSYS and virtual router), then review proposed parent ports in the
+   interface table. Derived VLANs and proposed zones remain editable. **Apply mappings**
+   validates nonempty edits in one request; approval remains separate. Blank edits stay
+   unresolved. Detailed editors and mapping files remain under Advanced tools.
+3. Expand unresolved choices and manual work when needed. Each task shows one
+   instruction; technical reasons and affected identities remain expandable. Placement actions apply only to editable
    decisions. Unsupported inspection, source ambiguity and other manual work remain
    excluded even after mappings are supplied. Affected counts are deduplicated within
    each task; tasks may overlap.
-4. Review the exact selection, operations, scope, configuration and expanded
-   prerequisites, then choose **Approve these changes and generate commands**.
+4. In **Review conversion**, check coverage by configuration family. Choose
+   **Review ready items** or select specific changes, review the exact values,
+   operations, scope and expanded prerequisites, then **Approve selected changes**.
    A failed draft request retains the previous view and staged edits as read-only
    evidence; Retry submits the same intended update. Failed generation after approval
    can be retried without approving again. Revalidate to change an approved selection
@@ -492,20 +499,20 @@ Navigation does not approve or change the design.
    a bundle without an artificial command or candidate push. Preview, `.set`, bundle
    and deployment use the same reviewed commands and SHA-256.
 
-### Download and resume a project
+Migration work stays in memory for the current page session. Refreshing clears it.
 
-Work is memory-only and refresh loses it. Choose **Download project** before closing
-or refreshing the page, then use **Resume project** in a fresh migration workspace.
-The versioned FortiGate → PAN-OS JSON file contains backend-sanitized source and
-optional target evidence, evidence role, selected device, intent, mapping proposals
-and service renames. It still contains customer topology; store it securely.
-Credentials, signed approvals, generated artifacts and candidate sessions are excluded.
+**Target version, hardware and conversion scope** contains optional reviewed settings.
+Selecting PA-820 bounds physical proposals to its 12 data ports; referenced, addressed or
+explicitly managed interfaces receive proposals first. Exclusions retain source evidence and keep dependents
+blocked. Target XML lists configured ports, not complete hardware inventory.
 
-Import validates the size (51 MB project limit), version, pair and schema, sanitizes
-and reparses evidence, and rebuilds the draft. Unmatched source identities are
-reported and excluded. Restored values are proposals requiring fresh approval;
-imported destination evidence does not prove the live firewall is unchanged. A
-rejected import leaves the current workspace intact.
+The converter proposes supported site-to-site tunnel identifiers and valid object names,
+rewrites planned references, and separates source defects from mapping choices. Missing VPN
+parameters can be proposed by group. Existing management/protection profiles require an
+explicit assignment; decryption and identity matching remain separate checks. Supported
+SNAT service unions expand into adjacent rules only after other NAT blockers are resolved.
+Gateway authentication and incomplete VPN semantics remain manual; no placeholder secrets
+are emitted. See [automation support and limits](documentation/migration-automation-implementation.md).
 
 ### Candidate recovery
 
