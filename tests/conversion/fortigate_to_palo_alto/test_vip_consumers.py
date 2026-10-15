@@ -53,6 +53,27 @@ def test_vip_consumers_reach_requirements_and_dnat_renderer(destination):
     assert source.model_dump() == before
 
 
+def test_flat_vip_group_expands_security_and_coverage_requires_every_rendered_dependency():
+    from dataclasses import replace
+    from fwmigrate.conversion.fortigate_to_palo_alto.coverage import build_migration_coverage, represented_vip_groups
+    from fwmigrate.conversion.fortigate_to_palo_alto.planner import FortiGateToPaloAltoPlanner
+    source = _source()
+    plan = FortiGateToPaloAltoPlanner().plan(source, build_derived_views(source), _options())
+    assert plan.security_rules[0].destinations == ('web',)
+    zones = tuple(PlannedZone(source_vdom='root', source_object_type='zone', source_name=name, target_name=name,
+        target_vsys='vsys1', status=PANMigrationStatus.SUPPORTED) for name in ('outside', 'inside', 'untrust'))
+    rendered = PANSetRenderer().render(replace(plan, zones=zones))
+    assert any('rulebase security' in command and 'destination [ web ]' in command for command in rendered.commands)
+    satisfied = {row['item_key'] for row in rendered.report['items'] if row['satisfied']}
+    represented = represented_vip_groups(source, plan, satisfied)
+    assert represented == {('root', 'web-group')}
+    assert not build_migration_coverage(source, planned_vip_groups=represented)['unplanned']
+    nat_key = next(row['item_key'] for row in rendered.report['items'] if row['source_object_type'] == 'nat_rule')
+    assert not represented_vip_groups(source, plan, satisfied - {nat_key})
+    source.vip_groups[0].raw_extra['future-setting'] = 'enable'
+    assert not represented_vip_groups(source, plan, satisfied)
+
+
 def test_vip_group_security_coverage_stays_visible_as_manual_work():
     source = _source()
     result = run_migration_pipeline(source, build_derived_views(source), options=_options())
@@ -85,13 +106,16 @@ def test_vip_group_never_resolves_member_from_another_vdom():
     assert "no referencing" in " ".join(rule.warnings)
 
 
-def test_vip_multiple_policy_consumers_keep_conflict_guard():
+def test_vip_multiple_policy_consumers_expand_distinct_ingress_matches():
     source = _source()
     source.policies.append(source.policies[0].model_copy(update={"policy_id": 2}))
     assert plan_nat(source, build_derived_views(source), _options())[0].status is PANMigrationStatus.SUPPORTED
     source.policies[1].srcintf = ["inside"]
-    rule = plan_nat(source, build_derived_views(source), _options())[0]
-    assert any("conflicting source zones" in warning for warning in rule.warnings)
+    rules = plan_nat(source, build_derived_views(source), _options())
+    assert len(rules) == 2
+    assert all(rule.status is PANMigrationStatus.SUPPORTED for rule in rules)
+    assert len({rule.from_zones for rule in rules}) == 2
+    assert [rule.target_name for rule in rules] == ['web-match-1', 'web-match-2']
 
 
 def test_group_interface_and_unknown_semantics_require_manual_review():

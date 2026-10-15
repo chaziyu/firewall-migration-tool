@@ -30,6 +30,24 @@ def _options(interfaces):
     )
 
 
+def test_management_groups_preserve_vdom_protocol_sets_and_monitoring_metadata():
+    from fwmigrate.conversion.fortigate_to_palo_alto.target.profile import management_profile_groups
+    source = FGConfig(interfaces=[
+        FGInterface(name='a', allowaccess=['ping', 'ssh'], raw_extra={'monitor-bandwidth': 'enable'}),
+        FGInterface(name='b', allowaccess=['ssh', 'ping']),
+        FGInterface(name='c', allowaccess=['https']),
+        FGInterface(name='a', vdom='blue', allowaccess=['ssh', 'ping']),
+    ])
+    groups = management_profile_groups(source)
+    assert len(groups) == 3
+    assert next(group for group in groups if group['identity'] == 'root/ping,ssh')['member_keys'] == ['root/a', 'root/b']
+    options = replace(_options({'a': {'target_interface': 'ethernet1/1'}}),
+        conversion_settings={'management_profiles': {'root/a': 'reviewed'}})
+    interface, = plan_interfaces(source, options)
+    assert interface.status is PANMigrationStatus.SUPPORTED
+    assert source.interfaces[0].raw_extra == {'monitor-bandwidth': 'enable'}
+
+
 def test_static_ethernet_mapping_becomes_executable_interface():
     source = FGConfig(interfaces=[
         FGInterface(name="port1", ip="192.0.2.1 255.255.255.0"),

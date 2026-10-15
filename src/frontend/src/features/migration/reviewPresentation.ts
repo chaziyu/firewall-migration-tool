@@ -66,13 +66,18 @@ export function draftReviewRows(rows: DraftRow[], filter: string, family: string
     && `${row.source_vdom} ${row.source_name} ${row.target_name || row.proposed_value || ''}`.toLowerCase().includes(query))
 }
 
+export const exportCategoryLabels: Record<string, string> = {
+  INCLUDED: 'Included', NOT_APPROVED: 'Not selected for approval', PREREQUISITE: 'Waiting for prerequisites',
+  UNSUPPORTED: 'Separate conversion work', SOURCE_DATA: 'Source data problem', TARGET_CONFLICT: 'Target conflict', BLOCKED: 'Other exclusions',
+}
+
 export function planFamilySummary(items: Array<Record<string, unknown>>) {
-  const summary: Record<string, { included: number; blocked: number }> = {}
+  const summary: Record<string, Record<string, number>> = {}
   for (const item of items) {
     const family = String(item.source_object_type || item.source_kind || 'Other')
-    const row = summary[family] ??= { included: 0, blocked: 0 }
-    if (item.render_disposition === 'BLOCK') row.blocked++
-    else row.included++
+    const row = summary[family] ??= {}
+    const category = String(item.export_category ?? (item.render_disposition === 'BLOCK' ? 'BLOCKED' : 'INCLUDED'))
+    row[category] = (row[category] ?? 0) + 1
   }
   return summary
 }

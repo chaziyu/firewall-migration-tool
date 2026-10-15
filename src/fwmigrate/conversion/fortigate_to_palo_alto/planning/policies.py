@@ -7,17 +7,23 @@ import json
 from fwmigrate.conversion.fortigate_to_palo_alto.models import PANMigrationStatus, PlannedSecurityRule
 from fwmigrate.conversion.fortigate_to_palo_alto.planning.services import service_target
 from fwmigrate.vendors.fortigate.fortios.predefined_services import is_predefined_service_reference
-from .addresses import address_references
+from fwmigrate.vendors.fortigate.transform.effective_values import effective_value
+from .addresses import address_references, vip_group_addresses
 
 
 INSPECTION_FIELDS = ('utm_status', 'profile_group', 'av_profile', 'ips_sensor', 'webfilter_profile',
     'ssl_ssh_profile', 'inspection_mode', 'profile_type', 'profile_protocol_options', 'application_list', 'dnsfilter_profile')
 
 
+def _requires_profile_group(policy):
+    return policy.utm_status not in {None, 'disable'} or any(getattr(policy, field, None)
+        for field in INSPECTION_FIELDS[1:] if field not in {'ssl_ssh_profile', 'profile_protocol_options'})
+
+
 def inspection_design_groups(source):
     groups = {}
     for policy in source.policies:
-        if policy.utm_status in {None, 'disable'} and not any(getattr(policy, field, None) for field in INSPECTION_FIELDS[1:]):
+        if not _requires_profile_group(policy):
             continue
         facts = {field: getattr(policy, field, None) for field in INSPECTION_FIELDS if getattr(policy, field, None) is not None}
         identity = f'{policy.vdom or "root"}/' + hashlib.sha256(json.dumps(facts, sort_keys=True).encode()).hexdigest()[:16]
@@ -41,6 +47,12 @@ def ipv6_match_warnings(policy):
 
 def plan_policies(source: Any, options: Any, derived: Any = None):
     result = []
+    from ..target.profile import policy_identity_groups
+    settings = getattr(options, 'conversion_settings', {})
+    eligible = {(group['source_vdom'], group['identity']) for group in policy_identity_groups(source)}
+    if (any((vdom, key) not in eligible for vdom, values in settings.get('identity_mappings', {}).items() for key in values)
+            or set(settings.get('identity_prerequisites', ())) - {vdom for vdom, _ in eligible}):
+        raise ValueError('Identity mappings and prerequisites must select current source identities')
     explicit_services = {(item.vdom, item.name) for item in (
         *getattr(getattr(derived, "services", None), "services", ()),
         *getattr(getattr(derived, "services", None), "groups", ()),
@@ -48,6 +60,8 @@ def plan_policies(source: Any, options: Any, derived: Any = None):
     zone_names = {(item.vdom or "root", item.name) for item in getattr(source, "zones", ())}
     for policy in getattr(source, "policies", ()):
         warnings = list(ipv6_match_warnings(policy))
+        destinations, group_warnings = vip_group_addresses(source, policy.vdom, policy.dstaddr or ())
+        warnings.extend(group_warnings)
         ipv6_configured = bool(warnings)
         if policy.srcintf is None or policy.dstintf is None:
             warnings.append("policy interface match is not explicit in the source")
@@ -74,7 +88,11 @@ def plan_policies(source: Any, options: Any, derived: Any = None):
             warnings.append("service negation is unsupported")
         if policy.srcaddr_negate in {"enable", "yes", "1"} and policy.dstaddr_negate in {"enable", "yes", "1"}:
             warnings.append("negating both IPv4 address selectors would permit IPv6 matching on PAN-OS")
-        if policy.users or policy.groups:
+        identity_keys = [f'{kind}/{name}' for kind, names in (('user', policy.users), ('group', policy.groups)) for name in names or ()]
+        identity_map = settings.get('identity_mappings', {}).get(policy.vdom or 'root', {})
+        source_users = tuple(dict.fromkeys(identity_map[key] for key in identity_keys if key in identity_map))
+        if identity_keys and (any(key not in identity_map for key in identity_keys)
+                or (policy.vdom or 'root') not in settings.get('identity_prerequisites', ())):
             warnings.append("user and group matching requires manual review")
         if any(getattr(policy, field) not in {None, "disable"}
                for field in ("internet_service", "internet_service_src")) or any(
@@ -87,10 +105,7 @@ def plan_policies(source: Any, options: Any, derived: Any = None):
         if policy.vpntunnel:
             warnings.append("VPN policy action requires manual review")
         profile_group = getattr(options, 'conversion_settings', {}).get('security_profiles', {}).get(policy_inspection_key(policy))
-        if (policy.utm_status not in {None, "disable"} or any(getattr(policy, field, None) for field in (
-            "profile_group", "av_profile", "ips_sensor", "webfilter_profile", "ssl_ssh_profile",
-            "inspection_mode", "profile_type", "profile_protocol_options", "application_list", "dnsfilter_profile",
-        ))) and not profile_group:
+        if _requires_profile_group(policy) and not profile_group:
             warnings.append("FortiGate inspection settings are not mapped")
         if policy.ssl_ssh_profile and policy.ssl_ssh_profile != 'no-inspection':
             warnings.append('SSL/SSH inspection requires a separate target decryption design; a security profile group does not replace it')
@@ -109,7 +124,8 @@ def plan_policies(source: Any, options: Any, derived: Any = None):
         for key in policy.raw_extra:
             if key not in {"uuid", "global-label", "label"}:
                 warnings.append(f"unclassified policy setting {key!r} requires manual review")
-        action = {"accept": "allow", "deny": "deny"}.get((policy.action or "").lower())
+        action_value = policy.action if policy.action is not None else effective_value(derived, policy.vdom, 'policy', policy.policy_id, 'action')
+        action = {"accept": "allow", "deny": "deny"}.get((action_value or "").lower())
         if action is None:
             warnings.append("unsupported or missing policy action")
         status = PANMigrationStatus.SUPPORTED if not warnings else PANMigrationStatus.PARTIAL
@@ -124,7 +140,7 @@ def plan_policies(source: Any, options: Any, derived: Any = None):
             target_name=policy.name or str(policy.policy_id),
             status=status, warnings=tuple(warnings), from_zones=from_zones, to_zones=to_zones,
             sources=address_references(source, policy.vdom, policy.srcaddr or ()),
-            destinations=address_references(source, policy.vdom, policy.dstaddr or ()),
+            destinations=address_references(source, policy.vdom, destinations),
             services=services, applications=applications,
             schedule=None if policy.schedule == "always" else policy.schedule, action=action,
             negate_source=getattr(policy, "srcaddr_negate", None) in {"enable", "yes", "1"},
@@ -133,6 +149,7 @@ def plan_policies(source: Any, options: Any, derived: Any = None):
             description=getattr(policy, "comments", None),
             log_start=log_start, log_end=log_end,
             profile_group=profile_group,
+            source_users=source_users,
         ))
     return tuple(result)
 

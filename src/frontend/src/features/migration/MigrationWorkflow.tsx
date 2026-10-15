@@ -12,7 +12,7 @@ import {
 } from './migrationApi'
 import type { CandidateRecovery, PlanArtifact } from './migrationApi'
 import { PlanReview } from './PlanReview'
-import { planFamilySummary } from './reviewPresentation'
+import { exportCategoryLabels, planFamilySummary } from './reviewPresentation'
 
 type Props = { generationRequest?: number; preview: SourcePreviewData; decisionDocument: MigrationDecisionDocument | null; targetSource: SourceEvidence | null; targetDevice: string; activeSection: 'plan' | 'live'; onViewChange: (view: 'live') => void; onReviewDecision: (key: string) => void }
 
@@ -191,10 +191,12 @@ export function MigrationWorkflow({ preview, decisionDocument, targetSource, tar
       <h3>Approved migration changes</h3>
       <p><strong>{artifact.plan_status === 'READY_NO_CHANGES' ? 'No changes needed' : artifact.plan_status === 'NEEDS_MAPPING' ? 'Needs mapping' : partial ? 'Partial export' : 'Ready for export'}</strong></p>
       {artifact.report.workflow_mode === 'OFFLINE_EXPORT' ? <p>Destination unverified. Check destination collisions, hardware compatibility and licensing before applying these commands.</p> : <p>Candidate preparation: {artifact.report.deployment_eligibility?.eligible ? 'Eligible — live preflight still required' : artifact.report.deployment_eligibility?.reason || 'Eligibility unverified'}</p>}
-      <p>{artifact.render_summary.create || 0} to create · {artifact.render_summary.configure || 0} to configure · {artifact.render_summary.reuse || 0} to reuse · {artifact.render_summary.blocked || 0} blocked · {artifact.artifact.command_count} commands</p>
+      <p>{artifact.render_summary.create || 0} to create · {artifact.render_summary.configure || 0} to configure · {artifact.render_summary.reuse || 0} to reuse · {artifact.render_summary.blocked || 0} excluded · {artifact.artifact.command_count} commands</p>
+      {!!artifact.report.export_counts?.NOT_APPROVED && <p role="status">{artifact.report.export_counts.NOT_APPROVED} supported configuration items were not selected for approval. Review all ready changes to include them.</p>}
       {partial && <p className="error-banner" role="status">Partial export: blocked and unsupported work is excluded. This artifact is not deployment-ready.</p>}
       {noTrafficRules && <p role="status">No security policies, NAT rules or static routes are included. This export contains supporting configuration only.</p>}
-      <div className="report-table-wrap"><table className="report-table"><caption>Included and blocked configuration</caption><thead><tr><th>Family</th><th>Included</th><th>Blocked</th></tr></thead><tbody>{Object.entries(families).map(([family, counts]) => <tr key={family}><td>{family.replaceAll('_', ' ')}</td><td>{counts.included}</td><td>{counts.blocked}</td></tr>)}</tbody></table></div>
+      {partial && <Button className="secondary-button" disabled={busy} onClick={() => onReviewDecision('')}>Review remaining changes</Button>}
+      <div className="report-table-wrap"><table className="report-table"><caption>Included configuration and exclusion reasons</caption><thead><tr><th>Family</th>{Object.entries(exportCategoryLabels).filter(([category]) => category === 'INCLUDED' || Object.values(families).some((counts) => counts[category])).map(([category, label]) => <th key={category}>{label}</th>)}</tr></thead><tbody>{Object.entries(families).map(([family, counts]) => <tr key={family}><td>{family.replaceAll('_', ' ')}</td>{Object.keys(exportCategoryLabels).filter((category) => category === 'INCLUDED' || Object.values(families).some((values) => values[category])).map((category) => <td key={category}>{counts[category] ?? 0}</td>)}</tr>)}</tbody></table></div>
       <details><summary>Artifact identity</summary><p className="artifact-identity">Artifact: {artifact.artifact_id} · SHA-256: {artifact.report.command_sha256 ?? 'Not reported'}</p></details>
       <PlanReview key={artifact.artifact_id} artifact={artifact} onReviewDecision={onReviewDecision} />
       <h3>Generated commands</h3>

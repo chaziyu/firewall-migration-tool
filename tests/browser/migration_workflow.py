@@ -60,7 +60,12 @@ def run(url, chromium, destination=False):
         else:
             expect(page.get_by_label('Drop your target XML here')).not_to_be_visible()
         page.get_by_role('button', name='2. Target setup', exact=True).click()
-        expect(page.get_by_text('Advanced tools and mapping files', exact=True)).to_be_visible()
+        if destination:
+            expect(page.get_by_text('Advanced tools and mapping files', exact=True)).to_be_visible()
+        else:
+            expect(page.get_by_text('Advanced tools and mapping files', exact=True)).to_have_count(0)
+            expect(page.get_by_text('Advanced mapping editors', exact=True)).to_have_count(0)
+            expect(page.locator('.migration-exceptions')).not_to_be_visible()
         expect(page.get_by_role('navigation', name='Migration workspace').get_by_role('button')).to_have_count(4)
         expect(page.get_by_label('Migration exceptions', exact=True)).to_have_count(0)
         mapping_editor = page.locator('.mapping-editor') if destination else page.locator('.target-setup')
@@ -112,7 +117,7 @@ def run(url, chromium, destination=False):
         expect(page.get_by_text('Previous successful review', exact=False)).not_to_be_visible()
         page.get_by_role('button', name='2. Target setup', exact=True).click()
         page.get_by_role('button', name='Review supported changes', exact=True).click()
-        page.get_by_role('button', name='Review ready items', exact=False).click()
+        page.get_by_role('button', name='Review all ready changes', exact=False).click()
         preview = page.get_by_role('region', name='Approval preview')
         expect(preview).to_contain_text(expected_port + '.10')
         # Approval succeeds; first generation fails. Retry must not submit another approval.

@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 from graphlib import CycleError, TopologicalSorter
-from ipaddress import IPv4Address, IPv4Interface, IPv4Network
+from ipaddress import IPv4Address, IPv4Interface, IPv4Network, ip_network
 import re
 
 from .models import MigrationIssue, MigrationSourceRef, PANMigrationPlan, PANMigrationStatus
@@ -63,6 +63,7 @@ def validate_plan(plan: PANMigrationPlan) -> MigrationValidationResult:
         "interfaces": _index(plan.interfaces),
         "zones": _index(plan.zones),
         "nat_rules": _index(plan.nat_rules),
+        "management_profiles": _index(plan.management_profiles),
     }
     errors: set[ItemKey] = set()
     seen: set[ItemKey] = set()
@@ -125,11 +126,26 @@ def validate_plan(plan: PANMigrationPlan) -> MigrationValidationResult:
             add("unsupported_security_rule", "security rule source semantics require manual design", item)
         if item.source_object_type == 'security_rule' and item.profile_group and not re.fullmatch(r'[A-Za-z0-9_. -]{1,63}', item.profile_group):
             add('invalid_security_profile_group', 'Invalid target security profile group name', item)
+        if item.source_object_type == 'security_rule':
+            from .target.profile import valid_target_identity
+            if any(not valid_target_identity(name) for name in item.source_users):
+                add('invalid_source_user', 'Source-user matching requires explicit target identities', item)
         if item.source_name and key in seen:
             add("duplicate_target_name", "duplicate target name", item)
         seen.add(key)
 
-        if item.source_object_type in {'ike_gateway', 'ipsec_tunnel'}:
+        if item.source_object_type == 'management_profile':
+            if (not re.fullmatch(r'[A-Za-z0-9_.-]{1,31}', item.target_name or '') or item.target_vsys is not None
+                    or not item.protocols or set(item.protocols) - {'ping', 'https', 'ssh', 'snmp', 'http', 'telnet'}
+                    or not 1 <= len(item.permitted_ips) <= 64):
+                add('invalid_management_profile', 'Management profile requires supported protocols and reviewed permitted networks in device scope', item)
+            for network in item.permitted_ips:
+                try:
+                    if not isinstance(network, str) or str(ip_network(network, strict=True)) != network:
+                        raise ValueError('Invalid management network')
+                except ValueError:
+                    add('invalid_management_profile', 'Management permitted network is invalid', item)
+        elif item.source_object_type in {'ike_gateway', 'ipsec_tunnel'}:
             add('vpn_manual_completion_required', 'Gateway credentials and tunnel semantics require secure target completion; no executable VPN commands are available', item)
         elif item.source_object_type in {"ike_crypto_profile", "ipsec_crypto_profile"}:
             if not re.fullmatch(r"[A-Za-z0-9_.-]{1,31}", item.target_name or ""):
@@ -325,6 +341,14 @@ def validate_plan(plan: PANMigrationPlan) -> MigrationValidationResult:
 
         if plan.interfaces:
             for interface in plan.interfaces:
+                if _key(interface) not in renderable or not interface.management_profile:
+                    continue
+                profile = find(('management_profiles',), interface.management_profile, None)
+                if profile is not None and _key(profile) not in renderable:
+                    add('dependency_not_renderable', 'Generated management profile is not renderable', interface)
+                    renderable.remove(_key(interface))
+                    changed = True
+            for interface in plan.interfaces:
                 if _key(interface) not in renderable or not interface.parent:
                     continue
                 parent = find(("interfaces",), interface.parent, interface.target_vsys)
@@ -398,6 +422,8 @@ def validate_plan(plan: PANMigrationPlan) -> MigrationValidationResult:
             if _key(rule) not in renderable:
                 continue
             before = _key(rule) in renderable
+            if rule.translation_interface and plan.interfaces:
+                require_reference(rule, rule.translation_interface, ('interfaces',), code='missing_interface')
             if rule.source_kind in {"source_nat", "vip"}:
                 for field, values in (("from_zones", rule.from_zones), ("to_zones", rule.to_zones)):
                     if not values:
@@ -486,5 +512,5 @@ def _issue(code, message, item):
 def _items(plan):
     if plan is None:
         return
-    for name in ("addresses", "address_groups", "services", "service_groups", "schedules", "interfaces", "zones", "static_routes", "dhcp_servers", "security_rules", "nat_rules", "ike_crypto_profiles", "ipsec_crypto_profiles", 'ike_gateways', 'ipsec_tunnels'):
+    for name in ("addresses", "address_groups", "services", "service_groups", "schedules", "interfaces", "zones", "static_routes", "dhcp_servers", "security_rules", "nat_rules", "ike_crypto_profiles", "ipsec_crypto_profiles", 'ike_gateways', 'ipsec_tunnels', 'management_profiles'):
         yield from getattr(plan, name)

@@ -3,6 +3,7 @@
 from typing import Any
 
 from fwmigrate.conversion.fortigate_to_palo_alto.models import PANMigrationStatus, PlannedService, PlannedServiceGroup
+from .vips import vip_port_translation, vip_service_name
 
 
 PAN_BUILTIN_SERVICES = frozenset({"any", "service-https"})
@@ -68,4 +69,16 @@ def plan_services(derived: Any, options: Any = None, source: Any = None):
                 target_vsys=getattr(getattr(options, "vdoms", {}).get(vdom), "vsys", None) if options else None,
                 target_name=name, status=PANMigrationStatus.SUPPORTED,
                 members=tuple(getattr(options, "service_names", {}).get(vdom, {}).get(n, n) for n in ("FG-DNS-TCP", "FG-DNS-UDP"))),)
+    for vip in getattr(source, 'vips', ()):
+        ports = vip_port_translation(vip)
+        if ports is None:
+            continue
+        vdom = vip.vdom or 'root'
+        name = vip_service_name(vip)
+        collision = (vdom, name) in explicit_names or any(item.source_vdom == vdom and item.source_name == name for item in services)
+        services.append(PlannedService(source_vdom=vdom, source_kind='vip_service', source_object_type='service',
+            source_name=name, target_name=getattr(options, 'service_names', {}).get(vdom, {}).get(name, name),
+            target_vsys=getattr(getattr(options, 'vdoms', {}).get(vdom), 'vsys', None), protocol=ports[0], destination_port=ports[1],
+            status=PANMigrationStatus.MANUAL_REVIEW if collision else PANMigrationStatus.SUPPORTED,
+            warnings=('Generated VIP service conflicts with an existing source service',) if collision else ()))
     return tuple(services), groups

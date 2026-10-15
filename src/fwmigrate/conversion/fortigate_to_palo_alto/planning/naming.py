@@ -15,6 +15,7 @@ FAMILIES = {
     'schedules': 'schedule', 'security_rules': 'security_rule', 'nat_rules': 'nat_rule',
     'ike_crypto_profiles': 'ike_crypto_profile', 'ipsec_crypto_profiles': 'ipsec_crypto_profile',
     'ike_gateways': 'ike_gateway', 'ipsec_tunnels': 'ipsec_tunnel',
+    'management_profiles': 'management_profile',
 }
 
 
@@ -30,7 +31,7 @@ def allocate_plan_names(plan, target=None, target_device=None, service_names=Non
     records = [(attribute, index, item) for attribute in FAMILIES for index, item in enumerate(getattr(plan, attribute))]
     def namespace(attribute, item):
         family = FAMILIES[attribute]
-        return (None if family in {'ike_crypto_profile', 'ipsec_crypto_profile', 'ike_gateway', 'ipsec_tunnel'} else item.target_vsys, family)
+        return (None if family in {'ike_crypto_profile', 'ipsec_crypto_profile', 'ike_gateway', 'ipsec_tunnel', 'management_profile'} else item.target_vsys, family)
     def valid(attribute, name):
         pattern = r'[A-Za-z0-9_.-]{1,31}' if FAMILIES[attribute].endswith('crypto_profile') else r'[A-Za-z0-9_. -]{1,63}'
         return isinstance(name, str) and bool(name.strip()) and bool(re.fullmatch(pattern, name))

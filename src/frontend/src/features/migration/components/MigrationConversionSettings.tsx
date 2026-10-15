@@ -7,6 +7,7 @@ export function MigrationConversionSettings({ draft, busy, onApply, onDirtyChang
 }) {
   const initial = draft.context.conversion_settings ?? {}
   const [settings, setSettings] = useState<ConversionSettings>(initial)
+  const [managementNetworks, setManagementNetworks] = useState('')
   const dirty = JSON.stringify(settings) !== JSON.stringify(initial)
   useEffect(() => onDirtyChange(dirty), [dirty, onDirtyChange])
   const excluded = settings.excluded_interfaces ?? []
@@ -28,13 +29,42 @@ export function MigrationConversionSettings({ draft, busy, onApply, onDirtyChang
         <span><input type="checkbox" checked={!excluded.includes(identity)} disabled={busy} onChange={(event) => setSettings({ ...settings, excluded_interfaces: event.target.checked ? excluded.filter((key) => key !== identity) : [...excluded, identity] })} /> {identity}{suggestions.has(identity) ? ' · no explicit addressing or consumers; review scope' : ''}</span>
       </label> })}
     </details>
-    <details><summary>Existing target management profiles</summary>
-      <p>Assign an existing target profile only after checking its protocols and permitted IPs. The converter does not create or enable administrative access. Final approval confirms these external prerequisites.</p>
-      {draft.findings.filter((row) => row.code === 'MANAGEMENT_PROFILE_REQUIRED').map((row) => <label className="field" key={row.identity}>
-        {row.identity} · {row.message}<input aria-label={`Management profile for ${row.identity}`} disabled={busy} value={settings.management_profiles?.[row.identity!] ?? ''} onChange={(event) => {
-          const profiles = { ...settings.management_profiles }; if (event.target.value.trim()) profiles[row.identity!] = event.target.value; else delete profiles[row.identity!]; setSettings({ ...settings, management_profiles: profiles })
+    <details><summary>Generate management profiles</summary>
+      <p>Proposals reuse explicit source protocols. Review permitted management networks for each group; generated profiles require final approval. Existing per-interface assignments take precedence.</p>
+      <label className="field">Permitted networks for all proposed management profiles<input aria-label="Permitted networks for all proposed management profiles" disabled={busy || draft.destination_verified} value={managementNetworks} placeholder="Reviewed CIDRs, separated by commas" onChange={(event) => setManagementNetworks(event.target.value)} /></label>
+      <Button disabled={busy || draft.destination_verified || !managementNetworks.trim()} onClick={() => {
+        const profiles = { ...settings.generated_management_profiles }
+        for (const group of draft.findings.filter((row) => row.code === 'MANAGEMENT_PROFILE_GROUP')) profiles[group.identity!] = { permitted_ips: managementNetworks.split(',').map((value) => value.trim()) }
+        setSettings({ ...settings, generated_management_profiles: profiles })
+      }}>Propose profiles for all protocol groups</Button>
+      {draft.findings.filter((row) => row.code === 'MANAGEMENT_PROFILE_GROUP').map((group) => <label className="field" key={group.identity}>
+        {group.source_vdom} · {group.message} · {group.member_keys?.length} interfaces
+        <input aria-label={`Permitted management networks for ${group.identity}`} disabled={busy || draft.destination_verified} value={settings.generated_management_profiles?.[group.identity!]?.permitted_ips.join(', ') ?? ''} placeholder="Reviewed CIDRs, separated by commas" onChange={(event) => {
+          const profiles = { ...settings.generated_management_profiles }
+          const networks = event.target.value.split(',').map((value) => value.trim())
+          if (event.target.value.trim()) profiles[group.identity!] = { permitted_ips: networks }; else delete profiles[group.identity!]
+          setSettings({ ...settings, generated_management_profiles: profiles })
         }} />
       </label>)}
+      {draft.destination_verified && <p>Use existing target profiles until destination profile inventory can be verified.</p>}
+    </details>
+    <details><summary>Existing target management profiles</summary>
+      <p>Assign an existing target profile only after checking its protocols and permitted IPs. The converter does not create or enable administrative access. Final approval confirms these external prerequisites.</p>
+      {draft.findings.filter((row) => row.code === 'MANAGEMENT_PROFILE_GROUP').map((group) => {
+        const values = group.member_keys?.map((key) => settings.management_profiles?.[key] ?? '') ?? []
+        const mixed = !values.every((value) => value === values[0])
+        return <label className="field" key={group.identity}>
+          {group.source_vdom} · {group.member_keys?.length} interfaces · {group.message}
+          <input aria-label={`Management profile for ${group.identity}`} disabled={busy} value={mixed ? '' : values[0] ?? ''} placeholder={mixed ? 'Mixed assignments — enter a profile to apply to this group' : 'Existing target profile'} onChange={(event) => {
+            const profiles = { ...settings.management_profiles }
+            for (const key of group.member_keys ?? []) {
+              if (event.target.value.trim()) profiles[key] = event.target.value; else delete profiles[key]
+            }
+            setSettings({ ...settings, management_profiles: profiles })
+          }} />
+          <small>Applies to: {group.member_keys?.join(', ')}. Different assignments are preserved until you edit this group.</small>
+        </label>
+      })}
     </details>
     <details><summary>Existing target VPN prerequisites</summary>
       <p>Leave unchecked unless the gateway, credentials, crypto and selectors already exist and use the proposed tunnel identifier. Final approval records this engineer decision. The converter cannot recover source secrets.</p>
@@ -66,6 +96,28 @@ export function MigrationConversionSettings({ draft, busy, onApply, onDirtyChang
           </label>
         })}
       </fieldset>)}
+    </details>
+    <details><summary>Policy identities · shared mappings</summary>
+      <p>Map each source user/group to its equivalent target identity once. Confirm that target User-ID and authentication preserve the source restrictions. NAT identity conditions remain separate.</p>
+      <Button disabled={busy} onClick={() => {
+        const mappings = Object.fromEntries(Object.entries(settings.identity_mappings ?? {}).map(([vdom, values]) => [vdom, { ...values }]))
+        for (const group of draft.findings.filter((row) => row.code === 'IDENTITY_MAPPING_REQUIRED' && row.proposed_value)) {
+          mappings[group.source_vdom!] ??= {}
+          mappings[group.source_vdom!][group.identity!] ??= group.proposed_value!
+        }
+        setSettings({ ...settings, identity_mappings: mappings })
+      }}>Propose source identity names</Button>
+      {[...new Set(draft.findings.filter((row) => row.code === 'IDENTITY_MAPPING_REQUIRED').map((row) => row.source_vdom!))].map((vdom) => <label className="field" key={vdom}><span>
+        <input type="checkbox" disabled={busy} checked={settings.identity_prerequisites?.includes(vdom) ?? false} onChange={(event) => setSettings({ ...settings, identity_prerequisites: event.target.checked ? [...settings.identity_prerequisites ?? [], vdom] : settings.identity_prerequisites?.filter((value) => value !== vdom) })} /> {vdom}: target identity and authentication prerequisites are configured and reviewed
+      </span></label>)}
+      {draft.findings.filter((row) => row.code === 'IDENTITY_MAPPING_REQUIRED').map((group) => <label className="field" key={`${group.source_vdom}/${group.identity}`}>
+        {group.source_vdom} · {group.message} · {group.member_keys?.length} policies
+        <input aria-label={`Target identity for ${group.source_vdom}/${group.identity}`} disabled={busy} value={settings.identity_mappings?.[group.source_vdom!]?.[group.identity!] ?? ''} onChange={(event) => {
+          const mappings = { ...settings.identity_mappings, [group.source_vdom!]: { ...settings.identity_mappings?.[group.source_vdom!] } }
+          if (event.target.value.trim()) mappings[group.source_vdom!][group.identity!] = event.target.value; else delete mappings[group.source_vdom!][group.identity!]
+          setSettings({ ...settings, identity_mappings: mappings })
+        }} />
+      </label>)}
     </details>
     <details><summary>Security profile groups · shared mappings</summary>
       <p>Assign an existing target profile group after reviewing its protection settings. One assignment applies to all policies with the same explicit source settings. SSL/SSH decryption and unsupported matching remain separate blockers.</p>

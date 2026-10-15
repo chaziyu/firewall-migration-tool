@@ -16,11 +16,11 @@ from ..target.target_plan_validation import assess_target_plan, _items, item_key
 from ..plan_dependencies import build_plan_dependency_index
 from ..validation import validate_plan, validate_source_interfaces
 from ..requirements import build_mapping_requirements
-from ..coverage import build_migration_coverage
+from ..coverage import build_migration_coverage, represented_vip_groups
 from ..recommendations.recommendation_engine import build_recommendations
-from ..recommendations.support_guidance import _warning_guidance
+from ..recommendations.support_guidance import _warning_guidance, shared_action_groups
 from ..options import PANMigrationOptions
-from ..target.profile import MODEL_PORTS, parse_conversion_settings, interface_scope_suggestions, interface_consumers, site_to_site_phase1
+from ..target.profile import MODEL_PORTS, parse_conversion_settings, interface_scope_suggestions, interface_consumers, site_to_site_phase1, management_profile_groups, policy_identity_groups
 from ..planning.naming import allocate_plan_names
 from ..planning.vpn import vpn_parameter_requirements, represented_vpn_sources, validate_vpn_parameters
 from ..planning.policies import inspection_design_groups
@@ -98,7 +98,7 @@ def build_deterministic_draft(config, derived, decisions, *, source_digest, targ
     interfaces = {(item.vdom or "root", item.name): item for item in config.interfaces}
     vpns = site_to_site_phase1(config)
     tunnel_sources = sorted(identity for identity, item in interfaces.items() if (item.type or '').lower() == 'tunnel' and identity in vpns)
-    validate_vpn_parameters(config, settings)
+    validate_vpn_parameters(config, settings, derived)
     inspection_groups = inspection_design_groups(config)
     if set(settings.get('security_profiles', {})) - {row['identity'] for row in inspection_groups}:
         raise ValueError('Security profile assignments must select current source inspection groups')
@@ -264,10 +264,14 @@ def build_deterministic_draft(config, derived, decisions, *, source_digest, targ
     provisional = PANMigrationDecisionSet(tuple(replace(item, approved_operation=operations[item.key]) for item in provisional.decisions))
     target_findings = validate_against_target(config, provisional, destination, target_device)
     findings = [row.to_dict() for row in target_findings]
+    findings.extend({'code': 'EFFECTIVE_SOURCE_VALUE', 'source_vdom': row.vdom,
+        'source_kind': row.kind, 'identity': f'{row.vdom}/{row.name}',
+        'message': f'{row.kind} {row.name}: {row.field}={row.value} is a documented FortiOS {row.version} effective value, not explicit source state. Reference: {row.reference}'}
+        for row in getattr(derived, 'effective_values', ()))
     findings.extend(validate_source_interfaces(config))
     findings.extend({'code': 'SECURITY_PROFILE_REQUIRED', **group} for group in inspection_groups)
     findings.extend({'code': 'VPN_PARAMETERS_REQUIRED', 'message': 'Supply reviewed target values for absent source parameters; no defaults are inferred.',
-        **group} for group in vpn_parameter_requirements(config))
+        **group} for group in vpn_parameter_requirements(config, derived))
     findings.extend({'code': 'VPN_PREREQUISITE', 'identity': f'{vdom}/{name}',
         'message': 'Existing target VPN must use the reviewed tunnel identifier, gateway, credentials, selectors and crypto settings.'}
         for vdom, name in tunnel_sources)
@@ -278,6 +282,8 @@ def build_deterministic_draft(config, derived, decisions, *, source_digest, targ
     findings.extend({'code': 'MANAGEMENT_PROFILE_REQUIRED', 'identity': f'{item.vdom or "root"}/{item.name}',
         'message': 'Explicit source administrative protocols: ' + ', '.join(item.allowaccess)}
         for item in config.interfaces if item.allowaccess)
+    findings.extend({'code': 'MANAGEMENT_PROFILE_GROUP', **group} for group in management_profile_groups(config))
+    findings.extend({'code': 'IDENTITY_MAPPING_REQUIRED', **group} for group in policy_identity_groups(config))
     findings.extend({"code": "TARGET_RULE_PLACEMENT_UNVERIFIED",
         "message": f"Target {row['family'].replace('_', ' ')} placement for {row['target_name']!r} is unverified because the applicable rulebase is populated.",
         "source_vdom": row.get("source_vdom"), "source_name": row.get("source_name"),
@@ -366,7 +372,9 @@ def build_deterministic_draft(config, derived, decisions, *, source_digest, targ
     for item in _items(plan):
         key = item_key(item)
         required = list(index.decision_keys_by_item.get(key, ()))
-        for name in source_refs.get((item.source_vdom or "root", item.source_kind, item.source_name), ()):
+        source_interfaces = (() if item.source_object_type == 'address' else
+            source_refs.get((item.source_vdom or "root", item.source_kind, item.source_name), ()))
+        for name in source_interfaces:
             required.extend(row.key for row in decisions.decisions if row.source_vdom == (item.source_vdom or "root")
                             and row.source_name == name and row.source_kind in {"interface", "zone"})
         required = list(dict.fromkeys(required))
@@ -396,8 +404,10 @@ def build_deterministic_draft(config, derived, decisions, *, source_digest, targ
         comparison = classification_by_item.get((item.source_vdom or "root", item.source_kind, item.source_name, item.source_object_type, item.target_name))
         if comparison and comparison['status'] != 'NO_MATCH':
             configuration[-1]['target_comparison'] = comparison
+    findings.extend(shared_action_groups(configuration))
     coverage = build_migration_coverage(config,
-        build_recommendations(config, derived, provisional, destination, target_device), planned_vpn_sources=represented_vpn_sources(plan))
+        build_recommendations(config, derived, provisional, destination, target_device), planned_vpn_sources=represented_vpn_sources(plan),
+        planned_vip_groups=represented_vip_groups(config, plan, {row['item_key'] for row in configuration if row['status'] == 'READY'}))
     for number, gap in enumerate(coverage["unplanned"]):
         configuration.append({"group_key": f"coverage:{number}",
             "source_vdom": gap["source_vdom"], "source_kind": gap["source_kind"],

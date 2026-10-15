@@ -1,5 +1,6 @@
 """Explicit design settings; configured XML interfaces are not hardware inventory."""
 import re
+from ipaddress import ip_network
 
 # PA-800 Hardware Reference: data ports 1-12; MGT and HA are separate.
 MODEL_PORTS = {'PA-820': tuple(f'ethernet1/{number}' for number in range(1, 13))}
@@ -8,9 +9,40 @@ MODEL_PORTS = {'PA-820': tuple(f'ethernet1/{number}' for number in range(1, 13))
 def parse_conversion_settings(value):
     if value is None:
         return {}
-    if not isinstance(value, dict) or set(value) - {'target_model', 'panos_version', 'excluded_interfaces', 'management_profiles', 'existing_vpns', 'vpn_parameters', 'security_profiles'}:
+    if not isinstance(value, dict) or set(value) - {'target_model', 'panos_version', 'excluded_interfaces', 'management_profiles', 'generated_management_profiles', 'existing_vpns', 'vpn_parameters', 'security_profiles', 'identity_mappings', 'identity_prerequisites'}:
         raise ValueError('Invalid conversion settings')
     result = dict(value)
+    identities = result.get('identity_mappings', {})
+    if not isinstance(identities, dict):
+        raise ValueError('Invalid scoped identity mappings')
+    for vdom, mappings in identities.items():
+        if not isinstance(vdom, str) or not isinstance(mappings, dict):
+            raise ValueError('Invalid scoped identity mappings')
+        for key, name in mappings.items():
+            if (not isinstance(key, str) or not key.startswith(('user/', 'group/')) or not key.split('/', 1)[1]
+                    or not valid_target_identity(name)):
+                raise ValueError('Identity mappings require explicit target user/group names')
+    prerequisites = result.get('identity_prerequisites', [])
+    if not isinstance(prerequisites, list) or any(not isinstance(vdom, str) or not vdom for vdom in prerequisites):
+        raise ValueError('Identity prerequisites must select source VDOMs')
+    generated = result.get('generated_management_profiles', {})
+    if not isinstance(generated, dict):
+        raise ValueError('Invalid generated management profiles')
+    normalized = {}
+    for key, settings in generated.items():
+        if (not isinstance(key, str) or '/' not in key or not isinstance(settings, dict)
+                or set(settings) != {'permitted_ips'} or not isinstance(settings['permitted_ips'], list)
+                or not 1 <= len(settings['permitted_ips']) <= 64):
+            raise ValueError('Generated management profiles require reviewed permitted networks')
+        try:
+            networks = [str(ip_network(network, strict=True)) for network in settings['permitted_ips'] if isinstance(network, str)]
+            if len(networks) != len(settings['permitted_ips']):
+                raise ValueError('Invalid network')
+        except ValueError as exc:
+            raise ValueError('Management permitted networks must be explicit valid CIDRs') from exc
+        normalized[key] = {'permitted_ips': sorted(set(networks))}
+    if 'generated_management_profiles' in result:
+        result['generated_management_profiles'] = normalized
     if result.get('target_model') not in {None, '', *MODEL_PORTS}:
         raise ValueError('Unsupported target hardware model')
     if result.get('panos_version') not in {None, '', '11.1'}:
@@ -56,6 +88,39 @@ def site_to_site_phase1(source):
             if item.interface and item.remote_gw and item.type != 'dynamic'
             and item.raw_extra.get('mode-cfg') not in {'enable', 'yes'}
             and not item.raw_extra.get('xauthtype')}
+
+
+def valid_target_identity(value):
+    return (isinstance(value, str) and bool(value.strip()) and value == value.strip() and len(value) <= 255
+        and value.casefold() not in {'any', 'known-user', 'unknown', 'pre-logon'}
+        and not any(ord(character) < 32 or ord(character) == 127 for character in value))
+
+
+def policy_identity_groups(source):
+    groups = {}
+    for policy in getattr(source, 'policies', ()):
+        vdom = policy.vdom or 'root'
+        for kind, identities in (('user', policy.users), ('group', policy.groups)):
+            for name in identities or ():
+                key = f'{kind}/{name}'
+                group = groups.setdefault((vdom, key), {'source_vdom': vdom, 'identity': key,
+                    'message': f'{kind} {name}', 'proposed_value': name, 'member_keys': []})
+                group['member_keys'].append(str(policy.policy_id))
+    return list(groups.values())
+
+
+def management_profile_groups(source):
+    groups = {}
+    for item in getattr(source, 'interfaces', ()):
+        if not item.allowaccess:
+            continue
+        vdom = item.vdom or 'root'
+        protocols = tuple(sorted(set(item.allowaccess)))
+        group = groups.setdefault((vdom, protocols), {'source_vdom': vdom,
+            'identity': f'{vdom}/' + ','.join(protocols),
+            'message': 'Explicit source administrative protocols: ' + ', '.join(protocols), 'member_keys': []})
+        group['member_keys'].append(f'{vdom}/{item.name}')
+    return list(groups.values())
 
 
 def interface_consumers(source):

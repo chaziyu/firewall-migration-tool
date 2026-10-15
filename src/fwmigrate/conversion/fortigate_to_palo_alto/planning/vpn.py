@@ -2,6 +2,7 @@
 
 from ..models import (PANMigrationStatus, PlannedIKECryptoProfile, PlannedIPsecCryptoProfile,
     PlannedIKEGateway, PlannedIPsecTunnel, PlannedVPNProxyID)
+from fwmigrate.vendors.fortigate.transform.effective_values import effective_value
 
 
 # One proposal avoids turning ordered proposal pairs into an algorithm cross product.
@@ -24,16 +25,16 @@ def crypto_lifetime(seconds):
     return None
 
 
-def vpn_parameter_requirements(source):
+def vpn_parameter_requirements(source, derived=None):
     groups = {}
     for kind, records in (('ipsec_phase1', source.ipsec_phase1), ('ipsec_phase2', source.ipsec_phase2)):
         for item in records:
             fields = []
-            if (item.keylife if kind == 'ipsec_phase1' else item.keylifeseconds) is None:
+            if (item.keylife if kind == 'ipsec_phase1' else item.keylifeseconds) is None and effective_value(derived, item.vdom, kind, item.name, 'keylifeseconds' if kind == 'ipsec_phase2' else 'keylife') is None:
                 fields.append('lifetime_seconds')
             if not item.dhgrp:
                 fields.append('dh_group')
-            if kind == 'ipsec_phase2' and item.pfs is None:
+            if kind == 'ipsec_phase2' and item.pfs is None and effective_value(derived, item.vdom, kind, item.name, 'pfs') is None:
                 fields.append('pfs')
             if kind == 'ipsec_phase1' and item.ike_version is None:
                 fields.append('ike_version')
@@ -45,16 +46,22 @@ def vpn_parameter_requirements(source):
     return list(groups.values())
 
 
-def validate_vpn_parameters(source, settings):
+def validate_vpn_parameters(source, settings, derived=None):
     if not settings.get('vpn_parameters'):
         return
     eligible = {key: set(group['fields']) for group in vpn_parameter_requirements(source) for key in group['member_keys']}
     for key, fields in settings.get('vpn_parameters', {}).items():
         if key not in eligible or set(fields) - eligible[key]:
             raise ValueError('Reviewed VPN values may only fill current absent source parameters')
+        vdom, kind, name = key.split('/', 2)
+        for field, value in fields.items():
+            source_field = 'keylifeseconds' if field == 'lifetime_seconds' and kind == 'ipsec_phase2' else field
+            derived_value = effective_value(derived, vdom, kind, name, source_field)
+            if derived_value is not None and value != derived_value:
+                raise ValueError('Reviewed VPN values cannot replace verified effective source values')
 
 
-def plan_vpn_crypto(source, options):
+def plan_vpn_crypto(source, options, derived=None):
     ike, ipsec = [], []
     phase1s = {(item.vdom or 'root', item.name): item for item in getattr(source, 'ipsec_phase1', ())}
     for family, records, cls, destination in (
@@ -72,11 +79,15 @@ def plan_vpn_crypto(source, options):
                 warnings.append('Crypto profile requires one supported AES-CBC/SHA256, SHA384 or SHA512 proposal')
             lifetime = item.keylife if family == 'ike_crypto_profile' else item.keylifeseconds
             if lifetime is None:
+                lifetime = effective_value(derived, vdom, kind, item.name, 'keylife' if kind == 'ipsec_phase1' else 'keylifeseconds')
+            if lifetime is None:
                 lifetime = reviewed.get('lifetime_seconds')
             if crypto_lifetime(lifetime) is None:
                 warnings.append('Crypto profile requires an explicit or reviewed lifetime representable in PAN-OS seconds or hours')
             dh_group = None
             pfs = item.pfs if family == 'ipsec_crypto_profile' else None
+            if family == 'ipsec_crypto_profile' and pfs is None:
+                pfs = effective_value(derived, vdom, kind, item.name, 'pfs')
             if family == 'ipsec_crypto_profile' and pfs is None:
                 pfs = reviewed.get('pfs')
             if family == 'ipsec_crypto_profile' and pfs == 'disable':

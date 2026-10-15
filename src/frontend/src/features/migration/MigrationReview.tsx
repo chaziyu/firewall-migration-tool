@@ -565,7 +565,7 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
           approvedItems={approvedItems} busy={busy || !reviewCurrent || settingsDirty} focusRequest={setupFocus}
           onChange={(key, value) => setDrafts((current) => ({ ...current, [key]: value }))}
           onApply={() => run(applyMappings)} onReview={() => setReviewSection('configuration')} />}
-        <details className="migration-review-tools" open={workflowMode === 'destination'}>
+        {workflowMode === 'destination' && <details className="migration-review-tools" open>
         <summary>Advanced mapping editors</summary>
         <p>Review VDOM, VSYS, and virtual-router ownership, then allocate parent ports. Changes remain proposals until design approval.</p>
          {workflowMode === 'destination' && <div className="migration-summary" aria-label="Mapping task dashboard">{taskCategories.map((category) => <p key={category}><strong>{category}</strong><br />{(deterministicDraft?.decisions ?? []).filter((row) => taskCategory(row, proposalByKey, approvedKeys) === category).length} mapping fields · {(deterministicDraft?.configuration ?? []).filter((row) => taskCategory(row, proposalByKey, approvedKeys) === category).length} configuration items</p>)}</div>}
@@ -607,9 +607,13 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
           proposals={deterministicDraft?.decisions}
           selectedKeys={selectedKeys} setSelectedKeys={(keys) => { setSelectedKeys(keys); setBulkPreview([]) }} busy={busy || !reviewCurrent || settingsDirty} reviewSelected={reviewProposals}
           openDetails={(key) => { const group = reviewGroups.find((item) => item.decision_keys.includes(key)); if (group) { setMappingView('guided'); if (manualToolsRef.current) manualToolsRef.current.open = true; if (bulkMappingsRef.current) bulkMappingsRef.current.open = true; setActiveQueue(group.queue); setSelectedGroupKey(group.decision_keys[0]); setSearch(''); setVdomFilter('all'); manualToolsRef.current?.scrollIntoView({ block: 'start' }); focusMappingInput(key) } }} /></details></div>
-        </details>
-        <details className="migration-review-tools migration-exceptions" onToggle={(event) => setExceptionsOpen(event.currentTarget.open)}>
-         <summary>Unresolved choices ({deterministicDraft?.task_summary?.choices ?? (deterministicDraft?.issues ?? []).filter((issue) => issue.category === 'CHOICE').length}) and manual work ({deterministicDraft?.task_summary?.manual_items ?? 0} configuration items)</summary>
+        </details>}
+        {workflowMode === 'destination' && <div className="action-row"><Button disabled={busy || !deterministicDraft || !!changedMappings.length} onClick={() => setReviewSection('configuration')}>Review supported changes</Button></div>}
+        </section>
+        <details className="migration-review-tools migration-exceptions" hidden={workflowMode === 'offline'
+          ? (stage ? stage !== 'review' : reviewSection !== 'configuration')
+          : (stage ? stage !== 'place' : reviewSection !== 'mappings')} onToggle={(event) => setExceptionsOpen(event.currentTarget.open)}>
+         <summary>{workflowMode === 'offline' ? 'Conversion issues and manual work' : 'Unresolved choices and manual work'} ({deterministicDraft?.task_summary?.manual_items ?? 0} configuration items)</summary>
         {exceptionsOpen && <section aria-label="Migration exceptions">
           <h3>Root-cause exceptions and manual work</h3>
           {deterministicDraft?.task_summary && <p>{deterministicDraft.task_summary.prerequisites} dependent task groups · {deterministicDraft.task_summary.conflicts} conflicts · {deterministicDraft.task_summary.manual_issues} manual issue groups. Several issues can affect the same configuration item.</p>}
@@ -620,14 +624,12 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
             {!!issue.explanations?.length && <details><summary>Technical reasons ({issue.explanations.length})</summary><ul className="migration-technical-reasons">{issue.explanations.map((reason, index) => <li key={index}>{reason}</li>)}</ul></details>}
             <details><summary>Affected source identities</summary><ul>{issue.affected_sources.slice(0, 30).map((item, index) => <li key={index}>{item.source_vdom} / {item.source_kind} / {item.source_name}</li>)}</ul>{issue.affected_sources.length > 30 && <p>{issue.affected_sources.length - 30} more affected identities; inspect placement and configuration lists.</p>}</details>
             {issue.category === 'MANUAL' && <p>Requires manual implementation. Excluded from generated commands.</p>}
-            {issue.action && <div className="action-row"><Button className="secondary-button" disabled={busy || !reviewCurrent} onClick={() => { onStageChange?.('place'); setSetupFocus({ key: issue.action!.decision_key, request: Date.now() }); setMappingView('guided'); const group = reviewGroups.find((group) => group.decision_keys.includes(issue.action!.decision_key)); if (group) { setActiveQueue(group.queue); setSelectedGroupKey(group.decision_keys[0]); setSearch(''); setVdomFilter('all') }; focusMappingInput(issue.action!.decision_key) }}>Resolve placement</Button></div>}
+            {issue.action && <div className="action-row"><Button className="secondary-button" disabled={busy || !reviewCurrent} onClick={() => { setReviewSection('mappings'); setSetupFocus({ key: issue.action!.decision_key, request: Date.now() }); setMappingView('guided'); const group = reviewGroups.find((group) => group.decision_keys.includes(issue.action!.decision_key)); if (group) { setActiveQueue(group.queue); setSelectedGroupKey(group.decision_keys[0]); setSearch(''); setVdomFilter('all') }; focusMappingInput(issue.action!.decision_key) }}>{workflowMode === 'offline' ? 'Review target setup' : 'Resolve placement'}</Button></div>}
           </article>)}
           {(deterministicDraft?.issues?.length ?? 0) > 30 && <div className="report-pager"><button type="button" disabled={issuePage <= 1} onClick={() => setIssuePage((page) => page - 1)}>Previous tasks</button><span>Page {issuePage}</span><button type="button" disabled={issuePage * 30 >= (deterministicDraft?.issues?.length ?? 0)} onClick={() => setIssuePage((page) => page + 1)}>Next tasks</button></div>}
         </section>}
         </details>
-        {workflowMode === 'destination' && <div className="action-row"><Button disabled={busy || !deterministicDraft || !!changedMappings.length} onClick={() => setReviewSection('configuration')}>Review supported changes</Button></div>}
-        </section>
-        <details className="migration-review-tools" hidden={stage ? stage !== 'place' : reviewSection !== 'mappings'}><summary>Advanced tools and mapping files</summary>
+        {workflowMode === 'destination' && <details className="migration-review-tools" hidden={stage ? stage !== 'place' : reviewSection !== 'mappings'}><summary>Advanced tools and mapping files</summary>
         <button type="button" disabled={busy || !!changedMappings.length} onClick={() => void run(async () => { await loadReview(currentDocument()) }, 'Design revalidated.')}>Revalidate design</button>
         <details className="migration-review-tools"><summary>Import / export target intent</summary><div className="migration-toolbar">
           <label className="field">Import target intent YAML
@@ -678,7 +680,7 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
           run={run}
           updateProposal={updateProposal}
         />
-        </details>
+        </details>}
         {!!bulkPreview.length && <section className="review-work-card" aria-label="Bulk proposal review">
           <h3>Review {bulkPreview.length} proposed mappings</h3>
           <p>Only these nonempty values will be submitted. Related configuration and dependent mappings will be re-evaluated. Approval is separate.</p>

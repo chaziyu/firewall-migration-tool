@@ -545,6 +545,12 @@ def classify_target_object_reuse(plan: PANMigrationPlan, target, device: str | N
         return ()
     result = []
     result.extend(_interface_collisions(plan.interfaces, target, device, allow_additive=allow_additive))
+    for item in plan.management_profiles:
+        # The extracted baseline may omit profile contents; never infer an empty device namespace.
+        result.append({'status': 'AMBIGUOUS', 'family': 'management_profile', 'source_name': item.source_name,
+            'source_vdom': item.source_vdom or 'root', 'source_kind': item.source_kind,
+            'target_vsys': None, 'target_name': item.target_name,
+            'evidence': ['Generated management profile creation is available for offline export; destination profile inventory is not verified']})
     result.extend(_zone_collisions(plan.zones, target, device, allow_additive=allow_additive))
     for attribute in ("ike_crypto_profiles", "ipsec_crypto_profiles"):
         for item in getattr(plan, attribute):
@@ -588,7 +594,8 @@ def classify_target_object_reuse(plan: PANMigrationPlan, target, device: str | N
         ("from_zones", "from_zones", rule.from_zones), ("to_zones", "to_zones", rule.to_zones),
         ("source", "source", rule.sources), ("destination", "destination", rule.destinations),
         ("service", "service", rule.services), ("schedule", "schedule", rule.schedule), ("action", "action", rule.action),
-        ("log_start", "log_start", rule.log_start), ("log_end", "log_end", rule.log_end)))
+        ("log_start", "log_start", rule.log_start), ("log_end", "log_end", rule.log_end),
+        *((('source_user', 'source_user', rule.source_users),) if rule.source_users else ())))
     result.extend(security_collision_results)
     for rule in plan.security_rules:
         if rule.profile_group and not any(item.name == rule.profile_group and

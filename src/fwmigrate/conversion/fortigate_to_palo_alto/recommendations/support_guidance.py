@@ -24,7 +24,15 @@ class PANSupportGuidance:
     decision_key: str | None = None
 
     def to_dict(self) -> dict:
+        automation = {'MISSING_MAPPING': 'TARGET_CHOICE', 'MANUAL_TARGET_DESIGN': 'TARGET_CHOICE',
+            'SOURCE_CORRECTION': 'SOURCE_CORRECTION', 'SOURCE_ONLY': 'SOURCE_ONLY',
+            'TARGET_CONFLICT': 'TARGET_CONFLICT', 'DEPENDENCY': 'DEPENDENCY'}.get(self.resolution_type, 'CONVERTER_REQUIRED')
+        source_match = re.search(r"(?:Outgoing interface|for interface) ['\"]([^'\"]+)", self.why)
+        source_identity = source_match.group(1) if source_match else self.source_name
         return {
+            'automation_category': automation,
+            'action_group': json.dumps([self.source_vdom, self.code, self.decision_key,
+                source_identity if automation == 'SOURCE_CORRECTION' else None], separators=(',', ':')),
             "source_vdom": self.source_vdom, "source_kind": self.source_kind,
             "source_name": self.source_name, "source_policy_id": self.source_policy_id,
             "status": self.status, "code": self.code, "resolution_type": self.resolution_type,
@@ -60,6 +68,18 @@ def _warning_guidance(item, warning, decision_keys):
     vdom = getattr(item, "source_vdom", None) or "root"
     match = re.search(r"for ['\"]([^'\"]+)", warning)
     name = match.group(1) if match else None
+    for needle, code, resolution, title, action in (
+        ('could not be parsed', 'SOURCE_VALUE_INVALID', 'SOURCE_CORRECTION', 'Correct source data', 'Upload a corrected source export; explicit malformed data cannot be inferred.'),
+        ('management-profile decision', 'MANAGEMENT_PROFILE_REQUIRED', 'MANUAL_TARGET_DESIGN', 'Review management profiles', 'Generate reviewed profiles or assign existing profiles once per protocol group.'),
+        ('ssl/ssh inspection', 'DECRYPTION_DESIGN_REQUIRED', 'MANUAL_TARGET_DESIGN', 'Review inspection and decryption', 'Review the source SSL/SSH profile and its target decryption/certificate prerequisites.'),
+        ('existing-target prerequisite', 'VPN_PREREQUISITE_REQUIRED', 'MANUAL_TARGET_DESIGN', 'Review VPN prerequisites', 'Confirm existing target VPNs only when their authentication and selectors are already configured.'),
+        ('ipsec pfs state', 'VPN_PARAMETERS_REQUIRED', 'MANUAL_TARGET_DESIGN', 'Review missing VPN parameters', 'Apply verified source-version values or review the grouped VPN parameter choices.'),
+        ('explicit or reviewed lifetime', 'VPN_PARAMETERS_REQUIRED', 'MANUAL_TARGET_DESIGN', 'Review missing VPN parameters', 'Review the grouped VPN lifetime choices.'),
+        ('one explicit supported dh group', 'VPN_PARAMETERS_REQUIRED', 'MANUAL_TARGET_DESIGN', 'Review missing VPN parameters', 'Review the grouped VPN DH choices.'),
+        ('source-only', 'SOURCE_ONLY_EVIDENCE', 'SOURCE_ONLY', 'Preserved source evidence', 'Source-only metadata remains in the report.'),
+    ):
+        if needle in lower:
+            return _guidance(item, code, resolution, title, warning, action, 'the required source evidence or reviewed target design is resolved')
     if "missing target zone mapping" in lower:
         return _guidance(item, "MISSING_TARGET_ZONE", "MISSING_MAPPING", "Missing target zone",
                          warning, f"Confirm a target zone for {name or 'the referenced interface'}.",
@@ -149,8 +169,24 @@ def build_support_guidance(plan, validation, decisions, target_findings=()):
 def _items(plan):
     if plan is None:
         return
-    for name in ("addresses", "address_groups", "services", "service_groups", "schedules", "interfaces", "zones", "static_routes", "dhcp_servers", "security_rules", "nat_rules", "ike_crypto_profiles", "ipsec_crypto_profiles", 'ike_gateways', 'ipsec_tunnels'):
+    for name in ("addresses", "address_groups", "services", "service_groups", "schedules", "interfaces", "zones", "static_routes", "dhcp_servers", "security_rules", "nat_rules", "ike_crypto_profiles", "ipsec_crypto_profiles", 'ike_gateways', 'ipsec_tunnels', 'management_profiles'):
         yield from getattr(plan, name)
+
+
+def shared_action_groups(configuration):
+    groups = {}
+    for row in configuration:
+        if row['status'] == 'READY':
+            continue
+        for cause in row.get('causes', ()):
+            if cause['automation_category'] == 'SOURCE_ONLY':
+                continue
+            group = groups.setdefault(cause['action_group'], {'code': 'SHARED_ACTION',
+                'identity': cause['action_group'], 'source_vdom': row['source_vdom'],
+                'automation_category': cause['automation_category'], 'message': cause['next_action'], 'member_keys': []})
+            if row['group_key'] not in group['member_keys']:
+                group['member_keys'].append(row['group_key'])
+    return list(groups.values())
 
 
 __all__ = ["PANSupportGuidance", "build_support_guidance"]

@@ -252,7 +252,6 @@ def run_migration_pipeline(
     support_guidance = build_support_guidance(plan, validation, current, target_findings)
     recommendations = build_recommendations(source, derived, current, target, target_device)
     from .planning.vpn import represented_vpn_sources
-    coverage = build_migration_coverage(source, recommendations, planned_vpn_sources=represented_vpn_sources(plan))
     rendered = PANSetRenderer().render(
         plan,
         validation,
@@ -269,6 +268,9 @@ def run_migration_pipeline(
             and not any(finding.decision_key == item.key and finding.severity == "error" for finding in target_findings)),
     )
 
+    from .coverage import represented_vip_groups
+    coverage = build_migration_coverage(source, recommendations, planned_vpn_sources=represented_vpn_sources(plan),
+        planned_vip_groups=represented_vip_groups(source, plan, {row['item_key'] for row in rendered.report['items'] if row['satisfied']}))
     unresolved = tuple(
         item
         for item in current.decisions
@@ -282,6 +284,7 @@ def run_migration_pipeline(
     ).value
     rendered = replace(rendered, report={
         **rendered.report,
+        'source_effective_values': [asdict(row) for row in getattr(derived, 'effective_values', ())],
         "plan_status": status,
         "workflow_mode": workflow_mode,
         "automation": {
