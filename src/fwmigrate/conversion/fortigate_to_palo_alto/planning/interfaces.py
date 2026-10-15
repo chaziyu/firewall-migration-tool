@@ -32,7 +32,7 @@ def _explicit_ipv4(value: str | None) -> str | None:
 
 
 def plan_interfaces(source: Any, options: Any) -> tuple[PlannedInterface, ...]:
-    """Plan mapped Layer 3 ethernet interfaces and ethernet subinterfaces.
+    """Plan mapped Layer 3 ethernet interfaces, subinterfaces and loopbacks.
 
     Absence in the FortiGate source never becomes a target default. Fields that
     are not explicitly represented by this vertical slice either remain
@@ -94,6 +94,12 @@ def plan_interfaces(source: Any, options: Any) -> tuple[PlannedInterface, ...]:
                 if not re.fullmatch(r"[0-9]+", suffix) or not 1 <= int(suffix) <= 9999:
                     blockers.append("target subinterface identifier must be between 1 and 9999")
             interface_family = "ethernet"
+        elif kind == "loopback":
+            interface_family = "loopback"
+            if item.interface:
+                blockers.append("loopback interface cannot have a source parent")
+            if not re.fullmatch(r"loopback\.(?:[1-9][0-9]{0,3})", target):
+                blockers.append("target loopback identifier must be between 1 and 9999")
         else:
             if item.interface:
                 blockers.append("non-VLAN interface has an explicit parent relationship")
@@ -118,6 +124,8 @@ def plan_interfaces(source: Any, options: Any) -> tuple[PlannedInterface, ...]:
                 blockers.append("explicit source IPv4 address could not be parsed safely")
             else:
                 ipv4_addresses = (normalized,)
+                if interface_family == "loopback" and IPv4Interface(normalized).network.prefixlen != 32:
+                    blockers.append("PAN-OS loopback IPv4 addresses require an explicit /32 mask")
         else:
             notes.append("source IPv4 address is not explicit; no target IP command is emitted")
 
