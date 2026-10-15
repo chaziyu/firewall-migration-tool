@@ -65,6 +65,13 @@ def interface(item):
         commands.append(("device_pre", *base))
         commands.extend(("device_pre", *base, "ip", address) for address in item.ipv4_addresses)
     commands.append(("vsys", "import", "network", "interface", "[", name, "]"))
+    if item.aggregate_members:
+        lacp = ("device_pre", "network", "interface", "aggregate-ethernet", name, "layer3", "lacp")
+        commands.append((*lacp, "enable", "no" if item.lacp_mode == "static" else "yes"))
+        if item.lacp_mode in {"active", "passive"}:
+            commands.append((*lacp, "mode", item.lacp_mode))
+        commands.extend(("device_pre", "network", "interface", "ethernet", member, "aggregate-group", name)
+                        for member in item.aggregate_members)
     commands.append(("device_post", "network", "virtual-router", item.virtual_router,
                      "interface", "[", name, "]"))
     return commands

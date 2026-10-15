@@ -71,7 +71,7 @@ def test_dynamic_or_unknown_interface_semantics_fail_closed():
     assert by_name["wan"].status is PANMigrationStatus.MANUAL_REVIEW
     assert any("dynamic interface mode" in warning for warning in by_name["wan"].warnings)
     assert by_name["agg1"].status is PANMigrationStatus.MANUAL_REVIEW
-    assert any("unsupported FortiGate interface type" in warning for warning in by_name["agg1"].warnings)
+    assert any("explicit supported lacp-mode" in warning for warning in by_name["agg1"].warnings)
 
 
 def test_interface_planning_never_infers_missing_ownership():

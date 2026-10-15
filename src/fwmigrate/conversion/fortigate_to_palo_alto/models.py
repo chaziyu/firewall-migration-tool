@@ -79,6 +79,9 @@ class PlannedInterface(PlannedPANItem):
     ipv4_addresses: tuple[str, ...] = ()
     virtual_router: str | None = None
 
+    aggregate_members: tuple[str, ...] = ()
+    lacp_mode: str | None = None
+
 
 @dataclass(frozen=True, slots=True)
 class PlannedZone(PlannedPANItem):
