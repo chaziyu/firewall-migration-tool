@@ -7,6 +7,7 @@ from .planning.addresses import plan_addresses
 from .planning.dhcp import plan_dhcp
 from .planning.nat import plan_nat
 from .planning.interfaces import plan_interfaces
+from .planning.management_profiles import plan_management_profiles
 from .planning.policies import plan_policies
 from .planning.routing import plan_routes
 from .planning.schedules import plan_schedules
@@ -36,11 +37,12 @@ class FortiGateToPaloAltoPlanner:
         elif isinstance(options, dict):
             options = PANMigrationOptions(**options)
         from .planning.vpn import validate_vpn_parameters
-        validate_vpn_parameters(source, options.conversion_settings)
-        addresses, groups, issues = plan_addresses(source, options)
+        validate_vpn_parameters(source, options.conversion_settings, derived)
+        addresses, groups, issues = plan_addresses(source, options, derived)
         services, service_groups = plan_services(derived, options, source)
         schedules = plan_schedules(source, options)
         interfaces = plan_interfaces(source, options)
+        management_profiles = plan_management_profiles(source, options)
         requirements = build_mapping_requirements(source, derived, include_configuration=include_configuration)
         zones = plan_topology(source, derived, options, requirements["required_zone_keys"],
                               include_configuration=include_configuration)
@@ -48,10 +50,11 @@ class FortiGateToPaloAltoPlanner:
         dhcp_servers = plan_dhcp(source, options)
         policies = plan_policies(source, options, derived)
         nat_rules = plan_nat(source, derived, options)
-        ike_crypto_profiles, ipsec_crypto_profiles = plan_vpn_crypto(source, options)
+        ike_crypto_profiles, ipsec_crypto_profiles = plan_vpn_crypto(source, options, derived)
         from .planning.vpn import plan_vpn_structure
         gateways, tunnels = plan_vpn_structure(source, options) if include_configuration else ((), ())
         return PANMigrationPlan(
+            management_profiles=management_profiles,
             addresses=addresses,
             address_groups=groups,
             services=services,

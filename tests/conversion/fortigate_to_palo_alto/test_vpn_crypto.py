@@ -111,3 +111,38 @@ def test_recommendations_block_authentication_and_reject_cross_namespace_phase1(
     recommendations = build_vpn_recommendations(config, object(), PANMigrationDecisionSet())
     assert any('Authentication material' in reason for row in recommendations for reason in row.blockers)
     assert any('Phase 1 gateway is missing' in reason for row in recommendations if row.source_kind == 'ipsec_phase2' for reason in row.blockers)
+def test_version_verified_phase2_values_are_separate_from_source_and_block_conflicting_overrides():
+    from fwmigrate.conversion.fortigate_to_palo_alto.planning.vpn import vpn_parameter_requirements, validate_vpn_parameters
+    from fwmigrate.vendors.fortigate.source_report import FortiGateSourceReporter
+    source = '''config vpn ipsec phase1-interface
+edit site
+set interface port1
+next
+end
+config vpn ipsec phase2-interface
+edit selectors
+set phase1name site
+set proposal aes256-sha256
+set dhgrp 14
+next
+end
+'''
+    header = '#config-version=FG100E-7.2.13-FW-build1762-260128\n'
+    analysis = FortiGateSourceReporter().analyze_source(header + source)
+    explicit = analysis.extracted.config.model_dump()
+    options = PANMigrationOptions(vdoms={'root': {'vsys': 'vsys1'}})
+    _, profiles = plan_vpn_crypto(analysis.extracted.config, options, analysis.derived)
+    assert profiles[0].status is PANMigrationStatus.SUPPORTED
+    assert profiles[0].dh_group == 'group14' and profiles[0].lifetime_seconds == 43200
+    assert not any(group['source_kind'] == 'ipsec_phase2' for group in vpn_parameter_requirements(analysis.extracted.config, analysis.derived))
+    assert analysis.extracted.config.model_dump() == explicit
+    assert analysis.extracted.config.ipsec_phase2[0].pfs is None
+    with pytest.raises(ValueError, match='verified effective'):
+        validate_vpn_parameters(analysis.extracted.config,
+            {'vpn_parameters': {'root/ipsec_phase2/selectors': {'pfs': 'disable'}}}, analysis.derived)
+    unknown = FortiGateSourceReporter().analyze_source(source)
+    _, blocked = plan_vpn_crypto(unknown.extracted.config, options, unknown.derived)
+    assert blocked[0].status is not PANMigrationStatus.SUPPORTED
+    disabled = FortiGateSourceReporter().analyze_source(header + source.replace('set dhgrp 14', 'set pfs disable'))
+    _, profile = plan_vpn_crypto(disabled.extracted.config, options, disabled.derived)
+    assert profile[0].status is PANMigrationStatus.SUPPORTED and profile[0].dh_group == 'no-pfs'

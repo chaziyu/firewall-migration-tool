@@ -24,6 +24,21 @@ def test_indexed_guidance_preserves_first_source_match_and_duplicate_message_han
     assert result[0].why == message
 
 
+def test_shared_source_correction_groups_dependents_but_preserves_scope():
+    from fwmigrate.conversion.fortigate_to_palo_alto.recommendations.support_guidance import _warning_guidance, shared_action_groups
+    warning = "Outgoing interface 'wan1' has an explicit ip value that could not be parsed safely"
+    rows = []
+    for vdom, name in (('root', 'one'), ('root', 'two'), ('blue', 'one')):
+        item = PlannedSecurityRule(source_vdom=vdom, source_kind='source_nat', source_name=name)
+        cause = _warning_guidance(item, warning, ()).to_dict()
+        assert cause['automation_category'] == 'SOURCE_CORRECTION'
+        rows.append({'status': 'UNSUPPORTED', 'source_vdom': vdom, 'group_key': f'{vdom}/{name}', 'causes': [cause, cause]})
+    groups = shared_action_groups(rows)
+    assert len(groups) == 2
+    assert groups[0]['member_keys'] == ['root/one', 'root/two']
+    assert groups[1]['member_keys'] == ['blue/one']
+
+
 def test_missing_zone_guidance_links_existing_decision():
     item = PlannedSecurityRule(source_vdom="root", source_kind="policy", source_name="42",
                                status=PANMigrationStatus.MANUAL_REVIEW,

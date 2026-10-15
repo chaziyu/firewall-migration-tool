@@ -216,6 +216,90 @@ def test_offline_source_upload_approval_and_identical_exports(monkeypatch):
         assert client.post('/api/' + endpoint, json={**CREDS, 'artifact': artifact}).status_code == 400
 
 
+def test_generated_management_profile_is_signed_with_its_interface_dependencies():
+    source = SOURCE.replace('set type physical', 'set type physical\nset allowaccess ping ssh')
+    client, payload = setup(None, source=source)
+    data, payload = prepare(client, {**payload, 'workflow_mode': 'OFFLINE_EXPORT', 'conversion_settings': {
+        'generated_management_profiles': {'root/ping,ssh': {'permitted_ips': ['192.0.2.0/24']}}}})
+    profile = next(row for row in data['draft']['configuration'] if row['family'] == 'management_profile')
+    interface = next(row for row in data['draft']['configuration'] if row['family'] == 'interface' and row['source_name'] == 'port1')
+    assert profile['status'] == interface['status'] == 'READY'
+    assert profile['group_key'] in interface['dependencies']
+    approved = approve(client, payload, data)
+    assert approved.status_code == 200, approved.get_json()
+    request = {**payload, 'decision_document': approved.get_json()['decision_document']}
+    generated = client.post('/api/migrate', json=request)
+    assert generated.status_code == 200, generated.get_json()
+    result = generated.get_json()
+    assert any('interface-management-profile' in command and 'permitted-ip 192.0.2.0/24' in command for command in result['commands'])
+    changed = {**request, 'conversion_settings': {'generated_management_profiles': {'root/ping,ssh': {'permitted_ips': ['198.51.100.0/24']}}}}
+    assert client.post('/api/migrate', json=changed).status_code == 400
+
+
+def test_vip_address_can_be_approved_while_its_interface_and_nat_remain_blocked():
+    source = SOURCE.replace('set ip 192.0.2.1 255.255.255.0', 'set ip malformed-primary') + '''config firewall vip
+edit published
+set type static-nat
+set extintf port1
+set extip 203.0.113.10
+set mappedip 198.51.100.10
+next
+end
+config firewall policy
+edit 1
+set srcintf port1
+set dstintf vlan10
+set srcaddr all
+set dstaddr published
+set action accept
+set schedule always
+set service ALL
+next
+end
+'''
+    client, payload = setup(None, source=source)
+    data, payload = prepare(client, {**payload, 'workflow_mode': 'OFFLINE_EXPORT'})
+    address = next(row for row in data['draft']['configuration'] if row['family'] == 'address' and row['source_name'] == 'published')
+    assert address['status'] == 'READY'
+    assert next(row for row in data['draft']['configuration'] if row['family'] == 'nat_rule')['status'] != 'READY'
+    approved = approve(client, payload, data, [address['group_key'], *address['dependencies']])
+    assert approved.status_code == 200, approved.get_json()
+    result = client.post('/api/migrate', json={**payload, 'decision_document': approved.get_json()['decision_document']}).get_json()
+    assert result['commands'] == ['set vsys vsys1 address published ip-netmask 203.0.113.10/32']
+    assert not any(row['rendered'] for row in result['report']['items'] if row['source_object_type'] in {'nat_rule', 'security_rule', 'interface'})
+
+
+def test_partial_approval_explains_supported_unselected_and_unsupported_items():
+    source = SOURCE + '''config firewall address
+edit another
+set subnet 198.51.100.0 255.255.255.0
+next
+edit unsupported
+set wildcard-fqdn *.example.com
+next
+end
+'''
+    client, payload = setup(None, source=source)
+    payload['workflow_mode'] = 'OFFLINE_EXPORT'
+    data, payload = prepare(client, payload)
+    address = next(row for row in data['draft']['configuration'] if row['family'] == 'address' and row['source_name'] == 'net')
+    approved = approve(client, payload, data, [address['group_key'], *address['dependencies']])
+    assert approved.status_code == 200
+    payload['decision_document'] = approved.get_json()['decision_document']
+    result = client.post('/api/migrate', json={**payload, 'compact_response': True}).get_json()
+    report = result['artifact']['report']
+    addresses = {row['source_name']: row for row in report['items'] if row['source_object_type'] == 'address'}
+    assert addresses['net']['export_category'] == 'INCLUDED'
+    assert addresses['another']['export_category'] == 'NOT_APPROVED'
+    assert addresses['unsupported']['export_category'] == 'UNSUPPORTED'
+    assert addresses['another']['commands'] == addresses['unsupported']['commands'] == []
+    assert sum(report['export_counts'].values()) == len(report['items'])
+    assert len(result['artifact']['commands']) == 1
+    downloaded = client.post('/api/migration/download', json={'artifact': result['artifact']})
+    assert downloaded.status_code == 200
+    assert downloaded.data.decode() == result['artifact']['commands'][0]
+
+
 @pytest.mark.parametrize('change', ['mode', 'source', 'mapping', 'configuration'])
 def test_offline_approval_rejects_changed_context(change):
     client, payload = setup(None)

@@ -96,14 +96,18 @@ def test_vip_requires_one_confirmed_post_nat_destination_zone():
     assert not any("rulebase" in command for command in PANSetRenderer().render(plan).commands)
 
 
-def test_vip_service_group_match_does_not_reach_pan_nat_service_leaf():
+def test_vip_service_group_expands_into_single_service_nat_rules():
     from fwmigrate.vendors.fortigate.model.service import FGServiceGroup
     source = _static_vip_config()
+    source.zones = []
     source.service_groups.append(FGServiceGroup(name="web-services", members=["HTTP", "HTTPS"]))
     source.policies[0] = source.policies[0].model_copy(update={"service": ["web-services"]})
-    plan = FortiGateToPaloAltoPlanner().plan(source, build_derived_views(source), OPTIONS)
-    assert any("service-group" in warning for warning in plan.nat_rules[0].warnings)
-    assert not any("rulebase" in command for command in PANSetRenderer().render(plan).commands)
+    plan = FortiGateToPaloAltoPlanner().plan(source, build_derived_views(source), OPTIONS, include_configuration=True)
+    assert len(plan.nat_rules) == 2
+    assert {rule.service for rule in plan.nat_rules} == {'HTTP', 'service-https'}
+    commands = PANSetRenderer().render(plan).commands
+    assert any(' service HTTP' in command and ' rulebase nat ' in command for command in commands)
+    assert not any(' service web-services' in command and ' rulebase nat ' in command for command in commands)
 
 
 def test_vip_nat_target_placement_block_propagates_through_existing_dependency_index():

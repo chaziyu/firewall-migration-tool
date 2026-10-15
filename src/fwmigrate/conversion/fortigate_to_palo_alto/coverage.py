@@ -46,7 +46,7 @@ def _identity(item, index):
     return vdom, str(index)
 
 
-def build_migration_coverage(source, recommendations=(), *, planned_vpn_sources=()):
+def build_migration_coverage(source, recommendations=(), *, planned_vpn_sources=(), planned_vip_groups=()):
     """Return migration work that is preserved but not executable yet.
 
     This is deliberately FortiGate -> PAN-OS specific. It does not create a
@@ -71,6 +71,8 @@ def build_migration_coverage(source, recommendations=(), *, planned_vpn_sources=
     for attribute, source_kind in _SOURCE_ONLY_FAMILIES:
         for index, item in enumerate(getattr(source, attribute, ()) or ()):
             vdom, name = _identity(item, index)
+            if attribute == 'vip_groups' and (vdom, name) in planned_vip_groups:
+                continue
             unplanned.append({
                 "status": "SOURCE_ONLY",
                 "source_vdom": vdom,
@@ -101,3 +103,32 @@ def build_migration_coverage(source, recommendations=(), *, planned_vpn_sources=
 
 
 __all__ = ["build_migration_coverage"]
+
+
+def represented_vip_groups(source, plan, satisfied_keys):
+    """Only complete flattened groups with satisfied consumer rules count as handled."""
+    from .planning.addresses import vip_group_addresses
+    from .plan_dependencies import item_key
+    result = set()
+    for group in getattr(source, 'vip_groups', ()):
+        vdom = group.vdom or 'root'
+        members, warnings = vip_group_addresses(source, vdom, (group.name,))
+        if warnings:
+            continue
+        consumers = [policy for policy in source.policies if (policy.vdom or 'root') == vdom and group.name in (policy.dstaddr or ())]
+        if not consumers:
+            continue
+        required = [rule for policy in consumers for rule in plan.security_rules
+            if rule.source_vdom == vdom and rule.source_policy_id == policy.policy_id and rule.source_name == (policy.name or str(policy.policy_id))]
+        if len(required) != len(consumers):
+            continue
+        complete = True
+        for member in members:
+            addresses = [item for item in plan.addresses if item.source_kind == 'vip' and item.source_vdom == vdom and item.source_name == member]
+            rules = [item for item in plan.nat_rules if item.source_kind == 'vip' and item.source_vdom == vdom and item.source_name == member]
+            if len(addresses) != 1 or not rules:
+                complete = False
+            required.extend((*addresses, *rules))
+        if complete and all(item_key(item) in satisfied_keys for item in required):
+            result.add((vdom, group.name))
+    return result

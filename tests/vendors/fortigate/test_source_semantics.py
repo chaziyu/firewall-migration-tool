@@ -38,6 +38,36 @@ def test_capture_source_metadata_rejects_missing_or_malformed_header():
         ).fortios_version is None
 
 
+def test_documented_effective_values_are_versioned_and_do_not_fill_source_fields():
+    from fwmigrate.vendors.fortigate.transform.effective_values import effective_value
+    config = '''config firewall policy
+edit 1
+next
+edit 2
+set action accept
+next
+end
+config firewall vip
+edit web
+set extip 192.0.2.1
+set mappedip 198.51.100.1
+next
+end
+'''
+    reporter = FortiGateSourceReporter()
+    for version, expected in [('7.2.13', 'static-nat'), ('7.4.6', None), (None, None)]:
+        header = f'#config-version=FG100E-{version}-FW-build1762-260128\n' if version else ''
+        analysis = reporter.analyze_source(header + config)
+        assert analysis.extracted.config.vips[0].type is None
+        assert analysis.extracted.config.policies[0].action is None
+        assert analysis.extracted.config.policies[1].action == 'accept'
+        assert effective_value(analysis.derived, 'root', 'vip', 'web', 'type') == expected
+        assert effective_value(analysis.derived, 'root', 'policy', 1, 'action') == ('deny' if version == '7.2.13' else None)
+        assert effective_value(analysis.derived, 'root', 'policy', 2, 'action') is None
+        assert effective_value(analysis.derived, 'other', 'vip', 'web', 'type') is None
+        assert all(row.origin == 'FORTIOS_DEFAULT' and row.reference for row in analysis.derived.effective_values)
+
+
 def test_missing_vpn_source_fields_remain_unconfigured():
     analysis = FortiGateSourceReporter().analyze_source('''config vpn ipsec phase1-interface
     edit "MINIMAL"

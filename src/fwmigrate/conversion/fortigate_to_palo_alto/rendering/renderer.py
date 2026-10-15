@@ -3,6 +3,7 @@
 import json
 import hashlib
 import re
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -48,6 +49,8 @@ class PANSetRenderer:
                 return paths
             return factory(item)
         commands = []
+        management_profiles = [(item, cli_paths.management_profile(item)) for item in plan.management_profiles
+            if item.status is PANMigrationStatus.SUPPORTED and _key(item) in allowed and can_create(item)]
         interface_items = [
             (item, paths_for(item, cli_paths.interface))
             for item in plan.interfaces
@@ -94,6 +97,7 @@ class PANSetRenderer:
                 )
         routes = [(item, cli_paths.static_route(item)) for item in plan.static_routes
                   if item.status is PANMigrationStatus.SUPPORTED and _key(item) in allowed and can_create(item)]
+        item_commands.update({_key(item): [_serialize(path[1:]) for path in paths] for item, paths in management_profiles})
         dhcp_servers = [(item, cli_paths.dhcp_server(item)) for item in plan.dhcp_servers
                         if item.status is PANMigrationStatus.SUPPORTED and _key(item) in allowed and can_create(item)]
         crypto_profiles = [(item, paths_for(item, path)) for family, path in (
@@ -102,6 +106,7 @@ class PANSetRenderer:
         item_commands.update({_key(item): [_serialize(path[1:]) for path in paths] for item, paths in crypto_profiles})
         item_commands.update({_key(item): [_serialize(path[1:]) for path in paths] for item, paths in routes})
         item_commands.update({_key(item): [_serialize(path[1:]) for path in paths] for item, paths in dhcp_servers})
+        commands.extend(self._render_device_scope(management_profiles))
         commands.extend(self._render_device_scope(interface_pre))
         commands[0:0] = [_serialize(("network", "virtual-router", name)) for name in dict.fromkeys(virtual_router_names)]
         commands.extend(vsys_commands)
@@ -134,6 +139,31 @@ def _key(item):
     return (item.source_object_type, item.target_vsys, item.target_name or item.source_name)
 
 
+def _exclusion_category(item, disposition, blockers, validation):
+    """Explain exclusion without changing rendering or approval eligibility."""
+    if disposition is not PANRenderDisposition.BLOCK:
+        return 'INCLUDED'
+    if any(fragment in warning for warning in item.warnings for fragment in (
+            'explicit source IPv4 address could not be parsed safely',
+            'could not be parsed as a static IPv4 address',
+            'address subnet is not a valid explicit IPv4 subnet')):
+        return 'SOURCE_DATA'
+    if any(code in blockers for code in ('TARGET_SCOPE_CONFLICT', 'TARGET_MAPPING_CONFLICT',
+            'TARGET_NAME_CONFLICT', 'TARGET_OBJECT_AMBIGUOUS', 'TARGET_RULE_PLACEMENT_UNVERIFIED')):
+        return 'TARGET_CONFLICT'
+    if item.status is not PANMigrationStatus.SUPPORTED:
+        mapping_warnings = [warning for warning in item.warnings if warning.startswith((
+            'missing target ', 'missing Palo Alto ', 'missing mapped target '))]
+        if mapping_warnings and len(mapping_warnings) == len(item.warnings):
+            return 'PREREQUISITE'
+        return 'UNSUPPORTED'
+    if 'DEPENDENCY_BLOCKED' in blockers or validation is not None and _key(item) not in validation.renderable_item_keys:
+        return 'PREREQUISITE'
+    if 'DESIGN_GROUP_NOT_APPROVED' in blockers:
+        return 'NOT_APPROVED'
+    return 'PREREQUISITE'
+
+
 def _report(plan, commands, validation, item_commands=None, dispositions=None, render_blockers=None, decision_keys=None):
     items = list(_items(plan))
     command_text = "\n".join(commands)
@@ -162,6 +192,12 @@ def _report(plan, commands, validation, item_commands=None, dispositions=None, r
                     disposition(item) in {PANRenderDisposition.CREATE, PANRenderDisposition.CONFIGURE} and
                     (validation is None or _key(item) in validation.renderable_item_keys)
                     for item in items)
+    exclusions = [_exclusion_category(item, disposition(item),
+        render_blockers.get(item_key(item), ()), validation) for item in items]
+    validation_codes = {}
+    for issue in validation.issues if validation else ():
+        ref = issue.source
+        validation_codes.setdefault((ref.source_vdom, ref.source_kind, ref.source_name, ref.source_policy_id), []).append(issue.code)
     return {"summary": {"counts": counts, "renderable": command_renderable,
                         "render_dispositions": disposition_counts, "satisfied": satisfied,
                         "command_renderable": command_renderable,
@@ -171,6 +207,7 @@ def _report(plan, commands, validation, item_commands=None, dispositions=None, r
             "counts": counts, "command_sha256": digest,
             "commands": len(commands), "render_dispositions": disposition_counts,
             "satisfied": satisfied, "command_renderable": command_renderable,
+            "export_counts": dict(Counter(exclusions)),
             "issue_summary": list(issue_counts.values()),
             "items": [{"item_key": item_key(item), "source_vdom": item.source_vdom, "source_kind": item.source_kind, "source_name": item.source_name,
                         "source_policy_id": item.source_policy_id, "source_object_type": item.source_object_type,
@@ -178,6 +215,7 @@ def _report(plan, commands, validation, item_commands=None, dispositions=None, r
                         "status": item.status.value, "warnings": list(item.warnings),
                         "decision_keys": list(decision_keys.get(item_key(item), ())),
                         "render_disposition": disposition(item).value,
+                        "export_category": category,
                         "satisfied": (disposition(item) is PANRenderDisposition.REUSE or
                                       disposition(item) in {PANRenderDisposition.CREATE, PANRenderDisposition.CONFIGURE} and item.status is PANMigrationStatus.SUPPORTED
                                       and (validation is None or _key(item) in validation.renderable_item_keys)),
@@ -187,11 +225,11 @@ def _report(plan, commands, validation, item_commands=None, dispositions=None, r
                         "renderable": (disposition(item) in {PANRenderDisposition.CREATE, PANRenderDisposition.CONFIGURE}
                                        and item.status is PANMigrationStatus.SUPPORTED
                                        and (validation is None or _key(item) in validation.renderable_item_keys)),
-                        "render_blockers": [*item.warnings, *render_blockers.get(item_key(item), ()), *(issue.code for issue in (validation.issues if validation else ()) if issue.source.source_name == item.source_name and issue.source.source_vdom == item.source_vdom)],
+                        "render_blockers": [*item.warnings, *render_blockers.get(item_key(item), ()), *validation_codes.get((item.source_vdom, item.source_kind, item.source_name, item.source_policy_id), ())],
                         "rendered": bool((item_commands or {}).get(_key(item))),
-                        "commands": list((item_commands or {}).get(_key(item), ())) } for item in items]}
+                        "commands": list((item_commands or {}).get(_key(item), ())) } for item, category in zip(items, exclusions)]}
 
 
 def _items(plan):
-    for name in ("addresses", "address_groups", "services", "service_groups", "schedules", "interfaces", "zones", "static_routes", "dhcp_servers", "security_rules", "nat_rules", "ike_crypto_profiles", "ipsec_crypto_profiles", 'ike_gateways', 'ipsec_tunnels'):
+    for name in ("addresses", "address_groups", "services", "service_groups", "schedules", "interfaces", "zones", "static_routes", "dhcp_servers", "security_rules", "nat_rules", "ike_crypto_profiles", "ipsec_crypto_profiles", 'ike_gateways', 'ipsec_tunnels', 'management_profiles'):
         yield from getattr(plan, name)

@@ -62,7 +62,7 @@ class FortiGateSourceReporter:
             "fortigate_extraction",
             lambda: extract_fortigate_config(tree, metrics=metrics),
         )
-        derived = timed("fortigate_derived_views", lambda: build_derived_views(extracted.config))
+        derived = timed("fortigate_derived_views", lambda: build_derived_views(extracted.config, source_metadata=extracted.source_metadata))
         validation = timed(
             "fortigate_validation",
             lambda: validate_config(extracted.config, derived=derived),
