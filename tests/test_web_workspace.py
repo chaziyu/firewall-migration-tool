@@ -26,7 +26,7 @@ def test_signed_artifact_survives_restart_and_id_only_requests_fail_closed():
 
 @pytest.mark.parametrize('field', ['commands', 'command_count', 'command_sha256', 'report', 'decision_document', 'mapping', 'artifact_id'])
 def test_artifact_tampering_is_rejected_before_deployment(monkeypatch, field):
-    client = web.create_app({'TESTING': True, 'WORKSPACE_SIGNING_KEY': KEY}).test_client()
+    client = web.create_app({'TESTING': True, 'WEB_MODE': 'local', 'WORKSPACE_SIGNING_KEY': KEY}).test_client()
     artifact = deepcopy(_ready_artifact(client))
     artifact[field] = ['set malicious command'] if field == 'commands' else 'changed'
     monkeypatch.setattr(web, 'PANSSHDeployer', lambda *_: pytest.fail('Tampered artifact reached deployment'))
@@ -54,7 +54,7 @@ def test_bundle_cannot_mix_another_engineers_source():
 
 
 def test_different_targets_can_deploy_concurrently(monkeypatch):
-    app = web.create_app({'TESTING': True})
+    app = web.create_app({'TESTING': True, 'WEB_MODE': 'local'})
     artifact = _ready_artifact(app.test_client())
     blocked, release, other = Event(), Event(), Event()
     class Deployer(_SuccessfulDeployer):

@@ -11,7 +11,7 @@ from openpyxl.utils import get_column_letter
 
 from ....source_reporting.options import ExcelExportProfile
 from ....source_reporting.collection_excel import collection_summary, write_collection_evidence
-from ....source_reporting.excel_style import append_report_row, style_fast_sheet, write_report_summary
+from ....source_reporting.excel_style import append_report_row, excel_safe_value, style_fast_sheet, write_report_summary
 
 from .excel_rows import ROW_BUILDERS, _PANExcelContext
 from .excel_schema import SHEET_ORDER, HIDDEN_COLUMNS_BY_DEFAULT, SHEET_HEADERS
@@ -30,9 +30,7 @@ _LINK_ALIGNMENT = Alignment(horizontal="right")
 
 
 def _excel_safe(value: Any) -> Any:
-    if isinstance(value, str) and value.startswith(("=", "+", "-", "@")):
-        return "'" + value
-    return value
+    return excel_safe_value(value)
 
 
 def _add_back_link(sheet) -> None:
@@ -127,7 +125,8 @@ def _write_table_fast(workbook: Workbook, name: str, rows: Iterable[Mapping[str,
     row_count = 0
     for row_count, row in enumerate(rows, 1):
         sheet.append([_excel_safe(row.get(header)) for header in headers])
-    sheet.auto_filter.ref = f"A3:{get_column_letter(len(headers))}{row_count + 3}"
+    if row_count:
+        sheet.auto_filter.ref = f"A3:{get_column_letter(len(headers))}{row_count + 3}"
     return row_count
 
 

@@ -14,8 +14,9 @@ const navIcons: Record<WorkflowView, string> = {
   live: 'M3 3h18v18H3zM8 9l-3 3 3 3m8-6 3 3-3 3m-3-8-2 10',
 }
 
-export function Sidebar({ view, onViewChange }: {
+export function Sidebar({ view, onViewChange, liveDeviceAccess }: {
   view: WorkflowView
+  liveDeviceAccess: boolean
   onViewChange: (view: WorkflowView) => void
 }) {
   return (
@@ -25,7 +26,7 @@ export function Sidebar({ view, onViewChange }: {
         <span className="brand-wordmark"><span>Firewall</span><small>MIGRATION TOOL</small></span>
       </a>
       <nav className="workflow-nav" aria-label="Workflow">
-        {navigation.map((item) => <button
+        {navigation.filter((item) => liveDeviceAccess || (item.id !== 'collect' && item.id !== 'live')).map((item) => <button
           key={item.id}
           type="button"
           aria-current={view === item.id ? 'page' : undefined}

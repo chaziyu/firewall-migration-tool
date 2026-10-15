@@ -27,7 +27,12 @@ class CiscoFTDSourceReporter:
 
     def export_excel(self, analysis: FTDSourceResult, output: Any, profile: ExcelExportProfile | str = ExcelExportProfile.FULL, **options: Any) -> Any:
         from .export.excel import export_ftd_excel
-        return export_ftd_excel(analysis, output, profile=profile)
+        return export_ftd_excel(
+            analysis, output, profile=profile, source_name=options.get("source_name"),
+            collection_status=options.get("collection_status"),
+            collection_parts=options.get("collection_parts", ()),
+            collection_warnings=options.get("collection_warnings", ()),
+        )
 
 
 __all__ = ["CiscoFTDSourceReporter", "FTDSourceResult", "extract_cisco_ftd_source"]

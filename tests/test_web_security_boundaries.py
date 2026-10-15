@@ -39,6 +39,7 @@ def test_required_hosted_web_auth_fails_closed_without_password():
 def test_global_request_size_limit_is_enforced():
     client = create_app({
         "TESTING": True,
+        "WEB_MODE": "local",
         "MAX_CONTENT_LENGTH": 64,
     }).test_client()
 
@@ -88,9 +89,9 @@ def test_remote_deployment_is_disabled_by_default():
     assert response.get_json()["error"] == "Remote deployment is disabled on this server."
 
 
-def test_remote_deployment_requires_web_authentication():
-    with pytest.raises(RuntimeError, match="Remote deployment requires configured web authentication"):
-        create_app({"TESTING": True, "ALLOW_REMOTE_DEPLOYMENT": True})
+def test_legacy_remote_deployment_flag_cannot_enable_device_access():
+    client = create_app({"TESTING": True, "ALLOW_REMOTE_DEPLOYMENT": True}).test_client()
+    assert client.post('/api/deploy', json={}).status_code == 403
 
 
 @pytest.mark.parametrize('exception_type,status', [(ValueError, 400), (RuntimeError, 500)])
@@ -137,7 +138,7 @@ def test_collection_validation_does_not_log_credentials(monkeypatch, caplog, rou
         raise ValueError('SYNTHETIC_COLLECTION_SECRET')
 
     monkeypatch.setattr(source.source_collectors, 'get', fail)
-    response = create_app({'TESTING': True}).test_client().post(route, json={
+    response = create_app({'TESTING': True, 'WEB_MODE': 'local'}).test_client().post(route, json={
         'vendor': 'fortigate', 'connection': {'password': 'SYNTHETIC_COLLECTION_SECRET'},
     })
     assert response.status_code == 400

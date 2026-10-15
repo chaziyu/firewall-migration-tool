@@ -1,7 +1,6 @@
 import base64
 import io
 import json
-import pytest
 
 from openpyxl import load_workbook
 
@@ -20,7 +19,7 @@ def _payload(password="do-not-persist"):
 
 
 def test_connection_failure_does_not_return_credentials(monkeypatch):
-    client = create_app({"TESTING": True}).test_client()
+    client = create_app({"TESTING": True, "WEB_MODE": "local"}).test_client()
     monkeypatch.setattr(source_collectors.get("cisco_asa"), "test_connection", lambda options: (_ for _ in ()).throw(RuntimeError(options["password"])))
     response = client.post("/api/collection/test", json=_payload())
     assert response.status_code == 502
@@ -28,7 +27,7 @@ def test_connection_failure_does_not_return_credentials(monkeypatch):
 
 
 def test_collect_failure_does_not_return_credentials(monkeypatch):
-    client = create_app({"TESTING": True}).test_client()
+    client = create_app({"TESTING": True, "WEB_MODE": "local"}).test_client()
     monkeypatch.setattr(source_collectors.get("cisco_asa"), "collect", lambda options: (_ for _ in ()).throw(ValueError(options["password"])))
     response = client.post("/api/collection/collect", json=_payload())
     assert response.status_code == 502
@@ -36,7 +35,7 @@ def test_collect_failure_does_not_return_credentials(monkeypatch):
 
 
 def test_asa_collection_snapshot_preview_and_excel(monkeypatch):
-    client = create_app({"TESTING": True}).test_client()
+    client = create_app({"TESTING": True, "WEB_MODE": "local"}).test_client()
     monkeypatch.setattr(source_collectors.get("cisco_asa"), "collect", lambda options: CollectedSource(
         "cisco_asa", SOURCE, "live-cisco-asa.cfg", "ssh", CollectionStatus.SUCCESS
     ))
@@ -58,7 +57,7 @@ def test_asa_collection_snapshot_preview_and_excel(monkeypatch):
 
 
 def test_collection_validates_vendor_and_port():
-    client = create_app({"TESTING": True}).test_client()
+    client = create_app({"TESTING": True, "WEB_MODE": "local"}).test_client()
     sources = {item["vendor_id"]: item for item in client.get("/api/vendors").get_json()["sources"]}
     assert sources["juniper_srx"]["collection"]["connection_fields"][1]["default"] == 22
     assert sources["cisco_ftd"]["collection"]["connection_fields"][-1]["default"] is True
@@ -68,7 +67,7 @@ def test_collection_validates_vendor_and_port():
 
 
 def test_partial_collection_keeps_preview(monkeypatch):
-    client = create_app({"TESTING": True}).test_client()
+    client = create_app({"TESTING": True, "WEB_MODE": "local"}).test_client()
     monkeypatch.setattr(source_collectors.get("cisco_asa"), "collect", lambda options: CollectedSource(
         "cisco_asa", SOURCE, "live-cisco-asa.cfg", "ssh", CollectionStatus.PARTIAL, warnings=("Some source unavailable",)
     ))
@@ -93,7 +92,7 @@ def test_partial_fortigate_snapshot_blocks_migration_but_manual_upload_is_allowe
 
 
 def test_failed_collection_is_rejected(monkeypatch):
-    client = create_app({"TESTING": True}).test_client()
+    client = create_app({"TESTING": True, "WEB_MODE": "local"}).test_client()
     monkeypatch.setattr(source_collectors.get("cisco_asa"), "collect", lambda options: CollectedSource(
         "cisco_asa", SOURCE, "failed.cfg", "ssh", CollectionStatus.FAILED
     ))
@@ -106,7 +105,7 @@ def test_native_collectors_reach_preview_and_excel(monkeypatch):
         "cisco_ftd": json.dumps({"format": "cisco-fmc-rest-export-v1", "source": "fmc-rest-api", "domain": {"id": "d1", "name": "Global"}, "objects": {"hosts": [{"id": "h1", "name": "host-1", "value": "192.0.2.1"}]}, "access_policies": [], "nat_policies": []}),
         "checkpoint": json.dumps({"format": "checkpoint-export-v1", "responses": [{"command": "show-hosts", "data": {"objects": [{"uid": "h1", "name": "host-1", "ipv4-address": "192.0.2.1"}], "from": 1, "to": 1, "total": 1}, "collection_status": "SUCCESS_WITH_DATA"}]}),
     }
-    client = create_app({"TESTING": True}).test_client()
+    client = create_app({"TESTING": True, "WEB_MODE": "local"}).test_client()
     for vendor, source in samples.items():
         monkeypatch.setattr(source_collectors.get(vendor), "collect", lambda options, vendor=vendor, source=source: CollectedSource(vendor, source, f"live-{vendor}.json", "test"))
         payload = _payload()
@@ -121,7 +120,7 @@ def test_native_collectors_reach_preview_and_excel(monkeypatch):
 
 
 def test_remote_live_collection_is_disabled_without_explicit_opt_in(monkeypatch):
-    client = create_app({"TESTING": True, "ALLOW_REMOTE_COLLECTION": False}).test_client()
+    client = create_app({"TESTING": True, "WEB_MODE": "local", "ALLOW_REMOTE_COLLECTION": False}).test_client()
     called = False
 
     def test_connection(_options):
@@ -140,9 +139,10 @@ def test_remote_live_collection_is_disabled_without_explicit_opt_in(monkeypatch)
     assert called is False
 
 
-def test_remote_live_collection_requires_explicit_server_opt_in(monkeypatch):
+def test_legacy_remote_live_collection_opt_in_cannot_enable_access(monkeypatch):
     client = create_app({
         "TESTING": True,
+        "WEB_MODE": "local",
         "ALLOW_REMOTE_COLLECTION": True,
         "WEB_AUTH_PASSWORD": "test-web-secret",
     }).test_client()
@@ -154,12 +154,12 @@ def test_remote_live_collection_requires_explicit_server_opt_in(monkeypatch):
     sources = {item["vendor_id"]: item for item in client.get(
         "/api/vendors", headers=headers, environ_base=remote
     ).get_json()["sources"]}
-    assert sources["cisco_asa"]["live_collection"] is True
+    assert sources["cisco_asa"]["live_collection"] is False
     assert client.post(
         "/api/collection/test", json=_payload(), headers=headers, environ_base=remote
-    ).status_code == 200
+    ).status_code == 403
 
 
-def test_remote_live_collection_opt_in_without_web_auth_is_rejected():
-    with pytest.raises(RuntimeError, match="Remote live collection requires configured web authentication"):
-        create_app({"TESTING": True, "ALLOW_REMOTE_COLLECTION": True})
+def test_remote_live_collection_opt_in_without_web_auth_stays_disabled():
+    client = create_app({"TESTING": True, "ALLOW_REMOTE_COLLECTION": True}).test_client()
+    assert client.post('/api/collection/test', json=_payload()).status_code == 403

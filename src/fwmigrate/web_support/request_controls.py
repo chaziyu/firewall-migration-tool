@@ -6,8 +6,18 @@ import math
 import threading
 import time
 from collections import OrderedDict
+from urllib.parse import urlsplit
 
 from flask import g, jsonify, request
+from werkzeug.wsgi import get_host
+
+
+def live_device_access_allowed(app):
+    return (
+        app.config['WEB_MODE'] == 'local'
+        and request.remote_addr in {'127.0.0.1', '::1'}
+        and urlsplit(request.host_url).hostname in {'localhost', '127.0.0.1', '::1'}
+    )
 
 
 class IPRateLimiter:
@@ -53,6 +63,24 @@ def register_request_controls(app):
         raise ValueError('Request control limits must be positive')
     semaphore = threading.BoundedSemaphore(maximum)
     app.extensions['request_controls'] = {'rate_limiter': limiter, 'semaphore': semaphore}
+
+    @app.before_request
+    def protect_browser_requests():
+        # Exact hostname checks also cover Flask 3.0 and IPv6 loopback.
+        hostname = urlsplit('//' + get_host(request.environ)).hostname
+        if hostname not in app.config['ALLOWED_HOSTS']:
+            return jsonify({'success': False, 'error': 'Host is not allowed'}), 400
+        if not request.path.startswith('/api/') or request.method in {'GET', 'HEAD', 'OPTIONS'}:
+            return None
+        origins = {request.host_url.rstrip('/')}
+        if app.config['WEB_MODE'] == 'local':
+            origins.update({'http://127.0.0.1:5173', 'http://localhost:5173'})
+        origin = request.headers.get('Origin')
+        if (origin is not None and origin not in origins) or (
+            origin is None and request.headers.get('Sec-Fetch-Site') == 'cross-site'
+        ):
+            return jsonify({'success': False, 'error': 'Cross-origin API requests are not allowed'}), 403
+        return None
 
     def rejected(code, message, retry_after):
         response = jsonify({'success': False, 'error': message, 'error_code': code})

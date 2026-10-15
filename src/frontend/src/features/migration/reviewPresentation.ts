@@ -19,6 +19,18 @@ export function taskCategory(row: DraftRow, byKey: Map<string, DraftRow>, approv
   return row.status === 'READY' ? 'Ready for review' : 'Needs decision'
 }
 
+export function mappingSummary(rows: DraftRow[], byKey: Map<string, DraftRow>, approved: Set<string>, excludedInterfaces: string[]) {
+  const counts = { needsInput: 0, conflicts: 0, blocked: 0, ready: 0, approved: 0, unsupported: 0, excluded: 0 }
+  for (const row of rows) {
+    if (row.source_kind === 'interface' && excludedInterfaces.includes(`${row.source_vdom}/${row.source_name}`)) { counts.excluded++; continue }
+    if (row.status === 'CONFLICT') { counts.conflicts++; continue }
+    const category = taskCategory(row, byKey, approved)
+    const key = ({ 'Needs decision': 'needsInput', 'Ready for review': 'ready', Blocked: 'blocked', Approved: 'approved', 'Manual work': 'unsupported' } as const)[category]
+    counts[key]++
+  }
+  return counts
+}
+
 export function mappingReviewGroups(groups: ReviewGroup[], rows: DraftRow[], offline: boolean, approvedItems: string[] = []) {
   if (!offline) return groups
   const byKey = new Map(rows.map((row) => [row.decision_key || row.group_key!, row]))

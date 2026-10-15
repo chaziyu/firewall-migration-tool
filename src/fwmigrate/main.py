@@ -138,12 +138,12 @@ def commit(host, port, username, password):
 @cli.command()
 @click.option('--port', default=5000, help='Port to run the web server on')
 @click.option('--host', default='127.0.0.1', show_default=True,
-              help='Interface to bind. Remote live collection remains disabled unless explicitly enabled.')
+              help='Interface to bind. Live device access is available only on loopback.')
 def serve(port, host):
     """Start the migration web interface."""
     from fwmigrate.web import create_app
 
-    app = create_app()
+    app = create_app({'WEB_MODE': 'local' if host in {'127.0.0.1', '::1', 'localhost'} else 'public'})
     click.echo(f"Starting web server on http://{host}:{port}")
     app.run(host=host, port=port, debug=False)
 

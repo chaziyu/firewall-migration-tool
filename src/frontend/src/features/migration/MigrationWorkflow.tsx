@@ -14,9 +14,9 @@ import type { CandidateRecovery, PlanArtifact } from './migrationApi'
 import { PlanReview } from './PlanReview'
 import { exportCategoryLabels, planFamilySummary } from './reviewPresentation'
 
-type Props = { generationRequest?: number; preview: SourcePreviewData; decisionDocument: MigrationDecisionDocument | null; targetSource: SourceEvidence | null; targetDevice: string; activeSection: 'plan' | 'live'; onViewChange: (view: 'live') => void; onReviewDecision: (key: string) => void }
+type Props = { liveDeviceAccess?: boolean; generationRequest?: number; preview: SourcePreviewData; decisionDocument: MigrationDecisionDocument | null; targetSource: SourceEvidence | null; targetDevice: string; activeSection: 'plan' | 'live'; onViewChange: (view: 'live') => void; onReviewDecision: (key: string) => void }
 
-export function MigrationWorkflow({ preview, decisionDocument, targetSource, targetDevice, activeSection, onViewChange, onReviewDecision, generationRequest }: Props) {
+export function MigrationWorkflow({ preview, decisionDocument, targetSource, targetDevice, activeSection, onViewChange, onReviewDecision, generationRequest, liveDeviceAccess = false }: Props) {
   const [artifact, setArtifact] = useState<PlanArtifact | null>(workspace().artifact)
   const [commandText, setCommandText] = useState(workspace().artifact?.artifact.commands.join('\n') || '')
   const [connection, setConnection] = useState({ host: '', port: '22', username: '', password: '' })
@@ -93,12 +93,12 @@ export function MigrationWorkflow({ preview, decisionDocument, targetSource, tar
   const partial = artifact ? !['READY', 'READY_NO_CHANGES'].includes(artifact.plan_status)
     : Boolean(decisionDocument?.decisions?.some((row) => row.mode !== 'AUTO' && row.review_state !== 'CONFIRMED'))
   const families = planFamilySummary(artifact?.report.items ?? [])
-  const noTrafficRules = artifact && !['security_rule', 'nat_rule', 'static_route'].some((family) => (families[family]?.included ?? 0) > 0)
+  const noTrafficRules = artifact && !['security_rule', 'nat_rule', 'static_route'].some((family) => (families[family]?.INCLUDED ?? 0) > 0)
 
   function log(line: string) { setActivityLog((lines) => [...lines, line]) }
 
   async function runDeployment(action: 'prepare' | 'validate' | 'commit' | 'inspect') {
-    if (operationPending.current || !artifact || !decisionDocument?.design_approval) return
+    if (!liveDeviceAccess || operationPending.current || !artifact || !decisionDocument?.design_approval) return
     if (action === 'prepare' && (artifact.report.deployment_eligibility?.eligible !== true || sessionId || (recovery && recovery.state !== 'CLEAN_BASELINE'))) return
     operationPending.current = true
     const request = buildRequest.current
@@ -181,8 +181,11 @@ export function MigrationWorkflow({ preview, decisionDocument, targetSource, tar
     finally { if (request === buildRequest.current) setBusy(false) }
   }
 
+  if (activeSection === 'live' && !liveDeviceAccess) return <p role="status">Live device access is available only in the local application.</p>
+
   return activeSection === 'plan' ? <section className="panel migration-workflow" aria-labelledby="migration-title">
     <h2 id="migration-title">Download</h2>
+    <p>Command syntax baseline: PAN-OS 11.1. Other releases and live-device compatibility remain unverified.</p>
     <p>Approval generates commands. Retry generation here if the build fails. Source, target evidence or mapping edits revoke the previous artifact.</p>
     {!artifact && <Button disabled={busy || !decisionDocument || !decisionDocument.design_approval} onClick={() => void generatePlan()}>{error ? 'Retry generation with current approval' : partial ? 'Build approved partial plan' : 'Build approved artifact'}</Button>}
     {(!decisionDocument?.design_approval || (!artifact && error)) && <Button onClick={() => onReviewDecision('')}>Review and approve design</Button>}
@@ -205,7 +208,7 @@ export function MigrationWorkflow({ preview, decisionDocument, targetSource, tar
         {artifact.plan_status === 'NEEDS_MAPPING' && <Button onClick={() => onReviewDecision(String(decisionDocument?.decisions.find((item) => item.mode !== 'AUTO' && item.mode !== 'UNSUPPORTED' && item.review_state !== 'CONFIRMED')?.key ?? artifact.support_guidance?.find((item) => item.decision_key)?.decision_key ?? ''))}>Review required mappings</Button>}
       </div>}
       <div className="action-row"><Button disabled={busy || (!artifact.artifact.command_count && artifact.plan_status !== 'READY_NO_CHANGES')} onClick={() => void saveArtifact('bundle')}>{partial ? 'Download partial bundle' : 'Download migration bundle'}</Button><Button disabled={busy || !artifact.artifact.command_count} onClick={() => void saveArtifact('commands')}>{partial ? 'Download partial .set' : 'Download .set'}</Button></div>
-      {artifact.report.workflow_mode !== 'OFFLINE_EXPORT' && <Button className="text-button" onClick={() => onViewChange('live')}>Open live migration</Button>}
+      {liveDeviceAccess && artifact.report.workflow_mode !== 'OFFLINE_EXPORT' && <Button className="text-button" onClick={() => onViewChange('live')}>Open live migration</Button>}
     </div>}
     {error && <ErrorBanner message={error} />}
   </section> : <>

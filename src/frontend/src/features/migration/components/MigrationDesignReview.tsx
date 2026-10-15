@@ -5,12 +5,13 @@ import { draftDependencies, draftRowKey } from '../reviewDrafts'
 import { draftReviewRows, draftStatusCounts, taskCategory } from '../reviewPresentation'
 import { Button } from '../../../components/common/Button'
 
-export function MigrationDesignReview({ draft, busy, approvedItems, onApprove, onRenameService }: {
+export function MigrationDesignReview({ draft, busy, approvedItems, onApprove, onRenameService, onResolveSettings }: {
   draft: MigrationDraft
   busy: boolean
   approvedItems: string[]
   onApprove: (groups: string[]) => void
   onRenameService?: (row: DraftRow, name: string) => void
+  onResolveSettings?: (group: 'management' | 'vpn' | 'policy') => void
 }) {
   const [selected, setSelected] = useState<string[]>([])
   const [filter, setFilter] = useState('READY')
@@ -48,6 +49,11 @@ export function MigrationDesignReview({ draft, busy, approvedItems, onApprove, o
     </div>
     {!!draft.findings.some((row) => row.code === 'SHARED_ACTION') && <details><summary>Shared actions for remaining configuration</summary>
       <p>Resolve these shared causes once, then apply settings and review the rebuilt configuration. Counts overlap.</p>
+      {onResolveSettings && <div className="action-row">
+        {draft.findings.some((row) => row.code === 'MANAGEMENT_PROFILE_GROUP') && <Button className="secondary-button" onClick={() => onResolveSettings('management')}>Review management access</Button>}
+        {draft.findings.some((row) => ['VPN_PREREQUISITE', 'VPN_PARAMETERS_REQUIRED'].includes(row.code)) && <Button className="secondary-button" onClick={() => onResolveSettings('vpn')}>Review VPN decisions</Button>}
+        {draft.findings.some((row) => ['IDENTITY_MAPPING_REQUIRED', 'SECURITY_PROFILE_REQUIRED'].includes(row.code)) && <Button className="secondary-button" onClick={() => onResolveSettings('policy')}>Review policy decisions</Button>}
+      </div>}
       <ul>{draft.findings.filter((row) => row.code === 'SHARED_ACTION').map((row) => <li key={row.identity}>
         <strong>{row.source_vdom} · {row.automation_category?.replaceAll('_', ' ').toLowerCase()}</strong>: {row.message} ({row.member_keys?.length} configuration items)
       </li>)}</ul>
