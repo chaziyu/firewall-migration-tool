@@ -541,6 +541,14 @@ def classify_target_object_reuse(plan: PANMigrationPlan, target, device: str | N
     result = []
     result.extend(_interface_collisions(plan.interfaces, target, device, allow_additive=allow_additive))
     result.extend(_zone_collisions(plan.zones, target, device, allow_additive=allow_additive))
+    for attribute in ("ike_crypto_profiles", "ipsec_crypto_profiles"):
+        for item in getattr(plan, attribute):
+            if any(existing.name == item.target_name and _device(existing) == device
+                   for existing in getattr(target.config, attribute, ())):
+                result.append({"status": "AMBIGUOUS", "family": item.source_object_type,
+                    "source_name": item.source_name, "source_vdom": item.source_vdom or "root",
+                    "source_kind": item.source_kind, "target_vsys": item.target_vsys,
+                    "target_name": item.target_name, "evidence": ["Existing crypto profile requires manual reuse review"]})
     for family, attribute, items, compare in (
         ("address", "addresses", plan.addresses, _address),
         ("address_group", "address_groups", plan.address_groups, _members),
