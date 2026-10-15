@@ -23,16 +23,20 @@ export type DraftRow = {
   configuration?: Record<string, unknown>
   target_comparison?: { status: string; target_scope?: string; evidence?: string[] }
 }
+export type VPNParameters = { lifetime_seconds?: number; dh_group?: string; pfs?: 'enable' | 'disable'; ike_version?: '1' | '2' }
+export type ConversionSettings = { target_model?: string; panos_version?: string; excluded_interfaces?: string[]; management_profiles?: Record<string, string>; existing_vpns?: string[]; vpn_parameters?: Record<string, VPNParameters>; security_profiles?: Record<string, string> }
 export type MigrationDraft = {
+  source_issues?: Array<{ code: string; message: string; source_vdom: string; source_name: string; affected_keys: string[] }>
+  task_summary?: { choices: number; prerequisites: number; conflicts: number; manual_items: number; manual_issues: number }
   digest: string
   signature: string
-  context: { reference_role: ReferenceRole | null; workflow_mode?: 'OFFLINE_EXPORT' | 'DESTINATION_AWARE'; overrides: Record<string, string>; service_names?: Record<string, Record<string, string>> }
+  context: { reference_role: ReferenceRole | null; workflow_mode?: 'OFFLINE_EXPORT' | 'DESTINATION_AWARE'; overrides: Record<string, string>; service_names?: Record<string, Record<string, string>>; conversion_settings?: ConversionSettings }
   destination_verified: boolean
   decisions: DraftRow[]
   configuration: DraftRow[]
   issues?: MigrationIssue[]
   readiness?: { coverage: { supported: number; manual: number }; deployment: { eligible: false; missing_prerequisites: string[] } }
-  findings: Array<{ code: string; message: string }>
+  findings: Array<{ code: string; message: string; identity?: string; fields?: Array<keyof VPNParameters>; member_keys?: string[]; source_vdom?: string; source_kind?: string }>
 }
 
 export interface MigrationDecision {

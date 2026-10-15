@@ -35,6 +35,8 @@ class FortiGateToPaloAltoPlanner:
             options = PANMigrationOptions()
         elif isinstance(options, dict):
             options = PANMigrationOptions(**options)
+        from .planning.vpn import validate_vpn_parameters
+        validate_vpn_parameters(source, options.conversion_settings)
         addresses, groups, issues = plan_addresses(source, options)
         services, service_groups = plan_services(derived, options, source)
         schedules = plan_schedules(source, options)
@@ -47,6 +49,8 @@ class FortiGateToPaloAltoPlanner:
         policies = plan_policies(source, options, derived)
         nat_rules = plan_nat(source, derived, options)
         ike_crypto_profiles, ipsec_crypto_profiles = plan_vpn_crypto(source, options)
+        from .planning.vpn import plan_vpn_structure
+        gateways, tunnels = plan_vpn_structure(source, options) if include_configuration else ((), ())
         return PANMigrationPlan(
             addresses=addresses,
             address_groups=groups,
@@ -62,4 +66,5 @@ class FortiGateToPaloAltoPlanner:
             issues=issues,
             ike_crypto_profiles=ike_crypto_profiles,
             ipsec_crypto_profiles=ipsec_crypto_profiles,
+            ike_gateways=gateways, ipsec_tunnels=tunnels,
         )

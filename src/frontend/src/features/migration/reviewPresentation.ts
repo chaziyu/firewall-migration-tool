@@ -19,6 +19,21 @@ export function taskCategory(row: DraftRow, byKey: Map<string, DraftRow>, approv
   return row.status === 'READY' ? 'Ready for review' : 'Needs decision'
 }
 
+export function mappingReviewGroups(groups: ReviewGroup[], rows: DraftRow[], offline: boolean, approvedItems: string[] = []) {
+  if (!offline) return groups
+  const byKey = new Map(rows.map((row) => [row.decision_key || row.group_key!, row]))
+  const approved = new Set(approvedItems)
+  return groups.map((group) => {
+    const proposals = group.decision_keys.map((key) => byKey.get(key))
+    const categories = proposals.map((row) => row ? taskCategory(row, byKey, approved) : 'Needs decision')
+    const queue = proposals.some((row) => row?.status === 'CONFLICT') ? 'CONFLICT'
+      : categories.length > 0 && categories.every((category) => category === 'Approved' || category === 'Manual work') ? 'COMPLETE'
+      : !categories.length || categories.some((category) => category === 'Needs decision' || category === 'Blocked') ? 'NEEDS_INPUT'
+      : 'READY_TO_CONFIRM'
+    return { ...group, queue }
+  })
+}
+
 export function orderedCandidates(candidates: Candidate[]) {
   const rank = (candidate: Candidate) => candidate.available === false || candidate.contested ? 3
     : candidate.class === 'STRONG' || candidate.strong_evidence?.length ? 0

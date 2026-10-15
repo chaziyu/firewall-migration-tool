@@ -2,8 +2,25 @@ from fwmigrate.conversion.fortigate_to_palo_alto.planning.interfaces import plan
 from fwmigrate.conversion.fortigate_to_palo_alto.models import PANMigrationStatus
 from fwmigrate.conversion.fortigate_to_palo_alto.options import PANMigrationOptions
 from fwmigrate.vendors.fortigate.model.interface import FGInterface
+from fwmigrate.vendors.fortigate.model.interface import FGInterfaceSecondaryIP
 from fwmigrate.vendors.fortigate.model.source import FGConfig
 import pytest
+from dataclasses import replace
+
+
+def test_metadata_secondary_addresses_and_explicit_existing_management_profile():
+    from fwmigrate.conversion.fortigate_to_palo_alto.rendering.cli_paths import interface
+    source = FGConfig(interfaces=[FGInterface(name='port1', ip='192.0.2.1/24', allowaccess=['https'],
+        secondary_ips=[FGInterfaceSecondaryIP(ip='198.51.100.1/24')], raw_extra={'snmp-index': '1', 'secondary-IP': 'enable'})])
+    options = _options({'port1': {'target_interface': 'ethernet1/1'}})
+    blocked, = plan_interfaces(source, options)
+    assert blocked.status is PANMigrationStatus.MANUAL_REVIEW
+    planned, = plan_interfaces(source, replace(options, conversion_settings={'management_profiles': {'root/port1': 'restricted-admin'}}))
+    assert planned.status is PANMigrationStatus.SUPPORTED
+    assert planned.ipv4_addresses == ('192.0.2.1/24', '198.51.100.1/24')
+    assert any(path[-2:] == ('interface-management-profile', 'restricted-admin') for path in interface(planned))
+    source.interfaces[0].raw_extra['src-check'] = 'disable'
+    assert plan_interfaces(source, options)[0].status is PANMigrationStatus.MANUAL_REVIEW
 
 
 def _options(interfaces):

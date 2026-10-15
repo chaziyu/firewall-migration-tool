@@ -27,6 +27,12 @@ def _target_preview(client):
     return response.get_json()["source_evidence"]
 
 
+def test_project_save_and_resume_endpoints_are_removed():
+    client = create_app({"TESTING": True}).test_client()
+    for endpoint in ("/api/migration/project/export", "/api/migration/project/import"):
+        assert client.post(endpoint, json={}).status_code == 404
+
+
 def test_migration_endpoint_rejects_unsupported_pair():
     client = create_app({"TESTING": True}).test_client()
     response = client.post(

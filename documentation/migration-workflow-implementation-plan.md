@@ -299,6 +299,10 @@ double clicks; credentials clear according to existing policy.
 
 ### Phase 5 — Explicit project download and resume
 
+Superseded on 2026-10-15: project save/resume was removed from the frontend and
+backend at the user's request. The specification below is historical and must
+not be reintroduced. Work stays in memory for the current page session.
+
 Primary files: storage types/store, migration API/import-export handlers,
 `web_support/request_source.py`, and current sanitization helpers (locate/reuse).
 

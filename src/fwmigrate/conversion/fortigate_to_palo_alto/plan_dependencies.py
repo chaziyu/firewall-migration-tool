@@ -15,7 +15,7 @@ def item_key(item):
 
 def _items(plan):
     for family in ("addresses", "address_groups", "services", "service_groups", "schedules", "interfaces", "zones",
-                   "static_routes", "dhcp_servers", "security_rules", "nat_rules", "ike_crypto_profiles", "ipsec_crypto_profiles"):
+                   "static_routes", "dhcp_servers", "security_rules", "nat_rules", "ike_crypto_profiles", "ipsec_crypto_profiles", 'ike_gateways', 'ipsec_tunnels'):
         yield from getattr(plan, family)
 
 
@@ -68,11 +68,17 @@ def build_plan_dependency_index(plan: PANMigrationPlan, decisions) -> PANPlanDep
                 for name in item.destinations:
                     for address in resolve(item.target_vsys, ('address',), name):
                         if address.source_kind == 'vip':
-                            refs.append((('nat_rule',), address.source_name))
+                            refs.extend((('nat_rule',), rule.target_name) for rule in plan.nat_rules
+                                if rule.source_kind == 'vip' and rule.source_vdom == address.source_vdom and rule.source_name == address.source_name)
         elif kind == "static_route" and item.interface:
             refs = [(('interface',), item.interface)]
         elif kind == "dhcp_server" and item.interface:
             refs = [(('interface',), item.interface)]
+        elif kind == 'ike_gateway':
+            refs = [(('interface',), item.interface), (('ike_crypto_profile',), item.crypto_profile)]
+        elif kind == 'ipsec_tunnel':
+            refs = [(('ike_gateway',), item.ike_gateway), (('interface',), item.interface)]
+            refs += [(('ipsec_crypto_profile',), selector.crypto_profile) for selector in item.proxy_ids]
         for families, name in refs:
             for dependency in resolve(item.target_vsys, families, name):
                 if dependency is not item:

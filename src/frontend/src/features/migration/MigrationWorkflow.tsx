@@ -182,7 +182,7 @@ export function MigrationWorkflow({ preview, decisionDocument, targetSource, tar
   }
 
   return activeSection === 'plan' ? <section className="panel migration-workflow" aria-labelledby="migration-title">
-    <h2 id="migration-title">Export</h2>
+    <h2 id="migration-title">Download</h2>
     <p>Approval generates commands. Retry generation here if the build fails. Source, target evidence or mapping edits revoke the previous artifact.</p>
     {!artifact && <Button disabled={busy || !decisionDocument || !decisionDocument.design_approval} onClick={() => void generatePlan()}>{error ? 'Retry generation with current approval' : partial ? 'Build approved partial plan' : 'Build approved artifact'}</Button>}
     {(!decisionDocument?.design_approval || (!artifact && error)) && <Button onClick={() => onReviewDecision('')}>Review and approve design</Button>}

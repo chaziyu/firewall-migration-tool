@@ -1,4 +1,5 @@
 """PAN-OS CLI hierarchies for the FortiGate to PAN-OS migration pair."""
+from ..planning.vpn import crypto_lifetime
 
 
 def address(item):
@@ -9,14 +10,14 @@ def ike_crypto_profile(item):
     base = ("device", "network", "ike", "crypto-profiles", "ike-crypto-profiles", item.target_name)
     return [(*base, leaf, "[", value, "]") for leaf, value in (
         ("encryption", item.encryption), ("hash", item.authentication), ("dh-group", item.dh_group))] + [
-        (*base, "lifetime", "seconds", item.lifetime_seconds)]
+        (*base, "lifetime", *crypto_lifetime(item.lifetime_seconds))]
 
 
 def ipsec_crypto_profile(item):
     base = ("device", "network", "ike", "crypto-profiles", "ipsec-crypto-profiles", item.target_name)
     return [(*base, "esp", leaf, "[", value, "]") for leaf, value in (
         ("encryption", item.encryption), ("authentication", item.authentication))] + [
-        (*base, "dh-group", item.dh_group), (*base, "lifetime", "seconds", item.lifetime_seconds)]
+        (*base, "dh-group", item.dh_group), (*base, "lifetime", *crypto_lifetime(item.lifetime_seconds))]
 
 
 def address_group(item):
@@ -64,8 +65,8 @@ def interface(item):
     """Return ordered device/VSYS paths for one planned Layer 3 interface."""
     name = item.target_name or item.source_name
     commands = []
-    if item.interface_family == "loopback":
-        base = ("network", "interface", "loopback", "units", name)
+    if item.interface_family in {"loopback", 'tunnel'}:
+        base = ("network", "interface", item.interface_family, "units", name)
         commands.append(("device_pre", *base))
         commands.extend(("device_pre", *base, "ip", address) for address in item.ipv4_addresses)
     elif item.parent:
@@ -78,6 +79,8 @@ def interface(item):
         base = ("network", "interface", item.interface_family, name, "layer3")
         commands.append(("device_pre", *base))
         commands.extend(("device_pre", *base, "ip", address) for address in item.ipv4_addresses)
+    if item.management_profile:
+        commands.append(('device_pre', *base, 'interface-management-profile', item.management_profile))
     commands.append(("vsys", "import", "network", "interface", "[", name, "]"))
     if item.aggregate_members:
         lacp = ("device_pre", "network", "interface", "aggregate-ethernet", name, "layer3", "lacp")
@@ -128,6 +131,8 @@ def static_route(item):
         commands.append(("device", *base, "interface", item.interface))
     if item.nexthop_type == "discard":
         commands.append(("device", *base, "nexthop", "discard"))
+    elif item.nexthop_type == 'none':
+        commands.append(('device', *base, 'nexthop', 'none'))
     elif item.nexthop:
         commands.append(("device", *base, "nexthop", item.nexthop_type or "ip-address", item.nexthop))
     if item.admin_distance is not None:
@@ -147,6 +152,7 @@ def security_rule(item):
     if item.action: commands.append(("vsys", *base, "action", item.action))
     if item.log_start is not None: commands.append(("vsys", *base, "log-start", item.log_start))
     if item.log_end is not None: commands.append(("vsys", *base, "log-end", item.log_end))
+    if item.profile_group: commands.append(('vsys', *base, 'profile-setting', 'group', '[', item.profile_group, ']'))
     return commands
 
 

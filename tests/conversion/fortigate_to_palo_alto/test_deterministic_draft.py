@@ -18,6 +18,44 @@ def derived():
                            topology=SimpleNamespace(interfaces=(), vpns=()))
 
 
+def test_source_defects_and_task_counts_are_reported_without_repair():
+    config = FGConfig(interfaces=[FGInterface(name='wan1', type='physical', ip='invalid diagnostic text')])
+    original = deepcopy(config)
+    result, _ = draft(config, workflow_mode='OFFLINE_EXPORT')
+    body = result.to_dict()
+    assert len(body['source_issues']) == 1
+    assert body['source_issues'][0]['code'] == 'SOURCE_INTERFACE_IPV4_INVALID'
+    assert body['source_issues'][0]['affected_keys']
+    assert body['task_summary']['manual_items'] == sum(row['status'] == 'UNSUPPORTED' for row in body['configuration'])
+    assert config == original
+    assert not any(row['status'] == 'READY' for row in body['configuration'] if row['family'] == 'interface')
+    from fwmigrate.conversion.fortigate_to_palo_alto.validation import validate_source_interfaces
+    assert validate_source_interfaces(FGConfig(interfaces=[FGInterface(name='bare', ip='192.0.2.1')]))
+
+
+def test_port_pool_exhaustion_scope_and_manual_overrides():
+    config = FGConfig(interfaces=[FGInterface(name=f'port{number}', type='physical') for number in range(1, 24)])
+    settings = {'target_model': 'PA-820', 'panos_version': '11.1'}
+    result, _ = draft(config, workflow_mode='OFFLINE_EXPORT', conversion_settings=settings)
+    ports = [row for row in result.decisions if row.target_field == 'target_interface']
+    assert sum(bool(row.proposed_value) for row in ports) == 12
+    assert all(row.proposed_value != 'ethernet1/13' for row in ports)
+    key = make_decision_key('root', 'interface', 'port1', 'target_interface')
+    invalid, _ = draft(config, {key: 'ethernet1/13'}, workflow_mode='OFFLINE_EXPORT', conversion_settings=settings)
+    assert next(row for row in invalid.decisions if row.decision_key == key).status == 'CONFLICT'
+    excluded, _ = draft(config, workflow_mode='OFFLINE_EXPORT', conversion_settings={**settings, 'excluded_interfaces': ['root/port1']})
+    assert next(row for row in excluded.decisions if row.decision_key == key).status == 'UNSUPPORTED'
+    assert next(row for row in excluded.configuration if row['source_name'] == 'port1' and row['family'] == 'interface')['status'] == 'UNSUPPORTED'
+
+
+def test_bounded_port_pool_proposes_referenced_or_addressed_interfaces_before_unused_ports():
+    config = FGConfig(interfaces=[FGInterface(name=f'port{number}', type='physical') for number in range(1, 14)]
+        + [FGInterface(name='wan', type='physical', ip='192.0.2.1/24')])
+    result, _ = draft(config, workflow_mode='OFFLINE_EXPORT', conversion_settings={'target_model': 'PA-820'})
+    assert next(row for row in result.decisions if row.source_name == 'wan' and row.target_field == 'target_interface').proposed_value == 'ethernet1/1'
+    assert any(row.source_name.startswith('port') and not row.proposed_value for row in result.decisions if row.target_field == 'target_interface')
+
+
 def test_source_only_coverage_is_visible_and_cannot_be_approved():
     from fwmigrate.vendors.fortigate.model.vip import FGVIPGroup
     config = FGConfig(addresses=[FGAddress(name='net', subnet='192.0.2.0 255.255.255.0')],
@@ -79,20 +117,82 @@ def test_offline_proposals_preserve_vdoms_and_do_not_confirm_ownership():
     assert scopes == {'a': 'vsys1', 'b': 'vsys2'}
     assert not decisions.to_options().vdoms
     assert all(not row.approved for row in result.decisions)
-    assert all(row.proposed_value is None for row in result.decisions if row.target_field == 'target_interface')
+    assert {row.source_vdom: row.proposed_value for row in result.decisions if row.target_field == 'target_interface'} == {
+        'a': 'ethernet1/1', 'b': 'ethernet1/2'}
     conflict, _ = draft(config, {make_decision_key(vdom, 'vdom', vdom, 'vsys'): 'vsys1'
                                   for vdom in ('a', 'b')}, workflow_mode='OFFLINE_EXPORT')
     assert all(row.status == 'CONFLICT' for row in conflict.decisions if row.target_field == 'vsys')
 
 
-def test_offline_invalid_object_names_are_not_approvable():
+def test_offline_port_proposals_use_natural_order_and_preserve_explicit_allocations():
+    config = FGConfig(interfaces=[FGInterface(name=name, type='physical') for name in ('port10', 'port2', 'port1')])
+    original = deepcopy(config)
+    key = make_decision_key('root', 'interface', 'port1', 'target_interface')
+    result, decisions = draft(config, {key: 'ethernet1/2'}, workflow_mode='OFFLINE_EXPORT')
+    ports = {row.source_name: row for row in result.decisions if row.target_field == 'target_interface'}
+    assert {name: row.proposed_value for name, row in ports.items()} == {
+        'port1': 'ethernet1/2', 'port2': 'ethernet1/1', 'port10': 'ethernet1/3'}
+    assert all(row.status == 'READY' and not row.approved for row in ports.values())
+    assert 'unverified' in ports['port2'].evidence[0]
+    assert ports['port1'].evidence == ('Explicit engineer allocation',)
+    assert not decisions.to_options().interfaces
+    assert config == original
+    reordered = FGConfig(interfaces=list(reversed(config.interfaces)))
+    again, _ = draft(reordered, {key: 'ethernet1/2'}, workflow_mode='OFFLINE_EXPORT')
+    assert {row.source_name: row.proposed_value for row in again.decisions if row.target_field == 'target_interface'} == {
+        name: row.proposed_value for name, row in ports.items()}
+
+
+def test_offline_ports_preserve_confirmed_values_and_reserve_explicit_subinterface_parents():
+    config = FGConfig(interfaces=[FGInterface(name='port1', type='physical'), FGInterface(name='port2', type='physical'),
+                                 FGInterface(name='vlan10', interface='port1', vlanid=10)])
+    views = derived()
+    state = build_review_state(config, views, 'source', include_configuration=True)
+    port = make_decision_key('root', 'interface', 'port1', 'target_interface')
+    vlan = make_decision_key('root', 'interface', 'vlan10', 'target_interface')
+    decisions = PANMigrationDecisionSet(tuple(replace(row, value='ethernet1/3',
+        review_state=PANDecisionReviewState.CONFIRMED) if row.key == port else row for row in state['decisions'].decisions))
+    result = build_deterministic_draft(config, views, decisions, source_digest='source', workflow_mode='OFFLINE_EXPORT',
+        overrides={vlan: 'ethernet1/1.10'})
+    ports = {row.source_name: row for row in result.decisions if row.target_field == 'target_interface'}
+    assert ports['port1'].proposed_value == 'ethernet1/3' and ports['port1'].approved
+    assert ports['port2'].proposed_value == 'ethernet1/2'
+    assert ports['vlan10'].proposed_value == 'ethernet1/1.10'
+    assert not ports['port2'].approved
+
+
+@pytest.mark.parametrize('kind', [None, 'tunnel', 'redundant', 'switch'])
+def test_offline_port_allocator_does_not_guess_missing_or_unsupported_interface_types(kind):
+    config = FGConfig(interfaces=[FGInterface(name='port1', type=kind)])
+    result, _ = draft(config, workflow_mode='OFFLINE_EXPORT')
+    port = next(row for row in result.decisions if row.target_field == 'target_interface')
+    assert port.proposed_value is None and port.status == ('UNSUPPORTED' if kind == 'tunnel' else 'NEEDS_INPUT')
+
+
+def test_destination_aware_draft_does_not_allocate_physical_ports_without_evidence():
+    config = FGConfig(interfaces=[FGInterface(name='port1', type='physical')])
+    result, _ = draft(config)
+    assert next(row for row in result.decisions if row.target_field == 'target_interface').proposed_value is None
+
+
+def test_automatic_port_proposals_keep_explicit_duplicate_edits_blocked():
+    config = FGConfig(interfaces=[FGInterface(name='port1', type='physical'), FGInterface(name='port2', type='physical')])
+    values = {make_decision_key('root', 'interface', name, 'target_interface'): 'ethernet1/1' for name in ('port1', 'port2')}
+    result, decisions = draft(config, values, workflow_mode='OFFLINE_EXPORT')
+    ports = [row for row in result.decisions if row.target_field == 'target_interface']
+    assert all(row.proposed_value == 'ethernet1/1' and row.status == 'CONFLICT' for row in ports)
+    with pytest.raises(ValueError, match='blocked'):
+        approve_draft(decisions, result, [row.decision_key for row in ports])
+
+
+def test_offline_invalid_object_names_receive_reviewable_stable_proposals():
     config = FGConfig(addresses=[FGAddress(name='x' * 64, subnet='192.0.2.1 255.255.255.255')])
     result, decisions = draft(config, workflow_mode='OFFLINE_EXPORT')
     row = next(row for row in result.configuration if row['family'] == 'address')
-    assert row['status'] == 'CONFLICT'
-    assert any('target object name' in reason for reason in row['blocking_reasons'])
-    with pytest.raises(ValueError, match='blocked'):
-        approve_draft(decisions, result, [row['group_key']])
+    assert row['status'] == 'READY'
+    assert len(row['target_name']) <= 63 and row['source_name'] == 'x' * 64
+    assert row['target_name'] == draft(config, workflow_mode='OFFLINE_EXPORT')[0].configuration[0]['target_name']
+    assert all(not decision.approved for decision in result.decisions)
 
 
 def test_offline_virtual_router_name_constraints_block_dependent_topology():
