@@ -16,7 +16,7 @@ def evidence(text, vendor):
 
 
 def test_source_review_artifact_and_mocked_deployment_cover_modes_baseline_logging_and_coverage(monkeypatch):
-    client = create_app({'TESTING': True}).test_client()
+    client = create_app({'TESTING': True, 'WEB_MODE': 'local'}).test_client()
     target = TARGET.decode().replace('<entry name="vsys1"/>', '<entry name="vsys1"/><entry name="vsys2"/>')
     source = 'config vdom\nedit root\n' + SOURCE.format(logging='set logtraffic all') + '''
 next
@@ -103,7 +103,7 @@ end
 def test_old_signed_approval_without_baseline_cannot_deploy(monkeypatch):
     from tests.test_web_candidate_sessions import _ready_artifact
     key = b'baseline-regression-test-key-000000'
-    client = create_app({'TESTING': True, 'WORKSPACE_SIGNING_KEY': key}).test_client()
+    client = create_app({'TESTING': True, 'WEB_MODE': 'local', 'WORKSPACE_SIGNING_KEY': key}).test_client()
     artifact = _ready_artifact(client)
     approval = artifact['decision_document']['design_approval']
     approval['context'].pop('baseline_sha256')

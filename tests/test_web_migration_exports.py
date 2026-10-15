@@ -542,7 +542,7 @@ def test_vsys_only_mapping_renders_objects_and_keeps_policy_for_review():
 
 
 def test_deploy_rejects_empty_rendered_artifact_before_credentials():
-    client = create_app({"TESTING": True}).test_client()
+    client = create_app({"TESTING": True, "WEB_MODE": "local"}).test_client()
     preview_id = _preview(client)
     plan = client.post("/api/migrate", json=approved_payload(client, {"source": preview_id}, configuration=False)).get_json()
     response = client.post("/api/deploy", json={"artifact": plan["artifact"], "source": preview_id})

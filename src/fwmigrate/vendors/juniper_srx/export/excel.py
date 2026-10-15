@@ -5,9 +5,10 @@ from pathlib import Path
 from typing import Any
 
 from fwmigrate.extraction.models import ExtractionStatus
-from fwmigrate.extraction.sanitize import sanitize_source_attributes, sanitize_source_value
+from fwmigrate.extraction.sanitize import sanitize_raw_text, sanitize_source_attributes, sanitize_source_value
 from ....source_reporting.options import ExcelExportProfile
 from ....source_reporting.excel_style import append_report_row, finish_report_workbook, write_report_summary
+from ....source_reporting.collection_excel import collection_summary, write_collection_evidence
 
 from .excel_schema import SHEET_HEADERS, SHEET_ORDER
 from ..transforms.effective_state import effective_path_state
@@ -328,6 +329,7 @@ def export_juniper_excel(
     output: Any,
     *,
     profile: ExcelExportProfile | str = ExcelExportProfile.FULL,
+    source_name: str | None = None,
     collection_status: str | None = None,
     collection_parts: Any = None,
     collection_warnings: Any = None,
@@ -424,30 +426,26 @@ def export_juniper_excel(
     if collection_status is not None:
         parts = tuple(collection_parts or ())
         warnings = tuple(collection_warnings or ())
-        coverage.extend((("Collection Status", collection_status),
+        write_collection_evidence(workbook, collection_status, parts, warnings)
+        coverage.extend((*collection_summary(collection_status),
                          ("Incomplete Collection Parts", sum(
                              not (part.get("complete") if isinstance(part, dict) else getattr(part, "complete", False))
                              for part in parts))))
         if warnings:
-            coverage.append(("Collection Warnings", " | ".join(str(item) for item in warnings)))
+            coverage.append(("Collection Warnings", " | ".join(sanitize_raw_text(str(item)) for item in warnings)))
     write_report_summary(
         workbook["Summary"], title="Juniper SRX Configuration Report", profile=profile.value.upper(),
         metadata=(("Hostname", result.config.hostname), ("Version", None),
                   ("Scopes", "\n".join(f"{context.context_type}: {context.name}"
                                        for context in result.config.iter_contexts()) or None),
-                  ("Source File", None), ("Source Format", result.source_format)),
+                  ("Source File", source_name), ("Source Format", result.source_format)),
         validation=(("Errors", len(result.validation.errors)), ("Warnings", len(result.validation.warnings)),
                     ("Unresolved References", sum(item.result == "UNRESOLVED" for item in views.dependencies))),
-        inventory=(("Interfaces", len(views.interface_topology), "Interfaces"),
-                   ("Zones", len(views.zone_memberships), "Zones"),
-                   ("Policies", len(views.policies), "Policies"),
-                   ("NAT Rule Sets", len(views.nat_rule_sets), "NAT"),
-                   ("Routes", sum(len(context.routes) for context in result.config.iter_contexts()), "Static Routes"),
-                   ("DHCP Objects", len(views.dhcp), "DHCP Pools"),
-                   ("VPNs", len(views.vpn_relationships), "VPN"),
-                   ("Remote Access Profiles", len(result.config.contexts) and sum(
-                       len(context.remote_access.profiles) for context in result.config.iter_contexts()), "Remote Access"),
-                   ("APBR SLA Rules", sum(len(context.apbr.sla_rules) for context in result.config.iter_contexts()), "APBR")),
+        inventory=((name, workbook[name]._report_row_count - 1, name) for name in SHEET_ORDER
+                   if name in workbook.sheetnames and name not in {
+                       "Summary", "Review Required", "Validation", "Source Inventory",
+                       "Extraction Coverage", "Unsupported Source", "Unresolved References", "Additional Settings",
+                   }),
         coverage=(*coverage, ("Contexts", len(result.config.contexts)),
                   ("Configuration Groups", len(result.config.configuration_groups)),
                   ("Source Sections", len(result.source_sections)),
@@ -459,7 +457,7 @@ def export_juniper_excel(
                   ("Export Limitations", "FAST omits Source Inventory and Extraction Coverage. Use FULL for traceability."
                    if profile is ExcelExportProfile.FAST else "FULL includes Source Inventory and Extraction Coverage.")),
     )
-    finish_report_workbook(workbook, summary_title="Juniper SRX Configuration Report")
+    finish_report_workbook(workbook)
     if hasattr(output, "write"):
         workbook.save(output)
         return output

@@ -18,8 +18,9 @@ import { asRecord } from '../report/reportPresentation'
 
 export type WorkflowView = 'report' | 'collect' | 'migration' | 'live'
 
-export function SourceConfiguration({ view, onViewChange }: {
+export function SourceConfiguration({ view, onViewChange, liveDeviceAccess }: {
   view: WorkflowView
+  liveDeviceAccess: boolean
   onViewChange: (view: WorkflowView) => void
 }) {
   const [vendor, setVendor] = useState<SourceVendor>('')
@@ -179,6 +180,7 @@ export function SourceConfiguration({ view, onViewChange }: {
   const selectedVendor = vendors.find((item) => item.vendor_id === vendor)
 
   if (!workspaceReady) return <LoadingState label="Restoring browser workspace…" />
+  if (!liveDeviceAccess && (view === 'collect' || view === 'live')) return <p role="status">Live device access is available only in the local application.</p>
   return <main className="feature-content">
     <section id="source-configuration" className="panel source-configuration" hidden={view !== 'collect' && Boolean(preview) && !(file && view === 'report') && !(view === 'migration' && migrationView === 'load')} aria-labelledby="source-title">
       <h2 id="source-title"><span className="step-num">01</span> Source configuration</h2>
@@ -237,6 +239,7 @@ export function SourceConfiguration({ view, onViewChange }: {
         </section>
         <div hidden={view === 'migration' && migrationView !== 'export'}>
         <MigrationWorkflow key={previewId}
+          liveDeviceAccess={liveDeviceAccess}
           preview={preview} decisionDocument={decisionDocument}
           targetSource={targetSource} targetDevice={targetDevice} generationRequest={generationRequest} activeSection={view === 'live' ? 'live' : 'plan'}
           onReviewDecision={(key) => { setRequestedDecision({ key, request: Date.now() }); setMigrationView('place'); onViewChange('migration'); requestAnimationFrame(() => document.getElementById('migration-review-title')?.scrollIntoView({ block: 'start' })) }}

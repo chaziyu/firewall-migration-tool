@@ -6,6 +6,7 @@ from dataclasses import fields, is_dataclass
 from typing import Any
 
 from fwmigrate.extraction.sanitize import sanitize_raw_text
+from ...source_reporting.excel_style import excel_safe_value
 
 _SENSITIVE = ("password", "secret", "credential", "private", "token", "psk", "key")
 
@@ -55,9 +56,7 @@ def safe_value(value: Any) -> Any:
 def excel_value(value: Any) -> Any:
     value = safe_value(value)
     value = str(value) if isinstance(value, (list, tuple, dict)) else value
-    if isinstance(value, str) and value.startswith(("=", "+", "-", "@", "\t", "\r", "\n")):
-        return "'" + value
-    return value
+    return excel_safe_value(value)
 
 
 def has_source_evidence(value: Any) -> bool:

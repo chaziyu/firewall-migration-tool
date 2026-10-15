@@ -12,13 +12,27 @@ from fwmigrate.source_reporting.options import ExcelExportProfile
 
 from fwmigrate.vendors.palo_alto.source_report import PaloAltoSourceReporter, PaloAltoSourceResult
 from fwmigrate.vendors.palo_alto.export.excel_schema import HIDDEN_COLUMNS_BY_DEFAULT, SHEET_HEADERS, SHEET_ORDER
-from fwmigrate.vendors.palo_alto.export.excel import _write_table
+from fwmigrate.vendors.palo_alto.export.excel import _write_table, _write_table_fast
 from fwmigrate.vendors.palo_alto.model import PANAddress, PANOSConfig
 from fwmigrate.vendors.palo_alto.source_model import PANOSDerivedViews, PANScope
 from fwmigrate.vendors.palo_alto.validation.models import PANOSValidationIssue, PANOSValidationResult
 
 
 FIXTURES = Path(__file__).parents[2] / "fixtures" / "palo_alto"
+
+
+@pytest.mark.parametrize("row_count", [0, 1, 2])
+def test_fast_filter_only_covers_sheets_with_data(row_count):
+    workbook = Workbook(write_only=True)
+    rows = ({"Name": "object"} for _ in range(row_count))
+    assert _write_table_fast(workbook, "Review Required", rows) == row_count
+    output = BytesIO()
+    workbook.save(output)
+    sheet = load_workbook(BytesIO(output.getvalue()))["Review Required"]
+    last_column = get_column_letter(len(SHEET_HEADERS["Review Required"]))
+    assert sheet.auto_filter.ref == (f"A3:{last_column}{row_count + 3}" if row_count else None)
+    assert sheet["A1"].value == "Review Required"
+    assert sheet.freeze_panes
 
 
 def _workbook(name: str, profile=ExcelExportProfile.FULL):

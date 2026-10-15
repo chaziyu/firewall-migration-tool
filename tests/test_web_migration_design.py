@@ -160,7 +160,7 @@ TARGET = '''<config><devices><entry name="fw"><network><interface><ethernet>
 
 
 def setup(target=TARGET, role='DESTINATION', source=SOURCE):
-    client = create_app({'TESTING': True, 'WORKSPACE_SIGNING_KEY': 'd' * 32}).test_client()
+    client = create_app({'TESTING': True, 'WEB_MODE': 'local', 'WORKSPACE_SIGNING_KEY': 'd' * 32}).test_client()
     def upload(text, vendor, name):
         result = client.post('/api/preview', data={'source_vendor': vendor,
             'file': (io.BytesIO(text.encode()), name)}, content_type='multipart/form-data')

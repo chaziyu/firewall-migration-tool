@@ -91,8 +91,19 @@ end
 """
 
 
+EXCEL_SOURCE_CASES = (
+    ("fortigate", FORTIGATE_SOURCE), ("palo_alto", PALO_SOURCE), ("cisco_asa", ASA_SOURCE),
+    ("juniper_srx", "set system host-name branch\nset interfaces ge-0/0/0 unit 0 family inet address 203.0.113.10/24"),
+    ("cisco_ftd", json.dumps({"format": "cisco-fmc-rest-export-v1", "source": "fmc-rest-api",
+                             "domain": {"id": "d1", "name": "Global"}, "objects": {"hosts": [
+                                 {"id": "h1", "name": "Host", "value": "203.0.113.10"},
+                             ]}, "access_policies": [], "nat_policies": []})),
+    ("checkpoint", CHECKPOINT_SOURCE),
+)
+
+
 @pytest.mark.parametrize("profile", ("fast", "full"))
-@pytest.mark.parametrize("vendor,source", (("fortigate", FORTIGATE_SOURCE), ("palo_alto", PALO_SOURCE), ("cisco_asa", ASA_SOURCE)), ids=("fortigate", "palo_alto", "cisco_asa"))
+@pytest.mark.parametrize("vendor,source", EXCEL_SOURCE_CASES)
 @pytest.mark.parametrize("status", ("PARTIAL", "SUCCESS"))
 def test_snapshot_excel_preserves_collection_evidence(profile, vendor, source, status, monkeypatch):
     from fwmigrate.collection.snapshot import FORMAT
@@ -130,6 +141,8 @@ def test_snapshot_excel_preserves_collection_evidence(profile, vendor, source, s
     workbook = load_workbook(io.BytesIO(response.data))
     try:
         summary = {row[0]: row[1] for row in workbook["Summary"].values if row[0]}
+        assert any(row[index] == "Source File" and row[index + 1] == "snapshot.conf"
+                   for row in workbook["Summary"].values for index in (0, 2, 4))
         assert summary["Collection Status"] == status
         if status == "PARTIAL":
             assert "Missing configuration is unknown" in summary["Collection Completeness"]
@@ -147,13 +160,13 @@ def test_snapshot_excel_preserves_collection_evidence(profile, vendor, source, s
         assert "evidence-secret" not in values
         assert "palo-web-secret" not in values
         assert "web-secret" not in values
-        address = {"fortigate": "192.0.2.1", "palo_alto": "203.0.113.10", "cisco_asa": "203.0.113.1"}[vendor]
+        address = {"fortigate": "192.0.2.1", "cisco_asa": "203.0.113.1"}.get(vendor, "203.0.113.10")
         assert address in values
     finally:
         workbook.close()
 
 
-@pytest.mark.parametrize("vendor,source", (("fortigate", FORTIGATE_SOURCE), ("palo_alto", PALO_SOURCE), ("cisco_asa", ASA_SOURCE)), ids=("fortigate", "palo_alto", "cisco_asa"))
+@pytest.mark.parametrize("vendor,source", EXCEL_SOURCE_CASES)
 @pytest.mark.parametrize("profile", ("fast", "full"))
 def test_excel_rejects_failed_collection_snapshot(vendor, source, profile):
     from fwmigrate.collection.snapshot import FORMAT
@@ -165,6 +178,25 @@ def test_excel_rejects_failed_collection_snapshot(vendor, source, profile):
     })
     assert response.status_code == 400
     assert response.get_json()["error"] == "Invalid source configuration"
+
+
+@pytest.mark.parametrize("vendor,source", EXCEL_SOURCE_CASES)
+@pytest.mark.parametrize("profile", ("fast", "full"))
+def test_uploaded_excel_preserves_filename_without_inventing_collection(vendor, source, profile):
+    client = create_app({"TESTING": True}).test_client()
+    response = client.post("/api/extract/excel", data={
+        "source_vendor": vendor, "excel_profile": profile,
+        "file": (io.BytesIO(source.encode()), "=source.conf"),
+    })
+    assert response.status_code == 200
+    workbook = load_workbook(io.BytesIO(response.data))
+    try:
+        assert "Collection Evidence" not in workbook.sheetnames
+        assert any(row[index] == "Source File" and row[index + 1] == "'=source.conf"
+                   for row in workbook["Summary"].values for index in (0, 2, 4))
+        assert all(cell.data_type != "f" for row in workbook["Summary"] for cell in row)
+    finally:
+        workbook.close()
 
 
 def test_panos_fast_does_not_build_source_appendix(monkeypatch):

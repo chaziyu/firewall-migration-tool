@@ -15,6 +15,7 @@ from fwmigrate.conversion.fortigate_to_palo_alto.application import ArtifactElig
 from fwmigrate.deployment import PANDeploymentOptions, PANDeploymentSession
 from fwmigrate.web_support.artifact_signing import verify_artifact, verify_envelope
 from fwmigrate.web_support.reporting import _parse_bool
+from fwmigrate.web_support.request_controls import live_device_access_allowed
 
 _LOGGER = logging.getLogger(__name__)
 _DEPLOYMENT_SESSION_TTL_SECONDS = 30 * 60
@@ -112,10 +113,7 @@ def register_deployment_routes(
     def _candidate_operation(function):
         @wraps(function)
         def locked(*args, **kwargs):
-            if (
-                not app.config.get('ALLOW_REMOTE_DEPLOYMENT')
-                and request.remote_addr not in {'127.0.0.1', '::1'}
-            ):
+            if not live_device_access_allowed(app):
                 return jsonify({
                     'success': False,
                     'error': 'Remote deployment is disabled on this server.',

@@ -11,6 +11,7 @@ from enum import Enum
 from functools import lru_cache
 from typing import TYPE_CHECKING, Any, Iterable, Iterator, Mapping, Sequence
 
+from ....source_reporting.excel_style import excel_safe_value
 from ..security.extraction import sanitize_source_attributes, sanitize_source_value
 from .excel_schema import SHEET_HEADERS
 
@@ -501,9 +502,7 @@ def _excel_safe(value: Any) -> Any:
     if value is None:
         return None
     if type(value) is str:
-        if value.startswith(("=", "+", "-", "@")):
-            return "'" + value
-        return value
+        return excel_safe_value(value)
     if type(value) is bool:
         return "Yes" if value else "No"
     if type(value) is int or type(value) is float:
@@ -511,10 +510,7 @@ def _excel_safe(value: Any) -> Any:
 
     value = _plain_value(value)
 
-    if isinstance(value, str) and value.startswith(("=", "+", "-", "@")):
-        return "'" + value
-
-    return value
+    return excel_safe_value(value)
 
 
 def _plain_value(value: Any) -> Any:

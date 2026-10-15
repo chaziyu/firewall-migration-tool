@@ -1637,7 +1637,7 @@ def _iter_fortigate_source_inventory_rows(
         )
 
         provenance = (
-            record.cli_scope, _excel_safe(" / ".join(record.cli_path)),
+            _excel_safe(record.cli_scope), _excel_safe(" / ".join(record.cli_path)),
             record.start_line_number, record.end_line_number,
         )
         if not record.commands:

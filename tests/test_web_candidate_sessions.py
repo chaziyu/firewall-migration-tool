@@ -83,7 +83,7 @@ def test_revalidation_failure_or_drift_invalidates_commit_session(monkeypatch, s
         def validate(self):
             return PANValidationResult('72', status, 'Candidate state changed', '012345678901', digest)
     monkeypatch.setattr(web, 'PANSSHDeployer', Drifted)
-    client = web.create_app({'TESTING': True}).test_client()
+    client = web.create_app({'TESTING': True, 'WEB_MODE': 'local'}).test_client()
     artifact = _ready_artifact(client)
     session = client.post('/api/deploy', json={**CREDS, 'artifact': artifact}).get_json()['deployment_session_id']
     response = client.post('/api/validate-candidate', json={**CREDS, 'artifact': artifact, 'deployment_session_id': session})
@@ -97,7 +97,7 @@ def test_unknown_commit_state_consumes_session(monkeypatch):
         def commit(self):
             raise RuntimeError('private device detail')
     monkeypatch.setattr(web, 'PANSSHDeployer', Unknown)
-    client = web.create_app({'TESTING': True}).test_client()
+    client = web.create_app({'TESTING': True, 'WEB_MODE': 'local'}).test_client()
     artifact = _ready_artifact(client)
     session = client.post('/api/deploy', json={**CREDS, 'artifact': artifact}).get_json()['deployment_session_id']
     response = client.post('/api/commit', json={**CREDS, 'artifact': artifact, 'deployment_session_id': session})
@@ -110,7 +110,7 @@ def test_unknown_commit_state_consumes_session(monkeypatch):
 def test_expired_candidate_session_never_connects(monkeypatch):
     import fwmigrate.web_api.deployment as deployment
     monkeypatch.setattr(web, 'PANSSHDeployer', _SuccessfulDeployer)
-    client = web.create_app({'TESTING': True}).test_client()
+    client = web.create_app({'TESTING': True, 'WEB_MODE': 'local'}).test_client()
     artifact = _ready_artifact(client)
     session = client.post('/api/deploy', json={**CREDS, 'artifact': artifact}).get_json()['deployment_session_id']
     now = deployment.time.time()
@@ -122,7 +122,7 @@ def test_expired_candidate_session_never_connects(monkeypatch):
 def test_prepare_candidate_forces_validation_and_commit_requires_bound_session(monkeypatch):
     _SuccessfulDeployer.options_seen = []
     monkeypatch.setattr(web, "PANSSHDeployer", _SuccessfulDeployer)
-    client = web.create_app({"TESTING": True}).test_client()
+    client = web.create_app({"TESTING": True, "WEB_MODE": "local"}).test_client()
     artifact_id = _ready_artifact(client)
 
     premature = client.post("/api/commit", json={**CREDS, "artifact": artifact_id})
@@ -188,7 +188,7 @@ def test_prepare_candidate_forces_validation_and_commit_requires_bound_session(m
 
 def test_failed_candidate_validation_never_creates_commit_session(monkeypatch):
     monkeypatch.setattr(web, "PANSSHDeployer", _FailedValidationDeployer)
-    client = web.create_app({"TESTING": True}).test_client()
+    client = web.create_app({"TESTING": True, "WEB_MODE": "local"}).test_client()
     artifact_id = _ready_artifact(client)
 
     prepared = client.post("/api/deploy", json={**CREDS, "artifact": artifact_id})
@@ -202,7 +202,7 @@ def test_failed_candidate_validation_never_creates_commit_session(monkeypatch):
 @pytest.mark.parametrize("failed_retry", [False, True])
 def test_candidate_attempt_invalidates_all_old_sessions_for_target(monkeypatch, failed_retry):
     monkeypatch.setattr(web, "PANSSHDeployer", _SuccessfulDeployer)
-    client = web.create_app({"TESTING": True}).test_client()
+    client = web.create_app({"TESTING": True, "WEB_MODE": "local"}).test_client()
     artifact = _ready_artifact(client)
     old_session = client.post("/api/deploy", json={**CREDS, "artifact": artifact}).get_json()["deployment_session_id"]
     next_artifact = artifact if failed_retry else _ready_artifact(client)
@@ -220,7 +220,7 @@ def test_commit_waits_for_candidate_write_and_rejects_stale_session(monkeypatch)
     from threading import Event
 
     monkeypatch.setattr(web, "PANSSHDeployer", _SuccessfulDeployer)
-    app = web.create_app({"TESTING": True})
+    app = web.create_app({"TESTING": True, "WEB_MODE": "local"})
     client = app.test_client()
     artifact = _ready_artifact(client)
     session = client.post("/api/deploy", json={**CREDS, "artifact": artifact}).get_json()["deployment_session_id"]
@@ -254,7 +254,7 @@ def test_commit_waits_for_candidate_write_and_rejects_stale_session(monkeypatch)
 
 def test_candidate_write_to_different_target_preserves_validated_session(monkeypatch):
     monkeypatch.setattr(web, "PANSSHDeployer", _SuccessfulDeployer)
-    client = web.create_app({"TESTING": True}).test_client()
+    client = web.create_app({"TESTING": True, "WEB_MODE": "local"}).test_client()
     artifact = _ready_artifact(client)
     session = client.post("/api/deploy", json={**CREDS, "artifact": artifact}).get_json()["deployment_session_id"]
     assert client.post("/api/deploy", json={**CREDS, "host": "192.0.2.51", "artifact": artifact}).status_code == 200
@@ -267,7 +267,7 @@ def test_expected_session_error_has_stable_public_code_and_never_connects(monkey
         pytest.fail("Invalid session must not connect to the target")
 
     monkeypatch.setattr(web, "PANSSHDeployer", forbidden_deployer)
-    client = web.create_app({"TESTING": True}).test_client()
+    client = web.create_app({"TESTING": True, "WEB_MODE": "local"}).test_client()
     response = client.post("/api/commit", json=CREDS)
     assert response.status_code == 400
     assert response.get_json()["error_code"] == "session_required"
@@ -280,7 +280,7 @@ def test_unexpected_commit_value_error_does_not_expose_device_details(monkeypatc
             raise ValueError("synthetic-private-password-device-detail")
 
     monkeypatch.setattr(web, "PANSSHDeployer", UnexpectedFailure)
-    client = web.create_app({"TESTING": True}).test_client()
+    client = web.create_app({"TESTING": True, "WEB_MODE": "local"}).test_client()
     artifact = _ready_artifact(client)
     session = client.post("/api/deploy", json={**CREDS, "artifact": artifact}).get_json()["deployment_session_id"]
     response = client.post("/api/commit", json={
@@ -296,7 +296,7 @@ def test_unexpected_commit_value_error_does_not_expose_device_details(monkeypatc
 @pytest.mark.parametrize('exception_type', [ValueError, RuntimeError])
 def test_deployment_exceptions_keep_secrets_private(monkeypatch, caplog, operation, exception_type):
     monkeypatch.setattr(web, 'PANSSHDeployer', _SuccessfulDeployer)
-    client = web.create_app({'TESTING': True}).test_client()
+    client = web.create_app({'TESTING': True, 'WEB_MODE': 'local'}).test_client()
     artifact = _ready_artifact(client)
     session = client.post('/api/deploy', json={**CREDS, 'artifact': artifact}).get_json()['deployment_session_id']
 
@@ -320,7 +320,7 @@ def test_deployment_exceptions_keep_secrets_private(monkeypatch, caplog, operati
 @pytest.mark.parametrize('operation', ['deploy', 'validate-candidate', 'commit'])
 def test_failed_deployment_results_do_not_expose_transport_errors(monkeypatch, caplog, operation):
     monkeypatch.setattr(web, 'PANSSHDeployer', _SuccessfulDeployer)
-    client = web.create_app({'TESTING': True}).test_client()
+    client = web.create_app({'TESTING': True, 'WEB_MODE': 'local'}).test_client()
     artifact = _ready_artifact(client)
     session = client.post('/api/deploy', json={**CREDS, 'artifact': artifact}).get_json()['deployment_session_id']
 
@@ -354,7 +354,7 @@ def test_read_only_candidate_inspection_does_not_restore_a_lost_session(monkeypa
         def commit(self):
             pytest.fail('Inspection must not commit')
     monkeypatch.setattr(web, 'PANSSHDeployer', Inspector)
-    client = web.create_app({'TESTING': True}).test_client()
+    client = web.create_app({'TESTING': True, 'WEB_MODE': 'local'}).test_client()
     artifact = _ready_artifact(client)
     response = client.post('/api/inspect-candidate', json={**CREDS, 'artifact': artifact})
     assert response.status_code == 200, response.get_json()
@@ -372,7 +372,7 @@ def test_partial_push_recovery_contract_preserves_counts_without_transport_outpu
                 (PANDeploymentCommandResult(0, rendered.commands[0], True, 'secret transport output'),),
                 recovery_state='OUTCOME_UNKNOWN')
     monkeypatch.setattr(web, 'PANSSHDeployer', PartialPush)
-    client = web.create_app({'TESTING': True}).test_client()
+    client = web.create_app({'TESTING': True, 'WEB_MODE': 'local'}).test_client()
     response = client.post('/api/deploy', json={**CREDS, 'artifact': _ready_artifact(client)})
     assert response.status_code == 502
     assert b'secret transport output' not in response.data
@@ -387,7 +387,7 @@ def test_unexpected_payload_type_error_after_submission_is_not_reported_as_no_wr
         def deploy(self, rendered):
             raise ValueError('secret after possible write')
     monkeypatch.setattr(web, 'PANSSHDeployer', InterruptedPush)
-    client = web.create_app({'TESTING': True}).test_client()
+    client = web.create_app({'TESTING': True, 'WEB_MODE': 'local'}).test_client()
     response = client.post('/api/deploy', json={**CREDS, 'artifact': _ready_artifact(client)})
     assert response.get_json()['recovery']['state'] == 'OUTCOME_UNKNOWN'
     assert response.get_json()['recovery']['commands_attempted'] is None

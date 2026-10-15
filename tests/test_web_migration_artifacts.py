@@ -116,7 +116,7 @@ def test_preview_and_download_block_empty_migration_artifact():
 def test_all_reuse_migration_is_ready_with_an_empty_artifact():
     from tests.test_web_candidate_sessions import MINIMAL_FORTIGATE, CREDS
     from tests.approved_design import TARGET
-    client = create_app({"TESTING": True}).test_client()
+    client = create_app({"TESTING": True, "WEB_MODE": "local"}).test_client()
     source = client.post('/api/preview', data={'file': (io.BytesIO(MINIMAL_FORTIGATE), 'source.conf')}).get_json()['source_evidence']
     target_xml = TARGET.replace(b'<vsys><entry name="vsys1"/>',
         b'<vsys><entry name="vsys1"><address><entry name="host-a"><ip-netmask>192.0.2.10/32</ip-netmask></entry></address></entry>')

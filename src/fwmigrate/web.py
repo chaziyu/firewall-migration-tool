@@ -56,17 +56,21 @@ def create_app(test_config=None):
     if test_config:
         app.config.update(test_config)
     app.config.setdefault('FRONTEND_DIST_DIR', os.environ.get('FWMIGRATE_FRONTEND_DIST_DIR') or frontend_dist)
-    app.config.setdefault(
-        'ALLOW_REMOTE_COLLECTION',
-        os.environ.get('FWMIGRATE_ALLOW_REMOTE_COLLECTION', '').strip().casefold() in {'1', 'true', 'yes', 'on'},
-    )
-    app.config.setdefault(
-        'ALLOW_REMOTE_DEPLOYMENT',
-        os.environ.get('FWMIGRATE_ALLOW_REMOTE_DEPLOYMENT', '').strip().casefold() in {'1', 'true', 'yes', 'on'},
-    )
+    app.config.setdefault('WEB_MODE', os.environ.get('FWMIGRATE_WEB_MODE', 'public'))
+    if app.config['WEB_MODE'] not in {'public', 'local'}:
+        raise ValueError('WEB_MODE must be public or local')
+    if not app.config.get('ALLOWED_HOSTS'):
+        hosts = os.environ.get('FWMIGRATE_ALLOWED_HOSTS', '')
+        app.config['ALLOWED_HOSTS'] = [host.strip().lower() for host in hosts.split(',') if host.strip()] or [
+            'localhost', '127.0.0.1', '::1', 'firewall-migration-tool.onrender.com',
+        ]
+        render_host = os.environ.get('RENDER_EXTERNAL_HOSTNAME')
+        if render_host:
+            app.config['ALLOWED_HOSTS'].append(render_host.strip().lower())
     app.config.setdefault('API_RATE_LIMIT_PER_MINUTE', int(os.environ.get('FWMIGRATE_API_RATE_LIMIT_PER_MINUTE', '30')))
     app.config.setdefault('MAX_CONCURRENT_REQUESTS', int(os.environ.get('FWMIGRATE_MAX_CONCURRENT_REQUESTS', '2')))
     app.config.setdefault('MAX_CONTENT_LENGTH', 2 * MAX_BYTES + 5_000_000)
+    register_request_controls(app)
 
     require_web_auth = app.config.get('REQUIRE_WEB_AUTH')
     if require_web_auth is None:
@@ -79,14 +83,6 @@ def create_app(test_config=None):
         or 'fwmigrate'
     )
     web_password = app.config.get('WEB_AUTH_PASSWORD') or os.environ.get('FWMIGRATE_WEB_PASSWORD')
-    if app.config.get('ALLOW_REMOTE_COLLECTION') and not web_password:
-        raise RuntimeError(
-            'Remote live collection requires configured web authentication'
-        )
-    if app.config.get('ALLOW_REMOTE_DEPLOYMENT') and not web_password:
-        raise RuntimeError(
-            'Remote deployment requires configured web authentication'
-        )
     if require_web_auth and not web_password:
         raise RuntimeError(
             'Hosted web authentication is required but FWMIGRATE_WEB_PASSWORD is not configured'
@@ -109,8 +105,6 @@ def create_app(test_config=None):
             response.status_code = 401
             response.headers['WWW-Authenticate'] = 'Basic realm="Firewall Migration Tool"'
             return response
-
-    register_request_controls(app)
 
     @app.after_request
     def _security_headers(response):
