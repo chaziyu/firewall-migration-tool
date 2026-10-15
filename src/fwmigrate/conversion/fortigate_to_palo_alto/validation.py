@@ -73,6 +73,8 @@ def validate_plan(plan: PANMigrationPlan) -> MigrationValidationResult:
     for item in plan.interfaces:
         if item.target_name:
             interface_assignments.setdefault(item.target_name, []).append(item)
+        for member in item.aggregate_members:
+            interface_assignments.setdefault(member, []).append(item)
     for name, owners in interface_assignments.items():
         if len({(item.source_vdom, item.source_name) for item in owners}) > 1:
             for item in owners:
@@ -100,8 +102,18 @@ def validate_plan(plan: PANMigrationPlan) -> MigrationValidationResult:
         if item.source_object_type == "interface":
             if not item.target_name:
                 add("missing_target_interface", "interface has no mapped target name", item)
-            if item.interface_family not in {"ethernet", "loopback"}:
+            if item.interface_family not in {"ethernet", "loopback", "aggregate-ethernet"}:
                 add("unsupported_interface_family", "interface has no supported target family", item)
+            if item.interface_family == "aggregate-ethernet":
+                if not re.fullmatch(r"ae(?:[1-9]|1[0-6])(?:\.[1-9][0-9]{0,3})?", item.target_name or ""):
+                    add("invalid_aggregate_interface", "aggregate requires an ae1 through ae16 identifier and optional valid unit", item)
+                if not item.parent and (not item.aggregate_members or item.lacp_mode not in {"static", "active", "passive"}):
+                    add("missing_aggregate_settings", "aggregate requires explicit members and aggregation mode", item)
+            if item.aggregate_members:
+                if (item.interface_family != "aggregate-ethernet" or item.parent
+                        or len(set(item.aggregate_members)) != len(item.aggregate_members)
+                        or any(not re.fullmatch(r"ethernet[0-9]+/[0-9]+", name) for name in item.aggregate_members)):
+                    add("invalid_aggregate_members", "aggregate physical members are invalid or duplicated", item)
             if item.interface_family == "loopback":
                 if not re.fullmatch(r"loopback\.[1-9][0-9]{0,3}", item.target_name or "") or item.parent or item.tag is not None:
                     add("invalid_loopback_interface", "loopback requires an identifier from 1 to 9999 and no VLAN parent or tag", item)
@@ -269,7 +281,8 @@ def validate_plan(plan: PANMigrationPlan) -> MigrationValidationResult:
                 if _key(interface) not in renderable or not interface.parent:
                     continue
                 parent = find(("interfaces",), interface.parent, interface.target_vsys)
-                if parent is not None and _key(parent) not in renderable:
+                if (parent is not None and _key(parent) not in renderable
+                        or parent is None and interface.interface_family == "aggregate-ethernet"):
                     add("dependency_not_renderable", f"parent interface {interface.parent!r} is not renderable", interface)
                     renderable.remove(_key(interface))
                     changed = True

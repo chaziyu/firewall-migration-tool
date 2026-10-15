@@ -53,6 +53,7 @@ class PANSetRenderer:
             for item in plan.interfaces
             if item.status is PANMigrationStatus.SUPPORTED and _key(item) in allowed and can_create(item)
         ]
+        interface_items.sort(key=lambda entry: bool(entry[0].parent))
         interface_pre = [
             (item, [path for path in paths if path[0] == "device_pre"])
             for item, paths in interface_items
