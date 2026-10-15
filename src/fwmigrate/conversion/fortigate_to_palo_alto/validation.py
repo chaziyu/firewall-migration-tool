@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 from graphlib import CycleError, TopologicalSorter
-from ipaddress import IPv4Address, IPv4Network
+from ipaddress import IPv4Address, IPv4Interface, IPv4Network
 import re
 
 from .models import MigrationIssue, MigrationSourceRef, PANMigrationPlan, PANMigrationStatus
@@ -100,8 +100,11 @@ def validate_plan(plan: PANMigrationPlan) -> MigrationValidationResult:
         if item.source_object_type == "interface":
             if not item.target_name:
                 add("missing_target_interface", "interface has no mapped target name", item)
-            if item.interface_family != "ethernet":
+            if item.interface_family not in {"ethernet", "loopback"}:
                 add("unsupported_interface_family", "interface has no supported target family", item)
+            if item.interface_family == "loopback":
+                if not re.fullmatch(r"loopback\.[1-9][0-9]{0,3}", item.target_name or "") or item.parent or item.tag is not None:
+                    add("invalid_loopback_interface", "loopback requires an identifier from 1 to 9999 and no VLAN parent or tag", item)
             if not item.target_vsys:
                 add("missing_target_vsys", "missing target VSYS mapping", item)
             if not item.virtual_router:
@@ -110,7 +113,14 @@ def validate_plan(plan: PANMigrationPlan) -> MigrationValidationResult:
                 add("missing_interface_tag", "subinterface is missing an explicit VLAN tag", item)
             if not item.parent and item.tag is not None:
                 add("unexpected_interface_tag", "physical interface cannot carry a subinterface tag", item)
-            if any(not isinstance(value, str) or not value for value in item.ipv4_addresses):
+            try:
+                for value in item.ipv4_addresses:
+                    if not isinstance(value, str) or "/" not in value:
+                        raise ValueError
+                    address = IPv4Interface(value)
+                    if item.interface_family == "loopback" and address.network.prefixlen != 32:
+                        raise ValueError
+            except (ValueError, TypeError):
                 add("invalid_interface_address", "interface contains an invalid planned IPv4 address", item)
         elif item.source_object_type == "address":
             if not getattr(item, "address_type", None) or not getattr(item, "value", None):
