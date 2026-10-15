@@ -16,6 +16,35 @@ from fwmigrate.vendors.fortigate.source_report import FortiGateSourceReporter
 from fwmigrate.vendors.fortigate.validation.index import ValidationIssueIndex
 
 
+@pytest.mark.parametrize('section,field,value,invalid', [
+    ('firewall ippool', 'startport', '5116', True),
+    ('firewall ippool', 'startport', '5117', False),
+    ('firewall ippool', 'endport', '65533', False),
+    ('firewall ippool', 'endport', '65534', True),
+    ('firewall schedule onetime', 'expiration-days', '-1', True),
+    ('firewall schedule onetime', 'expiration-days', '0', False),
+    ('firewall schedule onetime', 'expiration-days', '100', False),
+    ('firewall schedule onetime', 'expiration-days', '101', True),
+    ('firewall schedule recurring', 'day', 'monday sunday none', False),
+    ('firewall schedule recurring', 'day', 'everyday', True),
+    ('firewall schedule onetime', 'expiration-days', 'malformed', False),
+    ('firewall ippool', 'startport', 'malformed', False),
+])
+def test_cli_constraints_only_report_invalid_explicit_values(section, field, value, invalid):
+    reporter = FortiGateSourceReporter()
+    analysis = reporter.analyze_source(f'config {section}\nedit checked\nset {field} {value}\nnext\nedit absent\nnext\nend\n')
+    before = analysis.extracted.config.model_dump()
+    constraints = [issue for issue in analysis.validation.issues if issue.message.startswith('FortiOS 7.4.6:')]
+    assert len(constraints) == int(invalid)
+    if invalid:
+        assert constraints[0].object_name == 'checked'
+        assert value in constraints[0].message
+    if value == 'malformed':
+        primitive = [issue for issue in analysis.validation.issues if issue.domain == 'source_value']
+        assert len(primitive) == 1
+    assert analysis.extracted.config.model_dump() == before
+
+
 def test_global_scope_has_canonical_paths_and_original_provenance():
     source = '''config global
     config system interface

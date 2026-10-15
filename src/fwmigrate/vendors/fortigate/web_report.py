@@ -329,7 +329,7 @@ def build_web_report(
             "start_utc": item.start_utc,
             "end_utc": item.end_utc,
             "expiration_days": item.expiration_days,
-            "review": _review(_messages(issue_index, vdom=item.vdom, names=(item.name,), domains=("schedule",))),
+            "review": _review(_messages(issue_index, vdom=item.vdom, names=(item.name,), domains=("schedule", "schedule_onetime"))),
         }
         for item in config.one_time_schedules
     ] + [
@@ -340,7 +340,7 @@ def build_web_report(
             "days": list(item.days),
             "start": item.start,
             "end": item.end,
-            "review": _review(_messages(issue_index, vdom=item.vdom, names=(item.name,), domains=("schedule",))),
+            "review": _review(_messages(issue_index, vdom=item.vdom, names=(item.name,), domains=("schedule", "schedule_recurring"))),
         }
         for item in config.recurring_schedules
     ]

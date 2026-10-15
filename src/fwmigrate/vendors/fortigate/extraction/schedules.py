@@ -4,7 +4,7 @@ from typing import Any, Protocol
 
 from ..model.schedule import FGScheduleGroup, FGOneTimeSchedule, FGRecurringSchedule
 
-from .common import evaluate_edit, iter_section_edits, source_model_kwargs
+from .common import evaluate_edit_sequence, iter_grouped_section_edits, source_model_kwargs
 from .section_index import SectionIndex
 
 
@@ -21,8 +21,8 @@ def extract_schedules(tree: SectionIndex, config: ScheduleConfig) -> None:
 
 
 def _extract(tree: SectionIndex, section_path: str, model_type: type[Any], destination: list[Any], field_map: dict[str, str] | None = None) -> None:
-    for source in iter_section_edits(tree, section_path):
-        evaluation = evaluate_edit(section_path, source.edit)
+    for source, edits in iter_grouped_section_edits(tree, section_path):
+        evaluation = evaluate_edit_sequence(section_path, edits)
         destination.append(model_type(**source_model_kwargs(
             evaluation,
             model_type=model_type,
