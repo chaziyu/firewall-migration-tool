@@ -168,6 +168,53 @@ const workspace = { workspace: () => ({ referenceRole: 'TEMPLATE', targetSource:
   targetDevice: '', deterministicDraft: null, artifact: null }), saveWorkspace: async () => {} }
 const api = { RequestError: class extends Error {} }
 
+test('reference role stays editable after upload and a failed rebuild revokes artifacts and preserves edits', async () => {
+  let state = { ...workspace.workspace(), workflowMode: 'destination', targetSource: { vendor: 'palo_alto', source_text: '<config />' } }
+  const requests = []
+  let fail = false
+  const decision = { key: 'port', source_vdom: 'root', source_kind: 'interface', source_name: 'port1', target_field: 'target_interface', mode: 'REQUIRED', review_state: 'PENDING' }
+  const result = { decisions: { decisions: [decision] }, decision_document: { decisions: [decision] }, target_devices: [],
+    decision_candidates: {}, review_groups: [], rule_suggestions: [], draft: { digest: 'draft', context: { overrides: {} }, decisions: [], configuration: [] } }
+  const documents = []
+  const harness = component('../src/features/migration/MigrationReview.tsx', 'MigrationReview', {
+    '../../storage/workspaceStore': { workspace: () => state, saveWorkspace: async (update) => { state = { ...state, ...update } } },
+    '../../api/client': { RequestError: api.RequestError, postJson: async (_, payload) => { requests.push(payload); if (fail) throw new Error('role rebuild failed'); return result } },
+    '../source/FileUpload': { FileUpload: 'FileUpload' }, './download': {}, './reviewDrafts': drafts, './reviewPresentation': presentation,
+    './components/MigrationDesignReview': { MigrationDesignReview: 'Design' }, './components/MigrationReviewQueues': { MigrationReviewQueues: 'Queues' },
+    './components/MigrationDecisionTable': { MigrationDecisionTable: 'Decisions' }, './components/MigrationInterfaceMappings': { MigrationInterfaceMappings: 'Interfaces' },
+  })
+  const props = { preview: { source_digest: 'source', source_evidence: {} }, vendor: 'fortigate', onDecisionDocument: (value) => documents.push(value) }
+  let tree = await harness.render(props)
+  const queues = () => elements(tree).find((node) => node.type === 'Queues')
+  queues().props.setDrafts({ port: 'ethernet1/9' })
+  tree = await harness.render(props)
+  state.artifact = { artifact_id: 'approved' }
+  const before = documents.length
+  queues().props.setDrafts((current) => ({ ...current }))
+  tree = await harness.render(props)
+  assert.equal(documents.length, before)
+  assert.equal(state.artifact.artifact_id, 'approved')
+  fail = true
+  await elements(tree).find((node) => node.props['aria-label'] === 'Reference role').props.onChange({ target: { value: 'DESTINATION' } })
+  tree = await harness.render(props)
+  assert.equal(requests.at(-1).reference_role, 'DESTINATION')
+  assert.equal(state.referenceRole, 'DESTINATION')
+  assert.equal(state.artifact, null)
+  assert.equal(state.decisionDocument, null)
+  assert.equal(documents.at(-1), null)
+  assert.equal(queues().props.drafts.port, 'ethernet1/9')
+  assert.equal(queues().props.busy, true)
+  fail = false
+  await elements(tree).find((node) => node.type === 'button' && node.props.children === 'Retry intended draft update').props.onClick()
+  await new Promise((resolve) => setImmediate(resolve))
+  tree = await harness.render(props)
+  assert.equal(requests.at(-1).reference_role, 'DESTINATION')
+  assert.equal(queues().props.drafts.port, 'ethernet1/9')
+  await elements(tree).find((node) => node.props['aria-label'] === 'Reference role').props.onChange({ target: { value: 'TEMPLATE' } })
+  await harness.render(props)
+  assert.equal(requests.at(-1).reference_role, 'TEMPLATE')
+})
+
 function workflowHarness(migrationApi) {
   return component('../src/features/migration/MigrationWorkflow.tsx', 'MigrationWorkflow', {
     '../../storage/workspaceStore': workspace, '../../api/client': api,
@@ -628,8 +675,8 @@ test('guided mappings use named compact choices, keep evidence closed, and prese
   assert.ok(nodes.filter((node) => node.type === 'details').every((node) => !node.props.open))
   for (const value of ['ethernet1/2', 'ethernet1/3', 'duplicate']) assert.ok(nodes.filter((node) => node.type === 'option' && node.props.value === value).every((node) => node.props.disabled))
   assert.equal(nodes.find((node) => node.type === 'button' && node.props.children === 'Review staged changes').props.disabled, false)
-  await nodes.find((node) => node.type === 'button' && node.props.children === 'Save draft').props.onClick()
-  assert.equal(saved, 0, 'Save draft must stay local even when fields are incomplete')
+  assert.ok(!nodes.some((node) => node.type === 'button' && node.props.children === 'Save draft'))
+  assert.equal(saved, 0, 'Editing stays local until validation')
   choice('target_interface').props.onChange({ target: { value: 'ethernet1/1' } })
   nodes = await render()
   choice('target_zone').props.onChange({ target: { value: 'WAN' } })

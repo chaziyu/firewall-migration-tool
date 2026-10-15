@@ -60,7 +60,7 @@ export function saveWorkspace(update: Partial<Workspace>): Promise<void> {
     targetSource: update.targetSource === undefined ? current.targetSource : update.targetSource,
     targetDevice: update.targetDevice ?? current.targetDevice,
     referenceRole: update.referenceRole ?? current.referenceRole,
-    decisionDocument: update.decisionDocument === undefined ? (modeChanged ? null : current.decisionDocument) : update.decisionDocument,
+    decisionDocument: update.decisionDocument === undefined ? (contextChanged ? null : current.decisionDocument) : update.decisionDocument,
     deterministicDraft: update.deterministicDraft === undefined
       ? (derivedStateChanged ? null : current.deterministicDraft)
       : update.deterministicDraft,

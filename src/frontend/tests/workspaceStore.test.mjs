@@ -94,10 +94,11 @@ test('role and decision changes invalidate deterministic state without persisten
     decisionDocument: { design_approval: {} },
   })
   await saveWorkspace({ referenceRole: 'DESTINATION' })
+  assert.equal(workspace().decisionDocument, null)
   assert.equal(workspace().deterministicDraft, null)
   assert.equal(workspace().artifact, null)
 
-  await saveWorkspace({ deterministicDraft: { digest: 'draft' }, artifact: { artifact_id: 'approved' } })
+  await saveWorkspace({ decisionDocument: { decisions: [] }, deterministicDraft: { digest: 'draft' }, artifact: { artifact_id: 'approved' } })
   await saveWorkspace({ decisionDocument: null })
   assert.equal(workspace().deterministicDraft, null)
   assert.equal(workspace().artifact, null)
