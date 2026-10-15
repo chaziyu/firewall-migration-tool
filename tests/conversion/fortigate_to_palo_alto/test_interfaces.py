@@ -102,3 +102,10 @@ def test_loopback_identifier_is_validated(name):
     config = FGConfig(interfaces=[FGInterface(name='lo', type='loopback')])
     item, = plan_interfaces(config, _options({'lo': {'target_interface': name}}))
     assert item.status is PANMigrationStatus.MANUAL_REVIEW
+
+
+def test_loopback_bare_address_does_not_infer_a_host_mask():
+    config = FGConfig(interfaces=[FGInterface(name='lo', type='loopback', ip='192.0.2.1')])
+    item, = plan_interfaces(config, _options({'lo': {'target_interface': 'loopback.1'}}))
+    assert item.status is PANMigrationStatus.MANUAL_REVIEW
+    assert not item.ipv4_addresses
