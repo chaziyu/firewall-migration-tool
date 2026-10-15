@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import type { PlanArtifact } from './migrationApi'
-import { groupPlanBlockers, mappingIdentityLabel } from './reviewPresentation'
+import { exportCategoryLabels, groupPlanBlockers, mappingIdentityLabel } from './reviewPresentation'
 import { asRecord, compactValue, safeValue } from '../report/reportPresentation'
 
 function PlanRows({ rows, kind, onReviewDecision }: { rows: Array<Record<string, unknown>>; kind: 'items' | 'blockers' | 'recommendations' | 'affected items'; onReviewDecision: (key: string) => void }) {
@@ -27,6 +27,7 @@ function PlanRows({ rows, kind, onReviewDecision }: { rows: Array<Record<string,
           <p>Source: {String(row.source_vdom ?? 'Unknown scope')} · {String(row.source_kind ?? row.source_object_type ?? 'Unknown kind')} · {String(row.source_name ?? row.source_policy_id ?? 'Unknown identity')}</p>
           <p>Target: {String(row.target_vsys ?? 'Not specified')} · {String(row.target_name ?? 'Not specified')}</p>
           <p>Support: {String(row.status ?? 'Unknown')} · Disposition: {String(row.render_disposition ?? 'Unknown')} · Rendered: {compactValue(row.rendered)}</p>
+          {row.export_category != null && <p>Export: {exportCategoryLabels[String(row.export_category)] ?? String(row.export_category)}</p>}
           <p>Command renderable: {compactValue(row.command_renderable)} · Satisfied: {compactValue(row.satisfied)}</p>
           <details><summary>Blockers and warnings</summary><pre>{JSON.stringify({ render_blockers: row.render_blockers, warnings: row.warnings }, null, 2)}</pre></details>
           <details><summary>Rendered commands ({Array.isArray(row.commands) ? row.commands.length : 0})</summary><pre>{Array.isArray(row.commands) ? row.commands.join('\n') : 'No commands reported'}</pre></details>

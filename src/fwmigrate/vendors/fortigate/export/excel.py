@@ -135,7 +135,7 @@ def export_excel(
     """Write the FortiGate configuration report."""
 
     profile = ExcelExportProfile(profile)
-    derived = derived or build_derived_views(extracted.config)
+    derived = derived or build_derived_views(extracted.config, source_metadata=extracted.source_metadata)
 
     excel_started = perf_counter()
     context_started = perf_counter()

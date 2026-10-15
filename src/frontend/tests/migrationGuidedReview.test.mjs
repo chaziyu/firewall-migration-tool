@@ -25,7 +25,12 @@ test('parent allocations sort ahead of blocked children without mutating rows', 
 
 test('family export counts and root-cause groups retain excluded identities and VDOMs', () => {
   assert.deepEqual(planFamilySummary([{ source_object_type: 'service', render_disposition: 'CREATE' }, { source_object_type: 'policy', render_disposition: 'BLOCK' }]),
-    { service: { included: 1, blocked: 0 }, policy: { included: 0, blocked: 1 } })
+    { service: { INCLUDED: 1 }, policy: { BLOCKED: 1 } })
+  assert.deepEqual(planFamilySummary([
+    { source_object_type: 'address', render_disposition: 'BLOCK', export_category: 'NOT_APPROVED' },
+    { source_object_type: 'address', render_disposition: 'BLOCK', export_category: 'UNSUPPORTED' },
+    { source_object_type: 'address', render_disposition: 'BLOCK', export_category: 'SOURCE_DATA' },
+  ]), { address: { NOT_APPROVED: 1, UNSUPPORTED: 1, SOURCE_DATA: 1 } })
   const reasons = ['one', 'two'].map((source_name) => ({ source_vdom: 'root', source_name, code: 'missing', decision_key: 'parent' }))
   const groups = groupPlanBlockers([...reasons, { ...reasons[0], source_vdom: 'blue' }])
   assert.equal(groups.length, 2)

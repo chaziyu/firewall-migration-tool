@@ -242,7 +242,7 @@
 .target-setup h3 { margin: 0 0 8px; }
 .target-setup p { color: var(--text-muted); }
 .target-setup .migration-summary p { margin: 0; }
-.target-setup-actions { position: sticky; top: 0; z-index: 1; padding: 12px 0; background: var(--surface); }
+.target-setup-actions { padding: 12px 0; }
 .target-setup-actions span { flex-basis: 100%; color: var(--text-muted); font-size: 13px; }
 .target-ownership { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: 16px; margin-top: 12px; }
 .target-ownership fieldset { min-width: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin: 0; padding: 16px; border: 1px solid var(--line); border-radius: var(--radius-sm); }

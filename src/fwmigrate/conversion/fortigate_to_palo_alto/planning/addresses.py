@@ -24,7 +24,30 @@ def address_references(source, vdom, names):
     return tuple("0.0.0.0/0" if name == "all" and not explicit_all else name for name in names)
 
 
-def plan_addresses(source: Any, options: Any) -> tuple[tuple[PlannedAddress, ...], tuple[PlannedAddressGroup, ...], tuple[MigrationIssue, ...]]:
+def vip_group_addresses(source, vdom, names):
+    """Flatten only complete, unambiguous flat VIP groups in policy destinations."""
+    result, warnings = [], []
+    for name in names:
+        groups = [group for group in source.vip_groups if (group.vdom or 'root') == (vdom or 'root') and group.name == name]
+        if not groups:
+            result.append(name)
+            continue
+        group = groups[0]
+        members = [vip for member in group.members for vip in source.vips if (vip.vdom or 'root') == (vdom or 'root') and vip.name == member]
+        conflicting = any(item.name in {name, *group.members} and (item.vdom or 'root') == (vdom or 'root')
+            for family in ('addresses', 'address_groups') for item in getattr(source, family, ()))
+        if (len(groups) != 1 or not group.members or len(group.members) > 256 or conflicting
+                or len(members) != len(group.members) or set(group.raw_extra) - {'color'}
+                or any(sum(vip.name == member for vip in members) != 1 for member in group.members)
+                or any(group.interface not in {None, 'any', vip.extintf} for vip in members)):
+            warnings.append(f'VIP group {name!r} has incomplete, ambiguous or unsupported membership/settings')
+            result.append(name)
+        else:
+            result.extend(group.members)
+    return tuple(dict.fromkeys(result)), tuple(warnings)
+
+
+def plan_addresses(source: Any, options: Any, derived=None) -> tuple[tuple[PlannedAddress, ...], tuple[PlannedAddressGroup, ...], tuple[MigrationIssue, ...]]:
     addresses = []
     groups = []
     issues = []
@@ -39,7 +62,7 @@ def plan_addresses(source: Any, options: Any) -> tuple[tuple[PlannedAddress, ...
         if issue:
             issues.append(issue)
     for vip in getattr(source, "vips", ()):
-        ext, _, warnings = vip_translation(vip)
+        ext, _, warnings = vip_translation(vip, derived)
         status, scope_warnings, issue = _scope(vip, options)
         warnings = [*scope_warnings, *warnings]
         if warnings:

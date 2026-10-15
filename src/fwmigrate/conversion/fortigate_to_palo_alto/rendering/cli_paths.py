@@ -2,6 +2,14 @@
 from ..planning.vpn import crypto_lifetime
 
 
+def management_profile(item):
+    base = ('network', 'profiles', 'interface-management-profile', item.target_name)
+    return [('device_pre', *base, protocol, 'yes' if protocol in item.protocols else 'no')
+            for protocol in ('ping', 'https', 'ssh', 'snmp', 'http', 'telnet', 'http-ocsp',
+                             'response-pages', 'userid-service', 'userid-syslog-listener-ssl', 'userid-syslog-listener-udp')
+    ] + [('device_pre', *base, 'permitted-ip', network) for network in item.permitted_ips]
+
+
 def address(item):
     return [("vsys", "address", item.target_name or item.source_name, item.address_type, item.value)]
 
@@ -144,6 +152,7 @@ def security_rule(item):
     base = ("rulebase", "security", "rules", item.target_name or item.source_name)
     commands = [("vsys", *base, key, "[", *values, "]") for key, values in (("from", item.from_zones), ("to", item.to_zones), ("source", item.sources), ("destination", item.destinations), ("service", item.services))]
     if item.applications: commands.append(("vsys", *base, "application", "[", *item.applications, "]"))
+    if item.source_users: commands.append(('vsys', *base, 'source-user', '[', *item.source_users, ']'))
     if item.schedule: commands.append(("vsys", *base, "schedule", item.schedule))
     if item.negate_source: commands.append(("vsys", *base, "negate-source", "yes"))
     if item.negate_destination: commands.append(("vsys", *base, "negate-destination", "yes"))

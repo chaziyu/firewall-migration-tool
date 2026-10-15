@@ -220,6 +220,10 @@ def plan_interfaces(source: Any, options: Any) -> tuple[PlannedInterface, ...]:
         if item.members and kind != "aggregate":
             blockers.append("aggregate or redundant member semantics are not rendered")
         management_profile = settings.get('management_profiles', {}).get(f'{vdom}/{item.name}')
+        identity = f'{vdom}/' + ','.join(sorted(set(item.allowaccess or ())))
+        if not management_profile and identity in settings.get('generated_management_profiles', {}):
+            from .management_profiles import management_profile_name
+            management_profile = management_profile_name(identity)
         if item.allowaccess and not management_profile:
             blockers.append("FortiGate administrative access requires a PAN-OS management-profile decision")
         if item.allowaccess and set(item.allowaccess) - {'ping', 'https', 'ssh', 'snmp', 'http', 'telnet'}:
@@ -228,7 +232,9 @@ def plan_interfaces(source: Any, options: Any) -> tuple[PlannedInterface, ...]:
             blockers.append("non-default FortiGate VRF requires explicit target routing design")
         if (item.status or "").casefold() in {"disable", "disabled", "down"}:
             blockers.append("disabled source interface state is not rendered")
-        known_metadata = {'snmp-index'}
+        known_metadata = {'snmp-index', 'monitor-bandwidth'}
+        if 'monitor-bandwidth' in item.raw_extra:
+            notes.append('Source bandwidth-monitoring display setting is retained as source-only evidence')
         if item.raw_extra.get('secondary-IP') == 'enable' and item.secondary_ips:
             known_metadata.add('secondary-IP')
         if set(item.raw_extra) - known_metadata - ({"lacp-mode"} if kind == "aggregate" else set()):

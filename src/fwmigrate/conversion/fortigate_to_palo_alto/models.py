@@ -72,6 +72,12 @@ class PlannedSchedule(PlannedPANItem):
 
 
 @dataclass(frozen=True, slots=True)
+class PlannedManagementProfile(PlannedPANItem):
+    protocols: tuple[str, ...] = ()
+    permitted_ips: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
 class PlannedInterface(PlannedPANItem):
     management_profile: str | None = None
     interface_family: str | None = None
@@ -132,6 +138,7 @@ class PlannedSecurityRule(PlannedPANItem):
     description: str | None = None
     log_start: str | None = None
     log_end: str | None = None
+    source_users: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -147,6 +154,7 @@ class PlannedNATRule(PlannedPANItem):
     destination_addresses: tuple[str, ...] = ()
     service: str | None = None
     to_interface: str | None = None
+    translation_interface: str | None = None
 
     @property
     def source_translation(self) -> str | None:
@@ -224,3 +232,4 @@ class PANMigrationPlan:
     ipsec_crypto_profiles: tuple[PlannedIPsecCryptoProfile, ...] = ()
     ike_gateways: tuple[PlannedIKEGateway, ...] = ()
     ipsec_tunnels: tuple[PlannedIPsecTunnel, ...] = ()
+    management_profiles: tuple[PlannedManagementProfile, ...] = ()

@@ -25,6 +25,7 @@ from .transform.vpn import (
     VPNTransformResult,
     normalize_vpn_phase2,
 )
+from .transform.effective_values import FGEffectiveValue, derive_effective_values
 
 
 @dataclass(frozen=True, slots=True)
@@ -38,10 +39,12 @@ class DerivedViews:
     nat: tuple[NormalizedSourceNAT, ...]
 
     vpn: VPNTransformResult
+    effective_values: tuple[FGEffectiveValue, ...] = ()
 
 
 def build_derived_views(
     config: FGConfig,
+    *, source_metadata=None,
 ) -> DerivedViews:
     references = build_reference_index(
         config
@@ -72,4 +75,5 @@ def build_derived_views(
             config,
             references=references,
         ),
+        effective_values=derive_effective_values(config, source_metadata),
     )

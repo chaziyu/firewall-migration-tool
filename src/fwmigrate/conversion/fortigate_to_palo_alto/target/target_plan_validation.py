@@ -38,7 +38,7 @@ class PANTargetPlanFinding:
 
 def _items(plan):
     for family in ("addresses", "address_groups", "services", "service_groups", "schedules", "interfaces", "zones",
-                   "static_routes", "dhcp_servers", "security_rules", "nat_rules", "ike_crypto_profiles", "ipsec_crypto_profiles", 'ike_gateways', 'ipsec_tunnels'):
+                   "static_routes", "dhcp_servers", "security_rules", "nat_rules", "ike_crypto_profiles", "ipsec_crypto_profiles", 'ike_gateways', 'ipsec_tunnels', 'management_profiles'):
         yield from getattr(plan, family)
 
 

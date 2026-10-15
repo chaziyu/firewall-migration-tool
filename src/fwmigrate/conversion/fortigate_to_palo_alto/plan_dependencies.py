@@ -15,7 +15,7 @@ def item_key(item):
 
 def _items(plan):
     for family in ("addresses", "address_groups", "services", "service_groups", "schedules", "interfaces", "zones",
-                   "static_routes", "dhcp_servers", "security_rules", "nat_rules", "ike_crypto_profiles", "ipsec_crypto_profiles", 'ike_gateways', 'ipsec_tunnels'):
+                   "static_routes", "dhcp_servers", "security_rules", "nat_rules", "ike_crypto_profiles", "ipsec_crypto_profiles", 'ike_gateways', 'ipsec_tunnels', 'management_profiles'):
         yield from getattr(plan, family)
 
 
@@ -38,7 +38,7 @@ def build_plan_dependency_index(plan: PANMigrationPlan, decisions) -> PANPlanDep
         identities.setdefault(_identity(item), []).append(item)
 
     def resolve(vsys, families, name):
-        return [entry for family in families for entry in identities.get((vsys, family, name), ())]
+        return [entry for family in families for entry in identities.get((None if family == 'management_profile' else vsys, family, name), ())]
 
     dependents = {keys[id(item)]: [] for item in items}
     direct_decisions = {keys[id(item)]: [] for item in items}
@@ -62,6 +62,8 @@ def build_plan_dependency_index(plan: PANMigrationPlan, decisions) -> PANPlanDep
             refs += [(('zone',), name) for name in item.from_zones + item.to_zones]
             if kind == "nat_rule" and item.to_interface:
                 refs.append((('interface',), item.to_interface))
+            if kind == 'nat_rule' and item.translation_interface:
+                refs.append((('interface',), item.translation_interface))
             if kind == "security_rule" and item.schedule:
                 refs.append((('schedule',), item.schedule))
             if kind == "security_rule":
@@ -84,6 +86,10 @@ def build_plan_dependency_index(plan: PANMigrationPlan, decisions) -> PANPlanDep
                 if dependency is not item:
                     dependents[keys[id(dependency)]].append(keys[id(item)])
 
+        if kind == 'interface' and getattr(item, 'management_profile', None):
+            for dependency in resolve(None, ('management_profile',), item.management_profile):
+                dependents[keys[id(dependency)]].append(keys[id(item)])
+
     by_vdom = {}
     by_source = {}
     by_interface = {}
@@ -96,7 +102,7 @@ def build_plan_dependency_index(plan: PANMigrationPlan, decisions) -> PANPlanDep
         by_source.setdefault((item.source_vdom, item.source_kind, item.source_name), []).append(key)
         names = set(getattr(item, 'interfaces', ()))
         names.update(getattr(item, 'aggregate_members', ()))
-        names.update(value for value in (getattr(item, 'interface', None), getattr(item, 'to_interface', None)) if value)
+        names.update(value for value in (getattr(item, 'interface', None), getattr(item, 'to_interface', None), getattr(item, 'translation_interface', None)) if value)
         zones = set(getattr(item, 'from_zones', ())) | set(getattr(item, 'to_zones', ()))
         if item.source_object_type == 'zone' and item.target_name:
             zones.add(item.target_name)
