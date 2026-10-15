@@ -107,6 +107,7 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
 
   function setDrafts(value: SetStateAction<Record<string, string>>) {
     const next = typeof value === 'function' ? value(drafts) : value
+    if (Object.keys(next).length === Object.keys(drafts).length && Object.entries(next).every(([key, value]) => drafts[key] === value)) return
     updateDrafts(next)
     void saveWorkspace({ proposals: { ...workspace().proposals, ...next } })
     setBulkPreview([])
@@ -125,7 +126,7 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
                             serviceNames = deterministicDraft?.context.service_names, mode = workflowMode) {
     if (!previewId) return null
     void saveWorkspace({ proposals: { ...workspace().proposals, ...overrides }, serviceNames: serviceNames ?? {} })
-    retryReview.current = () => loadReview(document, targetId, device, role, overrides, serviceNames)
+    retryReview.current = () => loadReview(document, targetId, device, role, overrides, serviceNames, mode)
     const request = beginReviewRequest()
     setReviewCurrent(false)
     try {
@@ -307,6 +308,17 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
     await loadReview(currentDocument(), targetSource, device)
   }
 
+  async function selectReferenceRole(role: ReferenceRole) {
+    if (role === referenceRole) return
+    setReferenceRole(role)
+    setReviewCurrent(false)
+    setDeterministicDraft(null)
+    onDecisionDocument?.(null)
+    await saveWorkspace({ referenceRole: role, decisionDocument: null, artifact: null,
+      proposals: { ...workspace().proposals, ...drafts }, serviceNames: deterministicDraft?.context.service_names ?? {} })
+    await loadReview(currentDocument(), targetSource, targetDevice, role)
+  }
+
   async function updateProposal(decision: Decision, value: string) {
     if (!value.trim()) return
     await prepareValues(new Map([[decision.key, value.trim()]]))
@@ -479,10 +491,10 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
         <summary>{workflowMode === 'offline' ? 'Optional PAN-OS reference' : 'PAN-OS destination XML'}{targetFilename ? ` · ${targetFilename}` : ''}</summary>
       <div className="migration-toolbar">
         <div className="target-xml-upload">
-          {(!targetSource || replaceTarget) && <label className="field">Reference role<select aria-label="Reference role" value={referenceRole} disabled={busy}
-            onChange={(event) => { const role = event.target.value as ReferenceRole; setReferenceRole(role); void run(async () => { await loadReview(currentDocument(), targetSource, targetDevice, role) }) }}>
+          <label className="field">Reference role<select aria-label="Reference role" value={referenceRole} disabled={busy}
+            onChange={async (event) => { await run(() => selectReferenceRole(event.target.value as ReferenceRole)) }}>
             <option value="DESTINATION">Destination configuration</option><option value="TEMPLATE">Architecture template</option>
-          </select></label>}
+          </select></label>
           {(!targetSource || replaceTarget) && <FileUpload file={null} accept=".xml,application/xml,text/xml" disabled={actionBusy} title="Drop your target XML here" helpText="Supports .xml files · Select the evidence role explicitly" onChange={(file) => { if (file) void uploadTarget(file) }} />}
           {targetFilename && <p className="report-count-note">Loaded target: {targetFilename}</p>}
           {targetSource && !replaceTarget && <p className="report-count-note">Reference role: {referenceRole === 'DESTINATION' ? 'Destination configuration' : 'Architecture template'}</p>}

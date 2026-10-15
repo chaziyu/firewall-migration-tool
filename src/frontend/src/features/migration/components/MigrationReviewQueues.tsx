@@ -154,7 +154,7 @@ export function MigrationReviewQueues({
             {group.actions?.map((action) => <div key={`${action.type}:${action.source_key}`}><details><summary>Review member decision scope</summary><p>{group.source_vdom} · {action.source_key} → {action.value}</p><ul>{action.apply_to.map((key) => <li key={key}>{key}</li>)}</ul></details><button className="secondary-button" type="button" disabled={busy} onClick={() => void run(() => applyGroupAction(action))}>Apply {action.value} to {action.apply_to.length} member decisions</button></div>)}
             {(() => {
               const required = group.decisions.filter((item) => item.mode !== 'UNSUPPORTED' && item.mode !== 'AUTO')
-              return required.length > 0 && <><p>Edits are saved locally in this workspace. Blank fields stay unresolved. Validation and approval are separate steps.</p><button className="secondary-button" type="button" disabled={busy} onClick={() => void updateGroup(group)}>Review staged changes</button><button type="button" disabled={busy} onClick={() => setDrafts((current) => ({ ...current }))}>Save draft</button></>
+              return required.length > 0 && <><p>Edits are saved locally in this workspace. Blank fields stay unresolved. Validation and approval are separate steps.</p><button className="secondary-button" type="button" disabled={busy} onClick={() => void updateGroup(group)}>Review staged changes</button></>
             })()}
           </article>)}
           </div></div>
