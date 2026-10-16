@@ -3,7 +3,7 @@
 from typing import Any
 
 from ..contracts import VendorDerivedViews, VendorSourceConfig
-from .planning.addresses import plan_addresses
+from .planning.addresses import explicit_all_vdoms, plan_addresses
 from .planning.dhcp import plan_dhcp
 from .planning.nat import plan_nat
 from .planning.interfaces import plan_interfaces
@@ -43,13 +43,16 @@ class FortiGateToPaloAltoPlanner:
         schedules = plan_schedules(source, options)
         interfaces = plan_interfaces(source, options)
         management_profiles = plan_management_profiles(source, options)
-        requirements = build_mapping_requirements(source, derived, include_configuration=include_configuration)
+        requirements = kwargs.get("requirements")
+        if requirements is None:
+            requirements = build_mapping_requirements(source, derived, include_configuration=include_configuration)
         zones = plan_topology(source, derived, options, requirements["required_zone_keys"],
                               include_configuration=include_configuration)
         routes = plan_routes(source, options, derived)
         dhcp_servers = plan_dhcp(source, options)
-        policies = plan_policies(source, options, derived)
-        nat_rules = plan_nat(source, derived, options)
+        explicit_all = explicit_all_vdoms(source)
+        policies = plan_policies(source, options, derived, explicit_all=explicit_all)
+        nat_rules = plan_nat(source, derived, options, explicit_all=explicit_all)
         ike_crypto_profiles, ipsec_crypto_profiles = plan_vpn_crypto(source, options, derived)
         from .planning.vpn import plan_vpn_structure
         gateways, tunnels = plan_vpn_structure(source, options) if include_configuration else ((), ())

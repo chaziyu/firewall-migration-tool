@@ -1,12 +1,7 @@
 from __future__ import annotations
 
-from pydantic import Field
 
 from .common import CheckPointObjectReference, CheckPointSourceObject
-
-
-class CPManagementAccess(CheckPointSourceObject):
-    access: list[str] | None = None
 
 
 class CPPermissionProfile(CheckPointSourceObject):
@@ -20,4 +15,4 @@ class CPAdministrator(CheckPointSourceObject):
     email: str | None = None
 
 
-__all__ = ["CPAdministrator", "CPManagementAccess", "CPPermissionProfile"]
+__all__ = ["CPAdministrator", "CPPermissionProfile"]

@@ -2,7 +2,6 @@ from fwmigrate.vendors.fortigate.extraction.coverage import typed_source_paths
 from fwmigrate.vendors.fortigate.extraction.extractor import extract_fortigate_config
 from fwmigrate.vendors.fortigate.parser import parse_fortigate_config
 from fwmigrate.vendors.fortigate.source_report import FortiGateSourceReporter
-from fwmigrate.vendors.fortigate.section_registry import registered_sections
 
 
 def test_static6_keeps_its_native_source_fields():

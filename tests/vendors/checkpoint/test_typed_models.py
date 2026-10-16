@@ -8,7 +8,7 @@ from fwmigrate.vendors.checkpoint.model.address import CPGroup, CPGroupWithExclu
 from fwmigrate.vendors.checkpoint.model.administration import CPAdministrator, CPPermissionProfile
 from fwmigrate.vendors.checkpoint.model.gaia import CPGaiaRBARole, CPGaiaUser, CPVTI
 from fwmigrate.vendors.checkpoint.model.gateway import CPCluster, CPGateway, CPInteroperableDevice
-from fwmigrate.vendors.checkpoint.model.policy import CPNATRule, CPPolicyPackage
+from fwmigrate.vendors.checkpoint.model.policy import CPNATRule
 from fwmigrate.vendors.checkpoint.model.service import CPService, CPServiceGroup
 from fwmigrate.vendors.checkpoint.model.schedule import CPTime, CPTimeGroup
 from fwmigrate.vendors.checkpoint.model.threat import CPHTTPSInspectionRule, CPThreatProfile, CPThreatRule, CPThreatRuleException

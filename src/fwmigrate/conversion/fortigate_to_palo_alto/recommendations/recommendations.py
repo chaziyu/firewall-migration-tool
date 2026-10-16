@@ -7,7 +7,7 @@ from enum import Enum
 import json
 from typing import Any, Iterable
 
-from fwmigrate.conversion.fortigate_to_palo_alto.decisions import PANDecisionReviewState, PANMigrationDecisionSet, make_decision_key
+from fwmigrate.conversion.fortigate_to_palo_alto.decisions import PANMigrationDecisionSet, make_decision_key, decision_value as decision_value
 from fwmigrate.conversion.fortigate_to_palo_alto.target.target_candidates import PANTargetCandidate, build_target_candidates, target_vsys_value
 
 
@@ -126,17 +126,6 @@ def candidate_names(candidates: Iterable[PANTargetCandidate]) -> tuple[str, ...]
 def decision_key_if_present(decisions: PANMigrationDecisionSet | None, vdom: str, kind: str, name: str, field: str) -> str | None:
     key = make_decision_key(vdom, kind, name, field)
     return key if decisions and any(item.key == key for item in decisions.decisions) else None
-
-
-def decision_value(decisions: PANMigrationDecisionSet | None, key: str | None) -> str | None:
-    if not decisions or not key:
-        return None
-    for item in decisions.decisions:
-        if item.key == key and item.mode.value != "UNSUPPORTED" and item.value and (
-            item.mode.value == "AUTO" or item.review_state is PANDecisionReviewState.CONFIRMED
-        ):
-            return item.value
-    return None
 
 
 def unique(values: Iterable[str]) -> tuple[str, ...]:

@@ -76,7 +76,6 @@ def build_asa_interface_topology(config: Any, references: ASAReferenceIndex) -> 
     def ancestry(entry, trail=()):
         key = (entry.source_context, entry.name.casefold())
         if key in trail:
-            cycle = trail[trail.index(key):] + (key,)
             issues.append(ASAReferenceIssue(entry.source_context, ASAReferenceKind.INTERFACE, entry.name,
                                             entry.name, ASAReferenceStatus.AMBIGUOUS,
                                             "Interface topology cycle", "topology-cycle"))

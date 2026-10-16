@@ -8,7 +8,7 @@ from fwmigrate.conversion.fortigate_to_palo_alto.models import PANMigrationStatu
 from fwmigrate.conversion.fortigate_to_palo_alto.planning.services import service_target
 from fwmigrate.vendors.fortigate.fortios.predefined_services import is_predefined_service_reference
 from fwmigrate.vendors.fortigate.transform.effective_values import effective_value
-from .addresses import address_references, vip_group_addresses
+from .addresses import address_references, explicit_all_vdoms, vip_group_addresses
 
 
 INSPECTION_FIELDS = ('utm_status', 'profile_group', 'av_profile', 'ips_sensor', 'webfilter_profile',
@@ -45,8 +45,10 @@ def ipv6_match_warnings(policy):
               for field in ("srcaddr", "dstaddr", "srcaddr6", "dstaddr6")))
 
 
-def plan_policies(source: Any, options: Any, derived: Any = None):
+def plan_policies(source: Any, options: Any, derived: Any = None, *, explicit_all=None):
     result = []
+    if explicit_all is None:
+        explicit_all = explicit_all_vdoms(source)
     from ..target.profile import policy_identity_groups
     settings = getattr(options, 'conversion_settings', {})
     eligible = {(group['source_vdom'], group['identity']) for group in policy_identity_groups(source)}
@@ -139,8 +141,8 @@ def plan_policies(source: Any, options: Any, derived: Any = None):
             target_vsys=getattr(getattr(options, "vdoms", {}).get(policy.vdom), "vsys", None),
             target_name=policy.name or str(policy.policy_id),
             status=status, warnings=tuple(warnings), from_zones=from_zones, to_zones=to_zones,
-            sources=address_references(source, policy.vdom, policy.srcaddr or ()),
-            destinations=address_references(source, policy.vdom, destinations),
+            sources=address_references(source, policy.vdom, policy.srcaddr or (), explicit_all=explicit_all),
+            destinations=address_references(source, policy.vdom, destinations, explicit_all=explicit_all),
             services=services, applications=applications,
             schedule=None if policy.schedule == "always" else policy.schedule, action=action,
             negate_source=getattr(policy, "srcaddr_negate", None) in {"enable", "yes", "1"},

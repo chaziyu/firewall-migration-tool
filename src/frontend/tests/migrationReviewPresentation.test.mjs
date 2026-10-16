@@ -10,7 +10,49 @@ import {
   orderedCandidates,
   reviewSourceSummary,
   approvedDraftKeys,
+  groupManualIssues,
+  migrationIssueImpact,
+  migrationIssueTitle,
+  migrationIssueWork,
+  migrationFieldLabel,
+  migrationIssueReason,
+  migrationIssueSourceCount,
 } from '../src/features/migration/reviewPresentation.ts'
+
+test('manual reason groups preserve scope, distinct causes and every original finding', () => {
+  const first = { id: 'a', source_vdom: 'root', source_kind: 'vpn', source_name: 'site-a', code: 'MIGRATION_REVIEW', category: 'MANUAL',
+    resolution_kind: 'MANUAL_IMPLEMENTATION', explanation: 'Separate VPN design required.', affected_keys: ['a', 'shared', 'mapping'], action: null }
+  const second = { ...first, id: 'b', source_name: 'site-b', affected_keys: ['shared', 'b'] }
+  const variants = [
+    { ...first, id: 'vdom', source_vdom: 'branch' }, { ...first, id: 'kind', source_kind: 'address' },
+    { ...first, id: 'reason', explanation: 'Review IPv6 address matching.' }, { ...first, id: 'resolution', resolution_kind: 'TARGET_CONFLICT' },
+    { ...first, id: 'category', category: 'CONFLICT' }, { ...first, id: 'code', code: 'OTHER_REVIEW' },
+  ]
+  const input = [first, second, ...variants]
+  const snapshot = structuredClone(input)
+  const groups = groupManualIssues(input)
+  assert.equal(groups.length, 7)
+  assert.deepEqual(groups[0].issues, [first, second])
+  assert.deepEqual(groups.flatMap((group) => group.issues), input)
+  assert.deepEqual(input, snapshot)
+  assert.equal(migrationIssueImpact([first, second], new Set(['a', 'b', 'shared'])), 3, 'Counts unique configuration keys, excluding placement keys')
+})
+
+test('issue labels explain choices without inventing unsupported resolutions', () => {
+  assert.equal(migrationFieldLabel('target_interface'), 'Target PAN-OS interface')
+  assert.equal(migrationFieldLabel('custom_field'), 'custom field')
+  assert.equal(migrationFieldLabel(''), 'Target value')
+  assert.equal(migrationIssueTitle({ code: 'VIP_EXTERNAL_ZONE_REQUIRED' }), 'Choose the incoming zone for destination NAT')
+  assert.equal(migrationIssueTitle({ code: 'NEW_CODE', explanation: 'Preserve this specific reason.' }), 'Preserve this specific reason.')
+  assert.match(migrationIssueWork({ resolution_kind: 'UNKNOWN' }), /Engineer review required; no supported in-app fix/)
+  assert.match(migrationIssueWork({ resolution_kind: 'TARGET_CONFLICT' }), /target conflict/)
+  assert.equal(migrationIssueTitle({ action: { kind: 'REVIEW_SOURCE' } }), 'Correct the source configuration')
+  assert.match(migrationIssueReason({ explanation: 'DEPENDENCY_BLOCKED' }), /Required configuration is blocked/)
+  assert.match(migrationIssueReason({ explanation: 'NEW_INTERNAL_CODE' }), /Engineer review required/)
+  assert.equal(migrationIssueSourceCount([{ affected_sources: [{ source_vdom: 'root', source_kind: 'address', source_name: 'shared' }] },
+    { affected_sources: [{ source_vdom: 'root', source_kind: 'address', source_name: 'shared' },
+      { source_vdom: 'branch', source_kind: 'address', source_name: 'shared' }] }]), 2)
+})
 
 const decisions = [
   { key: 'zone', source_vdom: 'root', source_kind: 'zone', source_name: 'trust', target_field: 'target_zone',

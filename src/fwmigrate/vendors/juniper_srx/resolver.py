@@ -10,8 +10,6 @@ from fwmigrate.vendors.juniper_srx.model import (
     JuniperAddress,
     JuniperAddressBook,
     JuniperAddressSet,
-    JuniperApplication,
-    JuniperApplicationSet,
     JuniperContextConfig,
 )
 from fwmigrate.vendors.juniper_srx.provenance import is_effective_candidate

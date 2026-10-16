@@ -3,6 +3,8 @@
 from dataclasses import dataclass
 from enum import StrEnum
 
+from ..decisions import decision_value, make_decision_key
+
 from fwmigrate.vendors.palo_alto.relationships.scopes import build_scope_hierarchy, visible_scopes
 from fwmigrate.vendors.palo_alto.source_model import PANScope, pan_scope_identity
 
@@ -54,9 +56,6 @@ def classify_candidate(strong_evidence=(), supporting_evidence=(), contradiction
 
 def target_vsys_value(decisions, source_vdom: str, *, proposed_design=None) -> str | None:
     """Return a target VSYS only from a usable, explicit decision value."""
-    from fwmigrate.conversion.fortigate_to_palo_alto.recommendations.recommendations import decision_value
-    from fwmigrate.conversion.fortigate_to_palo_alto.decisions import make_decision_key
-
     key = make_decision_key(source_vdom, "vdom", source_vdom, "vsys")
     if proposed_design is not None:
         return proposed_design.provisional_value(key)

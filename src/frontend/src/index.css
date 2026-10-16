@@ -12,7 +12,7 @@ body {
   margin: 0;
   background: var(--canvas);
   color: var(--text-main);
-  font: 500 15px/1.5 var(--font-ui);
+  font: 500 var(--font-size-body)/1.5 var(--font-ui);
 }
 
 button, input, select, textarea { font: inherit; }

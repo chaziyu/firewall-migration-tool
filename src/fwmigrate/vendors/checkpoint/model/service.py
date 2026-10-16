@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from pydantic import Field
 
 from .common import CheckPointObjectReference, CheckPointSourceObject
 

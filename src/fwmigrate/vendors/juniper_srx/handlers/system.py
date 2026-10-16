@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Sequence
 
 from fwmigrate.extraction.models import ExtractionStatus
 from fwmigrate.vendors.juniper_srx.extraction import (

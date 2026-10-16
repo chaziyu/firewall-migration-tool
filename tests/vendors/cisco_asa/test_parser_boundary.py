@@ -1,10 +1,7 @@
-from copy import deepcopy
 
-from fwmigrate.vendors.cisco_asa.derived import build_asa_derived_views
 
 from fwmigrate.vendors.cisco_asa.parser import CiscoASAParser
 
-from fwmigrate.vendors.cisco_asa.validation import validate_asa_config
 
 def parse(text):
     return CiscoASAParser(text).parse_raw()

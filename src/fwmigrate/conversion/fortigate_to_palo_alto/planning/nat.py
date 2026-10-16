@@ -7,7 +7,7 @@ from ipaddress import IPv4Address, IPv4Network
 from fwmigrate.conversion.fortigate_to_palo_alto.models import PANMigrationStatus, PlannedNATRule
 from .policies import ipv6_match_warnings
 from .services import service_target
-from .addresses import address_references
+from .addresses import address_references, explicit_all_vdoms
 from .vips import vip_policy_consumers, vip_translation, vip_port_translation, vip_service_name
 
 
@@ -132,7 +132,9 @@ def _packet_disjoint_test(source, derived=None):
     return independent
 
 
-def plan_nat(source: Any, derived: Any, options: Any):
+def plan_nat(source: Any, derived: Any, options: Any, *, explicit_all=None):
+    if explicit_all is None:
+        explicit_all = explicit_all_vdoms(source)
     external_zones = getattr(options, 'conversion_settings', {}).get('vip_external_zones', {})
     identities = {(vip.vdom or 'root', vip.name) for vip in getattr(source, 'vips', ())}
     if any((vdom, name) not in identities for vdom, mappings in external_zones.items() for name in mappings):
@@ -207,8 +209,8 @@ def plan_nat(source: Any, derived: Any, options: Any):
             translated_addresses=translated_addresses, source_interface_address=source_interface_address,
             from_zones=_policy_zones(policy, policy.srcintf or (), options, zone_names) if policy else (),
             to_zones=_policy_zones(policy, item.egress_interfaces, options, zone_names),
-            source_addresses=address_references(source, vdom, policy.srcaddr or ()) if policy else (),
-            destination_addresses=address_references(source, vdom, policy.dstaddr or ()) if policy else (),
+            source_addresses=address_references(source, vdom, policy.srcaddr or (), explicit_all=explicit_all) if policy else (),
+            destination_addresses=address_references(source, vdom, policy.dstaddr or (), explicit_all=explicit_all) if policy else (),
             service=(service_target(matches[0], service_names.get(vdom, ()), getattr(options, "service_names", {}).get(vdom, {})) if matches and len(matches) == 1 else
                      service_target(policy.service[0], service_names.get(vdom, ()), getattr(options, "service_names", {}).get(vdom, {})) if policy and policy.service and len(policy.service) == 1 else None),
             to_interface=getattr(egress_mapping, "target_interface", None),
@@ -245,7 +247,7 @@ def plan_nat(source: Any, derived: Any, options: Any):
             if not policy.srcaddr or not matches:
                 warnings.append("VIP referencing policy requires explicit addresses and supported service matches")
             else:
-                match_contexts.append((address_references(source, vdom, policy.srcaddr),
+                match_contexts.append((address_references(source, vdom, policy.srcaddr, explicit_all=explicit_all),
                     tuple(service_target(name, service_names.get(vdom, ()),
                                    getattr(options, "service_names", {}).get(vdom, {})) for name in matches)))
             names = policy.srcintf or ()

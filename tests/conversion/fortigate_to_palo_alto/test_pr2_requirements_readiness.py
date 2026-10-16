@@ -3,6 +3,7 @@ from fwmigrate.conversion.fortigate_to_palo_alto import (
     PANRecommendationReadiness, build_recommendations,
 )
 from fwmigrate.conversion.fortigate_to_palo_alto.recommendations import decision_value
+from fwmigrate.conversion.fortigate_to_palo_alto.decisions import decision_value as mapping_decision_value
 from fwmigrate.conversion.fortigate_to_palo_alto.requirements import build_mapping_requirements
 from fwmigrate.vendors.fortigate.model.dhcp import FGDHCPServer
 from fwmigrate.vendors.fortigate.model.sdwan import FGSDWAN, FGSDWANMember
@@ -69,6 +70,7 @@ def test_confirmed_interface_value_resolves_mapping_blockers():
 
 
 def test_decision_value_requires_a_supported_nonempty_auto_or_confirmed_value():
+    assert decision_value is mapping_decision_value
     pending = PANMigrationDecision("root", "interface", "port1", "target_interface")
     confirmed_empty = pending.confirm()
     unsupported_confirmed = PANMigrationDecision(

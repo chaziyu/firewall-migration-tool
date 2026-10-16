@@ -7,7 +7,6 @@ from typing import Any, MutableMapping
 from fwmigrate.vendors.juniper_srx.extraction import sanitize_tokens
 
 from fwmigrate.vendors.juniper_srx.model import (
-    JuniperConfigContext,
     JuniperEffectiveCandidate,
     JuniperEffectiveProvenance,
     JuniperProvenanceKind,

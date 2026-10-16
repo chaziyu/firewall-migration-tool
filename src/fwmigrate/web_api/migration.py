@@ -40,7 +40,6 @@ from fwmigrate.conversion.fortigate_to_palo_alto.application import (
     deployment_serial,
     evidence_summary,
     export_target_intent,
-    item_key,
     load_decision_document,
     options_mapping,
     reconcile_target_evidence,
@@ -210,7 +209,7 @@ def register_migration_routes(
             overrides=payload.get('draft_overrides', bound.get('overrides')),
             service_names=payload.get('service_name_overrides', bound.get('service_names')),
             conversion_settings=payload.get('conversion_settings', bound.get('conversion_settings')),
-            workflow_mode=payload.get('workflow_mode'))
+            workflow_mode=payload.get('workflow_mode'), requirements=state['requirements'])
         return state, draft, approval
 
     @app.route('/api/migration/design/prepare', methods=['POST'])
@@ -220,7 +219,7 @@ def register_migration_routes(
             raise ValueError('A JSON object is required')
         entry = _migration_source(payload)
         state, draft, approval = _deterministic_state(payload, entry)
-        response = _migration_review_response(entry, state).get_json()
+        response = _migration_review_payload(entry, state)
         response['draft'] = sign_envelope(draft.to_dict(), signing_key)
         response['approval_readiness'] = {'current': bool(approval), 'expires_at': approval.get('expires_at') if approval else None}
         response['decision_document']['draft_required'] = True
@@ -259,16 +258,16 @@ def register_migration_routes(
             document['draft_required'] = True
             return jsonify({'success': True, 'approved_count': len(selected), 'decision_document': document,
                             'decisions': confirmed.to_dict()})
-        except (ValueError, KeyError, TypeError) as exc:
+        except (ValueError, KeyError, TypeError):
             _LOGGER.warning('Migration design approval failed')
             return jsonify({'success': False, 'error': 'Invalid request or stale draft'}), 409
 
 
-    def _migration_review_response(entry, state):
+    def _migration_review_payload(entry, state):
         target_context = state['target_context']
         target = target_context.analysis if target_context else None
         decisions = state['decisions']
-        return jsonify({'success': True, 'source_digest': entry.source_digest, 'requirements': state['requirements'],
+        return {'success': True, 'source_digest': entry.source_digest, 'requirements': state['requirements'],
                         'decisions': decisions.to_dict(),
                         'design_session': state['design_session'].to_dict(),
                         'decision_document': {**build_decision_document(entry.source_digest, decisions,
@@ -287,7 +286,7 @@ def register_migration_routes(
                         'target_evidence': target_context.metadata if target_context else None,
                         'target_evidence_changed': state['target_evidence_changed'],
                         'invalidated_target_decisions': list(state['invalidated_target_decisions']),
-                        'recommendations': [item.to_dict() for item in state['recommendations']]})
+                        'recommendations': [item.to_dict() for item in state['recommendations']]}
 
     @app.route('/api/migration/requirements', methods=['POST'])
     def migration_requirements():
@@ -295,7 +294,7 @@ def register_migration_routes(
         try:
             entry = _migration_source(payload)
             state = _build_migration_review_state(entry, payload)
-            return _migration_review_response(entry, state)
+            return jsonify(_migration_review_payload(entry, state))
         except (ValueError, KeyError, TypeError) as exc:
             _LOGGER.warning('Invalid migration requirements request')
             message = 'Invalid migration requirements request'
@@ -345,7 +344,7 @@ def register_migration_routes(
                 target_metadata=destination.metadata if destination else None,
                 target_device_count=len(target_context.devices) if target_context else 0,
             )
-            response = _migration_review_response(entry, {'target_context': target_context, **state}).get_json()
+            response = _migration_review_payload(entry, {'target_context': target_context, **state})
             response['decision_document']['draft_required'] = True
             return jsonify(response)
         except InterfaceMappingConfirmationError as exc:
@@ -580,7 +579,7 @@ def register_migration_routes(
                 document['design_approval'] = serialized['design_approval']
                 document['draft_required'] = True
             return jsonify({'success': True, 'document': document})
-        except (ValueError, KeyError, TypeError) as exc:
+        except (ValueError, KeyError, TypeError):
             _LOGGER.warning("Failed to export migration decisions due to invalid input.")
             return jsonify({'success': False, 'error': 'Invalid decision document payload.'}), 400
 

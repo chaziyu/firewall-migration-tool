@@ -5,7 +5,7 @@ import xml.etree.ElementTree as ET
 from ..model import PANSchedule, PANScheduleRecurring
 from ..schema_registry import PANPathSpec
 from ..source_context import PANWalkContext
-from .common import raw_extra, source_fields, typed_fields, value, values
+from .common import raw_extra, source_fields, typed_fields, values
 
 
 _WEEKDAYS = frozenset({

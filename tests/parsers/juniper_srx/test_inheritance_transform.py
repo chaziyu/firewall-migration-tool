@@ -234,7 +234,6 @@ def test_excluded_or_deactivated_inherited_address_does_not_resolve():
         dependency = next(item for item in derived.dependencies if item.reference == "INHERITED")
         assert dependency.result == "UNRESOLVED"
         candidates = derived.inheritance_view["candidates"]
-        statements = derived.inheritance_view["effective_statements"]
         source = candidates
         assert any(item["status"] == expected_status for item in source), (
             expected_status, [(item["status"], item.get("target_path")) for item in source])

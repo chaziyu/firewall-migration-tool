@@ -1,0 +1,44 @@
+.theme-toggle, .secondary-button { min-height: var(--control-height); padding: 10px 14px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface); color: var(--text-main); font-weight: 600; }
+.theme-toggle:hover, .secondary-button:hover:not(:disabled), .outline-button:hover:not(:disabled) { border-color: var(--line-strong); background: var(--surface-hover); }
+.panel { min-width: 0; padding: var(--panel-padding); background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-md); box-shadow: var(--shadow-panel); }
+.panel h2 { margin: 0 0 16px; color: var(--text-heading); font: 600 20px/1.25 var(--font-display); }
+.panel h3 { color: var(--text-heading); font-family: var(--font-display); }
+.field { min-width: 0; display: grid; gap: var(--space-2); margin-bottom: var(--space-4); color: var(--text-main); font-size: var(--font-size-small); font-weight: 600; }
+.review-work-field input, .field select, .field input:not([type='checkbox']), .field textarea { box-sizing: border-box; width: 100%; max-width: 100%; padding: 10px 12px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); background: var(--bg-input); color: var(--text-main); font: inherit; }
+.field input[type='file'] { max-width: 100%; }
+.field small, .field > small { color: var(--text-muted); font-weight: 500; }
+.text-button { border: 0; padding: 0; background: none; color: var(--color-primary); font: inherit; cursor: pointer; }
+.primary-button { min-height: var(--control-height); padding: 10px 16px; border: 1px solid transparent; border-radius: var(--radius-sm); background: var(--color-primary); color: var(--color-on-primary); font: inherit; font-weight: 700; }
+.primary-button:hover:not(:disabled) { background: var(--color-primary-hover); }
+.outline-button { border: 1px solid var(--line); background: transparent; color: var(--text-main); }
+:where(.field, .review-work-field, .report-toolbar, .validation-filters, .excel-profile-control, .excel-profile, .report-pager, .report-section-select) :is(input:not([type='checkbox']), select, textarea) { border-color: var(--line-strong); }
+:where(.field, .review-work-field, .report-toolbar, .validation-filters) :is(input:not([type='checkbox']), select, textarea):focus-visible { border-color: var(--color-primary); }
+
+/* Class selectors also support existing native buttons and summary controls. */
+:where(.primary-button, .secondary-button, .outline-button, .text-button) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: var(--control-height);
+  max-width: 100%;
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-sm);
+  font: inherit;
+  font-weight: 600;
+  line-height: 1.5;
+  text-align: center;
+}
+.text-button { min-height: var(--control-height-compact); padding: 6px 0; }
+.text-button:hover:not(:disabled) { color: var(--color-primary-hover); text-decoration: underline; text-underline-offset: 3px; }
+:where(.primary-button, .secondary-button, .outline-button, .text-button):disabled { opacity: .55; }
+:where(.primary-button, .secondary-button, .outline-button, .text-button):active:not(:disabled) { box-shadow: inset 0 0 0 1px currentColor; }
+:where(.primary-button, .secondary-button, .outline-button, .text-button):focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 3px; }
+.button-compact { min-height: var(--control-height-compact); padding: 6px var(--space-3); }
+@media (pointer: coarse) {
+  :is(.button-compact, .text-button) { min-height: var(--control-height); }
+}
+:where(.field, .review-work-field) :is(input:not([type='checkbox']):not([type='radio']), select) { min-height: var(--control-height); }
+:where(.field, .review-work-field) :is(input, select, textarea):disabled { background: var(--surface-muted); color: var(--text-muted); cursor: not-allowed; }
+.panel .panel { box-shadow: none; }
+.action-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin: var(--space-3) 0; }

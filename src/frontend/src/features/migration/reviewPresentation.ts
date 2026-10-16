@@ -1,5 +1,5 @@
 import type { Candidate, Decision, DecisionDocument, ReviewGroup } from './reviewTypes'
-import type { DraftRow } from './types'
+import type { DraftRow, MigrationIssue, MigrationReviewTab } from './types'
 
 export const taskCategories = ['Needs decision', 'Ready for review', 'Blocked', 'Approved', 'Manual work'] as const
 
@@ -64,6 +64,62 @@ export function reviewSourceSummary(group: ReviewGroup) {
 
 export function draftStatusCounts(rows: DraftRow[]) {
   return rows.reduce((counts, row) => { counts[row.status] = (counts[row.status] ?? 0) + 1; return counts }, {} as Record<string, number>)
+}
+
+export function migrationIssueTasks(issues: MigrationIssue[], tab: Exclude<MigrationReviewTab, 'changes'>) {
+  return issues.filter((issue) => tab === 'decisions' ? !!issue.action : !issue.action)
+}
+
+export function migrationIssueCounts(issues: MigrationIssue[]) {
+  return { decisions: migrationIssueTasks(issues, 'decisions').length, manual: migrationIssueTasks(issues, 'manual').length }
+}
+
+export function migrationFieldLabel(field: string) {
+  return ({ target_interface: 'Target PAN-OS interface', target_zone: 'Target PAN-OS zone',
+    vsys: 'Target VSYS', virtual_router: 'Target virtual router' } as Record<string, string>)[field] || field.replaceAll('_', ' ') || 'Target value'
+}
+
+export function migrationIssueTitle(issue: MigrationIssue) {
+  if (issue.action?.kind === 'REVIEW_SOURCE') return 'Correct the source configuration'
+  return ({ MAPPING_CHOICE: 'Choose target placement', MAPPING_CONFLICT: 'Resolve target placement conflict',
+    VIP_EXTERNAL_ZONE_REQUIRED: 'Choose the incoming zone for destination NAT',
+    MANAGEMENT_PROFILE_GROUP: 'Choose interface management access', VPN_PREREQUISITE: 'Review existing target VPN',
+    VPN_PARAMETERS_REQUIRED: 'Enter missing VPN parameters', IDENTITY_MAPPING_REQUIRED: 'Map policy users and groups',
+    SECURITY_PROFILE_REQUIRED: 'Choose a target security profile' } as Record<string, string>)[issue.code]
+    || migrationIssueReason(issue)
+}
+
+export function migrationIssueReason(issue: MigrationIssue) {
+  if (issue.explanation === 'DEPENDENCY_BLOCKED') return 'Required configuration is blocked. Review the affected source objects and prerequisite evidence.'
+  return issue.explanation && !/^[A-Z][A-Z0-9_]+$/.test(issue.explanation) ? issue.explanation
+    : 'Engineer review required. Inspect the technical evidence for the reported reason.'
+}
+
+export function migrationIssueWork(issue: MigrationIssue) {
+  return ({ SOURCE_REVIEW: 'Correct the source configuration and upload it again.',
+    TARGET_CONFLICT: 'Review the target conflict and agree on a target design before implementation.',
+    MISSING_MAPPING: 'Review the missing target placement before implementation.' } as Record<string, string>)[issue.resolution_kind]
+    || 'Engineer review required; no supported in-app fix is available. Use the reason and source evidence below to plan the separate work.'
+}
+
+export function groupManualIssues(issues: MigrationIssue[]) {
+  const groups = new Map<string, { id: string; issues: MigrationIssue[] }>()
+  for (const issue of issues) {
+    const key = JSON.stringify([issue.source_vdom, issue.source_kind, issue.code, issue.category, issue.resolution_kind, issue.explanation])
+    const group = groups.get(key)
+    if (group) group.issues.push(issue)
+    else groups.set(key, { id: issue.id, issues: [issue] })
+  }
+  return [...groups.values()]
+}
+
+export function migrationIssueImpact(issues: MigrationIssue[], configurationKeys: ReadonlySet<string>) {
+  return new Set(issues.flatMap((issue) => issue.affected_keys).filter((key) => configurationKeys.has(key))).size
+}
+
+export function migrationIssueSourceCount(issues: MigrationIssue[]) {
+  return new Set(issues.flatMap((issue) => issue.affected_sources.map((source) =>
+    JSON.stringify([source.source_vdom, source.source_kind, source.source_name])))).size
 }
 
 export function draftReviewRows(rows: DraftRow[], filter: string, family: string, search: string, grouped: Set<string>, approvedItems: Set<string> = new Set()) {

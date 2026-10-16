@@ -7,12 +7,7 @@ from fwmigrate.vendors.fortigate.model.policy import FGPolicy
 from fwmigrate.vendors.fortigate.model.service import FGService
 from fwmigrate.vendors.fortigate.model.source import FGConfig
 from fwmigrate.vendors.fortigate.model.vip import FGVIP, FGVIPRealServer
-from fwmigrate.vendors.fortigate.model.vpn import FGIPsecPhase2
-from fwmigrate.vendors.fortigate.transform.nat import transform_nat
-from fwmigrate.vendors.fortigate.transform.vpn import normalize_vpn_phase2
-from fwmigrate.vendors.fortigate.transform.services import transform_services
 from fwmigrate.vendors.fortigate.validation.validator import validate_config
-from fwmigrate.vendors.fortigate.source_report import FortiGateSourceReporter
 import unittest
 
 from fwmigrate.vendors.fortigate.derived import build_derived_views

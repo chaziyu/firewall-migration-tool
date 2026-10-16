@@ -13,15 +13,22 @@ from fwmigrate.conversion.fortigate_to_palo_alto.planning.routing import _normal
 from .vips import vip_translation
 
 
-def address_references(source, vdom, names):
+def explicit_all_vdoms(source):
+    return {item.vdom or "root"
+            for family in ("addresses", "address_groups", "vips", "vip_groups")
+            for item in getattr(source, family, ()) if item.name == "all"}
+
+
+def address_references(source, vdom, names, *, explicit_all=None):
     """Map only the IPv4 built-in all; explicit objects keep their identity."""
     names = tuple(names)
     if "all" not in names:
         return names
-    explicit_all = any(item.name == "all" and (item.vdom or "root") == (vdom or "root")
-                       for family in ("addresses", "address_groups", "vips", "vip_groups")
-                       for item in getattr(source, family, ()))
-    return tuple("0.0.0.0/0" if name == "all" and not explicit_all else name for name in names)
+    has_explicit_all = ((vdom or "root") in explicit_all if explicit_all is not None else
+                        any(item.name == "all" and (item.vdom or "root") == (vdom or "root")
+                            for family in ("addresses", "address_groups", "vips", "vip_groups")
+                            for item in getattr(source, family, ())))
+    return tuple("0.0.0.0/0" if name == "all" and not has_explicit_all else name for name in names)
 
 
 def vip_group_addresses(source, vdom, names):

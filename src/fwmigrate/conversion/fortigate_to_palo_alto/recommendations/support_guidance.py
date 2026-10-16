@@ -5,7 +5,7 @@ import json
 import re
 import hashlib
 
-from fwmigrate.conversion.fortigate_to_palo_alto.decisions import PANMigrationDecisionSet, make_decision_key
+from fwmigrate.conversion.fortigate_to_palo_alto.decisions import make_decision_key
 
 
 @dataclass(frozen=True, slots=True)
@@ -150,9 +150,9 @@ def build_support_guidance(plan, validation, decisions, target_findings=()):
             known_whys.add(issue.message)
     for finding in target_findings:
         try:
-            source_vdom, source_kind, source_name, _ = json.loads(finding.decision_key)
+            source_vdom, _, source_name, _ = json.loads(finding.decision_key)
         except (TypeError, ValueError, json.JSONDecodeError):
-            source_vdom = source_kind = source_name = None
+            source_vdom = source_name = None
         item = by_source.get((source_vdom, source_name))
         if item is None:
             continue

@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 import xml.etree.ElementTree as ET
 from pydantic import BaseModel, Field
-from typing import Optional, Dict, Any, List, Literal
+from typing import Optional, Dict, Any, Literal
 
 
 @dataclass(frozen=True)

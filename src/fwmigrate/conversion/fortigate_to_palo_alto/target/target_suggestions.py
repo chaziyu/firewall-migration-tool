@@ -194,7 +194,6 @@ def discover_target_candidates(source, decisions: PANMigrationDecisionSet, targe
         elif decision.target_field == "target_zone":
             source_zone = next((item for item in source.zones
                 if (item.vdom or "root", item.name) == (decision.source_vdom, decision.source_name)), None)
-            source_interface = by_source.get((decision.source_vdom, decision.source_name))
             mapped_name = mapped.get((decision.source_vdom, decision.source_name))
             assigned = []
             if mapped_name:

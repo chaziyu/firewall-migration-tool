@@ -389,12 +389,14 @@ def test_builtin_all_and_named_all_preserve_ipv4_match_identity():
 
 
 @pytest.mark.parametrize("family", ["addresses", "address_groups", "vips", "vip_groups"])
-def test_address_references_preserve_explicit_all_in_each_scoped_family(family):
-    from fwmigrate.conversion.fortigate_to_palo_alto.planning.addresses import address_references
+@pytest.mark.parametrize("indexed", [False, True])
+def test_address_references_preserve_explicit_all_in_each_scoped_family(family, indexed):
+    from fwmigrate.conversion.fortigate_to_palo_alto.planning.addresses import address_references, explicit_all_vdoms
     source = SimpleNamespace(**{family: [SimpleNamespace(name="all", vdom="branch")]})
-    assert address_references(source, "branch", ["host", "all", "all"]) == ("host", "all", "all")
-    assert address_references(source, "root", ["host", "all"]) == ("host", "0.0.0.0/0")
-    assert address_references(source, None, ["all"]) == ("0.0.0.0/0",)
+    kwargs = {"explicit_all": explicit_all_vdoms(source)} if indexed else {}
+    assert address_references(source, "branch", ["host", "all", "all"], **kwargs) == ("host", "all", "all")
+    assert address_references(source, "root", ["host", "all"], **kwargs) == ("host", "0.0.0.0/0")
+    assert address_references(source, None, ["all"], **kwargs) == ("0.0.0.0/0",)
 
 
 def test_address_references_skip_inventory_without_all_and_stop_at_explicit_all():
@@ -407,9 +409,34 @@ def test_address_references_skip_inventory_without_all_and_stop_at_explicit_all(
     source = SimpleNamespace(addresses=UnreadableInventory())
     assert address_references(source, "root", iter(["host", "host"])) == ("host", "host")
     assert address_references(source, "root", []) == ()
+    assert address_references(source, "root", ["all"], explicit_all=set()) == ("0.0.0.0/0",)
+    assert address_references(source, None, ["all"], explicit_all={"root"}) == ("all",)
     source.addresses = [SimpleNamespace(name="all", vdom=None)]
     source.address_groups = UnreadableInventory()
     assert address_references(source, "root", ["all"]) == ("all",)
+
+
+def test_planner_shares_one_all_inventory_between_security_and_nat(monkeypatch):
+    from importlib import import_module
+    from unittest.mock import Mock
+    from fwmigrate.conversion.fortigate_to_palo_alto.planning.addresses import explicit_all_vdoms
+    from fwmigrate.vendors.fortigate.model.policy import FGPolicy
+
+    planner = import_module('fwmigrate.conversion.fortigate_to_palo_alto.planner')
+    inventory = Mock(wraps=explicit_all_vdoms)
+    for module in ('planner', 'planning.policies', 'planning.nat'):
+        monkeypatch.setattr(import_module('fwmigrate.conversion.fortigate_to_palo_alto.' + module),
+                            'explicit_all_vdoms', inventory)
+    source = FGConfig(policies=[FGPolicy(policy_id=1, name='nat', nat='enable',
+        srcintf=['lan'], dstintf=['wan'], srcaddr=['all'], dstaddr=['all'],
+        service=['ALL'], schedule='always', action='accept')])
+    for addresses, expected in (([], '0.0.0.0/0'), ([FGAddress(name='all', subnet='192.0.2.0/24')], 'all')):
+        source.addresses = addresses
+        inventory.reset_mock()
+        plan = planner.FortiGateToPaloAltoPlanner().plan(source, build_derived_views(source))
+        inventory.assert_called_once_with(source)
+        assert plan.security_rules[0].sources == plan.security_rules[0].destinations == (expected,)
+        assert plan.nat_rules[0].source_addresses == plan.nat_rules[0].destination_addresses == (expected,)
 
 
 def test_literal_ipv4_selectors_are_only_exempt_for_addresses_and_keep_named_dependencies():

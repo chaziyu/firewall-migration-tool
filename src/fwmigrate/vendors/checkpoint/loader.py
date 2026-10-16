@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import re
 from pydantic import ValidationError
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union
 from fwmigrate.vendors.checkpoint.errors import CheckPointParseError
 from fwmigrate.vendors.checkpoint.models import (
     CheckPointExportBundle,
@@ -220,7 +220,6 @@ def _resolve_scope(bundle: CheckPointExportBundle) -> ScopeSelectionResult:
         gateways.add(bundle.gateway)
 
     sel_domain = bundle.selected_domain
-    sel_domain_uid = getattr(bundle, "selected_domain_uid", None)
     sel_package = bundle.selected_package
     sel_layer = bundle.selected_access_layer
     sel_layer_uid = bundle.selected_access_layer_uid

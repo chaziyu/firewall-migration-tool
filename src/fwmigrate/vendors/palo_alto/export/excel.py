@@ -11,20 +11,17 @@ from openpyxl.utils import get_column_letter
 
 from ....source_reporting.options import ExcelExportProfile
 from ....source_reporting.collection_excel import collection_summary, write_collection_evidence
-from ....source_reporting.excel_style import excel_safe_value, write_report_summary
+from ....source_reporting.excel_style import excel_safe_value, report_column_width, style_report_header, write_report_summary
 
 from .excel_rows import ROW_BUILDERS, _PANExcelContext
 from .excel_schema import SHEET_ORDER, HIDDEN_COLUMNS_BY_DEFAULT, SHEET_HEADERS
 from ..source_report import PaloAltoSourceResult
 
 _TITLE_FILL = PatternFill("solid", fgColor="17324D")
-_HEADER_FILL = PatternFill("solid", fgColor="0F766E")
 _TITLE_FONT = Font(color="FFFFFF", bold=True, size=14)
-_WHITE_FONT = Font(color="FFFFFF", bold=True)
 _MUTED_FONT = Font(color="64748B", italic=True)
 _LINK_FONT = Font(color="0563C1", underline="single")
 _TITLE_ALIGNMENT = Alignment(vertical="center")
-_HEADER_ALIGNMENT = Alignment(wrap_text=True, vertical="center")
 _BODY_ALIGNMENT = Alignment(wrap_text=True, vertical="top")
 _LINK_ALIGNMENT = Alignment(horizontal="right")
 
@@ -72,10 +69,12 @@ def _write_table(
     sheet = workbook.create_sheet(name)
     sheet.sheet_view.showGridLines = True
     sheet.sheet_view.zoomScale = 90
+    sheet.sheet_format.defaultRowHeight = 18
+    sheet.row_dimensions[3].height = 30
     sheet.freeze_panes = "D4" if name in {"Interfaces", "Security Policies", "NAT Rules"} else "C4" if len(headers) > 12 else "A4"
     for column, header in enumerate(headers, 1):
         dimension = sheet.column_dimensions[get_column_letter(column)]
-        dimension.width = 28
+        dimension.width = report_column_width(header)
         dimension.hidden = header in HIDDEN_COLUMNS_BY_DEFAULT.get(name, ())
     if row_count is not None:
         sheet.merged_cells.add(f"A1:{get_column_letter(len(headers))}1")
@@ -100,8 +99,7 @@ def _write_table(
     cells = []
     for header in headers:
         cell = WriteOnlyCell(sheet, header)
-        cell.fill, cell.font = _HEADER_FILL, _WHITE_FONT
-        cell.alignment = _HEADER_ALIGNMENT
+        style_report_header(cell)
         cells.append(cell)
     sheet.append(cells)
     row_count = 0
