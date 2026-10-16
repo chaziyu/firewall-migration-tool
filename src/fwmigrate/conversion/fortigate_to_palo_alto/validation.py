@@ -73,12 +73,22 @@ def validate_plan(plan: PANMigrationPlan) -> MigrationValidationResult:
     for item in plan.interfaces:
         if item.target_name:
             interface_assignments.setdefault(item.target_name, []).append(item)
+        for member in item.aggregate_members:
+            interface_assignments.setdefault(member, []).append(item)
     for name, owners in interface_assignments.items():
         if len({(item.source_vdom, item.source_name) for item in owners}) > 1:
             for item in owners:
                 add("TARGET_INTERFACE_ALREADY_ASSIGNED",
                     f"source {item.source_vdom} / {item.source_name} shares target interface {name!r} with "
                     + ", ".join(f"{owner.source_vdom} / {owner.source_name}" for owner in owners if owner is not item), item)
+
+    profile_names = {}
+    for item in (*plan.ike_crypto_profiles, *plan.ipsec_crypto_profiles):
+        profile_names.setdefault((item.source_object_type, item.target_name), []).append(item)
+    for owners in profile_names.values():
+        if len(owners) > 1:
+            for item in owners:
+                add("duplicate_target_crypto_profile", "device-scoped crypto profile names must be unique across VDOMs", item)
 
     for item in _items(plan):
         key = _key(item)
@@ -97,11 +107,31 @@ def validate_plan(plan: PANMigrationPlan) -> MigrationValidationResult:
             add("duplicate_target_name", "duplicate target name", item)
         seen.add(key)
 
-        if item.source_object_type == "interface":
+        if item.source_object_type in {"ike_crypto_profile", "ipsec_crypto_profile"}:
+            if not re.fullmatch(r"[A-Za-z0-9_.-]{1,31}", item.target_name or ""):
+                add("invalid_target_object_name", "crypto profile name must contain 1 to 31 letters, numbers, periods, hyphens or underscores", item)
+            if (item.encryption not in {"aes-128-cbc", "aes-256-cbc"} or item.authentication != "sha256"
+                    or item.dh_group not in {"group14", "group15", "group16", "group19", "group20", "group21"}
+                       | ({"no-pfs"} if item.source_object_type == "ipsec_crypto_profile" else set())
+                    or not isinstance(item.lifetime_seconds, int) or not 180 <= item.lifetime_seconds <= 65535):
+                add("invalid_crypto_profile", "crypto profile algorithms, DH group or lifetime are unsupported", item)
+            if not item.target_vsys:
+                add("missing_target_vsys", "missing target VSYS mapping", item)
+        elif item.source_object_type == "interface":
             if not item.target_name:
                 add("missing_target_interface", "interface has no mapped target name", item)
-            if item.interface_family not in {"ethernet", "loopback"}:
+            if item.interface_family not in {"ethernet", "loopback", "aggregate-ethernet"}:
                 add("unsupported_interface_family", "interface has no supported target family", item)
+            if item.interface_family == "aggregate-ethernet":
+                if not re.fullmatch(r"ae(?:[1-9]|1[0-6])(?:\.[1-9][0-9]{0,3})?", item.target_name or ""):
+                    add("invalid_aggregate_interface", "aggregate requires an ae1 through ae16 identifier and optional valid unit", item)
+                if not item.parent and (not item.aggregate_members or item.lacp_mode not in {"static", "active", "passive"}):
+                    add("missing_aggregate_settings", "aggregate requires explicit members and aggregation mode", item)
+            if item.aggregate_members:
+                if (item.interface_family != "aggregate-ethernet" or item.parent
+                        or len(set(item.aggregate_members)) != len(item.aggregate_members)
+                        or any(not re.fullmatch(r"ethernet[0-9]+/[0-9]+", name) for name in item.aggregate_members)):
+                    add("invalid_aggregate_members", "aggregate physical members are invalid or duplicated", item)
             if item.interface_family == "loopback":
                 if not re.fullmatch(r"loopback\.[1-9][0-9]{0,3}", item.target_name or "") or item.parent or item.tag is not None:
                     add("invalid_loopback_interface", "loopback requires an identifier from 1 to 9999 and no VLAN parent or tag", item)
@@ -269,7 +299,8 @@ def validate_plan(plan: PANMigrationPlan) -> MigrationValidationResult:
                 if _key(interface) not in renderable or not interface.parent:
                     continue
                 parent = find(("interfaces",), interface.parent, interface.target_vsys)
-                if parent is not None and _key(parent) not in renderable:
+                if (parent is not None and _key(parent) not in renderable
+                        or parent is None and interface.interface_family == "aggregate-ethernet"):
                     add("dependency_not_renderable", f"parent interface {interface.parent!r} is not renderable", interface)
                     renderable.remove(_key(interface))
                     changed = True
@@ -426,5 +457,5 @@ def _issue(code, message, item):
 def _items(plan):
     if plan is None:
         return
-    for name in ("addresses", "address_groups", "services", "service_groups", "schedules", "interfaces", "zones", "static_routes", "dhcp_servers", "security_rules", "nat_rules"):
+    for name in ("addresses", "address_groups", "services", "service_groups", "schedules", "interfaces", "zones", "static_routes", "dhcp_servers", "security_rules", "nat_rules", "ike_crypto_profiles", "ipsec_crypto_profiles"):
         yield from getattr(plan, name)

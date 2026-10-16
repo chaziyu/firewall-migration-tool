@@ -305,6 +305,15 @@ def _interface_collisions(planned, target, device, *, allow_additive=False):
     result = []
     for source in planned:
         matches = [item for item in records if item.name == source.target_name]
+        if source.aggregate_members:
+            member_records = [item for item in records if item.name in source.aggregate_members]
+            # Existing member allocations and LACP semantics need a separate reuse implementation.
+            if matches or member_records:
+                result.append({"status": "AMBIGUOUS", "family": "interface", "source_name": source.source_name,
+                    "source_vdom": source.source_vdom or "root", "source_kind": source.source_kind,
+                    "target_vsys": source.target_vsys, "target_name": source.target_name,
+                    "evidence": ["Existing aggregate or member configuration requires manual reuse review"]})
+                continue
         if not matches:
             continue
         evidence = []
@@ -532,6 +541,14 @@ def classify_target_object_reuse(plan: PANMigrationPlan, target, device: str | N
     result = []
     result.extend(_interface_collisions(plan.interfaces, target, device, allow_additive=allow_additive))
     result.extend(_zone_collisions(plan.zones, target, device, allow_additive=allow_additive))
+    for attribute in ("ike_crypto_profiles", "ipsec_crypto_profiles"):
+        for item in getattr(plan, attribute):
+            if any(existing.name == item.target_name and _device(existing) == device
+                   for existing in getattr(target.config, attribute, ())):
+                result.append({"status": "AMBIGUOUS", "family": item.source_object_type,
+                    "source_name": item.source_name, "source_vdom": item.source_vdom or "root",
+                    "source_kind": item.source_kind, "target_vsys": item.target_vsys,
+                    "target_name": item.target_name, "evidence": ["Existing crypto profile requires manual reuse review"]})
     for family, attribute, items, compare in (
         ("address", "addresses", plan.addresses, _address),
         ("address_group", "address_groups", plan.address_groups, _members),

@@ -84,6 +84,7 @@ def build_deterministic_draft(config, derived, decisions, *, source_digest, targ
                 dependencies[item.key].add(vsys_key)
     interfaces = {(item.vdom or "root", item.name): item for item in config.interfaces}
     loopbacks = sorted(identity for identity, item in interfaces.items() if (item.type or "").casefold() == "loopback")
+    aggregates = sorted(identity for identity, item in interfaces.items() if (item.type or "").casefold() == "aggregate")
     zone_parents = {}
     for item in decisions.decisions:
         if item.source_kind == "interface" and item.target_field == "target_zone":
@@ -157,7 +158,13 @@ def build_deterministic_draft(config, derived, decisions, *, source_digest, targ
                         number += 1
                     values[key] = f"loopback.{number}"
                     evidence[key] = ["Proposed loopback identifier; engineer must confirm identifier and ownership"]
-                elif source and source.vlanid is not None and parent and re.fullmatch(r"ethernet\d+/\d+", parent):
+                elif source and (source.type or "").casefold() == "aggregate":
+                    number = aggregates.index((item.source_vdom, item.source_name)) + 1
+                    while f"ae{number}" in values.values():
+                        number += 1
+                    values[key] = f"ae{number}"
+                    evidence[key] = ["Proposed aggregate identifier; physical member allocations and ownership require engineer approval"]
+                elif source and source.vlanid is not None and parent and re.fullmatch(r"ethernet\d+/\d+|ae(?:[1-9]|1[0-6])", parent):
                     values[key] = f"{parent}.{source.vlanid}"
                     evidence[key] = ["Proposed subinterface identifier using the VLAN tag as a suffix; identifier and tag are independent"]
         if previous == values:

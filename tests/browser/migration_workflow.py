@@ -43,6 +43,12 @@ def run(url, chromium, destination=False):
             page.get_by_text('Target evidence loaded.', exact=False).wait_for()
             expect(page.get_by_label('Reference role')).to_be_visible()
             expect(page.get_by_text('Reference role: Destination configuration', exact=True)).to_be_visible()
+            page.get_by_label('Reference role').select_option('TEMPLATE')
+            expect(page.get_by_text('Preparing and validating', exact=False)).not_to_be_visible()
+            assert preparations[-1]['reference_role'] == 'TEMPLATE'
+            page.get_by_label('Reference role').select_option('DESTINATION')
+            expect(page.get_by_text('Preparing and validating', exact=False)).not_to_be_visible()
+            assert preparations[-1]['reference_role'] == 'DESTINATION'
         else:
             expect(page.get_by_label('Migration intent')).to_have_value('offline')
             expect(page.get_by_label('Drop your target XML here')).not_to_be_visible()

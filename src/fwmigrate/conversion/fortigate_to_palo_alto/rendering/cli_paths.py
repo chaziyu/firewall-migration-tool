@@ -5,6 +5,20 @@ def address(item):
     return [("vsys", "address", item.target_name or item.source_name, item.address_type, item.value)]
 
 
+def ike_crypto_profile(item):
+    base = ("device", "network", "ike", "crypto-profiles", "ike-crypto-profiles", item.target_name)
+    return [(*base, leaf, "[", value, "]") for leaf, value in (
+        ("encryption", item.encryption), ("hash", item.authentication), ("dh-group", item.dh_group))] + [
+        (*base, "lifetime", "seconds", item.lifetime_seconds)]
+
+
+def ipsec_crypto_profile(item):
+    base = ("device", "network", "ike", "crypto-profiles", "ipsec-crypto-profiles", item.target_name)
+    return [(*base, "esp", leaf, "[", value, "]") for leaf, value in (
+        ("encryption", item.encryption), ("authentication", item.authentication))] + [
+        (*base, "dh-group", item.dh_group), (*base, "lifetime", "seconds", item.lifetime_seconds)]
+
+
 def address_group(item):
     if item.members:
         return [("vsys", "address-group", item.target_name or item.source_name, "static", "[", *item.members, "]")]
@@ -65,6 +79,13 @@ def interface(item):
         commands.append(("device_pre", *base))
         commands.extend(("device_pre", *base, "ip", address) for address in item.ipv4_addresses)
     commands.append(("vsys", "import", "network", "interface", "[", name, "]"))
+    if item.aggregate_members:
+        lacp = ("device_pre", "network", "interface", "aggregate-ethernet", name, "layer3", "lacp")
+        commands.append((*lacp, "enable", "no" if item.lacp_mode == "static" else "yes"))
+        if item.lacp_mode in {"active", "passive"}:
+            commands.append((*lacp, "mode", item.lacp_mode))
+        commands.extend(("device_pre", "network", "interface", "ethernet", member, "aggregate-group", name)
+                        for member in item.aggregate_members)
     commands.append(("device_post", "network", "virtual-router", item.virtual_router,
                      "interface", "[", name, "]"))
     return commands
