@@ -109,14 +109,14 @@ TARGET = '''<config><devices><entry name="fw"><network><interface><ethernet>
 <vsys><entry name="vsys1"/></vsys></entry></devices></config>'''
 
 
-def setup(target=TARGET, role='DESTINATION'):
+def setup(target=TARGET, role='DESTINATION', source=SOURCE):
     client = create_app({'TESTING': True, 'WORKSPACE_SIGNING_KEY': 'd' * 32}).test_client()
     def upload(text, vendor, name):
         result = client.post('/api/preview', data={'source_vendor': vendor,
             'file': (io.BytesIO(text.encode()), name)}, content_type='multipart/form-data')
         assert result.status_code == 200, result.get_json()
         return result.get_json()['source_evidence']
-    payload = {'source': upload(SOURCE, 'fortigate', 'source.conf')}
+    payload = {'source': upload(source, 'fortigate', 'source.conf')}
     if target is not None:
         payload.update(target_source=upload(target, 'palo_alto', 'target.xml'), reference_role=role)
     return client, payload
@@ -346,6 +346,57 @@ def prepare(client, payload):
     assert response.status_code == 200, response.get_json()
     data = response.get_json()
     return data, {**payload, 'decision_document': data['decision_document']}
+
+
+@pytest.mark.parametrize('unsupported', [False, True])
+def test_offline_loopbacks_require_approval_and_gate_dependent_routes_and_policies(unsupported):
+    source = '''config system interface
+edit lo1
+set type loopback
+set ip 192.0.2.1 255.255.255.255
+%s
+next
+edit lo2
+set type loopback
+set ip 198.51.100.1 255.255.255.255
+next
+end
+config router static
+edit 1
+set dst 203.0.113.0 255.255.255.0
+set gateway 192.0.2.254
+set device lo1
+next
+end
+config firewall policy
+edit 1
+set srcintf lo1
+set dstintf lo2
+set srcaddr all
+set dstaddr all
+set service ALL
+set schedule always
+set action accept
+next
+end
+''' % ('set allowaccess ping' if unsupported else '')
+    client, payload = setup(None, source=source)
+    data, payload = prepare(client, {**payload, 'workflow_mode': 'OFFLINE_EXPORT'})
+    identifiers = [row['proposed_value'] for row in data['draft']['decisions'] if row['target_field'] == 'target_interface']
+    assert identifiers == ['loopback.1', 'loopback.2']
+    assert all(row['review_state'] == 'PENDING' for row in data['decisions']['decisions'])
+    assert client.post('/api/migrate', json=payload).status_code == 400
+    response = approve(client, payload, data)
+    assert response.status_code == 200, response.get_json()
+    payload['decision_document'] = response.get_json()['decision_document']
+    response = client.post('/api/migrate', json=payload)
+    assert response.status_code == 200, response.get_json()
+    commands = response.get_json()['commands']
+    assert any('loopback units loopback.2' in command for command in commands)
+    assert any('loopback units loopback.1' in command for command in commands) == (not unsupported)
+    assert any('static-route' in command for command in commands) == (not unsupported)
+    assert any('rulebase security' in command for command in commands) == (not unsupported)
+    assert not response.get_json()['report']['deployment_eligibility']['eligible']
 
 
 def allocate(client, payload):
