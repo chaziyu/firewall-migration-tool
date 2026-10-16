@@ -222,3 +222,14 @@ def build_decision_set(config, derived, requirements, previous=None) -> PANMigra
             add(vdom, kind, name, field, suggestion=suggestion, mode=mode, reason=reason, impact=impact,
                 evidence_source=evidence_source, evidence_type=evidence_type, evidence_value=evidence_value)
     return PANMigrationDecisionSet(tuple(sorted(decisions, key=lambda item: item.key)))
+
+
+def decision_value(decisions: PANMigrationDecisionSet | None, key: str | None) -> str | None:
+    if not decisions or not key:
+        return None
+    for item in decisions.decisions:
+        if item.key == key and item.mode.value != "UNSUPPORTED" and item.value and (
+            item.mode.value == "AUTO" or item.review_state is PANDecisionReviewState.CONFIRMED
+        ):
+            return item.value
+    return None

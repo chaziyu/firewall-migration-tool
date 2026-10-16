@@ -3,6 +3,7 @@ import type { RefObject } from 'react'
 import type { SourcePreviewData } from '../source/types'
 import { activeSubsection, asRecord, asRows, compactValue, interfaceTopologyRows, matchingSourceRows, reportCounts, reportSections, reportSectionRowCount, reportSearchText, rowColumns, safeValue, defaultColumns, cellSummary, columnWidth, fieldLabel, findingGroups, findingGroupKey } from './reportPresentation'
 import { ReportDetails } from './ReportDetails'
+import { ExcelExportControls } from './ExcelExportControls'
 import { tabKeyboard } from '../../components/common/tabKeyboard'
 
 type Finding = Record<string, unknown>
@@ -106,14 +107,15 @@ function useScrollRows(filteredRows: Finding[], active = true) {
   if (previousRows !== filteredRows) { setPreviousRows(filteredRows); setRenderedRowCount(200) }
   useEffect(() => {
     const sentinel = loadMoreRef.current
-    if (!active || !sentinel || renderedRowCount >= filteredRows.length) return
+    if (!active || !sentinel || renderedRowCount >= filteredRows.length || typeof IntersectionObserver === 'undefined') return
     const observer = new IntersectionObserver((entries) => {
       if (entries.some((entry) => entry.isIntersecting)) setRenderedRowCount((count) => Math.min(count + 200, filteredRows.length))
     }, { rootMargin: '600px' })
     observer.observe(sentinel)
     return () => observer.disconnect()
-  }, [filteredRows.length, renderedRowCount, active])
-  return { visibleRows: filteredRows.slice(0, renderedRowCount), loadMoreRef }
+  }, [filteredRows, renderedRowCount, active])
+  return { visibleRows: filteredRows.slice(0, renderedRowCount), loadMoreRef,
+    loadMore: () => setRenderedRowCount((count) => Math.min(count + 200, filteredRows.length)) }
 }
 
 function ValidationReport({ data, reportScope, onReportScope, active }: { data: SourcePreviewData; reportScope: string; onReportScope: (scope: string) => void; active: boolean }) {
@@ -141,7 +143,7 @@ function ValidationReport({ data, reportScope, onReportScope, active }: { data: 
   const group = findingGroups(matchingRows).find((item) => item.key === activeGroup)
   const filteredRows = useMemo(() => matchingRows.filter((row) => !activeGroup
     || findingGroupKey(row) === activeGroup), [matchingRows, activeGroup])
-  const { visibleRows, loadMoreRef } = useScrollRows(filteredRows, active)
+  const { visibleRows, loadMoreRef, loadMore } = useScrollRows(filteredRows, active)
 
   function clearFilters() {
     setSearch('')
@@ -169,15 +171,37 @@ function ValidationReport({ data, reportScope, onReportScope, active }: { data: 
     </div>
     {!allRows.length && <p className="validation-empty">No validation findings were reported.</p>}
     {!!scopes.length && <p className="validation-scope-note">Findings are reported for {scopes.length} {scopes.length === 1 ? 'scope' : 'scopes'}.</p>}
+    <p className="report-row-count" role="status">Showing {visibleRows.length.toLocaleString()} of {filteredRows.length.toLocaleString()} matching findings · {allRows.length.toLocaleString()} total</p>
+    {visibleRows.length < filteredRows.length && <button type="button" className="secondary-button button-compact" onClick={loadMore}>Load more findings</button>}
   </div>
 }
 
 function SourceRowsTable({ rows, columns, selected, hasSource, topology, loadMoreRef, onSelect }: { rows: Finding[]; columns: string[]; selected: Finding | null; hasSource: boolean; topology: boolean; loadMoreRef: RefObject<HTMLDivElement | null>; onSelect: (row: Finding) => void }) {
+  const tableRef = useRef<HTMLDivElement>(null)
+  const [availableHeight, setAvailableHeight] = useState<number>()
+  const hasRows = rows.length > 0
+  useEffect(() => {
+    const table = tableRef.current
+    if (!hasRows || !table) return
+    const updateHeight = () => setAvailableHeight(Math.max(120, window.innerHeight - Math.max(0, table.getBoundingClientRect().top) - 16))
+    const observer = new ResizeObserver(updateHeight)
+    observer.observe(table.closest('main') ?? table)
+    window.addEventListener('resize', updateHeight)
+    window.addEventListener('scroll', updateHeight, { passive: true })
+    updateHeight()
+    return () => { observer.disconnect(); window.removeEventListener('resize', updateHeight); window.removeEventListener('scroll', updateHeight) }
+  }, [hasRows])
   if (!rows.length) return <p className="report-empty">{hasSource ? 'No rows match the current filters.' : 'No reported entries in this subsection.'}</p>
-  return <div className="report-table-wrap" role="region" aria-label="Source report rows" tabIndex={0}>
+  return <div ref={tableRef} className="report-table-wrap" style={{ maxHeight: availableHeight }} role="region" aria-label="Source report rows" tabIndex={0}>
     <table className="report-table"><thead><tr>{columns.map((key, index) => <th key={key} scope="col" className={`report-column-${columnWidth(key)}${index === 0 ? ' report-identity' : ''}`}>{fieldLabel(key)}</th>)}</tr></thead>
       <tbody>{rows.map((row, index) => <tr className={selected === row ? 'selected' : ''} key={`${row.name ?? row.policy_id ?? index}-${index}`}>
-        {columns.map((key, index) => { const value = topology && key === 'name' ? row.display_name ?? row.name : row[key]; return <td key={key} className={`report-column-${columnWidth(key)}${index === 0 ? ' report-identity' : ''}`}><span className={`report-cell${value == null ? ' report-not-reported' : ''}`} title={value == null ? 'This value was not reported. No default is inferred. See details for the exact value.' : undefined}>{cellSummary(value)}</span>{index === 0 && <button type="button" className="finding-inline-link" aria-label={`Details for ${text(row.name ?? row.policy_id ?? row.route_id ?? value)}`} onClick={() => onSelect(row)}>Details</button>}</td> })}
+        {columns.map((key, index) => {
+          const value = topology && key === 'name' ? row.display_name ?? row.name : row[key]
+          const cell = <span className={`report-cell${value == null ? ' report-not-reported' : ''}`} title={value == null ? 'This value was not reported. No default is inferred. See details for the exact value.' : undefined}>{cellSummary(value)}</span>
+          return <td key={key} className={`report-column-${columnWidth(key)}${index === 0 ? ' report-identity' : ''}`}>
+            {index === 0 ? <div className="report-identity-content">{cell}<button type="button" className="finding-inline-link" aria-label={`Details for ${text(row.name ?? row.policy_id ?? row.route_id ?? value)}`} onClick={() => onSelect(row)}>Details</button></div> : cell}
+          </td>
+        })}
       </tr>)}</tbody>
     </table>
     <div ref={loadMoreRef} aria-hidden="true" style={{ height: 1 }} />
@@ -253,8 +277,7 @@ export function SourceReport({ data, excelProfile, onExcelProfileChange, exporti
       return !query || reportSearchText(row).includes(query)
     })
   }, [subsectionRows, effectiveScope, activeObjectSection, search, unifiedInterfaces])
-  const { visibleRows: scrollRows, loadMoreRef } = useScrollRows(filteredRows)
-  const visibleRows = unifiedInterfaces ? filteredRows : scrollRows
+  const { visibleRows, loadMoreRef, loadMore } = useScrollRows(filteredRows, activeSection !== 'Overview' && activeSection !== 'Validation')
   const subsectionCount = search || effectiveScope ? `${filteredRows.length} of ${subsectionRows.length}` : subsectionRows.length
   const reportTabs = ['Overview', 'Interfaces', 'Objects', 'Schedules', 'Policies', 'NAT', 'Routes', 'VPN', 'References', ...(sections.some((item) => item.label === 'Additional sections') ? ['Additional sections'] : []), 'Validation']
   const objectTabs = unifiedInterfaces ? ['interface_topology'] : sourceSections.filter((key) => showEmpty || key === activeObjectSection || active?.subsections.find((item) => item.key === key)?.rows.length)
@@ -275,9 +298,7 @@ export function SourceReport({ data, excelProfile, onExcelProfileChange, exporti
       <div className="report-workspace-header">
         <div><h2 id="report-title">Source inventory</h2>{Array.isArray(summary.scopes) && summary.scopes.length > 0 && <p className="report-scope-summary">Scopes: {summary.scopes.join(', ')}</p>}</div>
         <div className="report-header-actions">
-          <div className="excel-actions"><label className="excel-profile-control">Excel<select aria-label="Excel export profile" value={excelProfile} onChange={(event) => onExcelProfileChange(event.target.value as 'fast' | 'full')}><option value="fast">FAST (omits Source Inventory, Extraction Coverage, and Source Appendix)</option><option value="full">FULL</option></select></label>
-            <button className="primary-button excel-export-button" type="button" disabled={exporting} aria-busy={exporting} onClick={onExport}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 3v12m-4-4 4 4 4-4M4 16v5h16v-5" /></svg>{exporting ? 'Preparing workbook…' : 'Export Excel'}</button>
-          </div>
+          <ExcelExportControls vendor={data.vendor ?? ''} profile={excelProfile} onProfileChange={onExcelProfileChange} exporting={exporting} onExport={onExport} />
         </div>
       </div>
       {data.collection != null && <div className="report-count-note"><p>Collection: {String(asRecord(data.collection).status ?? 'Unknown')} · Method: {String(asRecord(data.collection).method ?? 'Not reported')}</p>{Array.isArray(asRecord(data.collection).warnings) && <ul>{(asRecord(data.collection).warnings as unknown[]).map((warning, index) => <li key={index}>{String(safeValue(warning))}</li>)}</ul>}</div>}
@@ -319,10 +340,12 @@ export function SourceReport({ data, excelProfile, onExcelProfileChange, exporti
         </div>
         <details className="report-column-selector"><summary>Columns ({columns.length})</summary><div>{allColumns.map((key, index) => <label key={key}><input type="checkbox" checked={columns.includes(key)} disabled={index === 0} onChange={(event) => updateView({ columns: allColumns.filter((column) => column === allColumns[0] || (column === key ? event.target.checked : columns.includes(column))) })} />{fieldLabel(key)}</label>)}<button className="filter-clear" type="button" onClick={() => updateView({ columns: undefined })}>Reset columns</button></div></details>
       </div>
+      <p className="report-row-count" role="status">Showing {visibleRows.length.toLocaleString()} of {filteredRows.length.toLocaleString()} matching rows · {subsectionRows.length.toLocaleString()} total. Open Details for full values.</p>
       <div className={`validation-workspace${currentSelected ? ' has-details' : ''}${unifiedInterfaces ? ' report-topology-view' : ''}`} key={activeSection}>
         <SourceRowsTable rows={visibleRows} columns={columns} selected={currentSelected} hasSource={subsectionRows.length > 0} topology={activeObjectSection === 'interface_topology'} loadMoreRef={loadMoreRef} onSelect={setSelectedRow} />
         {currentSelected && <ReportDetails row={currentSelected} subsection={activeObjectSection} vendor={data.vendor} onClose={() => setSelectedRow(null)} previous={selectedIndex > 0 ? () => setSelectedRow(visibleRows[selectedIndex - 1]) : undefined} next={selectedIndex < visibleRows.length - 1 ? () => setSelectedRow(visibleRows[selectedIndex + 1]) : undefined} />}
       </div>
+      {visibleRows.length < filteredRows.length && <button type="button" className="secondary-button button-compact" onClick={loadMore}>Load more rows</button>}
       </div>
     </>}
     <div hidden={activeSection !== 'Validation'}><ValidationReport data={data} reportScope={scope} onReportScope={changeScope} active={activeSection === 'Validation'} /></div>

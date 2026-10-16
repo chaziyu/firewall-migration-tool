@@ -20,7 +20,6 @@ from fwmigrate.vendors.checkpoint.validation.validator import (
 
 def test_checkpoint_package_boundaries_preserve_canonical_types():
     from fwmigrate.vendors.checkpoint.model.source import CheckPointConfig as CanonicalConfig
-    import fwmigrate.vendors.checkpoint.transform
 
     assert CanonicalConfig is CheckPointConfig
     assert CheckPointValidationIssue is ModelValidationIssue

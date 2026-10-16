@@ -8,7 +8,7 @@ function ReportValue({ value }: { value: unknown }) {
   if (value !== null && typeof value === 'object' && Object.keys(value).length) {
     return <details className="report-nested"><summary>{compactValue(value)}</summary><dl className="finding-nested">{Object.entries(value).map(([key, item]) => <div key={key}><dt>{Array.isArray(value) ? `Entry ${Number(key) + 1}` : fieldLabel(key)}</dt><dd><ReportValue value={item} /></dd></div>)}</dl></details>
   }
-  return <>{compactValue(value)}</>
+  return <span className="report-detail-value">{compactValue(value)}</span>
 }
 
 export function ReportDetails({ row, subsection = '', vendor = '', finding = false, target, onNavigate, onClose, previous, next }: {

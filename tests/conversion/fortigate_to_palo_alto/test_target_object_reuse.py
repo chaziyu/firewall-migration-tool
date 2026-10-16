@@ -4,8 +4,7 @@ from fwmigrate.conversion.fortigate_to_palo_alto.decisions import (
     PANDecisionReviewState, PANMigrationDecision, PANMigrationDecisionSet,
 )
 from fwmigrate.conversion.fortigate_to_palo_alto.models import (
-    PANMigrationPlan, PANMigrationStatus, PlannedAddress, PlannedAddressGroup, PlannedServiceGroup,
-    PlannedInterface, PlannedNATRule, PlannedStaticRoute, PlannedSchedule,
+    PANMigrationPlan, PANMigrationStatus, PlannedAddress, PlannedAddressGroup, PlannedInterface, PlannedNATRule, PlannedStaticRoute, PlannedSchedule,
     PlannedZone, PlannedSecurityRule, PlannedService,
 )
 from fwmigrate.conversion.fortigate_to_palo_alto.rendering.renderer import PANSetRenderer

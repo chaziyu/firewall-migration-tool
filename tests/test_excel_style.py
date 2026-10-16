@@ -25,7 +25,10 @@ def test_fast_style_preserves_native_cells_and_hidden_evidence_after_save():
     assert restored.freeze_panes == "A2"
     assert restored.auto_filter.ref == "A1:B2"
     assert restored.column_dimensions["B"].hidden
-    assert restored.column_dimensions["A"].width == restored.column_dimensions["B"].width == 28
+    assert restored.column_dimensions["A"].width == 28
+    assert restored.column_dimensions["B"].width == 44
+    assert restored.row_dimensions[1].height == 30
+    assert restored["A1"].alignment.wrap_text
     assert restored["A1"].fill.fgColor.rgb.endswith("0F766E")
     assert [cell.value for cell in restored[2]] == ["source object", "retained evidence"]
     assert all(not cell.has_style for cell in restored[2])
@@ -45,6 +48,33 @@ def test_report_row_neutralizes_formula_leading_source_values_in_full_and_stream
         row = next(restored.iter_rows(min_row=2, max_row=2, max_col=len(values)))
         assert [cell.value for cell in row] == ["'" + value for value in values[:11]] + list(values[11:])
         assert all(cell.data_type != "f" for cell in row)
+
+
+@pytest.mark.parametrize("write_only", [False, True])
+def test_shared_dimensions_preserve_explicit_widths_and_unstyled_source_cells(write_only):
+    workbook = Workbook(write_only=write_only)
+    sheet = workbook.create_sheet("Objects") if write_only else workbook.active
+    sheet.column_dimensions["B"].width = 37
+    sheet.column_dimensions["D"].hidden = True
+    append_report_row(sheet, ("Rule ID", "Name", "Description", "Additional Settings"))
+    append_report_row(sheet, (0, False, "long technical value " * 100, "'=literal"))
+    if not write_only:
+        style_fast_sheet(sheet)
+    else:
+        sheet.auto_filter.ref = "A1:D2"
+    output = BytesIO()
+    workbook.save(output)
+    restored = load_workbook(output).active
+    assert [restored.column_dimensions[key].width for key in "ABCD"] == [16, 37, 44, 44]
+    assert restored.column_dimensions["D"].hidden
+    assert restored.freeze_panes == "A2"
+    assert restored.auto_filter.ref == "A1:D2"
+    assert restored.sheet_format.defaultRowHeight == 18
+    assert restored.row_dimensions[1].height == 30
+    assert restored["A1"].font.sz == 10
+    assert restored["A1"].alignment.wrap_text
+    assert [cell.value for cell in restored[2]] == [0, False, "long technical value " * 100, "'=literal"]
+    assert all(not cell.has_style for cell in restored[2])
 
 
 @pytest.mark.parametrize("value", ["=1+1", "+cmd", "-cmd", "@cmd", "\t=1+1", "\r=1+1", "\n=1+1",
@@ -136,6 +166,14 @@ def test_vendor_summaries_share_sections_links_and_profile_counts(vendor, report
         workbook = load_workbook(BytesIO(output.getvalue()))
         summary = workbook["Summary"]
         assert workbook.sheetnames[0] == "Summary"
+        for detail in workbook.worksheets[1:]:
+            header_row = 3 if vendor in {"fortigate", "palo_alto"} else 1
+            header = detail.cell(header_row, 1)
+            assert header.fill.fgColor.rgb.endswith("0F766E")
+            assert header.font.sz == 10
+            assert header.alignment.wrap_text
+            assert detail.row_dimensions[header_row].height == 30
+            assert detail.freeze_panes
         sections = [row[0].value for row in summary if row[0].value in {
             "SOURCE DETAILS", "VALIDATION", "CONFIGURATION INVENTORY", "SOURCE COVERAGE"}]
         assert sections == ["SOURCE DETAILS", "VALIDATION", "CONFIGURATION INVENTORY", "SOURCE COVERAGE"]

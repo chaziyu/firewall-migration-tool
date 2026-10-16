@@ -1,36 +1,24 @@
-from io import BytesIO
 
-from openpyxl import load_workbook
 
 from fwmigrate.vendors.cisco_asa import extract_cisco_asa_source
 
-from fwmigrate.vendors.cisco_asa.export.excel import export_asa_excel
 
-from fwmigrate.vendors.cisco_asa.web_report import build_asa_preview
 
 from types import SimpleNamespace
 
-from fwmigrate.vendors.cisco_asa.model import CiscoIPsecProfile, CiscoNATRule
+from fwmigrate.vendors.cisco_asa.model import CiscoNATRule
 
-from fwmigrate.vendors.cisco_asa.model.acl import CiscoACLEndpoint, CiscoAccessRule
 
-from fwmigrate.vendors.cisco_asa.model.service import CiscoPortSpec
 
-from fwmigrate.vendors.cisco_asa.relationships.acl import build_acl_relationships
 
-from fwmigrate.vendors.cisco_asa.relationships.identity import build_identity_relationships
 
-from fwmigrate.vendors.cisco_asa.relationships.mpf import build_mpf_relationships
 
 from fwmigrate.vendors.cisco_asa.relationships.nat import build_nat_relationships
 
 from fwmigrate.vendors.cisco_asa.relationships.references import ASAReferenceIndex, ASAReferenceKind
 
-from fwmigrate.vendors.cisco_asa.relationships.routing import build_routing_relationships
 
-from fwmigrate.vendors.cisco_asa.relationships.vpn import build_vpn_relationships
 
-from copy import deepcopy
 
 def test_nat_reporting_views_are_traceable_and_do_not_promote_manual_source_nat_to_vip():
     result = extract_cisco_asa_source(

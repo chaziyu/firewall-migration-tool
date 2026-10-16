@@ -1,11 +1,5 @@
-from fwmigrate.vendors.fortigate.derived import build_derived_views
-from fwmigrate.vendors.fortigate.export import export_excel
 from fwmigrate.vendors.fortigate.extraction.coverage import typed_source_paths
-from fwmigrate.vendors.fortigate.extraction.extractor import extract_fortigate_config
-from fwmigrate.vendors.fortigate.parser import parse_fortigate_config
 from fwmigrate.vendors.fortigate.source_report import FortiGateSourceReporter
-from fwmigrate.vendors.fortigate.section_registry import registered_sections
-from fwmigrate.vendors.fortigate.validation.validator import validate_config
 
 
 def test_ssl_vpn_realms_and_clients_keep_explicit_source_state():

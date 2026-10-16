@@ -44,7 +44,7 @@ class PANMigrationDraft:
                 "configuration": list(self.configuration), "findings": list(self.findings),
                 "destination_verified": self.context["reference_role"] == "DESTINATION"
                     and bool(self.context["reference_digest"] and self.context["target_device"])}
-        body["issues"] = draft_issues(body["decisions"], body["configuration"])
+        body["issues"] = draft_issues(body["decisions"], body["configuration"], body["findings"])
         body['source_issues'] = [row for row in self.findings if row['code'].startswith('SOURCE_')]
         body['task_summary'] = {
             'choices': sum(row['category'] == 'CHOICE' for row in body['issues']),
@@ -70,7 +70,7 @@ class PANMigrationDraft:
         return body
 
 
-def draft_issues(decisions, configuration):
+def draft_issues(decisions, configuration, findings=()):
     """Pair-specific, scope-preserving root tasks; actions select current editable decisions."""
     rows = {row["decision_key"]: row for row in decisions}
     result = {}
@@ -86,7 +86,7 @@ def draft_issues(decisions, configuration):
         value = list(dict.fromkeys(root for parent in parents for root in roots(parent, visiting | {key}))) if parents else [key]
         root_cache[key] = value
         return value
-    def add(code, category, row, explanation, resolution, decision=None, prerequisites=()):
+    def add(code, category, row, explanation, resolution, decision=None, prerequisites=(), action=None):
         identity = (row.get("source_vdom"), code, decision or row.get("group_key") or row.get("decision_key"))
         key = design_digest(identity)
         root = rows.get(decision, row)
@@ -103,18 +103,22 @@ def draft_issues(decisions, configuration):
             "source_name": root.get("source_name"), "affected_keys": [], "affected_sources": [],
             "prerequisite_keys": list(prerequisites), "explanation": summary, "explanations": [],
             "resolution_kind": resolution,
-            "action": {"kind": "EDIT_MAPPING", "decision_key": decision}
-                if category != "MANUAL" and decision in rows and rows[decision]["status"] != "UNSUPPORTED" else None})
-        affected = row.get("group_key") or row.get("decision_key")
+            "action": action or ({"kind": "EDIT_MAPPING", "decision_key": decision}
+                if category != "MANUAL" and decision in rows and rows[decision]["status"] != "UNSUPPORTED" else None)})
+        affected_values = row.get("affected_keys") or [row.get("group_key") or row.get("decision_key")]
         if explanation not in issue["explanations"]:
             issue["explanations"].append(explanation)
-        if affected not in affected_seen.setdefault(key, set()):
-            affected_seen[key].add(affected)
-            issue["affected_keys"].append(affected)
-        source_key = (row.get("source_vdom"), row.get("source_kind"), row.get("source_name"))
-        if source_key not in source_seen.setdefault(key, set()):
-            source_seen[key].add(source_key)
-            issue["affected_sources"].append(dict(zip(("source_vdom", "source_kind", "source_name"), source_key)))
+        for affected in affected_values:
+            if affected not in affected_seen.setdefault(key, set()):
+                affected_seen[key].add(affected)
+                issue["affected_keys"].append(affected)
+        source_values = row.get("affected_sources") or [{"source_vdom": row.get("source_vdom"),
+            "source_kind": row.get("source_kind"), "source_name": row.get("source_name")}]
+        for source in source_values:
+            source_key = (source.get("source_vdom"), source.get("source_kind"), source.get("source_name"))
+            if source_key not in source_seen.setdefault(key, set()):
+                source_seen[key].add(source_key)
+                issue["affected_sources"].append(dict(zip(("source_vdom", "source_kind", "source_name"), source_key)))
     for row in decisions:
         if row["status"] == "READY":
             continue
@@ -141,4 +145,38 @@ def draft_issues(decisions, configuration):
         if row["status"] != "READY" and not row.get("causes") and not parents:
             add("CONFIGURATION_" + row["status"], "MANUAL" if row["status"] == "UNSUPPORTED" else "CONFLICT" if row["status"] == "CONFLICT" else "PREREQUISITE",
                 row, "; ".join(row["blocking_reasons"]), "MANUAL_IMPLEMENTATION" if row["status"] == "UNSUPPORTED" else "REVIEW", prerequisites=row["dependencies"])
+    settings_sections = {
+        "MANAGEMENT_PROFILE_GROUP": "management",
+        "VPN_PREREQUISITE": "vpn", "VPN_PARAMETERS_REQUIRED": "vpn",
+        "IDENTITY_MAPPING_REQUIRED": "policy", "SECURITY_PROFILE_REQUIRED": "policy",
+        "VIP_EXTERNAL_ZONE_REQUIRED": "policy",
+    }
+    for finding in findings:
+        code = finding.get("code", "")
+        source_vdom = finding.get("source_vdom") or "root"
+        identity = finding.get("identity") or finding.get("source_name") or code
+        member_keys = list(dict.fromkeys(finding.get("member_keys") or ()))
+        source_kind = finding.get("source_kind") or "configuration"
+        source_name = finding.get("source_name") or identity
+        affected_sources = []
+        for member in member_keys:
+            parts = member.split("/", 2)
+            if len(parts) == 3:
+                affected_sources.append({"source_vdom": parts[0], "source_kind": parts[1], "source_name": parts[2]})
+            else:
+                affected_sources.append({"source_vdom": source_vdom,
+                    "source_kind": source_kind if source_kind != "configuration" else "policy", "source_name": member})
+        row = {"source_vdom": source_vdom, "source_kind": source_kind, "source_name": source_name,
+               "group_key": design_digest((code, source_vdom, source_kind, identity, member_keys)),
+               "affected_keys": member_keys or [design_digest((code, source_vdom, source_kind, identity))],
+               "affected_sources": affected_sources}
+        if code in settings_sections:
+            action = {"kind": "EDIT_SETTINGS", "section": settings_sections[code], "finding_code": code,
+                      "member_keys": member_keys}
+            action.update({field: finding[field] for field in ("source_vdom", "source_kind", "identity")
+                           if finding.get(field) is not None})
+            add(code, "CHOICE", row, finding.get("message", code), "CONVERSION_SETTINGS", action=action)
+        elif code.startswith("SOURCE_"):
+            add(code, "MANUAL", row, finding.get("message", code), "SOURCE_REVIEW",
+                action={"kind": "REVIEW_SOURCE"})
     return list(result.values())

@@ -4,15 +4,11 @@ from fwmigrate.vendors.cisco_asa.relationships.references import build_asa_refer
 
 from fwmigrate.vendors.cisco_asa.relationships.vpn import build_vpn_relationships
 
-from io import BytesIO
 
-from openpyxl import load_workbook
 
 from fwmigrate.vendors.cisco_asa import extract_cisco_asa_source
 
-from fwmigrate.vendors.cisco_asa.export.excel import export_asa_excel
 
-from fwmigrate.vendors.cisco_asa.web_report import build_asa_preview
 
 def test_remote_access_relationships_resolve_group_policy_and_interface():
     config = CiscoASAParser("""interface GigabitEthernet0/1

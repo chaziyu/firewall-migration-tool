@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from ..model.gateway import CPCluster, CPGateway, CPInteroperableDevice
+from ..model.gateway import CPCluster, CPInteroperableDevice
 from ..model.source import CheckPointConfig
 from .references import CPBrokenReference, CPReferenceIndex, CPReferenceKind, CPResolvedReference
 

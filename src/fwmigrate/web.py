@@ -18,7 +18,7 @@ from fwmigrate.conversion import migration_planners
 from fwmigrate.conversion.builtin import register_builtin_migration_planners
 from fwmigrate.conversion.fortigate_to_palo_alto.application import classify_target_object_reuse
 from fwmigrate.deployment import PANSSHDeployer
-from fwmigrate.source_reporting import source_reporters
+from fwmigrate.source_reporting import source_reporters as source_reporters
 from fwmigrate.source_reporting.builtin import register_builtin_source_reporters
 from fwmigrate.web_api.deployment import DeploymentCoordinator, register_deployment_routes
 from fwmigrate.web_api.migration import register_migration_routes

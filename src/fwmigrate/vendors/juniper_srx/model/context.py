@@ -1,11 +1,8 @@
 """Vendor-native juniper_srx context models."""
 
 from __future__ import annotations
-from dataclasses import dataclass
-from enum import Enum
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
-from fwmigrate.vendors.juniper_srx.tokenizer import JunosCommand
 from .address import JuniperAddressBook
 from .administration import JuniperAccessProfile, JuniperChassisCluster, JuniperDHCPConfig, JuniperScheduler, JuniperSecurityFlowSettings, JuniperSyslogSettings
 from .application import JuniperApplication, JuniperApplicationSet

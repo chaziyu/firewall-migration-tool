@@ -174,8 +174,12 @@ def test_plain_writer_preserves_values_and_layout_after_reload():
     assert [sheet.cell(row, derived).value for row in range(4, 8)] == ["derived"] * 4
     assert sheet.sheet_view.showGridLines
     assert all(not cell.has_style for row in sheet.iter_rows(min_row=4) for cell in row)
-    assert all(sheet.column_dimensions[get_column_letter(column)].width == 28
+    assert all(16 <= sheet.column_dimensions[get_column_letter(column)].width <= 44
                for column in range(1, len(SHEET_HEADERS["Security Policies"]) + 1))
+    assert any(dimension.width == 44 for dimension in sheet.column_dimensions.values())
+    assert sheet["A3"].font.sz == 10
+    assert sheet["A3"].alignment.wrap_text
+    assert sheet.row_dimensions[3].height == 30
     assert sheet["A2"].value.startswith("5 row(s)")
     assert sheet.auto_filter.ref == f"A3:{get_column_letter(len(SHEET_HEADERS['Security Policies']))}8"
     assert sheet.freeze_panes == "D4"

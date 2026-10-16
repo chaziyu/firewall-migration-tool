@@ -1,6 +1,5 @@
 from types import SimpleNamespace
 
-from fwmigrate.vendors.cisco_asa.model import CiscoIPsecProfile, CiscoNATRule
 
 from fwmigrate.vendors.cisco_asa.model.acl import CiscoACLEndpoint, CiscoAccessRule
 
@@ -8,17 +7,12 @@ from fwmigrate.vendors.cisco_asa.model.service import CiscoPortSpec
 
 from fwmigrate.vendors.cisco_asa.relationships.acl import build_acl_relationships
 
-from fwmigrate.vendors.cisco_asa.relationships.identity import build_identity_relationships
 
-from fwmigrate.vendors.cisco_asa.relationships.mpf import build_mpf_relationships
 
-from fwmigrate.vendors.cisco_asa.relationships.nat import build_nat_relationships
 
 from fwmigrate.vendors.cisco_asa.relationships.references import ASAReferenceIndex, ASAReferenceKind
 
-from fwmigrate.vendors.cisco_asa.relationships.routing import build_routing_relationships
 
-from fwmigrate.vendors.cisco_asa.relationships.vpn import build_vpn_relationships
 
 from fwmigrate.vendors.cisco_asa.parser import CiscoASAParser
 

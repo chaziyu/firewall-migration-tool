@@ -1,4 +1,3 @@
-from pathlib import Path
 
 from fwmigrate.vendors.palo_alto.model.address import PANAddress, PANAddressGroup
 from fwmigrate.vendors.palo_alto.model.globalprotect import PANGlobalProtectGateway, PANGlobalProtectGatewayClientAuth

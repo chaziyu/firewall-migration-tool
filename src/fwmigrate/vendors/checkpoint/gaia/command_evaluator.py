@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from .nodes import GaiaCommandNode, GaiaConfigTree, GaiaUnknownCommandNode
+from .nodes import GaiaCommandNode, GaiaConfigTree
 from .section_registry import match_gaia_family
 
 
