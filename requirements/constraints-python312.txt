@@ -36,8 +36,8 @@ openpyxl==3.1.5
 packaging==26.3
 paramiko==5.0.0
 pycparser==3.11
-pydantic==2.14.0
-pydantic-core==2.50.0
+pydantic==2.14.1
+pydantic-core==2.50.1
 pygments==2.21.0
 pynacl==1.6.2
 pyserial==3.5
