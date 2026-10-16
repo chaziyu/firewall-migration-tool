@@ -161,6 +161,8 @@ def _report(plan, commands, validation, item_commands=None, dispositions=None, r
                         "render_dispositions": disposition_counts, "satisfied": satisfied,
                         "command_renderable": command_renderable,
                         "commands": len(commands), "command_sha256": digest},
+            "cli_compatibility": {"reference_version": "11.1", "verification": "DOCUMENTED_SYNTAX",
+                                  "device_validation": "UNVERIFIED", "other_versions": "UNVERIFIED"},
             "counts": counts, "command_sha256": digest,
             "commands": len(commands), "render_dispositions": disposition_counts,
             "satisfied": satisfied, "command_renderable": command_renderable,
