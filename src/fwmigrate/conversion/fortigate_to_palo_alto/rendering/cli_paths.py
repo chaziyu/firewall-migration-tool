@@ -50,7 +50,11 @@ def interface(item):
     """Return ordered device/VSYS paths for one planned Layer 3 interface."""
     name = item.target_name or item.source_name
     commands = []
-    if item.parent:
+    if item.interface_family == "loopback":
+        base = ("network", "interface", "loopback", "units", name)
+        commands.append(("device_pre", *base))
+        commands.extend(("device_pre", *base, "ip", address) for address in item.ipv4_addresses)
+    elif item.parent:
         base = ("network", "interface", item.interface_family, item.parent, "layer3", "units", name)
         commands.append(("device_pre", *base))
         if item.tag is not None:

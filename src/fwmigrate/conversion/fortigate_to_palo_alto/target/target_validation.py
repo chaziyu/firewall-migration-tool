@@ -82,6 +82,9 @@ def validate_against_target(source, decisions: PANMigrationDecisionSet, target, 
             scopes = {pan_scope_identity(item.scope) for item in records if item.scope}
             if not records:
                 if (decision.approved_operation == "CREATE" and source_item is not None
+                        and source_item.type == "loopback" and re.fullmatch(r"loopback\.[1-9][0-9]{0,3}", decision.value)):
+                    continue
+                if (decision.approved_operation == "CREATE" and source_item is not None
                         and source_item.vlanid is not None and source_item.interface):
                     parent = confirmed_names.get((decision.source_vdom, source_item.interface))
                     parent_records = _records(target, device, parent) if parent else []
