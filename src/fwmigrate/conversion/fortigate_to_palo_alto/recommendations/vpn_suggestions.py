@@ -17,11 +17,13 @@ def build_vpn_recommendations(source, derived, decisions, target=None, target_de
     result = []
     phase1s = (*getattr(source, "ipsec_phase1", ()), *getattr(source, "ipsec_policy_phase1", ()))
     phase2s = (*getattr(source, "ipsec_phase2", ()), *getattr(source, "ipsec_policy_phase2", ()))
-    phase1_names = {(item.vdom or "root", item.name) for item in phase1s}
+    phase1_names = {(item.__class__.__name__.startswith("FGIPsecPolicy"), item.vdom or "root", item.name) for item in phase1s}
     for phase1 in phase1s:
         vdom = phase1.vdom or "root"
         kind = "ipsec_policy_phase1" if phase1.__class__.__name__.startswith("FGIPsecPolicy") else "ipsec_phase1"
         blockers = []
+        blockers.append("Authentication material is unavailable in sanitized source; configure credentials securely on the target")
+        blockers.append("Only explicitly approved non-secret crypto profiles can be exported; IKE gateways and tunnels remain manual")
         if kind == "ipsec_policy_phase1":
             blockers.append("Policy-based VPN remains distinct from interface-based VPN")
         decision_key = decision_key_if_present(decisions, vdom, "interface", phase1.interface, "target_interface") if phase1.interface else None
@@ -29,7 +31,7 @@ def build_vpn_recommendations(source, derived, decisions, target=None, target_de
         if phase1.interface and not mapped_interface:
             blockers.append("Target interface mapping required")
         blockers.extend(("Target tunnel zone required", "Target virtual router required"))
-        evidence = source_facts(phase1, ("interface", "remote_gw", "ike_version", "mode", "authmethod", "dhgrp", "keylife", "nattraversal", "dpd", "localid", "peerid"))
+        evidence = source_facts(phase1, ("interface", "local_gw", "remote_gw", "ike_version", "mode", "authmethod", "dhgrp", "keylife", "nattraversal", "dpd", "localid", "localid_type", "peerid"))
         if phase1.proposal:
             evidence += (f"Phase1 proposals = {', '.join(phase1.proposal)}",)
         if phase1.psk_configured:
@@ -46,7 +48,7 @@ def build_vpn_recommendations(source, derived, decisions, target=None, target_de
         vdom = phase2.vdom or "root"
         kind = "ipsec_policy_phase2" if phase2.__class__.__name__.startswith("FGIPsecPolicy") else "ipsec_phase2"
         blockers = ["Target tunnel interface required", "Target tunnel zone required", "Target virtual router required"]
-        if not phase2.phase1name or (vdom, phase2.phase1name) not in phase1_names:
+        if not phase2.phase1name or (kind == "ipsec_policy_phase2", vdom, phase2.phase1name) not in phase1_names:
             blockers.append("Referenced Phase 1 gateway is missing")
         if kind == "ipsec_policy_phase2":
             blockers.append("Policy-based VPN remains distinct from interface-based VPN")
