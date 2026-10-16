@@ -94,6 +94,14 @@ class PANSSHDeployer:
             raise TypeError("deployment requires a RenderedMigration")
         if not rendered.commands:
             return PANDeploymentResult(True, failure_message="The rendered migration has no commands to deploy")
+        for index, command in enumerate(rendered.commands):
+            if not isinstance(command, str) or any(
+                ord(char) < 32 or 127 <= ord(char) <= 159 or char in "\u2028\u2029"
+                for char in command
+            ):
+                return PANDeploymentResult(True, failed_command_index=index,
+                    failure_message=f"command {index} contains unsafe CLI control characters",
+                    recovery_state="REJECTED_BEFORE_WRITES")
         results = []
         try:
             self.connection.config_mode()

@@ -73,7 +73,7 @@ def plan_policies(source: Any, options: Any, derived: Any = None):
             warnings.append("policy service match is not explicit in the source")
         service_names = {name for vdom, name in explicit_services if vdom == policy.vdom}
         services = tuple(service_target(name, service_names, getattr(options, "service_names", {}).get(policy.vdom, {})) for name in policy.service or ())
-        applications = ()
+        applications = ("any",)
         if "PING" in (policy.service or ()) and "PING" not in service_names:
             if len(policy.service or ()) == 1:
                 services, applications = ("any",), ("ping",)

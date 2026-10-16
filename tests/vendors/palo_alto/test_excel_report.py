@@ -150,7 +150,7 @@ def test_partial_extraction_status_and_source_appendix_evidence():
     appendix = list(workbook["PAN-OS Source Appendix"].iter_rows(min_row=4, values_only=True))
     assert any(row[7].endswith("server/future-setting") and row[9] == "retain-me" for row in appendix)
     assert any(row[7].endswith("protocol/tcp/future-tcp-setting") and row[9] == "retain-protocol-source" for row in appendix)
-    assert "Services" in workbook.sheetnames and workbook["Services"].max_row > 3
+    assert "Services" in workbook.sheetnames and list(workbook["Services"].iter_rows(min_row=4, values_only=True))
     validation = list(workbook["Review Required"].iter_rows(min_row=4, values_only=True))
     assert any(row[0] == "warning" and row[1] == "extraction" and "ValidationError" in str(row) for row in validation)
     unsupported = list(workbook["Unsupported"].iter_rows(min_row=4, values_only=True))
@@ -181,3 +181,49 @@ def test_source_appendix_does_not_repeat_nested_entry_evidence():
     entry_name_values = [row["Evidence Value"] for row in rows if row["Evidence Path"].endswith("/@name")]
     assert entry_name_values.count("parent") == 1
     assert entry_name_values.count("child") == 1
+
+
+def test_full_streaming_export_preserves_all_rows_layout_and_collection_evidence():
+    from copy import deepcopy
+    from openpyxl.utils import get_column_letter
+    from fwmigrate.vendors.palo_alto.export.excel_rows import ROW_BUILDERS, _PANExcelContext
+    from fwmigrate.vendors.palo_alto.export.excel_schema import SHEET_HEADERS, SHEET_ORDER, HIDDEN_COLUMNS_BY_DEFAULT
+    from fwmigrate.source_reporting.excel_style import excel_safe_value
+
+    source = "<config><shared><address>" + "".join(
+        f'<entry name="host-{index}"><ip-netmask>192.0.2.1</ip-netmask><description>  =host-{index}</description></entry>'
+        for index in range(96)) + "</address></shared></config>"
+    reporter = PaloAltoSourceReporter()
+    analysis = reporter.analyze_source(source)
+    before = deepcopy(analysis.config.model_dump(mode="python"))
+    context = _PANExcelContext(analysis, None, collection_status="PARTIAL")
+    output = io.BytesIO()
+    reporter.export_excel(analysis, output, profile="full", collection_status="PARTIAL",
+                          collection_parts=[{"name": "config", "status": "PARTIAL", "complete": False, "count": 96}],
+                          collection_warnings=["Incomplete source"])
+    workbook = load_workbook(output)
+    assert workbook.sheetnames == [*SHEET_ORDER, "Collection Evidence"]
+    summary_values = [cell.value for row in workbook["Summary"] for cell in row]
+    assert "FULL" in summary_values and "FAST" not in summary_values
+    assert "FULL includes PAN-OS Source Inventory, Extraction Coverage, and PAN-OS Source Appendix." in summary_values
+    for name in SHEET_ORDER:
+        if name == "Summary":
+            continue
+        headers = SHEET_HEADERS[name]
+        expected = [tuple(None if (value := excel_safe_value(row.get(header))) == "" else value for header in headers)
+                    for row in ROW_BUILDERS[name](context)]
+        sheet = workbook[name]
+        assert tuple(cell.value for cell in sheet[3]) == headers
+        assert list(sheet.iter_rows(min_row=4, max_col=len(headers), values_only=True)) == expected
+        assert sheet["A2"].value.startswith(f"{len(expected)} row(s).")
+        assert f"A1:{get_column_letter(len(headers))}1" in sheet.merged_cells
+        assert sheet.cell(2, len(headers)).hyperlink.target == "#'Summary'!A1"
+        assert sheet.auto_filter.ref == (f"A3:{get_column_letter(len(headers))}{len(expected) + 3}" if expected else None)
+        assert all(sheet.column_dimensions[get_column_letter(column)].hidden
+                   for column, header in enumerate(headers, 1) if header in HIDDEN_COLUMNS_BY_DEFAULT.get(name, ()))
+        assert all(cell.data_type != "f" for row in sheet for cell in row)
+    assert workbook["PAN-OS Source Appendix"].max_row == 96 * 3 + 3
+    assert workbook["Collection Evidence"]["C2"].value is False
+    assert workbook["Collection Evidence"]["E3"].value == "Incomplete source"
+    workbook.close()
+    assert analysis.config.model_dump(mode="python") == before

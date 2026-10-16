@@ -169,7 +169,7 @@ def test_interface_conflict_blocks_its_zone_dependents_only():
         zones=(PlannedZone(source_vdom="root", source_kind="interface", source_name="lan",
             source_object_type="zone", target_vsys="vsys1", target_name="trust",
             status=PANMigrationStatus.SUPPORTED, interfaces=("ethernet1/1",)),),
-        security_rules=(PlannedSecurityRule(source_vdom="root", source_kind="policy", source_name="allow-web",
+        security_rules=(PlannedSecurityRule(applications=("any",), source_vdom="root", source_kind="policy", source_name="allow-web",
             source_object_type="security_rule", target_vsys="vsys1", target_name="allow-web",
             status=PANMigrationStatus.SUPPORTED, from_zones=("trust",), to_zones=("trust",),
             sources=("web-net",), destinations=("web-net",), services=("https",), action="allow"),),
@@ -295,7 +295,7 @@ def test_reused_address_remains_available_to_a_rendered_policy():
     zones = tuple(PlannedZone(source_vdom="root", source_object_type="zone", source_name=name,
         target_vsys="vsys1", target_name=name, status=PANMigrationStatus.SUPPORTED,
         interfaces=(f"ethernet1/{index}",)) for index, name in enumerate(("trust", "untrust"), 1))
-    rule = PlannedSecurityRule(source_vdom="root", source_object_type="security_rule", source_name="allow-web",
+    rule = PlannedSecurityRule(applications=("any",), source_vdom="root", source_object_type="security_rule", source_name="allow-web",
         target_vsys="vsys1", target_name="allow-web", status=PANMigrationStatus.SUPPORTED,
         from_zones=("trust",), to_zones=("untrust",), sources=("lan-net",), destinations=("any",),
         services=("https",), action="allow")
@@ -337,7 +337,7 @@ def test_dependency_index_scopes_same_names_by_object_family():
     service = PlannedService(source_vdom="root", source_kind="service", source_object_type="service",
         source_name="web", target_vsys="vsys1", target_name="web", status=PANMigrationStatus.SUPPORTED,
         protocol="tcp", destination_port="443")
-    rule = PlannedSecurityRule(source_vdom="root", source_kind="policy", source_object_type="security_rule",
+    rule = PlannedSecurityRule(applications=("any",), source_vdom="root", source_kind="policy", source_object_type="security_rule",
         source_name="allow-web", target_vsys="vsys1", target_name="allow-web", status=PANMigrationStatus.SUPPORTED,
         sources=("web",), services=("web",), action="allow")
     plan = PANMigrationPlan(addresses=(address,), address_groups=(group,), services=(service,), security_rules=(rule,))
@@ -358,7 +358,7 @@ def test_expanded_dependency_blocks_address_consumers_but_not_same_name_service(
     service = PlannedService(source_vdom="root", source_kind="service", source_object_type="service",
         source_name="web", target_vsys="vsys1", target_name="web", status=PANMigrationStatus.SUPPORTED,
         protocol="tcp", destination_port="443")
-    rule = PlannedSecurityRule(source_vdom="root", source_kind="policy", source_object_type="security_rule",
+    rule = PlannedSecurityRule(applications=("any",), source_vdom="root", source_kind="policy", source_object_type="security_rule",
         source_name="allow-web", target_vsys="vsys1", target_name="allow-web", status=PANMigrationStatus.SUPPORTED,
         sources=("web",), services=("web",), action="allow")
     plan = PANMigrationPlan(addresses=(address,), address_groups=(group,), services=(service,), security_rules=(rule,))
@@ -435,7 +435,7 @@ def test_exact_interface_reuse_skips_creation_and_conflicts_block_dependents():
         source_name="trust", target_vsys="vsys1", target_name="trust",
         status=PANMigrationStatus.SUPPORTED, interfaces=("ethernet1/1",),
     )
-    rule = PlannedSecurityRule(
+    rule = PlannedSecurityRule(applications=("any",),
         source_vdom="root", source_kind="policy", source_object_type="security_rule",
         source_name="allow", target_vsys="vsys1", target_name="allow",
         status=PANMigrationStatus.SUPPORTED, from_zones=("trust",), to_zones=("trust",),
@@ -466,7 +466,7 @@ def test_exact_interface_reuse_skips_creation_and_conflicts_block_dependents():
 
 def test_populated_target_rulebase_blocks_unverified_placement():
     scope = PANScope(kind="vsys", name="vsys1", vsys="vsys1", device_name="dev")
-    planned = PlannedSecurityRule(source_vdom="root", source_kind="policy", source_object_type="security_rule",
+    planned = PlannedSecurityRule(applications=("any",), source_vdom="root", source_kind="policy", source_object_type="security_rule",
         source_name="new-policy", target_name="new-policy", target_vsys="vsys1", status=PANMigrationStatus.SUPPORTED,
         from_zones=("trust",), to_zones=("untrust",), sources=("any",), destinations=("any",), services=("any",), action="allow")
     plan = PANMigrationPlan(security_rules=(planned,))
@@ -495,7 +495,7 @@ def test_populated_target_rulebase_blocks_unverified_placement():
 
 def test_target_rule_name_conflict_is_preserved_with_populated_rulebase():
     scope = PANScope(kind="vsys", name="vsys1", vsys="vsys1", device_name="dev")
-    planned = PlannedSecurityRule(source_vdom="root", source_kind="policy", source_object_type="security_rule",
+    planned = PlannedSecurityRule(applications=("any",), source_vdom="root", source_kind="policy", source_object_type="security_rule",
         source_name="same", target_name="same", target_vsys="vsys1", status=PANMigrationStatus.SUPPORTED)
     existing = PANSecurityRule(name="same", source_path="/rule", scope=scope, source_order=1)
     target = SimpleNamespace(config=SimpleNamespace(security_rules=[existing], nat_rules=[]))

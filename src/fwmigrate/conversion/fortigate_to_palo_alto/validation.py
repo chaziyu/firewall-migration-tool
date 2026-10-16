@@ -6,6 +6,7 @@ from ipaddress import IPv4Address, IPv4Interface, IPv4Network, ip_network
 import re
 
 from .models import MigrationIssue, MigrationSourceRef, PANMigrationPlan, PANMigrationStatus
+from .plan_dependencies import target_identity
 from .planning.services import PAN_BUILTIN_SERVICES
 from .target.name_validation import zone_name_issue
 from .planning.vpn import crypto_lifetime
@@ -127,6 +128,8 @@ def validate_plan(plan: PANMigrationPlan) -> MigrationValidationResult:
         if item.source_object_type == 'security_rule' and item.profile_group and not re.fullmatch(r'[A-Za-z0-9_. -]{1,63}', item.profile_group):
             add('invalid_security_profile_group', 'Invalid target security profile group name', item)
         if item.source_object_type == 'security_rule':
+            if not item.applications:
+                add('missing_rule_applications', 'Security rule requires explicit application matching', item)
             from .target.profile import valid_target_identity
             if any(not valid_target_identity(name) for name in item.source_users):
                 add('invalid_source_user', 'Source-user matching requires explicit target identities', item)
@@ -306,6 +309,8 @@ def validate_plan(plan: PANMigrationPlan) -> MigrationValidationResult:
         if name == "any" or "services" in accepted_families and name in PAN_BUILTIN_SERVICES:
             return
         dependency = find(accepted_families, name, owner.target_vsys)
+        if dependency is None and accepted_families == ('zones',) and (owner.target_vsys, name) in plan.target_zone_references:
+            return
         if dependency is None and "addresses" in accepted_families and _valid_ipv4_selector(name):
             return
         if dependency is None:
@@ -498,7 +503,7 @@ def _index(items):
 
 
 def _key(item) -> ItemKey:
-    return (item.source_object_type, item.target_vsys, item.target_name or item.source_name)
+    return target_identity(item)
 
 
 def _ref(item):

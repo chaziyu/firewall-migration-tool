@@ -102,7 +102,9 @@ def write_report_summary(
 
 def excel_safe_value(value):
     """Prevent untrusted source strings from being interpreted as Excel formulas."""
-    if isinstance(value, str) and value.startswith(("=", "+", "-", "@", "\t", "\r", "\n")):
+    if isinstance(value, str) and (
+        value.lstrip().startswith(("=", "+", "-", "@")) or value.startswith(("\t", "\r", "\n"))
+    ):
         return "'" + value
     return value
 
@@ -202,6 +204,8 @@ def finish_report_workbook(workbook, *, summary_title: str | None = None) -> Non
     if workbook.write_only:
         append_report_navigation(workbook)
         for sheet in workbook.worksheets:
+            if sheet.title == "Summary":
+                continue
             first_row = 2 if getattr(sheet, "_report_title_written", False) else 1
             sheet.auto_filter.ref = (
                 f"A{first_row}:{get_column_letter(sheet._report_column_count)}{sheet._report_row_count + first_row - 1}"

@@ -32,6 +32,69 @@ def _options():
     }})
 
 
+@pytest.mark.parametrize('external_interface', ['any', None, 'wan'])
+def test_reviewed_vip_external_zone_is_scoped_and_never_uses_post_nat_zone(external_interface):
+    from dataclasses import replace
+    source = _source('web')
+    source.vips[0].extintf = external_interface
+    options = _options()
+    if external_interface != 'wan':
+        missing = plan_nat(source, build_derived_views(source), options)[0]
+        assert missing.status is PANMigrationStatus.MANUAL_REVIEW
+        assert not missing.to_zones
+    settings = {'vip_external_zones': {'root': {'web': 'untrust'}}}
+    rule = plan_nat(source, build_derived_views(source), replace(options, conversion_settings=settings))[0]
+    assert rule.status is PANMigrationStatus.SUPPORTED
+    assert rule.to_zones == ('untrust',)
+    assert rule.to_zones != ('inside',)
+    with pytest.raises(ValueError, match='current source VIP'):
+        plan_nat(source, build_derived_views(source), replace(options, conversion_settings={
+            'vip_external_zones': {'blue': {'web': 'untrust'}}}))
+
+
+@pytest.mark.parametrize('zone', ['any', '', 'bad/zone', 'x' * 32, 'bad\rzone'])
+def test_vip_zone_settings_reject_invalid_choices(zone):
+    with pytest.raises(ValueError, match='destination zone'):
+        PANMigrationOptions(conversion_settings={'vip_external_zones': {'root': {'web': zone}}})
+
+
+def test_repeated_vip_names_use_independent_vdom_choices():
+    from dataclasses import replace
+    source = _source('web')
+    source.vips[0].extintf = 'any'
+    source.vips.append(source.vips[0].model_copy(update={'vdom': 'blue', 'extip': '203.0.113.11'}))
+    source.policies.append(source.policies[0].model_copy(update={'vdom': 'blue'}))
+    original = _options()
+    options = replace(original, vdoms={'root': {'vsys': 'vsys1'}, 'blue': {'vsys': 'vsys2'}},
+        interfaces={**original.interfaces, 'blue': original.interfaces['root']},
+        conversion_settings={'vip_external_zones': {'root': {'web': 'root-outside'}, 'blue': {'web': 'blue-outside'}}})
+    rules = plan_nat(source, build_derived_views(source), options)
+    assert {rule.source_vdom: rule.to_zones for rule in rules} == {'root': ('root-outside',), 'blue': ('blue-outside',)}
+    assert all(rule.status is PANMigrationStatus.SUPPORTED for rule in rules)
+
+
+def test_vip_zone_availability_uses_selected_vsys_and_device():
+    from dataclasses import replace
+    from fwmigrate.conversion.fortigate_to_palo_alto.target.profile import bind_vip_external_zones
+    from fwmigrate.vendors.palo_alto.source_model import PANScope
+    from fwmigrate.vendors.palo_alto.model.zone import PANZone
+    source = _source('web')
+    source.vips[0].extintf = 'any'
+    settings = {'vip_external_zones': {'root': {'web': 'untrust'}}}
+    options = replace(_options(), conversion_settings=settings)
+    plan = PANMigrationPlan(nat_rules=plan_nat(source, build_derived_views(source), options))
+    zone = PANZone(name='untrust', network_type='layer3',
+        scope=PANScope(kind='vsys', name='vsys1', vsys='vsys1', device_name='fw'))
+    target = SimpleNamespace(config=SimpleNamespace(zones=[zone]))
+    bound = bind_vip_external_zones(plan, settings, target, 'fw')
+    assert bound.target_zone_references == (('vsys1', 'untrust'),)
+    assert not any(' zone untrust ' in command for command in PANSetRenderer().render(bound).commands)
+    for device, vsys in [('other', 'vsys1'), ('fw', 'vsys2')]:
+        zone.scope.vsys = vsys
+        with pytest.raises(ValueError, match='unavailable'):
+            bind_vip_external_zones(plan, settings, target, device)
+
+
 @pytest.mark.parametrize("destination", ["web", "web-group"])
 def test_vip_consumers_reach_requirements_and_dnat_renderer(destination):
     source = _source(destination)

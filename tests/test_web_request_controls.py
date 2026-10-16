@@ -23,6 +23,29 @@ def test_shared_bucket_uses_remote_addr_and_ignores_forwarded_headers():
     assert create_app({'TESTING': True}).test_client().post('/api/preview').status_code == 400
 
 
+def test_trusted_proxy_uses_separate_client_buckets_and_rightmost_hop():
+    client = create_app({'TESTING': True, 'TRUSTED_PROXY_FOR': 1,
+                         'API_RATE_LIMIT_PER_MINUTE': 1}).test_client()
+    assert client.post('/api/preview', headers={'X-Forwarded-For': '192.0.2.1'}).status_code == 400
+    assert client.post('/api/preview', headers={'X-Forwarded-For': '192.0.2.2'}).status_code == 400
+    denied = client.post('/api/preview', headers={'X-Forwarded-For': '198.51.100.99, 192.0.2.1'})
+    assert denied.status_code == 429
+    assert denied.json['error_code'] == 'rate_limit_exceeded'
+
+
+@pytest.mark.parametrize('setting', ['TRUSTED_PROXY_FOR', 'TRUSTED_PROXY_PROTO'])
+@pytest.mark.parametrize('value', [-1, '-1', True, 1.5, '1.5', None, '', 'one'])
+def test_invalid_proxy_hops_fail_at_startup(setting, value):
+    with pytest.raises(ValueError, match='nonnegative integer'):
+        create_app({'TESTING': True, setting: value})
+
+
+@pytest.mark.parametrize('setting', ['TRUSTED_PROXY_FOR', 'TRUSTED_PROXY_PROTO'])
+def test_proxy_hops_can_be_configured_from_environment(setting, monkeypatch):
+    monkeypatch.setenv('FWMIGRATE_' + setting, '1')
+    assert create_app({'TESTING': True}).config[setting] == 1
+
+
 def test_default_limit_and_window_expiry():
     now = [0.0]
     limiter = IPRateLimiter(clock=lambda: now[0])

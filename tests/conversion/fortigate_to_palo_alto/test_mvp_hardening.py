@@ -38,7 +38,7 @@ def test_structured_plan_renders_scoped_policy_and_nat_commands_in_order():
                            status=PANMigrationStatus.SUPPORTED, interfaces=("ethernet1/1",)),
                PlannedZone(source_object_type="zone", source_name="untrust", target_vsys="vsys1", target_name="untrust",
                            status=PANMigrationStatus.SUPPORTED)),
-        security_rules=(PlannedSecurityRule(source_object_type="security_rule", source_name="allow-web",
+        security_rules=(PlannedSecurityRule(applications=("any",), source_object_type="security_rule", source_name="allow-web",
             target_vsys="vsys1", target_name="allow-web", status=PANMigrationStatus.SUPPORTED,
             from_zones=("trust",), to_zones=("untrust",), sources=("web",), destinations=("any",),
             services=("web-svc",), schedule="business-hours", action="allow", negate_source=True,

@@ -22,6 +22,7 @@ set vsys vsys1 rulebase security rules allow-web to [ untrust ]
 set vsys vsys1 rulebase security rules allow-web source [ web-host ]
 set vsys vsys1 rulebase security rules allow-web destination [ web-host ]
 set vsys vsys1 rulebase security rules allow-web service [ HTTPS ]
+set vsys vsys1 rulebase security rules allow-web application [ any ]
 set vsys vsys1 rulebase security rules allow-web schedule work-hours
 set vsys vsys1 rulebase security rules allow-web negate-source yes
 set vsys vsys1 rulebase security rules allow-web description "Allow web access"

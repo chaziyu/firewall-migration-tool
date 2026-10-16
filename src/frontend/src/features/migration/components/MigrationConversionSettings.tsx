@@ -11,6 +11,11 @@ export function MigrationConversionSettings({ draft, busy, settings, onChange: s
   const findings = [...(draft.findings ?? [])]
   const previous = draft.context.conversion_settings ?? {}
   for (const values of [previous, settings]) {
+    for (const [vdom, mappings] of Object.entries(values.vip_external_zones ?? {})) {
+      for (const name of Object.keys(mappings)) {
+        if (!findings.some((row) => row.code === 'VIP_EXTERNAL_ZONE_REQUIRED' && row.source_vdom === vdom && row.identity === name)) findings.push({ code: 'VIP_EXTERNAL_ZONE_REQUIRED', source_vdom: vdom, identity: name, message: name })
+      }
+    }
     for (const identity of Object.keys(values.generated_management_profiles ?? {})) {
       if (!findings.some((row) => row.code === 'MANAGEMENT_PROFILE_GROUP' && row.identity === identity)) findings.push({ code: 'MANAGEMENT_PROFILE_GROUP', identity, source_vdom: identity.split('/')[0], message: identity, member_keys: [] })
     }
@@ -114,7 +119,19 @@ export function MigrationConversionSettings({ draft, busy, settings, onChange: s
       </fieldset>)}
     </details>}
     </details>}
-    {section === 'policy' && (has('IDENTITY_MAPPING_REQUIRED', 'SECURITY_PROFILE_REQUIRED') || !!settings.identity_prerequisites?.length || !!previous.identity_prerequisites?.length) && <details className="migration-review-tools" id="settings-policy"><summary>Policy decisions</summary>
+    {section === 'policy' && (has('IDENTITY_MAPPING_REQUIRED', 'SECURITY_PROFILE_REQUIRED', 'VIP_EXTERNAL_ZONE_REQUIRED') || !!settings.identity_prerequisites?.length || !!previous.identity_prerequisites?.length) && <details className="migration-review-tools" id="settings-policy"><summary>Policy decisions</summary>
+    {findings.filter((row) => row.code === 'VIP_EXTERNAL_ZONE_REQUIRED').map((group) => <label className="field" key={`vip:${group.source_vdom}/${group.identity}`}>
+      {group.source_vdom} / {group.identity}: Original-packet destination zone
+      <input aria-label={`Original-packet destination zone for ${group.source_vdom}/${group.identity}`} disabled={busy} value={settings.vip_external_zones?.[group.source_vdom!]?.[group.identity!] ?? ''} onChange={(event) => {
+        const mappings = { ...settings.vip_external_zones, [group.source_vdom!]: { ...settings.vip_external_zones?.[group.source_vdom!] } }
+        if (event.target.value.trim()) mappings[group.source_vdom!][group.identity!] = event.target.value
+        else {
+          delete mappings[group.source_vdom!][group.identity!]
+          if (!Object.keys(mappings[group.source_vdom!]).length) delete mappings[group.source_vdom!]
+        }
+        setSettings({ ...settings, vip_external_zones: mappings })
+      }} />
+    </label>)}
     {(has('IDENTITY_MAPPING_REQUIRED') || !!settings.identity_prerequisites?.length || !!previous.identity_prerequisites?.length) && <details><summary>Policy identities · shared mappings</summary>
       <p>Map each source user/group to its equivalent target identity once. Confirm that target User-ID and authentication preserve the source restrictions. NAT identity conditions remain separate.</p>
       <Button disabled={busy} onClick={() => {

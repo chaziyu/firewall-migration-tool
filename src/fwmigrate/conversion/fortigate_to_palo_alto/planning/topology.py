@@ -1,8 +1,9 @@
 """Explicit interface-to-zone topology planning for Palo Alto."""
 
 from typing import Any
+from dataclasses import replace
 
-from fwmigrate.conversion.fortigate_to_palo_alto.models import PANMigrationStatus, PlannedZone
+from fwmigrate.conversion.fortigate_to_palo_alto.models import MigrationSourceRef, PANMigrationStatus, PlannedZone
 from .interfaces import aggregate_member_owners
 
 
@@ -61,5 +62,22 @@ def plan_topology(source: Any, derived: Any, options: Any, required_zone_keys=No
             result.append(PlannedZone(source_vdom=vdom, source_kind="interface", source_object_type="zone",
                 source_name=members[0][0], target_vsys=vsys, target_name=zone,
                 interfaces=tuple(target for _, target in members if target), warnings=warnings,
-                status=PANMigrationStatus.MANUAL_REVIEW if warnings else PANMigrationStatus.SUPPORTED))
-    return tuple(result)
+                status=PANMigrationStatus.MANUAL_REVIEW if warnings else PANMigrationStatus.SUPPORTED,
+                source_contributors=tuple(MigrationSourceRef(vdom, 'interface', name) for name, _ in members)))
+    consolidated = {}
+    for item in result:
+        contributors = item.source_contributors or (MigrationSourceRef(item.source_vdom, item.source_kind, item.source_name),)
+        key = (item.source_vdom, item.target_vsys, item.target_name)
+        # Unresolved target names cannot establish a common zone identity.
+        if not item.target_name:
+            key = (*key, item.source_kind, item.source_name)
+        previous = consolidated.get(key)
+        if previous is None:
+            consolidated[key] = replace(item, source_contributors=contributors)
+        else:
+            consolidated[key] = replace(previous,
+                interfaces=tuple(sorted(set(previous.interfaces) | set(item.interfaces))),
+                warnings=tuple(dict.fromkeys((*previous.warnings, *item.warnings))),
+                status=PANMigrationStatus.SUPPORTED if previous.status is item.status is PANMigrationStatus.SUPPORTED else PANMigrationStatus.MANUAL_REVIEW,
+                source_contributors=tuple(dict.fromkeys((*previous.source_contributors, *contributors))))
+    return tuple(consolidated.values())

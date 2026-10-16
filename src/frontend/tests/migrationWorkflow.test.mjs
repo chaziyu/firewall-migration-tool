@@ -8,6 +8,20 @@ import * as presentation from '../src/features/migration/reviewPresentation.ts'
 
 globalThis.requestAnimationFrame ??= () => 0
 
+test('VIP destination-zone choices retain scoped values and remain editable after rebuilding', async () => {
+  const harness = component('../src/features/migration/components/MigrationConversionSettings.tsx', 'MigrationConversionSettings', {})
+  let settings = { vip_external_zones: { blue: { web: 'blue-outside' } } }
+  const props = { draft: { context: {}, findings: [{ code: 'VIP_EXTERNAL_ZONE_REQUIRED', source_vdom: 'root', identity: 'web', message: 'Choose zone' }] },
+    section: 'policy', busy: false, onChange: (value) => { settings = value } }
+  let tree = await harness.render({ ...props, settings })
+  elements(tree).find((node) => node.props['aria-label'] === 'Original-packet destination zone for root/web').props.onChange({ target: { value: 'outside' } })
+  assert.deepEqual(settings.vip_external_zones, { blue: { web: 'blue-outside' }, root: { web: 'outside' } })
+  tree = await harness.render({ ...props, draft: { context: { conversion_settings: settings }, findings: [] }, settings, busy: true })
+  const input = elements(tree).find((node) => node.props['aria-label'] === 'Original-packet destination zone for root/web')
+  assert.equal(input.props.value, 'outside')
+  assert.equal(input.props.disabled, true)
+})
+
 test('public navigation hides device access while local navigation exposes it', async () => {
   const harness = component('../src/components/layout/Sidebar.tsx', 'Sidebar', {})
   const props = { view: 'report', onViewChange: () => {} }

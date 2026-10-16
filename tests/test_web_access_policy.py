@@ -15,6 +15,41 @@ DEVICE_ROUTES = (
 )
 
 
+@pytest.mark.parametrize('setting', ['TRUSTED_PROXY_FOR', 'TRUSTED_PROXY_PROTO'])
+def test_local_mode_cannot_trust_proxy_headers(setting):
+    with pytest.raises(ValueError, match='Proxy trust'):
+        create_app({'TESTING': True, 'WEB_MODE': 'local', setting: 1})
+
+
+@pytest.mark.parametrize('route', DEVICE_ROUTES)
+def test_public_proxy_cannot_enable_device_access(route):
+    client = create_app({'TESTING': True, 'TRUSTED_PROXY_FOR': 1,
+                         'TRUSTED_PROXY_PROTO': 1}).test_client()
+    response = client.post(route, json={}, headers={
+        'X-Forwarded-For': '127.0.0.1', 'X-Forwarded-Proto': 'https',
+    })
+    assert response.status_code == 403
+
+
+def test_forwarded_host_port_and_prefix_are_not_trusted():
+    client = create_app({'TESTING': True, 'TRUSTED_PROXY_FOR': 1,
+                         'TRUSTED_PROXY_PROTO': 1}).test_client()
+    headers = {'X-Forwarded-Host': 'localhost', 'X-Forwarded-Port': '5000',
+               'X-Forwarded-Prefix': '/trusted', 'X-Forwarded-Proto': 'https'}
+    assert client.get('/api/vendors', base_url='http://attacker.example', headers=headers).status_code == 400
+    headers['Origin'] = 'https://attacker.example'
+    assert client.post('/api/preview', headers=headers).status_code == 403
+
+
+def test_public_hostname_requires_explicit_configuration(monkeypatch):
+    monkeypatch.delenv('FWMIGRATE_ALLOWED_HOSTS', raising=False)
+    monkeypatch.delenv('RENDER_EXTERNAL_HOSTNAME', raising=False)
+    host = 'https://firewall-migration-tool.onrender.com'
+    assert create_app({'TESTING': True}).test_client().get('/api/vendors', base_url=host).status_code == 400
+    monkeypatch.setenv('RENDER_EXTERNAL_HOSTNAME', 'firewall-migration-tool.onrender.com')
+    assert create_app({'TESTING': True}).test_client().get('/api/vendors', base_url=host).status_code == 200
+
+
 @pytest.mark.parametrize('remote_addr', ['127.0.0.1', '::1', '198.51.100.20'])
 @pytest.mark.parametrize('route', DEVICE_ROUTES)
 def test_public_mode_blocks_device_routes_before_reading_payload(route, remote_addr, monkeypatch):
@@ -52,7 +87,8 @@ def test_local_loopback_device_access_needs_no_login(host, monkeypatch):
 
 @pytest.mark.parametrize('route', DEVICE_ROUTES)
 def test_local_mode_rejects_remote_clients_and_proxy_public_hosts(route):
-    client = create_app({'TESTING': True, 'WEB_MODE': 'local'}).test_client()
+    client = create_app({'TESTING': True, 'WEB_MODE': 'local',
+                         'ALLOWED_HOSTS': ['localhost', 'firewall-migration-tool.onrender.com']}).test_client()
     assert client.post(route, json={}, environ_overrides={'REMOTE_ADDR': '198.51.100.20'}).status_code == 403
     assert client.post(route, json={}, base_url='https://firewall-migration-tool.onrender.com').status_code == 403
 

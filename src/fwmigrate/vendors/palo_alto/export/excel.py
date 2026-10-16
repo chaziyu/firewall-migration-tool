@@ -11,7 +11,7 @@ from openpyxl.utils import get_column_letter
 
 from ....source_reporting.options import ExcelExportProfile
 from ....source_reporting.collection_excel import collection_summary, write_collection_evidence
-from ....source_reporting.excel_style import append_report_row, excel_safe_value, style_fast_sheet, write_report_summary
+from ....source_reporting.excel_style import excel_safe_value, write_report_summary
 
 from .excel_rows import ROW_BUILDERS, _PANExcelContext
 from .excel_schema import SHEET_ORDER, HIDDEN_COLUMNS_BY_DEFAULT, SHEET_HEADERS
@@ -33,47 +33,9 @@ def _excel_safe(value: Any) -> Any:
     return excel_safe_value(value)
 
 
-def _add_back_link(sheet) -> None:
-    if sheet.max_column > 1:
-        cell = sheet.cell(2, sheet.max_column, "Back to Summary")
-        cell.hyperlink = "#'Summary'!A1"
-        cell.font = _LINK_FONT
-        cell.alignment = _LINK_ALIGNMENT
-
-
-def _write_table(workbook: Workbook, name: str, rows: Iterable[Mapping[str, Any]]) -> int:
-    headers = SHEET_HEADERS[name]
-    sheet = workbook.create_sheet(name)
-    sheet.sheet_view.showGridLines = True
-    sheet.sheet_view.zoomScale = 90
-    max_column = max(len(headers), 1)
-    sheet.merge_cells(start_row=1, start_column=1, end_row=1, end_column=max_column)
-    title = sheet.cell(1, 1, name)
-    title.fill, title.font = _TITLE_FILL, _TITLE_FONT
-    title.alignment = _TITLE_ALIGNMENT
-    sheet.row_dimensions[1].height = 24
-    if max_column > 2:
-        sheet.merge_cells(start_row=2, start_column=1, end_row=2, end_column=max_column - 1)
-    note = sheet.cell(2, 1)
-    note.font = _MUTED_FONT
-    hidden_headers = set(HIDDEN_COLUMNS_BY_DEFAULT.get(name, ()))
-    for column, header in enumerate(headers, 1):
-        cell = sheet.cell(3, column, header)
-        cell.alignment = _HEADER_ALIGNMENT
-    row_count = 0
-    for row_count, row in enumerate(rows, 1):
-        sheet.append([_excel_safe(row.get(header)) for header in headers])
-    note.value = f"{row_count} row(s). Analysis Status reports validation only; NO_VALIDATION_ISSUES does not imply complete extraction. Source Inventory reports extraction coverage."
-    style_fast_sheet(sheet, header_row=3)
-    sheet.freeze_panes = "D4" if name in {"Interfaces", "Security Policies", "NAT Rules"} else "C4" if len(headers) > 12 else "A4"
-    for column, header in enumerate(headers, 1):
-        if header in hidden_headers:
-            sheet.column_dimensions[get_column_letter(column)].hidden = True
-    _add_back_link(sheet)
-    return row_count
-
-
-def _write_summary(workbook: Workbook, context: _PANExcelContext, row_counts: Mapping[str, int]) -> None:
+def _write_summary(
+    workbook: Workbook, context: _PANExcelContext, row_counts: Mapping[str, int], profile: ExcelExportProfile,
+) -> None:
     sheet = workbook["Summary"] if "Summary" in workbook.sheetnames else workbook.create_sheet("Summary")
     coverage_sheets = {"Review Required", "Unresolved References", "Unsupported",
                        "PAN-OS Source Inventory", "Extraction Coverage", "PAN-OS Source Appendix"}
@@ -82,7 +44,7 @@ def _write_summary(workbook: Workbook, context: _PANExcelContext, row_counts: Ma
         metadata=(("Hostname", context.config.hostname), ("PAN-OS Version", context.config.source_version),
                   ("Scopes", "\n".join(context.derived.scope_identities) or None),
                   ("Source File", context.source_name)),
-        profile="FAST" if workbook.write_only else "FULL",
+        profile=profile.value.upper(),
         validation=(("Errors", len(context.validation.errors)),
                     ("Warnings", len(context.validation.warnings)),
                     ("Unresolved References", len(context.derived.unresolved_references))),
@@ -97,29 +59,49 @@ def _write_summary(workbook: Workbook, context: _PANExcelContext, row_counts: Ma
                     for status in ("PARTIAL", "SOURCE_ONLY", "UNSUPPORTED")),
                   ("Export Limitations", (
                       "FAST omits PAN-OS Source Inventory, Extraction Coverage, and PAN-OS Source Appendix. "
-                      "Use FULL for complete source traceability." if workbook.write_only else
+                      "Use FULL for complete source traceability." if profile is ExcelExportProfile.FAST else
                       "FULL includes PAN-OS Source Inventory, Extraction Coverage, and PAN-OS Source Appendix."
                   ))),
     )
 
 
-def _write_table_fast(workbook: Workbook, name: str, rows: Iterable[Mapping[str, Any]]) -> int:
+def _write_table(
+    workbook: Workbook, name: str, rows: Iterable[Mapping[str, Any]], *, row_count: int | None = None,
+) -> int:
     headers = SHEET_HEADERS[name]
     sheet = workbook.create_sheet(name)
     sheet.sheet_view.showGridLines = True
+    sheet.sheet_view.zoomScale = 90
     sheet.freeze_panes = "D4" if name in {"Interfaces", "Security Policies", "NAT Rules"} else "C4" if len(headers) > 12 else "A4"
     for column, header in enumerate(headers, 1):
         dimension = sheet.column_dimensions[get_column_letter(column)]
         dimension.width = 28
         dimension.hidden = header in HIDDEN_COLUMNS_BY_DEFAULT.get(name, ())
+    if row_count is not None:
+        sheet.merged_cells.add(f"A1:{get_column_letter(len(headers))}1")
+        if len(headers) > 2:
+            sheet.merged_cells.add(f"A2:{get_column_letter(len(headers) - 1)}2")
+        sheet.row_dimensions[1].height = 24
     title = WriteOnlyCell(sheet, name)
     title.fill, title.font = _TITLE_FILL, _TITLE_FONT
+    title.alignment = _TITLE_ALIGNMENT
     sheet.append([title])
-    sheet.append(["FAST lightweight export. Analysis Status reports validation only; NO_VALIDATION_ISSUES does not imply complete extraction. Source Inventory reports extraction coverage. Source Inventory is available in FULL."])
+    note = WriteOnlyCell(sheet, (
+        "FAST lightweight export. " if row_count is None else f"{row_count} row(s). "
+    ) + "Analysis Status reports validation only; NO_VALIDATION_ISSUES does not imply complete extraction. "
+        "Source Inventory reports extraction coverage." + (" Source Inventory is available in FULL." if row_count is None else ""))
+    note.font = _MUTED_FONT
+    values = [note]
+    if row_count is not None and len(headers) > 1:
+        link = WriteOnlyCell(sheet, "Back to Summary")
+        link.hyperlink, link.font, link.alignment = "#'Summary'!A1", _LINK_FONT, _LINK_ALIGNMENT
+        values = [note, *([None] * (len(headers) - 2)), link]
+    sheet.append(values)
     cells = []
     for header in headers:
         cell = WriteOnlyCell(sheet, header)
         cell.fill, cell.font = _HEADER_FILL, _WHITE_FONT
+        cell.alignment = _HEADER_ALIGNMENT
         cells.append(cell)
     sheet.append(cells)
     row_count = 0
@@ -130,20 +112,27 @@ def _write_table_fast(workbook: Workbook, name: str, rows: Iterable[Mapping[str,
     return row_count
 
 
-def _build_fast_workbook(context: _PANExcelContext) -> Workbook:
+def _build_workbook(context: _PANExcelContext, profile: ExcelExportProfile) -> Workbook:
     workbook = Workbook(write_only=True)
     workbook.create_sheet("Summary")
     counts = {}
     no_rows = object()
     for name in SHEET_ORDER:
-        if name in {"Summary", "PAN-OS Source Inventory", "Extraction Coverage", "PAN-OS Source Appendix"}:
+        if name == "Summary":
+            continue
+        if profile is ExcelExportProfile.FULL:
+            # Count before streaming because the row-count note precedes the data.
+            count = sum(1 for _ in ROW_BUILDERS[name](context))
+            counts[name] = _write_table(workbook, name, ROW_BUILDERS[name](context), row_count=count)
+            continue
+        if name in {"PAN-OS Source Inventory", "Extraction Coverage", "PAN-OS Source Appendix"}:
             continue
         rows = iter(ROW_BUILDERS[name](context))
         first = next(rows, no_rows)
         if first is no_rows and name != "Review Required":
             continue
-        counts[name] = _write_table_fast(workbook, name, () if first is no_rows else chain((first,), rows))
-    _write_summary(workbook, context, counts)
+        counts[name] = _write_table(workbook, name, () if first is no_rows else chain((first,), rows))
+    _write_summary(workbook, context, counts, profile)
     return workbook
 
 
@@ -155,17 +144,7 @@ def export_panos_excel(
 ) -> None:
     profile = ExcelExportProfile(profile)
     context = _PANExcelContext(analysis, source_name, collection_status=collection_status)
-    if profile is ExcelExportProfile.FAST:
-        workbook = _build_fast_workbook(context)
-    else:
-        workbook = Workbook()
-        workbook.remove(workbook.active)
-        row_counts = {}
-        for name in SHEET_ORDER:
-            if name != "Summary":
-                row_counts[name] = _write_table(workbook, name, ROW_BUILDERS[name](context))
-        _write_summary(workbook, context, row_counts)
-        workbook.move_sheet(workbook["Summary"], offset=-len(workbook.sheetnames) + 1)
+    workbook = _build_workbook(context, profile)
     write_collection_evidence(workbook, collection_status, collection_parts, collection_warnings)
     if isinstance(output, (str, Path)):
         Path(output).parent.mkdir(parents=True, exist_ok=True)

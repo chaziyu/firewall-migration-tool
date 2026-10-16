@@ -24,7 +24,7 @@ export type DraftRow = {
   target_comparison?: { status: string; target_scope?: string; evidence?: string[] }
 }
 export type VPNParameters = { lifetime_seconds?: number; dh_group?: string; pfs?: 'enable' | 'disable'; ike_version?: '1' | '2' }
-export type ConversionSettings = { target_model?: string; panos_version?: string; excluded_interfaces?: string[]; management_profiles?: Record<string, string>; generated_management_profiles?: Record<string, { permitted_ips: string[] }>; existing_vpns?: string[]; vpn_parameters?: Record<string, VPNParameters>; security_profiles?: Record<string, string>; identity_mappings?: Record<string, Record<string, string>>; identity_prerequisites?: string[] }
+export type ConversionSettings = { target_model?: string; panos_version?: string; excluded_interfaces?: string[]; management_profiles?: Record<string, string>; generated_management_profiles?: Record<string, { permitted_ips: string[] }>; existing_vpns?: string[]; vpn_parameters?: Record<string, VPNParameters>; security_profiles?: Record<string, string>; identity_mappings?: Record<string, Record<string, string>>; identity_prerequisites?: string[]; vip_external_zones?: Record<string, Record<string, string>> }
 export type MigrationDraft = {
   source_issues?: Array<{ code: string; message: string; source_vdom: string; source_name: string; affected_keys: string[] }>
   task_summary?: { choices: number; prerequisites: number; conflicts: number; manual_items: number; manual_issues: number }

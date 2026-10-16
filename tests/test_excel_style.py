@@ -35,18 +35,20 @@ def test_report_row_neutralizes_formula_leading_source_values_in_full_and_stream
     for write_only in (False, True):
         workbook = Workbook(write_only=write_only)
         sheet = workbook.create_sheet("Report") if write_only else workbook.active
-        values = ("=1+1", "+SUM(A1:A2)", "-2+3", "@cmd", "\t=1+1", "\r=1+1", "\n=1+1", "safe", 0, -2, False, None)
+        values = ("=1+1", "+SUM(A1:A2)", "-2+3", "@cmd", "\t=1+1", "\r=1+1", "\n=1+1",
+                  "  =1+1", " \t@cmd", "  +cmd", "  -cmd", "safe", 0, -2, False, None)
         append_report_row(sheet, tuple(str(index) for index in range(len(values))))
         append_report_row(sheet, values)
         output = BytesIO()
         workbook.save(output)
         restored = load_workbook(BytesIO(output.getvalue()), read_only=True).active
         row = next(restored.iter_rows(min_row=2, max_row=2, max_col=len(values)))
-        assert [cell.value for cell in row] == ["'" + value for value in values[:7]] + list(values[7:])
+        assert [cell.value for cell in row] == ["'" + value for value in values[:11]] + list(values[11:])
         assert all(cell.data_type != "f" for cell in row)
 
 
 @pytest.mark.parametrize("value", ["=1+1", "+cmd", "-cmd", "@cmd", "\t=1+1", "\r=1+1", "\n=1+1",
+                                   "  =1+1", " \t@cmd", "  +cmd", "  -cmd", "  '=escaped",
                                    "'=already escaped", "safe", "|plain text", "", 0, -2, 1.5, False, None])
 def test_vendor_excel_guards_use_shared_policy_without_double_escaping(value):
     converters = (
@@ -256,3 +258,38 @@ def test_configuration_inventory_counts_all_exported_sections(vendor, reporter_c
     assert all(inventory[name] > 0 for name in expected)
     for name, count in inventory.items():
         assert count == len(list(workbook[name].values)) - 1
+
+
+@pytest.mark.parametrize("summary_values", [(), (("Metric", "Value"), ("Objects", 1))])
+def test_legacy_streaming_summary_needs_no_report_counters(summary_values):
+    workbook = Workbook(write_only=True)
+    summary = workbook.create_sheet("Summary")
+    for values in summary_values:
+        summary.append(values)
+    detail = workbook.create_sheet("Objects")
+    append_report_row(detail, ("Name", "Value"))
+    append_report_row(detail, ("object", 0))
+    finish_report_workbook(workbook)
+    output = BytesIO()
+    workbook.save(output)
+    restored = load_workbook(output)
+    assert restored["Summary"].auto_filter.ref is None
+    assert restored["Objects"].auto_filter.ref == "A1:B2"
+    assert any(cell.hyperlink and cell.hyperlink.target == "#'Objects'!A1"
+               for row in restored["Summary"] for cell in row)
+
+
+@pytest.mark.parametrize("module,function", [("cisco_asa.presentation", "excel_value"),
+                                             ("cisco_ftd.export.excel", "_text")])
+def test_cisco_formatters_preserve_structured_values_without_python_repr(module, function):
+    import json
+    convert = getattr(import_module(f"fwmigrate.vendors.{module}"), function)
+    assert convert(("inside", "outside")) == "inside, outside"
+    assert convert(()) == "[]"
+    assert json.loads(convert([None, False, 0])) == [None, False, 0]
+    refs = [{"name": "inside", "source_id": "if-1"}, {"source_id": "if-2"}, {"value": 0, "enabled": False}]
+    assert json.loads(convert(refs)) == refs
+    assert json.loads(convert({"items": refs, "missing": None})) == {"items": refs, "missing": None}
+    assert convert(("=1+1", "outside")) == "'=1+1, outside"
+    if module.startswith("cisco_asa"):
+        assert "hidden-secret" not in convert({"items": [{"password": "hidden-secret", "name": "safe"}]})

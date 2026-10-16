@@ -223,9 +223,11 @@ def run_migration_pipeline(
     actual_planner = planner or FortiGateToPaloAltoPlanner()
     plan = actual_planner.plan(source, derived, options=final_options,
                                **({"include_configuration": True} if approved_item_keys is not None else {}))
-    if approved_item_keys is not None:
-        from .planning.naming import allocate_plan_names
-        plan = allocate_plan_names(plan, target, target_device, final_options.service_names)
+    from .planning.naming import allocate_plan_names
+    named_plan = allocate_plan_names(plan, target, target_device, final_options.service_names)
+    plan = named_plan if approved_item_keys is not None else replace(plan, static_routes=named_plan.static_routes)
+    from .target.profile import bind_vip_external_zones
+    plan = bind_vip_external_zones(plan, final_options.conversion_settings, target, target_device)
 
     reuse_classifier = target_object_reuse_classifier or classify_target_object_reuse
     if workflow_mode == "OFFLINE_EXPORT":

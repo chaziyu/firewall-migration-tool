@@ -299,18 +299,22 @@ python -m pip install --constraint requirements/constraints-python312.txt -e ".[
 Run Gunicorn from the repository root with `src` on `PYTHONPATH`:
 
 ```bash
-PYTHONPATH=src gunicorn --bind=0.0.0.0:5000 --workers=1 --threads=4 --timeout=120 "fwmigrate.web:create_app({'WEB_MODE': 'public'})"
+PYTHONPATH=src gunicorn --config=gunicorn.conf.py --bind=0.0.0.0:5000 --timeout=120 "fwmigrate.web:create_app({'WEB_MODE': 'public'})"
 ```
 
-API POST requests default to 30 requests per 60-second window per IP and at most 2 active processing requests. Configure positive integers with `FWMIGRATE_API_RATE_LIMIT_PER_MINUTE=30` and `FWMIGRATE_MAX_CONCURRENT_REQUESTS=2`. Keep the one-worker, four-thread Gunicorn baseline above: both controls are process-local. Multiple workers or instances require a different coordination design.
+API POST requests default to 30 requests per 60-second window per IP and at most 2 active processing requests. Configure positive integers with `FWMIGRATE_API_RATE_LIMIT_PER_MINUTE=30` and `FWMIGRATE_MAX_CONCURRENT_REQUESTS=2`. The supplied Gunicorn configuration uses one worker and four threads, and rejects startup or worker-count changes that request another count. Sessions, target-operation locks, rate limits, and concurrency controls are process-local. Run exactly one application instance. Custom launchers that bypass this configuration are not guarded. Multiple instances, overlapping process generations, and zero-downtime replacement require a different coordination design; avoid overlap in this setup.
 
 Set `FWMIGRATE_FRONTEND_DIST_DIR` to `src/frontend/dist` if the host does not use the default frontend build path. Public mode requires no application login. It accepts configuration uploads, snapshot imports, previews, Excel reports, and migration downloads. All live collection and candidate inspection, preparation, validation, and commit endpoints return HTTP 403, including requests forwarded by a loopback proxy. The old `FWMIGRATE_ALLOW_REMOTE_COLLECTION` and `FWMIGRATE_ALLOW_REMOTE_DEPLOYMENT` flags cannot enable device access. Existing optional Basic authentication settings remain supported for private installations.
 
 `create_app()` defaults to public mode. `Start Local.bat` and `fwmigrate serve` enable local mode when bound to `127.0.0.1`, `localhost`, or `::1`; other bind addresses use public mode. Live device access requires local mode, a loopback client address, and a loopback hostname. Keep local mode bound to loopback and do not publish it through a reverse proxy or tunnel. For a custom WSGI launcher, set `FWMIGRATE_WEB_MODE=local` only for a loopback-only service.
 
-Terminate HTTPS before Flask. Preserve the original Host header and configure the trusted server/proxy to supply the correct HTTPS scheme; the application does not trust arbitrary forwarded headers. Allowed hostnames default to `localhost`, `127.0.0.1`, `::1`, and `firewall-migration-tool.onrender.com`. Render's `RENDER_EXTERNAL_HOSTNAME` is also accepted. For custom domains, set `FWMIGRATE_ALLOWED_HOSTS` to a comma-separated list of exact hostnames without schemes or ports. API writes must have the same Origin as the backend URL; only local mode also permits the Vite development origins `http://127.0.0.1:5173` and `http://localhost:5173`. Browser requests with an untrusted or null Origin are rejected. API clients without Origin remain supported; an explicit cross-site Fetch Metadata header is rejected when Origin is absent.
+Terminate HTTPS before Flask and enforce HTTPS at the edge. Preserve the original Host header. In public mode, configure `FWMIGRATE_TRUSTED_PROXY_FOR` for the number of trusted proxies supplying `X-Forwarded-For`, and `FWMIGRATE_TRUSTED_PROXY_PROTO` separately for `X-Forwarded-Proto`. Both default to zero. Enable them only when the backend cannot be reached directly and the trusted proxies overwrite or correctly append these headers. An incorrect count can trust client-supplied values. Configure Gunicorn's trusted scheme-header peers consistently with the actual proxy addresses. Forwarded host, port, and prefix headers are not used by the application. Proxy trust is rejected in local mode.
 
-Set `FWMIGRATE_WORKSPACE_SIGNING_KEY` to a stable random secret of at least 32 bytes. Keep credentials and signing keys in the host's secret manager. SSH collection and deployment use operating-system known-hosts configuration and strict host-key checking.
+HTTPS responses include `Strict-Transport-Security: max-age=31536000`. HSTS does not protect the first HTTP request; verify edge HTTPS enforcement before publishing. Loopback HTTP and local Vite access remain supported.
+
+Allowed hostnames default to `localhost`, `127.0.0.1`, and `::1`. Render's deployment-provided `RENDER_EXTERNAL_HOSTNAME` is also accepted. For custom domains or hosts without Render metadata, set `FWMIGRATE_ALLOWED_HOSTS` to a comma-separated list of exact hostnames without schemes or ports. API writes must have the same Origin as the backend URL; only local mode also permits the Vite development origins `http://127.0.0.1:5173` and `http://localhost:5173`. Browser requests with an untrusted or null Origin are rejected. API clients without Origin remain supported; an explicit cross-site Fetch Metadata header is rejected when Origin is absent.
+
+Set `FWMIGRATE_WORKSPACE_SIGNING_KEY` to a stable random secret of at least 32 bytes. It preserves artifact signatures across restarts, but candidate sessions are always invalidated by restart. Without it, signed artifacts also expire on restart. Keep credentials and signing keys in the host's secret manager. SSH collection and deployment use operating-system known-hosts configuration and strict host-key checking.
 
 ## Live Collection
 
@@ -336,7 +340,9 @@ Partial or failed collection is not interpreted as an empty configuration.
 
 SSH collection verifies device host keys against the operating system's known-hosts configuration.
 
-FMC and Check Point HTTPS certificate verification is enabled by default.
+FMC and Check Point HTTPS certificate verification is required. Requests that explicitly set `verify_tls=false` are rejected; omitted values and `true` remain accepted. For private certificate authorities, set `REQUESTS_CA_BUNDLE` on the backend to a PEM bundle containing the required trusted CAs. Browser requests cannot select server CA-file paths.
+
+FMC sessions are closed locally after use. Server-side token revocation is not implemented: its API contract has not been verified for the supported FMC version. Do not assume local closure revokes a token. Cisco documents access tokens as valid for 30 minutes; keep API account permissions limited.
 
 Successful collection can produce a secret-sanitized snapshot for later preview and Excel reporting.
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import fields, is_dataclass
+import json
 from typing import Any
 
 from fwmigrate.extraction.sanitize import sanitize_raw_text
@@ -55,7 +56,12 @@ def safe_value(value: Any) -> Any:
 
 def excel_value(value: Any) -> Any:
     value = safe_value(value)
-    value = str(value) if isinstance(value, (list, tuple, dict)) else value
+    if isinstance(value, dict) or isinstance(value, (list, tuple)) and (
+        not value or any(isinstance(item, (dict, list, tuple)) or item is None for item in value)
+    ):
+        value = json.dumps(value, ensure_ascii=False)
+    elif isinstance(value, (list, tuple)):
+        value = ", ".join(str(item) for item in value)
     return excel_safe_value(value)
 
 
