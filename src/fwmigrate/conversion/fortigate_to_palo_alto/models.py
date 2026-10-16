@@ -79,6 +79,9 @@ class PlannedInterface(PlannedPANItem):
     ipv4_addresses: tuple[str, ...] = ()
     virtual_router: str | None = None
 
+    aggregate_members: tuple[str, ...] = ()
+    lacp_mode: str | None = None
+
 
 @dataclass(frozen=True, slots=True)
 class PlannedZone(PlannedPANItem):
@@ -157,6 +160,23 @@ class PlannedNATRule(PlannedPANItem):
 
 
 @dataclass(frozen=True, slots=True)
+class PlannedIKECryptoProfile(PlannedPANItem):
+    encryption: str | None = None
+    authentication: str | None = None
+    dh_group: str | None = None
+    lifetime_seconds: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class PlannedIPsecCryptoProfile(PlannedPANItem):
+    encryption: str | None = None
+    authentication: str | None = None
+    dh_group: str | None = None
+    lifetime_seconds: int | None = None
+    phase1_name: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class PANMigrationPlan:
     addresses: tuple[PlannedAddress, ...] = ()
     address_groups: tuple[PlannedAddressGroup, ...] = ()
@@ -170,3 +190,5 @@ class PANMigrationPlan:
     security_rules: tuple[PlannedSecurityRule, ...] = ()
     nat_rules: tuple[PlannedNATRule, ...] = ()
     issues: tuple[MigrationIssue, ...] = field(default_factory=tuple)
+    ike_crypto_profiles: tuple[PlannedIKECryptoProfile, ...] = ()
+    ipsec_crypto_profiles: tuple[PlannedIPsecCryptoProfile, ...] = ()

@@ -15,7 +15,7 @@ def item_key(item):
 
 def _items(plan):
     for family in ("addresses", "address_groups", "services", "service_groups", "schedules", "interfaces", "zones",
-                   "static_routes", "dhcp_servers", "security_rules", "nat_rules"):
+                   "static_routes", "dhcp_servers", "security_rules", "nat_rules", "ike_crypto_profiles", "ipsec_crypto_profiles"):
         yield from getattr(plan, family)
 
 
@@ -89,6 +89,7 @@ def build_plan_dependency_index(plan: PANMigrationPlan, decisions) -> PANPlanDep
         by_vdom.setdefault(item.source_vdom, []).append(key)
         by_source.setdefault((item.source_vdom, item.source_kind, item.source_name), []).append(key)
         names = set(getattr(item, 'interfaces', ()))
+        names.update(getattr(item, 'aggregate_members', ()))
         names.update(value for value in (getattr(item, 'interface', None), getattr(item, 'to_interface', None)) if value)
         zones = set(getattr(item, 'from_zones', ())) | set(getattr(item, 'to_zones', ()))
         if item.source_object_type == 'zone' and item.target_name:

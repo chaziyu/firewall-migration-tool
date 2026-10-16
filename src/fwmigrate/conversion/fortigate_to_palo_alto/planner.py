@@ -12,6 +12,7 @@ from .planning.routing import plan_routes
 from .planning.schedules import plan_schedules
 from .planning.services import plan_services
 from .planning.topology import plan_topology
+from .planning.vpn import plan_vpn_crypto
 from .requirements import build_mapping_requirements
 from .models import PANMigrationPlan
 from .options import PANMigrationOptions
@@ -45,6 +46,7 @@ class FortiGateToPaloAltoPlanner:
         dhcp_servers = plan_dhcp(source, options)
         policies = plan_policies(source, options, derived)
         nat_rules = plan_nat(source, derived, options)
+        ike_crypto_profiles, ipsec_crypto_profiles = plan_vpn_crypto(source, options)
         return PANMigrationPlan(
             addresses=addresses,
             address_groups=groups,
@@ -58,4 +60,6 @@ class FortiGateToPaloAltoPlanner:
             security_rules=policies,
             nat_rules=nat_rules,
             issues=issues,
+            ike_crypto_profiles=ike_crypto_profiles,
+            ipsec_crypto_profiles=ipsec_crypto_profiles,
         )
