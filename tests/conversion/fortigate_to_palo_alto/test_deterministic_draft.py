@@ -109,6 +109,35 @@ def draft(config, overrides=None, **kwargs):
                                      overrides=overrides, **kwargs), state['decisions']
 
 
+@pytest.mark.parametrize('members,operation', [(['ethernet1/1'], 'CONFIGURE'), (['ethernet1/1', 'ethernet1/2'], 'REUSE')])
+def test_consolidated_zone_classification_reaches_all_draft_mapping_rows(members, operation):
+    from fwmigrate.vendors.palo_alto.native import build_derived_views
+    from fwmigrate.vendors.palo_alto.source_builder import build_panos_config
+    config = FGConfig(interfaces=[FGInterface(name=name, type='physical') for name in ('lan1', 'lan2')],
+        zones=[FGZone(name=name, members=[member]) for name, member in (('first', 'lan1'), ('second', 'lan2'))])
+    membership = ''.join(f'<member>{name}</member>' for name in members)
+    pan_config = build_panos_config(f"""<config><devices><entry name='dev'><vsys><entry name='vsys1'>
+      <zone><entry name='trust'><network><layer3>{membership}</layer3></network></entry></zone>
+    </entry></vsys></entry></devices></config>""")
+    target = SimpleNamespace(config=pan_config, derived=build_derived_views(pan_config))
+    overrides = {make_decision_key('root', 'vdom', 'root', 'vsys'): 'vsys1',
+        make_decision_key('root', 'vdom', 'root', 'virtual_router'): 'vr'}
+    overrides.update({make_decision_key('root', 'interface', name, 'target_interface'): f'ethernet1/{number}'
+        for number, name in enumerate(('lan1', 'lan2'), 1)})
+    overrides.update({make_decision_key('root', 'zone', name, 'target_zone'): 'trust' for name in ('first', 'second')})
+    result, decisions = draft(config, overrides, target=target, target_device='dev', reference_role='DESTINATION')
+    rows = [row for row in result.decisions if row.source_kind == 'zone']
+    assert len(rows) == 2 and all(row.operation == operation for row in rows)
+    zones = [row for row in result.configuration if row['family'] == 'zone']
+    assert len(zones) == 1
+    assert {row.decision_key for row in rows} <= set(zones[0]['dependencies'])
+    assert len(zones[0]['configuration']['source_contributors']) == 2
+    changed, _ = draft(config, {**overrides, rows[1].decision_key: 'other'}, target=target,
+        target_device='dev', reference_role='DESTINATION')
+    assert changed.to_dict()['digest'] != result.to_dict()['digest']
+    assert all(row.review_state is PANDecisionReviewState.PENDING for row in decisions.decisions)
+
+
 def test_offline_proposals_preserve_vdoms_and_do_not_confirm_ownership():
     config = FGConfig(interfaces=[FGInterface(name='port', vdom=name, type='physical') for name in ('b', 'a')])
     result, decisions = draft(config, workflow_mode='OFFLINE_EXPORT')

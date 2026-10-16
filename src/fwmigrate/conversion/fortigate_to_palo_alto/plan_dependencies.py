@@ -19,8 +19,14 @@ def _items(plan):
         yield from getattr(plan, family)
 
 
+def target_identity(item):
+    scope = item.virtual_router if item.source_object_type == 'static_route' else item.target_vsys
+    return item.source_object_type, scope, item.target_name or item.source_name
+
+
 def _identity(item):
-    return item.target_vsys, item.source_object_type, item.target_name or item.source_name
+    family, scope, name = target_identity(item)
+    return scope, family, name
 
 
 @dataclass(frozen=True, slots=True)
@@ -100,6 +106,8 @@ def build_plan_dependency_index(plan: PANMigrationPlan, decisions) -> PANPlanDep
         positions.setdefault(key, position)
         by_vdom.setdefault(item.source_vdom, []).append(key)
         by_source.setdefault((item.source_vdom, item.source_kind, item.source_name), []).append(key)
+        for ref in getattr(item, 'source_contributors', ()):
+            by_source.setdefault((ref.source_vdom, ref.source_kind, ref.source_name), []).append(key)
         names = set(getattr(item, 'interfaces', ()))
         names.update(getattr(item, 'aggregate_members', ()))
         names.update(value for value in (getattr(item, 'interface', None), getattr(item, 'to_interface', None), getattr(item, 'translation_interface', None)) if value)

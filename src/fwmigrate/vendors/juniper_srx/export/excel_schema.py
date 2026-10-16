@@ -18,6 +18,8 @@ SHEET_ORDER = (
 )
 
 SHEET_HEADERS = {
+    "Source Inventory": ("Domain", "Source Path", "Context", "Line", "Operation", "Key",
+                         "Values", "Status", "Handler", "Review Required"),
     "Interfaces": ("Context", "Interface", "Unit", "Parent", "Name", "Interface Type", "Source Present",
                     "Aggregate Parent", "Aggregate Parent Resolved", "Redundant Parent", "Redundant Parent Resolved",
                     "Redundancy Group", "Aggregate Members", "Redundant Members", "Zone Memberships",

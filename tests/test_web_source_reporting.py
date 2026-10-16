@@ -458,7 +458,7 @@ def test_excel_selector_reaches_real_vendor_profiles(vendor, fixture, excluded, 
             }, content_type="multipart/form-data")
         assert response.status_code == 200, (vendor, profile, response.get_json())
         workbooks[profile] = load_workbook(io.BytesIO(response.data))
-    assert write_modes == [True, False]
+    assert write_modes == [True, vendor == "palo_alto"]
     fast, full = workbooks["fast"], workbooks["full"]
     if vendor in {"fortigate", "palo_alto"}:
         for workbook in (fast, full):

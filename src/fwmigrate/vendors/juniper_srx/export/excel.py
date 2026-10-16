@@ -380,8 +380,7 @@ def export_juniper_excel(
         if name == "Summary":
             continue
         if name == "Source Inventory":
-            append_report_row(sheet, ("Domain", "Source Path", "Context", "Line", "Operation", "Key",
-                                      "Values", "Status", "Handler", "Review Required"))
+            append_report_row(sheet, SHEET_HEADERS[name])
             for item in result.inventory_items:
                 if not item.commands:
                     append_report_row(sheet, (item.domain, item.source_path, item.source_context, None, None, None,
@@ -394,6 +393,12 @@ def export_juniper_excel(
                         command.status.value if command.status else None, command.parser_handler,
                         command.requires_manual_review,
                     ))
+            continue
+        if name == "Review Required":
+            append_report_row(sheet, SHEET_HEADERS[name])
+            for item in result.review_required:
+                append_report_row(sheet, (item.severity, item.code, item.category, item.message, item.context,
+                                          item.source_path, item.object_name, item.field))
             continue
         if name == "Validation":
             append_report_row(sheet, SHEET_HEADERS[name])

@@ -76,6 +76,27 @@ def test_api_responses_disable_storage_and_add_browser_security_headers():
     assert "frame-ancestors 'none'" in response.headers["Content-Security-Policy"]
 
 
+@pytest.mark.parametrize('scheme,trust,forwarded,secure', [
+    ('https', 0, None, True),
+    ('http', 0, None, False),
+    ('http', 0, 'https', False),
+    ('http', 1, 'https', True),
+    ('http', 1, 'https, http', False),
+])
+def test_hsts_uses_only_the_effective_trusted_scheme(scheme, trust, forwarded, secure):
+    client = create_app({'TESTING': True, 'TRUSTED_PROXY_PROTO': trust}).test_client()
+    headers = {'X-Forwarded-Proto': forwarded} if forwarded else {}
+    response = client.get('/api/vendors', base_url=f'{scheme}://localhost', headers=headers)
+    assert response.status_code == 200
+    assert response.headers.get('Strict-Transport-Security') == ('max-age=31536000' if secure else None)
+    if secure:
+        response = client.post('/api/preview', base_url=f'{scheme}://localhost',
+                               headers={**headers, 'Origin': 'https://localhost'})
+        assert response.status_code == 400  # Accepted origin; missing source.
+        assert client.post('/api/preview', base_url=f'{scheme}://localhost',
+                           headers={**headers, 'Origin': 'http://localhost'}).status_code == 403
+
+
 def test_remote_deployment_is_disabled_by_default():
     client = create_app({"TESTING": True}).test_client()
 

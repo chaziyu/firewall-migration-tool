@@ -377,3 +377,31 @@ set apply-groups G
     row = next(item for item in effective_rows[1:] if item[1:3] == ("address", "INHERITED"))
     assert row[headers.index("Source Presence")] == "INHERITED_ONLY"
     assert "192.0.2.5/32" in row[headers.index("Attributes")]
+
+
+def test_review_identity_and_inventory_schema_survive_both_export_profiles():
+    from dataclasses import replace
+    from fwmigrate.vendors.juniper_srx.validation import JuniperReviewItem
+    from fwmigrate.vendors.juniper_srx.export.excel_schema import SHEET_HEADERS, SHEET_ORDER
+
+    assert set(SHEET_ORDER) - {"Summary"} <= SHEET_HEADERS.keys()
+    result = extract_juniper_source("set system host-name SRX")
+    items = tuple(JuniperReviewItem("warning", "reference", "Missing reference", context,
+                                   f"{context}/policy/P1", "P1", "source-address", "TEST")
+                  for context in ("root", "logical-system:LS1"))
+    items += (JuniperReviewItem("info", "coverage", "Source only"),)
+    result = replace(result, review_required=items)
+    before = deepcopy(result.config.model_dump(mode="python"))
+    for profile in ("full", "fast"):
+        output = BytesIO()
+        export_juniper_excel(result, output, profile=profile)
+        workbook = load_workbook(output, read_only=True)
+        rows = list(workbook["Review Required"].iter_rows(max_col=len(SHEET_HEADERS["Review Required"]), values_only=True))
+        assert rows[0] == SHEET_HEADERS["Review Required"]
+        assert rows[1:] == [(item.severity, item.code, item.category, item.message, item.context,
+                            item.source_path, item.object_name, item.field) for item in items]
+        assert ("Source Inventory" in workbook.sheetnames) == (profile == "full")
+        if profile == "full":
+            assert next(workbook["Source Inventory"].values) == SHEET_HEADERS["Source Inventory"]
+        workbook.close()
+    assert result.config.model_dump(mode="python") == before

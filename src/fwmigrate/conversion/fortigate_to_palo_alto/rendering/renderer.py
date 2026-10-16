@@ -4,10 +4,11 @@ import json
 import hashlib
 import re
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from . import cli_paths
+from ..plan_dependencies import target_identity
 from fwmigrate.conversion.fortigate_to_palo_alto.models import PANMigrationPlan, PANMigrationStatus
 from fwmigrate.conversion.fortigate_to_palo_alto.target.target_plan_validation import PANRenderDisposition, item_key
 from fwmigrate.conversion.fortigate_to_palo_alto.validation import MigrationValidationResult, validate_plan
@@ -21,6 +22,9 @@ class RenderedMigration:
 
 def _v(value):
     text = "" if value is None else str(value)
+    if any((ord(char) < 32 and char != "\n") or 127 <= ord(char) <= 159
+           or char in "\u2028\u2029" for char in text):
+        raise ValueError("CLI value contains an unsafe control character; correct the source value before rendering")
     if re.fullmatch(r"[A-Za-z0-9_./:@+-]+", text):
         return text
     return '"' + text.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n") + '"'
@@ -136,7 +140,7 @@ def _serialize(path):
 
 
 def _key(item):
-    return (item.source_object_type, item.target_vsys, item.target_name or item.source_name)
+    return target_identity(item)
 
 
 def _exclusion_category(item, disposition, blockers, validation):
@@ -212,6 +216,8 @@ def _report(plan, commands, validation, item_commands=None, dispositions=None, r
             "items": [{"item_key": item_key(item), "source_vdom": item.source_vdom, "source_kind": item.source_kind, "source_name": item.source_name,
                         "source_policy_id": item.source_policy_id, "source_object_type": item.source_object_type,
                         "target_vsys": item.target_vsys, "target_name": item.target_name,
+                        **({'virtual_router': item.virtual_router} if item.source_object_type == 'static_route' else {}),
+                        **({'source_contributors': [asdict(ref) for ref in item.source_contributors]} if item.source_object_type == 'zone' else {}),
                         "status": item.status.value, "warnings": list(item.warnings),
                         "decision_keys": list(decision_keys.get(item_key(item), ())),
                         "render_disposition": disposition(item).value,

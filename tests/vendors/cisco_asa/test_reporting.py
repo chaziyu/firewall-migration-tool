@@ -91,7 +91,7 @@ def test_every_workbook_row_matches_its_header_and_acl_binding_cells_keep_their_
     binding = next(workbook["ACL Bindings"].iter_rows(min_row=2, values_only=True))
     columns = dict(zip(SHEET_HEADERS["ACL Bindings"], binding))
     assert columns["Resolved Interface"] == "Ethernet0/0"
-    assert columns["Issues"] == "()"
+    assert columns["Issues"] == "[]"
 
 def test_derived_workbook_rows_match_semantic_columns():
     result = extract_cisco_asa_source(
@@ -119,7 +119,7 @@ def test_derived_workbook_rows_match_semantic_columns():
     assert ipsec["VTI Policy ACL"] == "SELECTOR"
     access = dict(zip(SHEET_HEADERS["Remote Access VPN"], next(workbook["Remote Access VPN"].iter_rows(min_row=2, values_only=True))))
     assert access["Connection Profile Type"] == "remote-access"
-    assert access["Group Policy"] == "GP" and access["Address Pools"] == "('CLIENTS',)"
+    assert access["Group Policy"] == "GP" and access["Address Pools"] == "CLIENTS"
     reservation = next(workbook["DHCP Reservations"].iter_rows(min_row=2, values_only=True))
     assert reservation == ("192.0.2.15", "0011.2233.4455", "inside", None, 26)
     binding = dict(zip(SHEET_HEADERS["ACL Bindings"], next(workbook["ACL Bindings"].iter_rows(min_row=2, values_only=True))))

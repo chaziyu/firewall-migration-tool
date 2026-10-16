@@ -270,3 +270,49 @@ def test_fmc_unnamed_policy_does_not_manufacture_child_policy_name():
     inventory = next(item for item in result.inventory_items if item.source_id == "rule-1")
     assert inventory.source_attributes["policy_id"] == "policy-without-name"
     assert inventory.source_attributes["policy_name"] is None
+
+
+def test_excel_preserves_interfaces_with_partial_and_scoped_topology():
+    from copy import deepcopy
+    from dataclasses import replace
+    from fwmigrate.vendors.cisco_ftd.relationships.interface_topology import (
+        FTDInterfaceTopology, FTDInterfaceTopologyEntry,
+    )
+
+    result = extract_cisco_ftd_source(
+        "interface GigabitEthernet0/0\n ip address 192.0.2.1 255.255.255.0\n"
+        "interface Management0/0\n ip address 198.51.100.1 255.255.255.0\n")
+    before = deepcopy(result.config.model_dump(mode="python"))
+    for entries in (result.derived.interface_topology.interfaces,
+                    result.derived.interface_topology.interfaces[:1], (),
+                    (FTDInterfaceTopologyEntry("Management0/0", "subinterface", "wrong-parent", device_id="other"),)):
+        analysis = replace(result, derived=replace(result.derived, interface_topology=FTDInterfaceTopology(entries)))
+        for profile in ("full", "fast"):
+            output = BytesIO()
+            CiscoFTDSourceReporter().export_excel(analysis, output, profile=profile)
+            workbook = load_workbook(output, read_only=True)
+            headers, *rows = list(workbook["Interfaces"].iter_rows(max_col=9, values_only=True))
+            assert [row[0] for row in rows] == [item.name for item in result.config.interfaces]
+            for row, source in zip(rows, result.config.interfaces):
+                assert row[3] == source.ip
+                expected = next((item for item in entries if item.name == source.name and not item.device_id), None)
+                assert row[6:8] == ((expected.kind, expected.parent) if expected else (None, None))
+            completeness = list(workbook["Collection Completeness"].iter_rows(max_col=5, values_only=True))
+            assert completeness[1] == ("Collection metadata", "NOT_PROVIDED", None, None, None)
+            workbook.close()
+    assert result.config.model_dump(mode="python") == before
+
+
+def test_ftd_zone_references_are_json_with_names_and_ids_in_both_profiles():
+    result = extract_cisco_ftd_source(json.dumps({"source": "fmc-rest-api", "objects": {
+        "securityzones": [{"id": "zone-1", "name": "trust", "interfaces": [
+            {"id": "if-1", "name": "inside"}, {"id": "if-2"}]}]}}))
+    for profile in ("full", "fast"):
+        output = BytesIO()
+        CiscoFTDSourceReporter().export_excel(result, output, profile=profile)
+        workbook = load_workbook(output, read_only=True)
+        row = next(workbook["Zones"].iter_rows(min_row=2, values_only=True))
+        refs = json.loads(row[1])
+        assert refs[0]["name"] == "inside" and refs[0]["source_id"] == "if-1"
+        assert refs[1]["source_id"] == "if-2"
+        workbook.close()

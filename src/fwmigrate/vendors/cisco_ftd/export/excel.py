@@ -13,7 +13,12 @@ from .excel_schema import SHEET_HEADERS, SHEET_ORDER
 
 
 def _text(value: Any) -> Any:
-    value = str(value) if isinstance(value, (list, tuple, dict)) else value
+    if isinstance(value, dict) or isinstance(value, (list, tuple)) and (
+        not value or any(isinstance(item, (dict, list, tuple)) or item is None for item in value)
+    ):
+        value = json.dumps(value, ensure_ascii=False)
+    elif isinstance(value, (list, tuple)):
+        value = ", ".join(str(item) for item in value)
     return excel_safe_value(value)
 
 
@@ -148,7 +153,7 @@ def export_ftd_excel(
             x.description, x.override_metadata, None, x.source_plane) for x in config.protocol_port_objects]
                      + [(_source_name(x), None, None, None, None, None, x.description, x.override_metadata,
                          _refs(x.members), x.source_plane) for x in config.port_object_groups]),
-        "Zones": [(_source_name(x), x.interfaces, x.source_plane) for x in config.security_zones],
+        "Zones": [(_source_name(x), _refs(x.interfaces), x.source_plane) for x in config.security_zones],
         "Interfaces": [(_source_name(x), x.device_id, x.interface_type, x.address, x.zone.name if x.zone else None, x.source_plane,
                          (topologies.get((x.device_id or "", x.name)).kind if topologies.get((x.device_id or "", x.name)) else None),
                          (topologies.get((x.device_id or "", x.name)).parent if topologies.get((x.device_id or "", x.name)) else None), None)
@@ -157,9 +162,10 @@ def export_ftd_excel(
                           (topologies.get((x.device_id or "", x.name)).kind if topologies.get((x.device_id or "", x.name)) else None),
                           (topologies.get((x.device_id or "", x.name)).parent if topologies.get((x.device_id or "", x.name)) else None), None)
                          for x in config.source_interfaces]
-                      + [(item.name, None, None, item.ip, None, config.source_plane, topology.kind, topology.parent, item.vlan_id)
+                      + [(item.name, None, None, item.ip, None, config.source_plane,
+                          topology.kind if topology else None, topology.parent if topology else None, item.vlan_id)
                          for item in config.interfaces
-                         for topology in (topologies["", item.name],) if ("", item.name) in topologies],
+                         for topology in (topologies.get((item.source_attributes.get("device_id") or "", item.name)),)],
         "Routes": [(_source_name(x), x.source_attributes.get("device_name") or x.device_id, x.virtual_router or (x.virtual_router_ref.name if x.virtual_router_ref else None),
              ref_text(x.interface),
              ", ".join(filter(None, (ref_text(ref) for ref in x.selected_networks))) if x.selected_networks else ref_text(x.destination),
@@ -277,7 +283,7 @@ def export_ftd_excel(
         elif name == "Collection Completeness":
             append_report_row(sheet, SHEET_HEADERS[name])
             if not config.collection_metadata.provided:
-                append_report_row(sheet, ("Collection metadata", "NOT_PROVIDED", None, None))
+                append_report_row(sheet, ("Collection metadata", "NOT_PROVIDED", None, None, None))
             for part in config.collection_metadata.parts:
                 append_report_row(sheet, (part.name, part.status, part.complete, part.count, part.failure_reason))
         elif name == "Semantic Completeness":

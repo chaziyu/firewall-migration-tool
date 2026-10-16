@@ -93,6 +93,7 @@ class PlannedInterface(PlannedPANItem):
 @dataclass(frozen=True, slots=True)
 class PlannedZone(PlannedPANItem):
     interfaces: tuple[str, ...] = ()
+    source_contributors: tuple[MigrationSourceRef, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -233,3 +234,4 @@ class PANMigrationPlan:
     ike_gateways: tuple[PlannedIKEGateway, ...] = ()
     ipsec_tunnels: tuple[PlannedIPsecTunnel, ...] = ()
     management_profiles: tuple[PlannedManagementProfile, ...] = ()
+    target_zone_references: tuple[tuple[str, str], ...] = ()
