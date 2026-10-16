@@ -50,7 +50,7 @@ def build_mapping_requirements(config, derived, *, include_configuration=False):
             need_vdom(zone.vdom, "vsys")
 
     # VSYS-scoped families that the planner currently produces directly.
-    for section in ("addresses", "address_groups", "recurring_schedules", "one_time_schedules"):
+    for section in ("addresses", "address_groups", "recurring_schedules", "one_time_schedules", "ipsec_phase1", "ipsec_phase2"):
         for item in getattr(config, section, ()):
             need_vdom(getattr(item, "vdom", None), "vsys")
     service_views = getattr(derived, "services", None)
