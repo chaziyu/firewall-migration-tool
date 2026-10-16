@@ -9,7 +9,6 @@ from fwmigrate.extraction.sanitize import REDACTED_PLACEHOLDER, is_sensitive_key
 
 from ..derived import CheckPointDerivedViews
 from ..model.common import CheckPointSourceObject
-from ..model.gaia import CPGaiaStaticRoute
 from ..model.policy import CPNATRule
 from ..model.source import CheckPointConfig
 from ..models import CollectionStatus, ScopeSelectionResult

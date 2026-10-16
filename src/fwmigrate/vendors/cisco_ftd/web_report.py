@@ -1,9 +1,11 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from .source_report import FTDSourceResult
 from .reporting_counts import count_acp_rules, count_nat_rules
+
+if TYPE_CHECKING:
+    from .source_report import FTDSourceResult
 
 
 def build_ftd_preview(result: FTDSourceResult) -> dict[str, Any]:

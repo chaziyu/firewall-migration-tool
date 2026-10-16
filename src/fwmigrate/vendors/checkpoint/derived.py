@@ -159,7 +159,6 @@ def _derived_completeness(
     }))
     present = {item.command for item in relevant}
     attempted_plane = {item.source_plane for item in collection}
-    applicable = {item for item in dependencies if not item.startswith("gaia/") or "gaia" in attempted_plane}
     # A diagnostic stream reports work the collector attempted; absence from a
     # scope-specific manifest is unknown unless that source plane was requested.
     management_manifest = bool(attempted_plane & {"management", "management-api"})

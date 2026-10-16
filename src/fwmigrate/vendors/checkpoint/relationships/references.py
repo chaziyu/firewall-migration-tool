@@ -45,11 +45,6 @@ class CPMembership:
     status: str = "resolved"; issue: CPBrokenReference | None = None
 
 
-@dataclass(frozen=True, slots=True)
-class CPReferenceResolution:
-    resolved: tuple[CPResolvedReference, ...] = (); broken: tuple[CPBrokenReference, ...] = ()
-
-
 CPRelationshipIssue = CPBrokenReference
 
 
@@ -231,11 +226,4 @@ def collect_broken_references(config: CheckPointConfig, index: CPReferenceIndex 
     return tuple(broken)
 
 
-def build_reference_views(config: CheckPointConfig):
-    index = build_reference_index(config); memberships = {}
-    for edge in build_memberships(config, index):
-        key = edge.owner.uid or f"{_scope(edge.owner)}:{edge.owner.name}"; memberships.setdefault(key, []).append(edge.member_reference)
-    return index.by_uid, index.by_name, {key: tuple(value) for key, value in memberships.items()}, tuple({"command": getattr(item.source, "command", None), "uid": getattr(item.source, "uid", None), "reference": item.reference} for item in collect_broken_references(config, index))
-
-
-__all__ = ["CPBrokenReference", "CPDuplicateObject", "CPMembership", "CPReferenceIndex", "CPReferenceKind", "CPReferenceResolution", "CPRelationshipIssue", "CPResolvedReference", "build_memberships", "build_reference_index", "build_reference_views", "collect_broken_references"]
+__all__ = ["CPBrokenReference", "CPDuplicateObject", "CPMembership", "CPReferenceIndex", "CPReferenceKind", "CPRelationshipIssue", "CPResolvedReference", "build_memberships", "build_reference_index", "collect_broken_references"]

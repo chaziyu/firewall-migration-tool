@@ -2,22 +2,16 @@ from __future__ import annotations
 import io
 import unittest
 from openpyxl import load_workbook
-from openpyxl.utils import get_column_letter
 from fwmigrate.vendors.fortigate.derived import build_derived_views
 from fwmigrate.vendors.fortigate.export import export_excel
-from fwmigrate.vendors.fortigate.export.excel_schema import SHEET_HEADERS, SHEET_ORDER
 from fwmigrate.vendors.fortigate.extraction.extractor import extract_fortigate_config
 from fwmigrate.vendors.fortigate.parser import parse_fortigate_config
-from fwmigrate.vendors.fortigate.security.extraction import sanitize_source_attributes, sanitize_source_value
 from fwmigrate.vendors.fortigate.validation.validator import validate_config
 import io
-import json
 from openpyxl import load_workbook
 from fwmigrate.source_reporting import source_reporters
-from fwmigrate.web import create_app
 from fwmigrate.vendors.fortigate.source_report import (
     FortiGateSourceReporter,
-    FortiGateSourceResult,
 )
 
 SOURCE = """config system global

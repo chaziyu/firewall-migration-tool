@@ -1,10 +1,12 @@
 import { useState } from 'react'
-import type { ConversionSettings, MigrationDraft, VPNParameters } from '../types'
+import type { ReactNode } from 'react'
+import type { ConversionSettings, MigrationDraft, MigrationIssue, VPNParameters } from '../types'
 import { Button } from '../../../components/common/Button'
 
-export function MigrationConversionSettings({ draft, busy, settings, onChange: setSettings, section }: {
+export function MigrationConversionSettings({ draft, busy, settings, onChange: setSettings, section, selectedFinding }: {
   draft: MigrationDraft; busy: boolean; settings: ConversionSettings; onChange: (settings: ConversionSettings) => void
   section: 'hardware' | 'management' | 'vpn' | 'policy'
+  selectedFinding?: Extract<NonNullable<MigrationIssue['action']>, { kind: 'EDIT_SETTINGS' }>
 }) {
   const [managementNetworks, setManagementNetworks] = useState('')
   // Keep applied choices editable after the backend no longer reports them as missing.
@@ -37,38 +39,24 @@ export function MigrationConversionSettings({ draft, busy, settings, onChange: s
       if (!findings.some((row) => row.code === 'SECURITY_PROFILE_REQUIRED' && row.identity === identity)) findings.push({ code: 'SECURITY_PROFILE_REQUIRED', identity, message: identity, member_keys: [] })
     }
   }
-  const has = (...codes: string[]) => findings.some((row) => codes.includes(row.code))
-  if (section === 'hardware') return <details className="migration-review-tools"><summary>Optional target hardware check</summary>
+  const scopedFindings = selectedFinding ? findings.filter((row) => row.code === selectedFinding.finding_code
+    && (selectedFinding.source_vdom === undefined || row.source_vdom === selectedFinding.source_vdom)
+    && (selectedFinding.source_kind === undefined || row.source_kind === selectedFinding.source_kind)
+    && (selectedFinding.identity === undefined || row.identity === selectedFinding.identity)
+    && (!selectedFinding.member_keys.length || JSON.stringify([...(row.member_keys ?? [])].sort()) === JSON.stringify([...selectedFinding.member_keys].sort()))) : findings
+  const has = (...codes: string[]) => scopedFindings.some((row) => codes.includes(row.code))
+  if (section === 'hardware') return <details className="migration-review-tools"><summary>Hardware</summary>
     <p>Limit physical-port proposals to a known model. Uploaded XML does not establish port capacity. Without a model, ports remain unverified.</p>
     <label className="field">Target hardware<select aria-label="Target hardware" value={settings.target_model ?? ''} disabled={busy} onChange={(event) => setSettings({ ...settings, target_model: event.target.value })}>
       <option value="">Hardware unverified</option><option value="PA-820">PA-820 · 12 data ports</option>
     </select></label>
   </details>
   return <>
-    {section === 'management' && has('MANAGEMENT_PROFILE_GROUP') && <details className="migration-review-tools" id="settings-management"><summary>Interface management access</summary>
-    <p>Use an existing profile or propose one with reviewed permitted networks. Existing per-interface assignments take precedence. Validate changes before approval.</p>
-    {findings.some((row) => row.code === 'MANAGEMENT_PROFILE_GROUP' && !row.identity?.startsWith('interface:')) && <details><summary>Generate profiles</summary>
-      <p>Proposals reuse explicit source protocols. Review permitted management networks for each group; generated profiles require final approval. Existing per-interface assignments take precedence.</p>
-      <label className="field">Permitted networks for all proposed management profiles<input aria-label="Permitted networks for all proposed management profiles" disabled={busy || draft.destination_verified} value={managementNetworks} placeholder="Reviewed CIDRs, separated by commas" onChange={(event) => setManagementNetworks(event.target.value)} /></label>
-      <Button disabled={busy || draft.destination_verified || !managementNetworks.trim()} onClick={() => {
-        const profiles = { ...settings.generated_management_profiles }
-        for (const group of findings.filter((row) => row.code === 'MANAGEMENT_PROFILE_GROUP' && !row.identity?.startsWith('interface:'))) profiles[group.identity!] = { permitted_ips: managementNetworks.split(',').map((value) => value.trim()) }
-        setSettings({ ...settings, generated_management_profiles: profiles })
-      }}>Propose profiles for all protocol groups</Button>
-      {findings.filter((row) => row.code === 'MANAGEMENT_PROFILE_GROUP' && !row.identity?.startsWith('interface:')).map((group) => <label className="field" key={group.identity}>
-        {group.source_vdom} · {group.message} · {group.member_keys?.length} interfaces
-        <input aria-label={`Permitted management networks for ${group.identity}`} disabled={busy || draft.destination_verified} value={settings.generated_management_profiles?.[group.identity!]?.permitted_ips.join(', ') ?? ''} placeholder="Reviewed CIDRs, separated by commas" onChange={(event) => {
-          const profiles = { ...settings.generated_management_profiles }
-          const networks = event.target.value.split(',').map((value) => value.trim())
-          if (event.target.value.trim()) profiles[group.identity!] = { permitted_ips: networks }; else delete profiles[group.identity!]
-          setSettings({ ...settings, generated_management_profiles: profiles })
-        }} />
-      </label>)}
-      {draft.destination_verified && <p>Use existing target profiles until destination profile inventory can be verified.</p>}
-    </details>}
-    {findings.some((row) => row.code === 'MANAGEMENT_PROFILE_GROUP' && !!row.member_keys?.length) && <details><summary>Existing target management profiles</summary>
-      <p>Assign an existing target profile only after checking its protocols and permitted IPs. The converter does not create or enable administrative access. Final approval confirms these external prerequisites.</p>
-      {findings.filter((row) => row.code === 'MANAGEMENT_PROFILE_GROUP' && !!row.member_keys?.length).map((group) => {
+    {section === 'management' && has('MANAGEMENT_PROFILE_GROUP') && <SettingsGroup inline={!!selectedFinding} title="Interface access" id="settings-management">
+    <p>Choose who can ping or manage these interfaces.</p>
+    {scopedFindings.some((row) => row.code === 'MANAGEMENT_PROFILE_GROUP' && !!row.member_keys?.length) && <details open={!!selectedFinding}><summary>Use existing profile</summary>
+      <p>Check the profile's protocols and allowed IPs before approval.</p>
+      {scopedFindings.filter((row) => row.code === 'MANAGEMENT_PROFILE_GROUP' && !!row.member_keys?.length).map((group) => {
         const values = group.member_keys?.map((key) => settings.management_profiles?.[key] ?? '') ?? []
         const mixed = !values.every((value) => value === values[0])
         return <label className="field" key={group.identity}>
@@ -80,22 +68,41 @@ export function MigrationConversionSettings({ draft, busy, settings, onChange: s
             }
             setSettings({ ...settings, management_profiles: profiles })
           }} />
-          <small>Applies to: {group.member_keys?.join(', ')}. Different assignments are preserved until you edit this group.</small>
+          <small>Applies to: {group.member_keys?.join(', ')}. Editing replaces this group's assignments.</small>
         </label>
       })}
     </details>}
+    {scopedFindings.some((row) => row.code === 'MANAGEMENT_PROFILE_GROUP' && !row.identity?.startsWith('interface:')) && <details open={!!selectedFinding}><summary>Create profile</summary>
+      <p>Uses source protocols. Existing interface profiles take precedence.</p>
+      <label className="field">Allowed IP ranges<input aria-label="Allowed IP ranges for all groups" disabled={busy || draft.destination_verified} value={managementNetworks} placeholder="CIDRs, separated by commas" onChange={(event) => setManagementNetworks(event.target.value)} /></label>
+      <Button disabled={busy || draft.destination_verified || !managementNetworks.trim()} onClick={() => {
+        const profiles = { ...settings.generated_management_profiles }
+        for (const group of scopedFindings.filter((row) => row.code === 'MANAGEMENT_PROFILE_GROUP' && !row.identity?.startsWith('interface:'))) profiles[group.identity!] = { permitted_ips: managementNetworks.split(',').map((value) => value.trim()) }
+        setSettings({ ...settings, generated_management_profiles: profiles })
+      }}>Apply to groups</Button>
+      {scopedFindings.filter((row) => row.code === 'MANAGEMENT_PROFILE_GROUP' && !row.identity?.startsWith('interface:')).map((group) => <label className="field" key={group.identity}>
+        {group.source_vdom} · {group.message} · {group.member_keys?.length} interfaces
+        <input aria-label={`Allowed IP ranges for ${group.identity}`} disabled={busy || draft.destination_verified} value={settings.generated_management_profiles?.[group.identity!]?.permitted_ips.join(', ') ?? ''} placeholder="CIDRs, separated by commas" onChange={(event) => {
+          const profiles = { ...settings.generated_management_profiles }
+          const networks = event.target.value.split(',').map((value) => value.trim())
+          if (event.target.value.trim()) profiles[group.identity!] = { permitted_ips: networks }; else delete profiles[group.identity!]
+          setSettings({ ...settings, generated_management_profiles: profiles })
+        }} />
+      </label>)}
+      {draft.destination_verified && <p>Creation unavailable: target profile inventory is unverified. Use an existing profile.</p>}
     </details>}
-    {section === 'vpn' && has('VPN_PREREQUISITE', 'VPN_PARAMETERS_REQUIRED') && <details className="migration-review-tools" id="settings-vpn"><summary>VPN decisions</summary>
+    </SettingsGroup>}
+    {section === 'vpn' && has('VPN_PREREQUISITE', 'VPN_PARAMETERS_REQUIRED') && <SettingsGroup inline={!!selectedFinding} title="VPN decisions" id="settings-vpn">
     <p>These decisions do not generate a complete VPN. Gateway authentication and other unsupported settings require separate target configuration.</p>
-    {has('VPN_PREREQUISITE') && <details><summary>Existing target VPN prerequisites</summary>
+    {has('VPN_PREREQUISITE') && <details open={!!selectedFinding}><summary>Existing target VPN prerequisites</summary>
       <p>Leave unchecked unless the gateway, credentials, crypto and selectors already exist and use the proposed tunnel identifier. Final approval records this engineer decision. The converter cannot recover source secrets.</p>
-      {findings.filter((row) => row.code === 'VPN_PREREQUISITE').map((row) => <label className="field" key={row.identity}><span>
+      {scopedFindings.filter((row) => row.code === 'VPN_PREREQUISITE').map((row) => <label className="field" key={row.identity}><span>
         <input type="checkbox" disabled={busy} checked={settings.existing_vpns?.includes(row.identity!) ?? false} onChange={(event) => setSettings({ ...settings, existing_vpns: event.target.checked ? [...settings.existing_vpns ?? [], row.identity!] : settings.existing_vpns?.filter((key) => key !== row.identity) })} /> {row.identity}
       </span></label>)}
     </details>}
-    {has('VPN_PARAMETERS_REQUIRED') && <details><summary>Missing VPN parameters · grouped decisions</summary>
+    {has('VPN_PARAMETERS_REQUIRED') && <details open={!!selectedFinding}><summary>Missing VPN parameters · grouped decisions</summary>
       <p>These source values are absent. Enter reviewed target values for each group; leaving a field blank keeps the related configuration unresolved. Explicit source values are preserved.</p>
-      {findings.filter((row) => row.code === 'VPN_PARAMETERS_REQUIRED').map((group) => <fieldset key={group.member_keys?.join('|')}><legend>{group.source_vdom} · {group.source_kind} · {group.member_keys?.length} source objects</legend>
+      {scopedFindings.filter((row) => row.code === 'VPN_PARAMETERS_REQUIRED').map((group) => <fieldset key={group.member_keys?.join('|')}><legend>{group.source_vdom} · {group.source_kind} · {group.member_keys?.length} source objects</legend>
         {group.fields?.map((field) => {
           const values = group.member_keys?.map((key) => settings.vpn_parameters?.[key]?.[field]) ?? []
           const value = values.length && values.every((item) => item === values[0]) ? values[0] ?? '' : ''
@@ -118,10 +125,10 @@ export function MigrationConversionSettings({ draft, busy, settings, onChange: s
         })}
       </fieldset>)}
     </details>}
-    </details>}
-    {section === 'policy' && (has('IDENTITY_MAPPING_REQUIRED', 'SECURITY_PROFILE_REQUIRED', 'VIP_EXTERNAL_ZONE_REQUIRED') || !!settings.identity_prerequisites?.length || !!previous.identity_prerequisites?.length) && <details className="migration-review-tools" id="settings-policy"><summary>Policy decisions</summary>
-    {findings.filter((row) => row.code === 'VIP_EXTERNAL_ZONE_REQUIRED').map((group) => <label className="field" key={`vip:${group.source_vdom}/${group.identity}`}>
-      {group.source_vdom} / {group.identity}: Original-packet destination zone
+    </SettingsGroup>}
+    {section === 'policy' && (has('IDENTITY_MAPPING_REQUIRED', 'SECURITY_PROFILE_REQUIRED', 'VIP_EXTERNAL_ZONE_REQUIRED') || !!settings.identity_prerequisites?.length || !!previous.identity_prerequisites?.length) && <SettingsGroup inline={!!selectedFinding} title="Policy decisions" id="settings-policy">
+    {scopedFindings.filter((row) => row.code === 'VIP_EXTERNAL_ZONE_REQUIRED').map((group) => <label className="field" key={`vip:${group.source_vdom}/${group.identity}`}>
+      {group.source_vdom} / {group.identity}: Incoming PAN-OS zone before destination NAT
       <input aria-label={`Original-packet destination zone for ${group.source_vdom}/${group.identity}`} disabled={busy} value={settings.vip_external_zones?.[group.source_vdom!]?.[group.identity!] ?? ''} onChange={(event) => {
         const mappings = { ...settings.vip_external_zones, [group.source_vdom!]: { ...settings.vip_external_zones?.[group.source_vdom!] } }
         if (event.target.value.trim()) mappings[group.source_vdom!][group.identity!] = event.target.value
@@ -131,21 +138,22 @@ export function MigrationConversionSettings({ draft, busy, settings, onChange: s
         }
         setSettings({ ...settings, vip_external_zones: mappings })
       }} />
+      <small>Choose the zone where traffic arrives before destination translation.</small>
     </label>)}
-    {(has('IDENTITY_MAPPING_REQUIRED') || !!settings.identity_prerequisites?.length || !!previous.identity_prerequisites?.length) && <details><summary>Policy identities · shared mappings</summary>
+    {(has('IDENTITY_MAPPING_REQUIRED') || (!selectedFinding && (!!settings.identity_prerequisites?.length || !!previous.identity_prerequisites?.length))) && <details open={!!selectedFinding}><summary>Policy identities · shared mappings</summary>
       <p>Map each source user/group to its equivalent target identity once. Confirm that target User-ID and authentication preserve the source restrictions. NAT identity conditions remain separate.</p>
       <Button disabled={busy} onClick={() => {
         const mappings = Object.fromEntries(Object.entries(settings.identity_mappings ?? {}).map(([vdom, values]) => [vdom, { ...values }]))
-        for (const group of findings.filter((row) => row.code === 'IDENTITY_MAPPING_REQUIRED' && row.proposed_value)) {
+        for (const group of scopedFindings.filter((row) => row.code === 'IDENTITY_MAPPING_REQUIRED' && row.proposed_value)) {
           mappings[group.source_vdom!] ??= {}
           mappings[group.source_vdom!][group.identity!] ??= group.proposed_value!
         }
         setSettings({ ...settings, identity_mappings: mappings })
       }}>Propose source identity names</Button>
-      {[...new Set([...findings.filter((row) => row.code === 'IDENTITY_MAPPING_REQUIRED').map((row) => row.source_vdom!), ...settings.identity_prerequisites ?? [], ...previous.identity_prerequisites ?? []])].map((vdom) => <label className="field" key={vdom}><span>
+      {[...new Set([...scopedFindings.filter((row) => row.code === 'IDENTITY_MAPPING_REQUIRED').map((row) => row.source_vdom!), ...(selectedFinding ? [] : [...settings.identity_prerequisites ?? [], ...previous.identity_prerequisites ?? []])])].map((vdom) => <label className="field" key={vdom}><span>
         <input type="checkbox" disabled={busy} checked={settings.identity_prerequisites?.includes(vdom) ?? false} onChange={(event) => setSettings({ ...settings, identity_prerequisites: event.target.checked ? [...settings.identity_prerequisites ?? [], vdom] : settings.identity_prerequisites?.filter((value) => value !== vdom) })} /> {vdom}: target identity and authentication prerequisites are configured and reviewed
       </span></label>)}
-      {findings.filter((row) => row.code === 'IDENTITY_MAPPING_REQUIRED').map((group) => <label className="field" key={`${group.source_vdom}/${group.identity}`}>
+      {scopedFindings.filter((row) => row.code === 'IDENTITY_MAPPING_REQUIRED').map((group) => <label className="field" key={`${group.source_vdom}/${group.identity}`}>
         {group.source_vdom} · {group.message} · {group.member_keys?.length} policies
         <input aria-label={`Target identity for ${group.source_vdom}/${group.identity}`} disabled={busy} value={settings.identity_mappings?.[group.source_vdom!]?.[group.identity!] ?? ''} onChange={(event) => {
           const mappings = { ...settings.identity_mappings, [group.source_vdom!]: { ...settings.identity_mappings?.[group.source_vdom!] } }
@@ -154,15 +162,20 @@ export function MigrationConversionSettings({ draft, busy, settings, onChange: s
         }} />
       </label>)}
     </details>}
-    {has('SECURITY_PROFILE_REQUIRED') && <details><summary>Security profile groups · shared mappings</summary>
+    {has('SECURITY_PROFILE_REQUIRED') && <details open={!!selectedFinding}><summary>Security profile groups · shared mappings</summary>
       <p>Assign an existing target profile group after reviewing its protection settings. One assignment applies to all policies with the same explicit source settings. SSL/SSH decryption and unsupported matching remain separate blockers.</p>
-      {findings.filter((row) => row.code === 'SECURITY_PROFILE_REQUIRED').map((group) => <label className="field" key={group.identity}>
+      {scopedFindings.filter((row) => row.code === 'SECURITY_PROFILE_REQUIRED').map((group) => <label className="field" key={group.identity}>
         {group.member_keys?.length} policies · {group.message}
         <input aria-label={`Security profile group for ${group.identity}`} disabled={busy} value={settings.security_profiles?.[group.identity!] ?? ''} onChange={(event) => {
           const profiles = { ...settings.security_profiles }; if (event.target.value.trim()) profiles[group.identity!] = event.target.value; else delete profiles[group.identity!]; setSettings({ ...settings, security_profiles: profiles })
         }} />
       </label>)}
     </details>}
-    </details>}
+    </SettingsGroup>}
   </>
+}
+
+function SettingsGroup({ inline, title, id, children }: { inline: boolean; title: string; id: string; children: ReactNode }) {
+  return inline ? <section id={id} aria-label={title}>{children}</section>
+    : <details id={id} className="migration-review-tools"><summary>{title}</summary>{children}</details>
 }

@@ -6,7 +6,6 @@ from openpyxl import load_workbook
 
 from fwmigrate.collection import CollectedSource, CollectionStatus, source_collectors
 from fwmigrate.web import create_app
-from fwmigrate.vendors.fortigate.source_report import FortiGateSourceReporter
 
 
 SOURCE = "hostname asa\nusername admin password 0 do-not-save\ninterface GigabitEthernet0/1\n nameif outside\n ip address 203.0.113.1 255.255.255.0\n"

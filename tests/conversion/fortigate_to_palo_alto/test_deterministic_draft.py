@@ -11,6 +11,7 @@ from fwmigrate.vendors.fortigate.model.source import FGConfig
 from fwmigrate.vendors.fortigate.model.interface import FGInterface
 from fwmigrate.vendors.fortigate.model.zone import FGZone
 from fwmigrate.vendors.fortigate.model.address import FGAddress
+from fwmigrate.conversion.fortigate_to_palo_alto.design.draft import draft_issues
 
 
 def derived():
@@ -31,6 +32,28 @@ def test_source_defects_and_task_counts_are_reported_without_repair():
     assert not any(row['status'] == 'READY' for row in body['configuration'] if row['family'] == 'interface')
     from fwmigrate.conversion.fortigate_to_palo_alto.validation import validate_source_interfaces
     assert validate_source_interfaces(FGConfig(interfaces=[FGInterface(name='bare', ip='192.0.2.1')]))
+
+
+def test_issue_routes_are_scoped_and_unknown_work_stays_read_only():
+    findings = [
+        {'code': 'VPN_PARAMETERS_REQUIRED', 'source_vdom': 'root', 'source_kind': 'ipsec_phase1',
+         'fields': ['dh_group'], 'member_keys': ['root/ipsec_phase1/shared'], 'message': 'Review VPN values.'},
+        {'code': 'VPN_PARAMETERS_REQUIRED', 'source_vdom': 'branch', 'source_kind': 'ipsec_phase1',
+         'fields': ['dh_group'], 'member_keys': ['branch/ipsec_phase1/shared'], 'message': 'Review VPN values.'},
+        {'code': 'SOURCE_INTERFACE_IPV4_INVALID', 'source_vdom': 'root', 'source_name': 'wan1',
+         'message': 'Correct the source address.'},
+        {'code': 'UNKNOWN_UNSUPPORTED', 'source_vdom': 'root', 'source_name': 'feature',
+         'message': 'Separate work.'},
+    ]
+    issues = draft_issues([], [], findings)
+    vpn = [issue for issue in issues if issue['code'] == 'VPN_PARAMETERS_REQUIRED']
+    assert len(vpn) == 2
+    assert all(issue['action']['kind'] == 'EDIT_SETTINGS' and issue['action']['section'] == 'vpn' for issue in vpn)
+    assert {issue['action']['source_vdom'] for issue in vpn} == {'root', 'branch'}
+    assert vpn[0]['affected_keys'] == ['root/ipsec_phase1/shared']
+    source = next(issue for issue in issues if issue['code'] == 'SOURCE_INTERFACE_IPV4_INVALID')
+    assert source['action'] == {'kind': 'REVIEW_SOURCE'}
+    assert draft_issues([], []) == []
 
 
 def test_port_pool_exhaustion_scope_and_manual_overrides():

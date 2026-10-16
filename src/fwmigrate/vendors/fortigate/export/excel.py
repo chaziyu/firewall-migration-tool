@@ -1,20 +1,16 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from copy import deepcopy
-from dataclasses import asdict, is_dataclass
-from enum import Enum
-from functools import lru_cache
 from itertools import chain
 from pathlib import Path
 from time import perf_counter
-from typing import Any, BinaryIO, Iterable, Iterator, Mapping, Sequence
+from typing import Any, BinaryIO, Iterable, Mapping, Sequence
 
-from ....source_reporting.excel_style import write_report_summary
+from ....source_reporting.excel_style import style_report_header, write_report_summary
 
 from openpyxl import Workbook
 from openpyxl.cell import WriteOnlyCell
-from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
 from fwmigrate.source_reporting import ExcelExportProfile
@@ -27,13 +23,9 @@ from ..extraction.source_inventory import SourceObjectRecord
 from ..extraction.coverage import (
     build_typed_source_identity_index,
     build_typed_source_inventory,
-    extraction_status,
-    find_typed_source_object,
     supports_path,
 )
-from ..security.extraction import sanitize_source_attributes, sanitize_source_value
 from ..section_registry import registered_sections
-from ..transform.policies import effective_policy_action
 from ..validation.index import ValidationIssueIndex
 from ..validation.models import ValidationIssue, ValidationResult
 from .excel_schema import (
@@ -43,17 +35,17 @@ from .excel_schema import (
 )
 from .excel_common import (
     _POLICY_ACTION_NOTE,
-    _VISIBLE_MODEL_FIELDS_BY_SHEET,
-    _additional_source_settings,
-    _additional_settings,
-    _build_additional_settings,
+    _VISIBLE_MODEL_FIELDS_BY_SHEET as _VISIBLE_MODEL_FIELDS_BY_SHEET,
+    _additional_source_settings as _additional_source_settings,
+    _additional_settings as _additional_settings,
+    _build_additional_settings as _build_additional_settings,
     _excel_safe,
-    _interface_source_values,
-    _lookup_source_header,
-    _model_rows,
+    _interface_source_values as _interface_source_values,
+    _lookup_source_header as _lookup_source_header,
+    _model_rows as _model_rows,
     _normalize_key,
-    _normalized_source_values,
-    _overlay_safe_raw,
+    _normalized_source_values as _normalized_source_values,
+    _overlay_safe_raw as _overlay_safe_raw,
 )
 from .excel_rows import (
     _iter_fortigate_source_inventory_rows,
@@ -62,16 +54,12 @@ from .excel_rows import (
 
 
 _TITLE_FILL = PatternFill("solid", fgColor="17324D")
-_HEADER_FILL = PatternFill("solid", fgColor="0F766E")
 _REVIEW_FILL = PatternFill("solid", fgColor="FEF3C7")
 _ERROR_FILL = PatternFill("solid", fgColor="FEE2E2")
 _WHITE_FONT = Font(color="FFFFFF", bold=True)
 _TITLE_FONT = Font(color="FFFFFF", bold=True, size=14)
-_HEADER_FONT = Font(color="FFFFFF", bold=True, size=10)
 _MUTED_FONT = Font(color="667085", italic=True, size=9)
 _LINK_FONT = Font(color="0563C1", underline="single")
-_THIN = Side(style="thin", color="D9E2DF")
-_BORDER = Border(bottom=_THIN)
 
 _COLUMN_WIDTHS_BY_HEADER = {
     "Name": 28,
@@ -444,6 +432,8 @@ def _write_table_sheet(
     sheet = workbook.create_sheet(sheet_name)
     sheet.sheet_view.showGridLines = True
     sheet.sheet_view.zoomScale = 90
+    sheet.sheet_format.defaultRowHeight = 18
+    sheet.row_dimensions[3].height = 30
 
     max_col = max(len(headers), 1)
     hidden_headers = set(HIDDEN_COLUMNS_BY_DEFAULT.get(sheet_name, ()))
@@ -468,10 +458,7 @@ def _write_table_sheet(
 
     for column, header in enumerate(headers, start=1):
         cell = sheet.cell(3, column, header)
-        cell.fill = _HEADER_FILL
-        cell.font = _HEADER_FONT
-        cell.alignment = Alignment(wrap_text=True, vertical="center")
-        cell.border = _BORDER
+        style_report_header(cell)
 
     _apply_widths(sheet, headers, sheet_name=sheet_name)
     for column, header in enumerate(headers, start=1):
@@ -520,6 +507,10 @@ def _write_table_sheet_fast(
 ) -> int:
     del context
     sheet = workbook.create_sheet(sheet_name)
+    sheet.sheet_view.showGridLines = True
+    sheet.sheet_view.zoomScale = 90
+    sheet.sheet_format.defaultRowHeight = 18
+    sheet.row_dimensions[3].height = 30
     max_col = max(len(headers), 1)
     hidden_headers = set(HIDDEN_COLUMNS_BY_DEFAULT.get(sheet_name, ()))
     sheet.freeze_panes = _freeze_pane(sheet_name, headers)
@@ -544,7 +535,12 @@ def _write_table_sheet_fast(
         ),
         *([None] * (max_col - 1)),
     ])
-    sheet.append([_fast_cell(sheet, header, font=_HEADER_FONT, fill=_HEADER_FILL) for header in headers])
+    cells = []
+    for header in headers:
+        cell = WriteOnlyCell(sheet, header)
+        style_report_header(cell)
+        cells.append(cell)
+    sheet.append(cells)
 
     row_count = 0
     for row in rows:
@@ -575,6 +571,8 @@ def _write_source_inventory_sheet(
     sheet = workbook.create_sheet(sheet_name)
     sheet.sheet_view.showGridLines = True
     sheet.sheet_view.zoomScale = 90
+    sheet.sheet_format.defaultRowHeight = 18
+    sheet.row_dimensions[3].height = 30
 
     max_col = len(headers)
     sheet.merge_cells(start_row=1, start_column=1, end_row=1, end_column=max_col)
@@ -591,10 +589,7 @@ def _write_source_inventory_sheet(
 
     for column, header in enumerate(headers, start=1):
         cell = sheet.cell(3, column, header)
-        cell.fill = _HEADER_FILL
-        cell.font = _HEADER_FONT
-        cell.alignment = Alignment(wrap_text=True, vertical="center")
-        cell.border = _BORDER
+        style_report_header(cell)
 
     for column, header in enumerate(headers, start=1):
         sheet.column_dimensions[get_column_letter(column)].width = _SOURCE_INVENTORY_WIDTHS[header]

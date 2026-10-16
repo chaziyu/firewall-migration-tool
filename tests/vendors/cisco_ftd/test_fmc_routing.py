@@ -1,18 +1,15 @@
 import json
-from copy import deepcopy
-from copy import deepcopy
 from types import SimpleNamespace
 from io import BytesIO
 from pathlib import Path
 from openpyxl import load_workbook
 
 from fwmigrate.vendors.cisco_ftd.fmc.fmc_adapter import CiscoFMCBundleParser
-from fwmigrate.vendors.cisco_ftd.source_report import CiscoFTDSourceReporter, extract_cisco_ftd_source
+from fwmigrate.vendors.cisco_ftd.source_report import extract_cisco_ftd_source
 from fwmigrate.vendors.cisco_ftd.derived import build_ftd_derived_views
 from fwmigrate.vendors.cisco_ftd.validation import validate_ftd_config
 from fwmigrate.vendors.cisco_ftd.model import CiscoFTDReference
 from fwmigrate.vendors.cisco_ftd.export.excel import export_ftd_excel
-from fwmigrate.vendors.cisco_ftd.web_report import build_ftd_preview
 
 
 FIXTURE = Path(__file__).parents[2] / "fixtures" / "cisco_ftd" / "fmc_selected_domains.json"

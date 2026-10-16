@@ -61,7 +61,7 @@ test('summary buttons retain their section and subsection destinations', () => {
   const source = readFileSync(new URL('../src/features/report/SourceReport.tsx', import.meta.url), 'utf8')
   const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText
   const exports = {}
-  const modules = { react: hooks, 'react/jsx-runtime': jsxRuntime, './reportPresentation': presentation, './ReportDetails': {}, '../../components/common/tabKeyboard': {} }
+  const modules = { react: hooks, 'react/jsx-runtime': jsxRuntime, './reportPresentation': presentation, './ReportDetails': {}, './ExcelExportControls': {}, '../../components/common/tabKeyboard': {} }
   new Function('require', 'exports', compiled)((name) => { assert.ok(name in modules); return modules[name] }, exports)
   function nodes(node) {
     if (Array.isArray(node)) return node.flatMap(nodes)

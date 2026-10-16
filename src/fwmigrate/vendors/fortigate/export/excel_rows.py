@@ -7,7 +7,6 @@ existing Excel context. No source-model mutation or target inference occurs here
 from __future__ import annotations
 
 from collections import defaultdict
-from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Iterable, Iterator, Mapping, Sequence
 
 from fwmigrate.source_reporting import ExcelExportProfile
@@ -18,7 +17,6 @@ from ..transform.policies import effective_policy_action
 from ..report_values import address_value, credential_presence, policy_nat_entries, policy_nat_review
 from .excel_schema import SHEET_ORDER
 from .excel_common import (
-    _POLICY_ACTION_NOTE,
     _VISIBLE_MODEL_FIELDS_BY_SHEET,
     _SOURCE_PATHS_BY_SHEET,
     _add_analysis_status,

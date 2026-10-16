@@ -6,6 +6,7 @@ import { ErrorBanner } from '../../components/common/ErrorBanner'
 import { LoadingState } from '../../components/common/LoadingState'
 import { FileUpload } from './FileUpload'
 import { SourceReport } from '../report/SourceReport'
+import { ExcelExportControls } from '../report/ExcelExportControls'
 import { downloadSourceWorkbook, importCollectionSnapshot, loadSourceVendors, previewSource } from './sourceApi'
 import type { SourcePreviewData, SourceVendor, SourceVendorOption } from './types'
 import { SourceOverview } from './SourceOverview'
@@ -13,6 +14,7 @@ import { VendorSelect } from './VendorSelect'
 import { LiveCollection, type CollectionResult } from './LiveCollection'
 import { MigrationWorkflow } from '../migration/MigrationWorkflow'
 import { MigrationReview } from '../migration/MigrationReview'
+import type { MigrationReviewTab } from '../migration/types'
 import type { MigrationStage, MigrationDecisionDocument } from '../migration/types'
 import { asRecord } from '../report/reportPresentation'
 
@@ -29,6 +31,7 @@ export function SourceConfiguration({ view, onViewChange, liveDeviceAccess }: {
   const [vendorsError, setVendorsError] = useState<string | null>(null)
   const [file, setFile] = useState<File | null>(null)
   const [preview, setPreview] = useState<SourcePreviewData | null>(null)
+  const [sourceExpanded, setSourceExpanded] = useState(true)
   const previewId = preview?.source_digest || (preview?.source_evidence ? JSON.stringify(preview.source_evidence) : '')
   const [decisionDocument, setDecisionDocument] = useState<MigrationDecisionDocument | null>(null)
   const [targetSource, setTargetSource] = useState<SourceEvidence | null>(null)
@@ -42,6 +45,10 @@ export function SourceConfiguration({ view, onViewChange, liveDeviceAccess }: {
   const [error, setError] = useState<string | null>(null)
   const [migrationVisited, setMigrationVisited] = useState(false)
   const [migrationView, setMigrationView] = useState<MigrationStage>('load')
+  const reviewContextKey = JSON.stringify([previewId, targetSource, targetDevice])
+  const [reviewTabState, setReviewTabState] = useState({ contextKey: reviewContextKey, tab: 'changes' as MigrationReviewTab })
+  const migrationReviewTab = reviewTabState.contextKey === reviewContextKey ? reviewTabState.tab : 'changes'
+  const setMigrationReviewTab = (tab: MigrationReviewTab) => setReviewTabState({ contextKey: reviewContextKey, tab })
   const [generationRequest, setGenerationRequest] = useState(0)
   const [requestedDecision, setRequestedDecision] = useState<{ key: string; request: number } | null>(null)
   const analysisRequest = useRef(0)
@@ -64,7 +71,7 @@ export function SourceConfiguration({ view, onViewChange, liveDeviceAccess }: {
     let active = true
     restoreWorkspace().then((saved) => {
       if (!active) return
-      if (saved.preview) { setPreview(saved.preview); setVendor(saved.preview.vendor || ''); setExcelProfile(saved.preview.vendor === 'palo_alto' ? 'full' : 'fast'); setDecisionDocument(saved.decisionDocument); setTargetSource(saved.targetSource); setTargetDevice(saved.targetDevice); setMigrationView(saved.workflowMode === 'destination' ? 'load' : 'place') }
+      if (saved.preview) { setPreview(saved.preview); setSourceExpanded(false); setVendor(saved.preview.vendor || ''); setExcelProfile(saved.preview.vendor === 'palo_alto' ? 'full' : 'fast'); setDecisionDocument(saved.decisionDocument); setTargetSource(saved.targetSource); setTargetDevice(saved.targetDevice); setMigrationView(saved.workflowMode === 'destination' ? 'load' : 'place') }
     }).catch((cause) => { if (active) setError(`Workspace restore failed: ${String(cause)}`) })
       .finally(() => { if (active) setWorkspaceReady(true) })
     return () => { active = false }
@@ -83,6 +90,7 @@ export function SourceConfiguration({ view, onViewChange, liveDeviceAccess }: {
       const result = await previewSource(sourceFile, vendor)
       if (request !== analysisRequest.current) return
       setPreview({ ...result, vendor: result.vendor || vendor, acquisition: 'Uploaded configuration' })
+      setSourceExpanded(false)
       setMigrationView('place')
       setDecisionDocument(null)
       setTargetSource(null)
@@ -96,6 +104,7 @@ export function SourceConfiguration({ view, onViewChange, liveDeviceAccess }: {
   }
 
   function clearAnalysis() {
+    setSourceExpanded(true)
     setExportStatus('')
     analysisRequest.current++
     void saveWorkspace({ deterministicDraft: null, artifact: null }).catch((cause) => setError(String(cause)))
@@ -131,6 +140,7 @@ export function SourceConfiguration({ view, onViewChange, liveDeviceAccess }: {
     const collectedVendor = result.vendor_id || result.collection.vendor || vendor
     setVendor(collectedVendor)
     setPreview({ ...result.preview, source_evidence: result.snapshot, vendor: collectedVendor, collection: result.collection, acquisition: 'Live collection' })
+    setSourceExpanded(false)
     setFile(null)
     onViewChange('report')
   }
@@ -169,6 +179,7 @@ export function SourceConfiguration({ view, onViewChange, liveDeviceAccess }: {
       setVendor(result.vendor_id)
       setFile(null)
       setPreview({ ...result.preview, source_evidence: result.snapshot, vendor: result.vendor_id, collection: result.collection, acquisition: 'Imported collection snapshot' })
+      setSourceExpanded(false)
     } catch (cause) {
       if (request !== analysisRequest.current) return
       setError(cause instanceof Error ? cause.message : 'Snapshot import failed')
@@ -178,12 +189,18 @@ export function SourceConfiguration({ view, onViewChange, liveDeviceAccess }: {
   }
 
   const selectedVendor = vendors.find((item) => item.vendor_id === vendor)
+  const sourceCollapsed = view === 'report' && !!preview && !sourceExpanded && !loading
 
   if (!workspaceReady) return <LoadingState label="Restoring browser workspace…" />
   if (!liveDeviceAccess && (view === 'collect' || view === 'live')) return <p role="status">Live device access is available only in the local application.</p>
   return <main className="feature-content">
-    <section id="source-configuration" className="panel source-configuration" hidden={view !== 'collect' && Boolean(preview) && !(file && view === 'report') && !(view === 'migration' && migrationView === 'load')} aria-labelledby="source-title">
-      <h2 id="source-title"><span className="step-num">01</span> Source configuration</h2>
+    <section id="source-configuration" className={`panel source-configuration${sourceCollapsed ? ' source-collapsed' : ''}`} hidden={view !== 'collect' && Boolean(preview) && view !== 'report' && !(view === 'migration' && migrationView === 'load')} aria-labelledby="source-title">
+      <div className="source-panel-heading">
+        <h2 id="source-title" className={sourceCollapsed ? 'visually-hidden' : undefined}><span className="step-num">01</span> Source configuration</h2>
+        {sourceCollapsed && <div className="source-compact-summary"><span className="source-loaded" role="status">✓ Configuration loaded</span><strong>{selectedVendor?.display_name || vendor}</strong><span>{preview?.source_evidence?.source_name || file?.name || String(preview?.acquisition || 'Loaded source configuration')}</span></div>}
+        {view === 'report' && preview && <Button type="button" className="secondary-button button-compact source-panel-toggle" aria-expanded={!sourceCollapsed} aria-controls="source-configuration-controls" onClick={() => setSourceExpanded((expanded) => !expanded)}>{sourceCollapsed ? 'Change source' : 'Collapse source'}</Button>}
+      </div>
+      <div id="source-configuration-controls" hidden={sourceCollapsed}>
       <div className={`source-vendor-grid${view === 'migration' || view === 'live' ? ' with-target' : ''}`}>
         <VendorSelect value={vendor} onChange={changeVendor} vendors={vendors} />
         {(view === 'migration' || view === 'live') && <label className="field"><span>Target platform</span><span className="vendor-select-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path d="m12 3 10 5-10 5L2 8Zm-10 9 10 5 10-5M2 17l10 5 10-5" /></svg><select className="vendor-select" value="palo_alto" disabled><option value="palo_alto">Palo Alto Networks</option></select></span></label>}
@@ -191,16 +208,17 @@ export function SourceConfiguration({ view, onViewChange, liveDeviceAccess }: {
       {vendorsLoading && <LoadingState label="Loading vendors…" />}
       {vendorsError && <ErrorBanner message={vendorsError} />}
       {view === 'collect' ? <>{selectedVendor?.live_collection ? <LiveCollection key={vendor} vendor={selectedVendor} onCollected={acceptCollection} /> : !vendorsLoading && <p>Live collection is not available for this vendor.</p>}</> : <>
-        {!preview && <><div className="ingest-tabs" role="tablist" aria-label="Configuration source">
+        {(!preview || (view === 'report' && sourceExpanded)) && <><div className="ingest-tabs" role="tablist" aria-label="Configuration source">
           <button className={`ingest-tab-btn${ingestMode === 'config' ? ' active' : ''}`} role="tab" aria-selected={ingestMode === 'config'} type="button" onClick={() => setIngestMode('config')}>↑ Upload Config</button>
           <button className={`ingest-tab-btn${ingestMode === 'snapshot' ? ' active' : ''}`} role="tab" aria-selected={ingestMode === 'snapshot'} type="button" onClick={() => setIngestMode('snapshot')}>▤ Upload Snapshot</button>
         </div></>}
         {ingestMode === 'config' ? selectedVendor && <FileUpload key={vendor} file={file} onChange={updateFile} description={selectedVendor.display_name} accept={selectedVendor.file_extensions.join(',')}>
           {loading ? <LoadingState label="Reading configuration and preparing the inventory…" /> : preview ? <span className="selected-file-success" role="status"><span aria-hidden="true">✓ </span>Configuration loaded</span> : error && <><ErrorBanner message={error} /><Button type="button" className="text-button" onClick={() => void analyse()}>Retry</Button></>}
-        </FileUpload> : !preview && <FileUpload key="snapshot" file={null} onChange={(snapshot) => { if (snapshot) void importSnapshot(snapshot) }} accept=".json,application/json" disabled={loading} title="Drop your collection snapshot here" helpText="Import a previously collected, sanitized snapshot (.json)" />}
+        </FileUpload> : (!preview || (view === 'report' && sourceExpanded)) && <FileUpload key="snapshot" file={null} onChange={(snapshot) => { if (snapshot) void importSnapshot(snapshot) }} accept=".json,application/json" disabled={loading} title="Drop your collection snapshot here" helpText="Import a previously collected, sanitized snapshot (.json)" />}
         {preview && !file && <SourceOverview vendor={vendor} vendorName={selectedVendor?.display_name ?? ''} file={file} preview={preview} />}
         {loading && (ingestMode !== 'config' || !file) && <LoadingState label="Reading configuration and preparing the inventory…" />}
       </>}
+      </div>
     </section>
 
     <div className="workflow-panel" hidden={view !== 'report'}>
@@ -214,7 +232,7 @@ export function SourceConfiguration({ view, onViewChange, liveDeviceAccess }: {
 
     <div className="workflow-panel" hidden={view !== 'collect'}>
       <p className="preview-status" role="status" aria-live="polite">{exportStatus}</p>
-      {preview && <div className="report-actions"><p className="report-source-context">{selectedVendor?.display_name ?? vendor} · Live collection</p><label className="excel-profile">Excel profile<select value={excelProfile} onChange={(event) => setExcelProfile(event.target.value as 'fast' | 'full')}><option value="fast">FAST (omits technical evidence sheets)</option><option value="full">FULL</option></select></label><Button disabled={exporting || !previewId} onClick={() => void exportWorkbook()}>{exporting ? 'Preparing workbook…' : 'Export to Excel'}</Button></div>}
+      {preview && <div className="report-actions"><p className="report-source-context">{selectedVendor?.display_name ?? vendor} · Live collection</p><ExcelExportControls vendor={vendor} profile={excelProfile} onProfileChange={setExcelProfile} exporting={exporting} onExport={() => void exportWorkbook()} /></div>}
     </div>
 
     <div className="workflow-panel" hidden={view !== 'migration' && view !== 'live'}>
@@ -227,12 +245,12 @@ export function SourceConfiguration({ view, onViewChange, liveDeviceAccess }: {
         </div>}
         {view === 'migration' && <div className="report-source-context"><strong>FortiGate → PAN-OS</strong><span>{preview.source_evidence?.source_name || file?.name || 'Loaded source configuration'}</span><span>{targetDevice ? `Destination: ${targetDevice}` : 'Destination checks optional for offline export'}</span></div>}
         {view === 'migration' && <nav className="migration-view-nav" aria-label="Migration workspace">
-          {([['load', 'Source'], ['place', 'Target setup'], ['review', 'Review conversion'], ['export', 'Download']] as const).map(([stage, label], index) =>
+          {([['load', 'Source'], ['place', 'Target setup'], ['review', 'Review migration'], ['export', 'Download']] as const).map(([stage, label], index) =>
             <button key={stage} type="button" aria-current={migrationView === stage ? 'step' : undefined} onClick={() => setMigrationView(stage)}>{index + 1}. {label}</button>)}
         </nav>}
         <section hidden={view !== 'migration' || migrationView === 'export'}>
         <MigrationReview key={previewId} preview={preview} vendor={vendor} requestedDecision={requestedDecision}
-          stage={migrationView} onStageChange={setMigrationView}
+          stage={migrationView} onStageChange={setMigrationView} reviewTab={migrationReviewTab} onReviewTabChange={setMigrationReviewTab}
           onApproved={() => { setGenerationRequest((value) => value + 1); setMigrationView('export') }}
           onDecisionDocument={setDecisionDocument}
           onContextChange={(nextSource, nextDevice) => { setTargetSource(nextSource); setTargetDevice(nextDevice) }} />

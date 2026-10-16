@@ -158,7 +158,7 @@ export function fieldLabel(key: string) {
   return labels[key] ?? key.replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())
 }
 export function columnWidth(key: string) {
-  if (['policy_id', 'route_id', 'action', 'status', 'vdom', 'scope', 'distance', 'pfs', 'nat'].includes(key)) return 'short'
+  if (['policy_id', 'rule_id', 'route_id', 'position', 'sequence', 'action', 'status', 'vdom', 'scope', 'distance', 'pfs', 'nat'].includes(key)) return 'short'
   if (['name', 'policy_name', 'display_name'].includes(key)) return 'identity'
   return 'content'
 }

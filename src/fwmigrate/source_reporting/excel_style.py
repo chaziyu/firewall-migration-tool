@@ -12,6 +12,24 @@ _HEADER_FILL = PatternFill("solid", fgColor="0F766E")
 _HEADER_FONT = Font(color="FFFFFF", bold=True, size=10)
 _TITLE_FILL = PatternFill("solid", fgColor="17324D")
 _TITLE_FONT = Font(color="FFFFFF", bold=True, size=14)
+_HEADER_ALIGNMENT = Alignment(wrap_text=True, vertical="center")
+_HEADER_BORDER = Border(bottom=Side(style="thin", color="D9E2DF"))
+
+
+def style_report_header(cell) -> None:
+    """Use the same compact header in native and streaming vendor worksheets."""
+    cell.fill, cell.font, cell.alignment = _HEADER_FILL, _HEADER_FONT, _HEADER_ALIGNMENT
+    cell.border = _HEADER_BORDER
+
+
+def report_column_width(header) -> int:
+    """Bound widths using labels only, without scanning or styling source rows."""
+    words = str(header).lower().replace("_", " ").split()
+    if any(word in words for word in ("description", "comments", "notes", "settings", "reasons", "members", "addresses", "value")):
+        return 44
+    if words and (words[-1] in {"id", "count", "port", "vlan", "enabled"} or words == ["vdom"]):
+        return 16
+    return 28
 
 
 def write_report_summary(
@@ -112,13 +130,17 @@ def excel_safe_value(value):
 def style_fast_sheet(sheet, *, header_row: int = 1) -> None:
     """Style headers only; leave body cells on Excel's native grid."""
     sheet.sheet_view.showGridLines = True
+    sheet.sheet_view.zoomScale = 90
     sheet.sheet_format.defaultColWidth = 28
+    sheet.sheet_format.defaultRowHeight = 18
+    sheet.row_dimensions[header_row].height = 30
     for column in range(1, sheet.max_column + 1):
         letter = get_column_letter(column)
-        sheet.column_dimensions[letter].width = 28
         cell = sheet.cell(header_row, column)
-        cell.fill = _HEADER_FILL
-        cell.font = _HEADER_FONT
+        dimension = sheet.column_dimensions[letter]
+        if dimension.width == 13:
+            dimension.width = report_column_width(cell.value)
+        style_report_header(cell)
     sheet.freeze_panes = f"A{header_row + 1}"
     sheet.auto_filter.ref = f"A{header_row}:{get_column_letter(sheet.max_column)}{sheet.max_row}"
 
@@ -135,35 +157,23 @@ def append_report_row(sheet, values) -> None:
         values = tuple(values)
         sheet._report_column_count = len(values)
         sheet.sheet_view.showGridLines = True
+        sheet.sheet_view.zoomScale = 90
         sheet.sheet_format.defaultColWidth = 28
-        sheet.freeze_panes = "A3" if getattr(sheet, "_report_title_written", False) else "A2"
+        sheet.sheet_format.defaultRowHeight = 18
+        sheet.row_dimensions[1].height = 30
+        sheet.freeze_panes = "A2"
         cells = []
         for column, value in enumerate(values, 1):
-            sheet.column_dimensions[get_column_letter(column)].width = 28
+            dimension = sheet.column_dimensions[get_column_letter(column)]
+            if dimension.width == 13:
+                dimension.width = report_column_width(value)
             cell = WriteOnlyCell(sheet, value)
-            cell.fill, cell.font = _HEADER_FILL, _HEADER_FONT
+            style_report_header(cell)
             cells.append(cell)
         sheet.append(cells)
     else:
         sheet.append(values)
     sheet._report_row_count = count + 1
-
-
-def append_report_title(sheet, title: str) -> None:
-    """Add the FortiGate-style title band to a streaming report sheet."""
-    if not sheet.parent.write_only:
-        raise ValueError("append_report_title requires a write-only worksheet")
-    sheet.sheet_view.showGridLines = True
-    sheet.sheet_format.defaultColWidth = 28
-    sheet.freeze_panes = "A3"
-    cells = []
-    for column in range(1, 7):
-        sheet.column_dimensions[get_column_letter(column)].width = 28
-        cell = WriteOnlyCell(sheet, title if column == 1 else None)
-        cell.fill, cell.font = _TITLE_FILL, _TITLE_FONT
-        cells.append(cell)
-    sheet.append(cells)
-    sheet._report_title_written = True
 
 
 def append_report_navigation(workbook, *, column: int = 5) -> None:
@@ -192,7 +202,7 @@ def finish_report_workbook(workbook, *, summary_title: str | None = None) -> Non
             if sheet.title == "Summary":
                 continue
             if workbook.write_only:
-                first_row = 2 if getattr(sheet, "_report_title_written", False) else 1
+                first_row = 1
                 sheet.auto_filter.ref = (
                     f"A{first_row}:{get_column_letter(sheet._report_column_count)}"
                     f"{sheet._report_row_count + first_row - 1}"
@@ -206,7 +216,7 @@ def finish_report_workbook(workbook, *, summary_title: str | None = None) -> Non
         for sheet in workbook.worksheets:
             if sheet.title == "Summary":
                 continue
-            first_row = 2 if getattr(sheet, "_report_title_written", False) else 1
+            first_row = 1
             sheet.auto_filter.ref = (
                 f"A{first_row}:{get_column_letter(sheet._report_column_count)}{sheet._report_row_count + first_row - 1}"
             )

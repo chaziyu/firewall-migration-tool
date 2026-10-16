@@ -472,7 +472,6 @@ def _rule_collisions(planned, target, device, family, attribute, fields):
                    and (not rule.target_vsys or not item.scope or item.scope.vsys == rule.target_vsys)]
         if not matches:
             continue
-        exact = False
         if len(matches) == 1:
             existing = matches[0]
             explicit = _fields(existing)

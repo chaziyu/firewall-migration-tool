@@ -8,7 +8,6 @@ from fwmigrate.vendors.cisco_ftd.source_report import CiscoFTDSourceReporter, ex
 from fwmigrate.vendors.cisco_ftd.derived import build_ftd_derived_views
 from fwmigrate.vendors.cisco_ftd.validation import validate_ftd_config
 from fwmigrate.vendors.cisco_ftd.export.excel import export_ftd_excel
-from fwmigrate.vendors.cisco_ftd.web_report import build_ftd_preview
 
 
 FIXTURE = Path(__file__).parents[2] / "fixtures" / "cisco_ftd" / "fmc_selected_domains.json"

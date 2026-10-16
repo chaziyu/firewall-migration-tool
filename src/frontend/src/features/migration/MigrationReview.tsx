@@ -6,12 +6,13 @@ import { postForm } from '../../api/client'
 import { FileUpload } from '../source/FileUpload'
 import type { SourcePreviewData } from '../source/types'
 import type { MigrationDecisionDocument } from './types'
-import type { MigrationStage, MigrationDraft, ReferenceRole, ConversionSettings } from './types'
-import { MigrationDesignReview } from './components/MigrationDesignReview'
+import type { MigrationStage, MigrationDraft, MigrationReviewTab, MigrationIssue, ReferenceRole, ConversionSettings } from './types'
+import { MigrationDesignReview, MigrationDesignSummary } from './components/MigrationDesignReview'
 import type { Decision, DecisionDocument, ReviewData, ReviewGroup } from './reviewTypes'
 import { download } from './download'
 import { MigrationReviewQueues } from './components/MigrationReviewQueues'
 import { MigrationDecisionTable } from './components/MigrationDecisionTable'
+import { MigrationIssueWorkspace } from './components/MigrationIssueWorkspace'
 import { draftRowKey, orderReviewGroups, reconcileReviewDrafts, reviewGroupActionable } from './reviewDrafts'
 import { MigrationInterfaceMappings } from './components/MigrationInterfaceMappings'
 import { MigrationTargetSetup } from './components/MigrationTargetSetup'
@@ -29,7 +30,10 @@ import {
   mappingReviewGroups,
   visibleReviewDecisions,
   visibleReviewGroups,
+  migrationIssueCounts,
+  migrationFieldLabel,
 } from './reviewPresentation'
+import { tabKeyboard } from '../../components/common/tabKeyboard'
 
 function focusMappingInput(key: string) {
   requestAnimationFrame(() => {
@@ -42,8 +46,10 @@ function focusMappingInput(key: string) {
   })
 }
 
-export function MigrationReview({ preview, vendor, onDecisionDocument, onContextChange, requestedDecision, stage, onStageChange, onApproved }: {
+export function MigrationReview({ preview, vendor, onDecisionDocument, onContextChange, requestedDecision, stage, onStageChange, onApproved, reviewTab = 'changes', onReviewTabChange = () => {} }: {
   stage: MigrationStage
+  reviewTab?: MigrationReviewTab
+  onReviewTabChange?: (tab: MigrationReviewTab) => void
   onStageChange: (stage: MigrationStage) => void
   onApproved?: () => void
   preview: SourcePreviewData
@@ -65,8 +71,10 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
   const [mappingView, setMappingView] = useState<'guided' | 'bulk'>('guided')
   const [deterministicDraft, setDeterministicDraft] = useState<MigrationDraft | null>(workspace().deterministicDraft)
   const [workflowMode, setWorkflowMode] = useState<'offline' | 'destination'>(workspace().workflowMode ?? 'offline')
-  const [issuePage, setIssuePage] = useState(1)
-  const [exceptionsOpen, setExceptionsOpen] = useState(false)
+  const issueContextKey = JSON.stringify([previewId, targetSource, targetDevice, referenceRole, workflowMode])
+  const [selectedIssueState, setSelectedIssueState] = useState({ contextKey: issueContextKey, id: '' })
+  const selectedIssueId = selectedIssueState.contextKey === issueContextKey ? selectedIssueState.id : ''
+  const setSelectedIssueId = (id: string) => setSelectedIssueState({ contextKey: issueContextKey, id })
   const [setupFocus, setSetupFocus] = useState<{ key: string; request: number } | null>(null)
   const [reviewCurrent, setReviewCurrent] = useState(false)
   const lastReviewContext = useRef('')
@@ -486,17 +494,12 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
 
   function viewIssues() {
     setReviewSection('configuration')
-    setIssuePage(1)
-    setExceptionsOpen(true)
-    requestAnimationFrame(() => {
-      const section = document.getElementById('migration-exceptions') as HTMLDetailsElement | null
-      if (section) { section.open = true; section.scrollIntoView({ block: 'start' }); section.focus() }
-    })
+    onReviewTabChange('decisions')
   }
 
-  function settingsEditor(section: 'hardware' | 'management' | 'vpn' | 'policy') {
+  function settingsEditor(section: 'hardware' | 'management' | 'vpn' | 'policy', selectedFinding?: Extract<NonNullable<MigrationIssue['action']>, { kind: 'EDIT_SETTINGS' }>) {
     return deterministicDraft && <MigrationConversionSettings draft={deterministicDraft} busy={editorsBusy}
-      section={section} settings={stagedSettings} onChange={changeSettings} />
+      section={section} settings={stagedSettings} onChange={changeSettings} selectedFinding={selectedFinding} />
   }
 
   async function applyGroupAction(action: NonNullable<ReviewGroup['actions']>[number]) {
@@ -551,9 +554,44 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
     } : item)), targetSource, targetDevice, referenceRole, overrides) }, 'Selected allocations cleared. Derived proposals may be suggested again.')
   }
 
+  function routeIssue(issue: MigrationIssue) {
+    const action = issue.action
+    if (!action) return
+    if (action.kind === 'REVIEW_SOURCE') { setReviewSection('target'); return }
+    if (action.kind === 'EDIT_SETTINGS') { onReviewTabChange('decisions'); setSelectedIssueId(issue.id); return }
+    setReviewSection('mappings')
+    setSetupFocus((current) => ({ key: action.decision_key, request: (current?.request ?? 0) + 1 }))
+    setMappingView('guided')
+    const group = reviewGroups.find((item) => item.decision_keys.includes(action.decision_key))
+    if (group) { setActiveQueue(group.queue); setSelectedGroupKey(group.decision_keys[0]); setSearch(''); setVdomFilter('all') }
+    focusMappingInput(action.decision_key)
+  }
+
+  function renderIssueAction(issue: MigrationIssue) {
+    const action = issue.action
+    if (action?.kind === 'EDIT_SETTINGS') return <>{settingsEditor(action.section, action)}{pendingChangesControls()}</>
+    if (action?.kind !== 'EDIT_MAPPING') return null
+    const row = deterministicDraft?.decisions.find((item) => item.decision_key === action.decision_key)
+    if (!row) return <Button className="secondary-button" onClick={() => routeIssue(issue)}>Open target setup</Button>
+    const value = drafts[action.decision_key] ?? row.proposed_value ?? ''
+    return <><label className="field">{migrationFieldLabel(row.target_field || '')}
+      <input aria-label={`Decision value for ${row.source_vdom}/${row.source_name}`} value={value} disabled={editorsBusy}
+        onChange={(event) => setDrafts((current) => ({ ...current, [action.decision_key]: event.target.value }))} />
+    </label><p>Validation checks all pending mapping and setting edits. It does not approve configuration.</p><div className="action-row"><Button disabled={editorsBusy || value === (row.proposed_value ?? '')} onClick={() => void run(applyMappings)}>Validate changes</Button>
+      {value !== (row.proposed_value ?? '') && <Button className="secondary-button" disabled={busy} onClick={undoPendingEdits}>Undo pending edits</Button>}</div></>
+  }
+
+  const issueCounts = migrationIssueCounts(deterministicDraft?.issues ?? [])
+  const configurationKeys = new Set(deterministicDraft?.configuration.map(draftRowKey) ?? [])
+  const reviewTabs = [
+    ['changes', 'Changes', deterministicDraft?.configuration.length ?? 0],
+    ['decisions', 'Needs your input', issueCounts.decisions],
+    ['manual', 'Work outside this tool', issueCounts.manual],
+  ] as const
+
   return (
     <section className="panel migration-review" aria-labelledby="migration-review-title">
-      <h2 id="migration-review-title" tabIndex={-1}>{stage === 'load' ? 'Source and conversion settings' : stage === 'review' ? 'Review conversion' : workflowMode === 'offline' ? 'Target setup' : 'Resolve mappings'}</h2>
+      <h2 id="migration-review-title" tabIndex={-1}>{stage === 'load' ? 'Source and conversion settings' : stage === 'review' ? 'Review migration' : workflowMode === 'offline' ? 'Target setup' : 'Resolve mappings'}</h2>
 
       <div hidden={stage !== 'load'}>
       <label className="field">Migration intent<select aria-label="Migration intent" value={workflowMode} disabled={busy} onChange={async (event) => {
@@ -608,21 +646,35 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
         {workflowMode !== 'offline' && !!changedMappings.length && <div className="review-work-card" role="status"><p>{changedMappings.length} staged mapping edits. Blank fields stay local and unresolved.</p><button type="button" className="secondary-button" disabled={busy || !changedMappings.some((row) => drafts[row.decision_key!].trim())} onClick={() => reviewProposals(changedMappings.map((row) => row.decision_key!), (decision) => drafts[decision.key])}>Review staged mappings</button></div>}
         {deterministicDraft && <div hidden={stage !== 'review'}>
           <section aria-label="Configuration decisions">
-            {settingsEditor('vpn')}{settingsEditor('policy')}
-            {workflowMode === 'destination' && settingsEditor('management')}
             {pendingChangesControls()}
           </section>
+          <MigrationDesignSummary draft={deterministicDraft} approvedItems={approvedItems} />
+          <p>Resolve the required inputs, validate your changes, then approve supported configuration in Changes. Separate work remains outside the generated commands.</p>
+          <p className="migration-issue-counts">Changes counts configuration items. The other tabs count issues; one issue can affect several items.</p>
+          <div role="tablist" aria-label="Review migration" className="migration-review-tabs" onKeyDown={tabKeyboard}>
+            {reviewTabs.map(([key, label, count]) => <button key={key} id={`migration-tab-${key}`} role="tab" type="button"
+              aria-selected={reviewTab === key} aria-controls={`migration-panel-${key}`} tabIndex={reviewTab === key ? 0 : -1}
+              onClick={() => onReviewTabChange(key)}>{label} <span>{count}</span></button>)}
+          </div>
+          <div id="migration-panel-changes" role="tabpanel" aria-labelledby="migration-tab-changes" hidden={reviewTab !== 'changes'}>
           <MigrationDesignReview draft={deterministicDraft} busy={busy || !reviewCurrent || !!changedMappings.length || settingsDirty || approvalRevoked}
           approvedItems={approvedItems}
-          onResolveSettings={(group) => {
-            setReviewSection(group === 'management' && workflowMode === 'offline' ? 'mappings' : 'configuration')
-            requestAnimationFrame(() => {
-              const section = document.getElementById(`settings-${group}`) as HTMLDetailsElement | null
-              if (section) { section.open = true; section.querySelector('summary')?.focus(); section.scrollIntoView({ block: 'start' }) }
-            })
-          }}
+          onSelectIssue={(issueId) => { onReviewTabChange('decisions'); setSelectedIssueId(issueId) }}
           onApprove={(groups) => void run(() => approveDesign(groups), 'Selected design groups approved.')}
-          onRenameService={(row, name) => { const names = deterministicDraft.context.service_names ?? {}; void run(async () => { await loadReview(currentDocument(), targetSource, targetDevice, referenceRole, deterministicDraft.context.overrides, { ...names, [row.source_vdom]: { ...names[row.source_vdom], [row.source_name]: name } }) }, 'Service name proposed. Review and approve the rebuilt configuration.') }} /></div>}
+          onRenameService={(row, name) => { const names = deterministicDraft.context.service_names ?? {}; void run(async () => { await loadReview(currentDocument(), targetSource, targetDevice, referenceRole, deterministicDraft.context.overrides, { ...names, [row.source_vdom]: { ...names[row.source_vdom], [row.source_name]: name } }) }, 'Service name proposed. Review and approve the rebuilt configuration.') }} /></div>
+          <div id="migration-panel-decisions" role="tabpanel" aria-labelledby="migration-tab-decisions" hidden={reviewTab !== 'decisions'}>
+            <MigrationIssueWorkspace issues={deterministicDraft.issues ?? []} configurationKeys={configurationKeys} tab="decisions" contextKey={JSON.stringify([previewId, targetSource, targetDevice, referenceRole, workflowMode])}
+              selectedId={selectedIssueId} onSelect={setSelectedIssueId} onRoute={routeIssue} renderAction={renderIssueAction} />
+          </div>
+          <div id="migration-panel-manual" role="tabpanel" aria-labelledby="migration-tab-manual" hidden={reviewTab !== 'manual'}>
+            <MigrationIssueWorkspace issues={deterministicDraft.issues ?? []} configurationKeys={configurationKeys} tab="manual" contextKey={JSON.stringify([previewId, targetSource, targetDevice, referenceRole, workflowMode])}
+              selectedId={selectedIssueId} onSelect={setSelectedIssueId} onRoute={routeIssue} />
+          </div>
+          <details className="conversion-options"><summary>Conversion options</summary>
+            {settingsEditor('vpn')}{settingsEditor('policy')}
+            {workflowMode === 'destination' && settingsEditor('management')}
+          </details>
+        </div>}
         <section hidden={stage !== 'place'} aria-label="Resolve mappings">
         {workflowMode === 'destination' && settingsEditor('hardware')}
         {workflowMode === 'offline' && deterministicDraft && <MigrationTargetSetup draft={deterministicDraft} review={review} drafts={drafts}
@@ -676,25 +728,6 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
         </details>}
         {workflowMode === 'destination' && <>{pendingChangesControls()}<div className="action-row"><Button disabled={busy || !deterministicDraft || !!changedMappings.length || settingsDirty} onClick={() => setReviewSection('configuration')}>Continue to configuration review</Button></div></>}
         </section>
-        <details id="migration-exceptions" tabIndex={-1} open={exceptionsOpen} className="migration-review-tools migration-exceptions" hidden={workflowMode === 'offline'
-          ? stage !== 'review'
-          : stage !== 'place'} onToggle={(event) => setExceptionsOpen(event.currentTarget.open)}>
-         <summary>{workflowMode === 'offline' ? 'Conversion issues and manual work' : 'Unresolved choices and manual work'} ({deterministicDraft?.task_summary?.manual_items ?? 0} configuration items)</summary>
-        {exceptionsOpen && <section aria-label="Migration exceptions">
-          <h3>Root-cause exceptions and manual work</h3>
-          {deterministicDraft?.task_summary && <p>{deterministicDraft.task_summary.prerequisites} dependent task groups · {deterministicDraft.task_summary.conflicts} conflicts · {deterministicDraft.task_summary.manual_issues} manual issue groups. Several issues can affect the same configuration item.</p>}
-          <p>Tasks retain source scope. Affected counts are deduplicated within each task and may overlap between tasks.</p>
-          {(deterministicDraft?.issues ?? []).slice((issuePage - 1) * 30, issuePage * 30).map((issue) => <article className="review-work-card" key={issue.id}>
-            <h3>{({ CHOICE: 'Needs your choice', PREREQUISITE: 'Blocked by a prerequisite', CONFLICT: 'Conflict', MANUAL: 'Requires manual implementation' })[issue.category]} · {issue.source_vdom} / {issue.source_name}</h3>
-            <p>{issue.explanation}</p><p>{issue.affected_keys.length} affected items</p>
-            {!!issue.explanations?.length && <details><summary>Technical reasons ({issue.explanations.length})</summary><ul className="migration-technical-reasons">{issue.explanations.map((reason, index) => <li key={index}>{reason}</li>)}</ul></details>}
-            <details><summary>Affected source identities</summary><ul>{issue.affected_sources.slice(0, 30).map((item, index) => <li key={index}>{item.source_vdom} / {item.source_kind} / {item.source_name}</li>)}</ul>{issue.affected_sources.length > 30 && <p>{issue.affected_sources.length - 30} more affected identities; inspect placement and configuration lists.</p>}</details>
-            {issue.category === 'MANUAL' && <p>Requires manual implementation. Excluded from generated commands.</p>}
-            {issue.action && <div className="action-row"><Button className="secondary-button" disabled={busy || !reviewCurrent} onClick={() => { setReviewSection('mappings'); setSetupFocus({ key: issue.action!.decision_key, request: Date.now() }); setMappingView('guided'); const group = reviewGroups.find((group) => group.decision_keys.includes(issue.action!.decision_key)); if (group) { setActiveQueue(group.queue); setSelectedGroupKey(group.decision_keys[0]); setSearch(''); setVdomFilter('all') }; focusMappingInput(issue.action!.decision_key) }}>{workflowMode === 'offline' ? 'Review target setup' : 'Resolve placement'}</Button></div>}
-          </article>)}
-          {(deterministicDraft?.issues?.length ?? 0) > 30 && <div className="report-pager"><button type="button" disabled={issuePage <= 1} onClick={() => setIssuePage((page) => page - 1)}>Previous tasks</button><span>Page {issuePage}</span><button type="button" disabled={issuePage * 30 >= (deterministicDraft?.issues?.length ?? 0)} onClick={() => setIssuePage((page) => page + 1)}>Next tasks</button></div>}
-        </section>}
-        </details>
         {workflowMode === 'destination' && <details className="migration-review-tools" hidden={stage !== 'place'}><summary>Advanced tools and mapping files</summary>
         <button type="button" disabled={busy || !!changedMappings.length} onClick={() => void run(async () => { await loadReview(currentDocument()) }, 'Design revalidated.')}>Revalidate design</button>
         <details className="migration-review-tools"><summary>Import / export target intent</summary><div className="migration-toolbar">

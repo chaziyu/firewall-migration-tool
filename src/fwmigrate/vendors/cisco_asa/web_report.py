@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Any
-from .source_report import ASASourceResult
+from typing import TYPE_CHECKING, Any
 from .presentation_schema import SOURCE_SECTIONS
 from .presentation import has_source_evidence, safe_value, source_value
+
+if TYPE_CHECKING:
+    from .source_report import ASASourceResult
 
 
 def _source_record(item: Any, allowed: str) -> dict[str, Any]:

@@ -71,7 +71,8 @@ def _intent_values(context, decisions):
 
 def build_deterministic_draft(config, derived, decisions, *, source_digest, target=None,
                               target_device=None, reference=None, reference_role=None,
-                              intent=None, overrides=None, service_names=None, workflow_mode=None, conversion_settings=None):
+                              intent=None, overrides=None, service_names=None, workflow_mode=None, conversion_settings=None,
+                              requirements=None):
     context = draft_context(source_digest, reference, reference_role, target_device, intent, workflow_mode, conversion_settings)
     settings = context.get('conversion_settings', {})
     excluded = set(settings.get('excluded_interfaces', ()))
@@ -88,8 +89,9 @@ def build_deterministic_draft(config, derived, decisions, *, source_digest, targ
     context["overrides"] = {key: value.strip() for key, value in overrides.items()}
     service_names = PANMigrationOptions(service_names={} if service_names is None else service_names).service_names
     context["service_names"] = service_names
-    graph = build_decision_graph(config, derived, decisions,
-                                build_mapping_requirements(config, derived, include_configuration=True))
+    if requirements is None:
+        requirements = build_mapping_requirements(config, derived, include_configuration=True)
+    graph = build_decision_graph(config, derived, decisions, requirements)
     dependencies = {row.decision_key: set(row.depends_on) for row in graph.dependencies}
     for item in decisions.decisions:
         if item.source_kind != "vdom":
@@ -234,13 +236,14 @@ def build_deterministic_draft(config, derived, decisions, *, source_digest, targ
             review_state=PANDecisionReviewState.CONFIRMED if values.get(item.key) else PANDecisionReviewState.PENDING,
             approved_operation="CREATE") for item in decisions.decisions))
     planner_options = replace(provisional.to_options(), conversion_settings=settings)
-    plan = FortiGateToPaloAltoPlanner().plan(config, derived, planner_options, include_configuration=True)
+    plan = FortiGateToPaloAltoPlanner().plan(config, derived, planner_options, include_configuration=True,
+                                          requirements=requirements)
     if service_names:
         eligible = {(item.source_vdom or "root", item.source_name) for item in plan.services if item.status.value == "SUPPORTED"}
         if any((vdom, name) not in eligible for vdom, names in service_names.items() for name in names):
             raise ValueError("Service name overrides must select current supported services")
         plan = FortiGateToPaloAltoPlanner().plan(config, derived,
-            replace(planner_options, service_names=service_names), include_configuration=True)
+            replace(planner_options, service_names=service_names), include_configuration=True, requirements=requirements)
     plan = allocate_plan_names(plan, destination, target_device, service_names)
     plan = bind_vip_external_zones(plan, settings, destination, target_device)
     # Discover additive deltas using proposed values, never the executable pipeline.

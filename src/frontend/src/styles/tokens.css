@@ -68,6 +68,23 @@
   --terminal-warning: #e2be84;
   --terminal-error: #efb3a0;
 
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --control-height: 44px;
+  --control-height-compact: 36px;
+  --font-size-small: 13px;
+  --font-size-body: 15px;
+  --font-size-title: clamp(24px, 2.5vw, 32px);
+  --content-width: 1510px;
+  --page-gutter: clamp(16px, 3vw, 32px);
+  --panel-padding: clamp(16px, 2vw, 24px);
+  --panel-gap: var(--space-4);
+
   --radius-sm: 9px;
   --radius-md: 14px;
   --radius-lg: 18px;

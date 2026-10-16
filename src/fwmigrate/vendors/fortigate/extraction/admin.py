@@ -14,7 +14,6 @@ from ..model.admin import (
 )
 from ..nodes import (
     CommandNode,
-    ConfigNode,
     UnknownCommandNode,
 )
 

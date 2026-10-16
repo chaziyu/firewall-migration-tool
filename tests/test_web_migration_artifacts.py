@@ -7,7 +7,6 @@ from pathlib import Path
 
 from fwmigrate.web import create_app
 import fwmigrate.web as web
-from fwmigrate.conversion.fortigate_to_palo_alto.models import PANMigrationPlan, PANMigrationStatus, PlannedAddress
 
 
 FIXTURE = Path(__file__).parent / "fixtures" / "fortigate" / "palo_alto_mvp.conf"
@@ -20,6 +19,34 @@ MAPPING = {
         "untrust": {"target_zone": "untrust"},
     }},
 }
+
+
+def test_prepare_reuses_requirements_and_serializes_once(monkeypatch):
+    from importlib import import_module
+    from unittest.mock import Mock
+    from fwmigrate.conversion.fortigate_to_palo_alto.requirements import build_mapping_requirements
+    from fwmigrate.web_api import migration
+
+    client = create_app({'TESTING': True}).test_client()
+    payload = {'source': {'vendor': 'fortigate', 'source_text': FIXTURE.read_text()},
+               'workflow_mode': 'OFFLINE_EXPORT'}
+    for overrides in ({}, {'root': {'HTTPS': 'renamed-https'}}):
+        payload['service_name_overrides'] = overrides
+        expected = client.post('/api/migration/design/prepare', json=payload).get_json()
+        requirements = Mock(wraps=build_mapping_requirements)
+        jsonify = Mock(wraps=migration.jsonify)
+        with monkeypatch.context() as patch:
+            for module in ('application.review', 'design.deterministic', 'planner', 'design.graph', 'requirements'):
+                patch.setattr(import_module('fwmigrate.conversion.fortigate_to_palo_alto.' + module),
+                              'build_mapping_requirements', requirements)
+            patch.setattr(migration, 'jsonify', jsonify)
+            response = client.post('/api/migration/design/prepare', json=payload)
+        assert response.status_code == 200
+        assert response.get_json() == expected
+        assert expected['draft']['configuration']
+        requirements.assert_called_once()
+        assert requirements.call_args.kwargs == {'include_configuration': True}
+        jsonify.assert_called_once()
 
 
 def test_mixed_policy_match_stays_blocked_and_visible_in_review_and_bundle():

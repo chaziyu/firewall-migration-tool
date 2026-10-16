@@ -3,7 +3,6 @@ import json
 from copy import deepcopy
 from importlib import import_module
 from pathlib import Path
-from unittest.mock import patch
 
 import openpyxl
 import pytest

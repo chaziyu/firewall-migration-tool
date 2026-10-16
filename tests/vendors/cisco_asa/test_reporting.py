@@ -1,6 +1,5 @@
 from io import BytesIO
 
-import ast
 
 from openpyxl import load_workbook
 
@@ -22,11 +21,9 @@ from fwmigrate.web import create_app
 
 from fwmigrate.vendors.cisco_asa import CiscoASASourceReporter, ASASourceResult
 
-from pathlib import Path
 
 from fwmigrate.vendors.cisco_asa import extract_cisco_asa_source
 
-from fwmigrate.vendors.cisco_asa.model import CiscoInterface, CiscoNATRule, CiscoStaticRoute
 
 
 def test_selected_asa_domains_have_stable_report_sheets_and_headers():

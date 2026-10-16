@@ -5,9 +5,7 @@ from types import SimpleNamespace
 from fwmigrate.conversion.fortigate_to_palo_alto import (
     PANMigrationDecision,
     PANMigrationDecisionSet,
-    PANDecisionReviewState,
     build_recommendations,
-    make_decision_key,
 )
 from fwmigrate.conversion.fortigate_to_palo_alto.interface_candidates import viable_candidate
 from fwmigrate.vendors.fortigate.model.source import FGConfig

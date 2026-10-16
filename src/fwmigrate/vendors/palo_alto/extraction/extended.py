@@ -6,8 +6,7 @@ from typing import Any
 from fwmigrate.extraction.sanitize import sanitize_source_attributes
 
 from ..model import (
-    PANAdministrator, PANAdminRole, PANGlobalProtectGateway,
-    PANGlobalProtectPortal, PANIKECryptoProfile, PANIKEGateway,
+    PANAdministrator, PANAdminRole, PANIKECryptoProfile, PANIKEGateway,
     PANIPsecCryptoProfile, PANLocalUser, PANLocalUserGroup, PANGroupMapping,
     PANSDWANErrorCorrectionProfile, PANSDWANInterfaceProfile,
     PANSDWANPathQualityProfile, PANSDWANRule, PANSDWANSaaSQualityProfile,

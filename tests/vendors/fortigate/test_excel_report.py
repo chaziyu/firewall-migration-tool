@@ -27,7 +27,6 @@ from fwmigrate.vendors.fortigate.export.excel import (
 from fwmigrate.vendors.fortigate.export.excel_schema import SHEET_HEADERS, SHEET_ORDER
 from fwmigrate.vendors.fortigate.extraction.extractor import extract_fortigate_config
 from fwmigrate.vendors.fortigate.parser import parse_fortigate_config
-from fwmigrate.vendors.fortigate.security.extraction import sanitize_source_attributes, sanitize_source_value
 from fwmigrate.vendors.fortigate.validation.validator import validate_config
 from fwmigrate.vendors.fortigate.model.policy import FGPolicy
 from fwmigrate.source_reporting import ExcelExportProfile
@@ -767,7 +766,7 @@ end
 
         row = {}
         with patch(
-            "fwmigrate.vendors.fortigate.export.excel.sanitize_source_attributes",
+            "fwmigrate.vendors.fortigate.export.excel_common.sanitize_source_attributes",
             side_effect=AssertionError("already-safe source was sanitized again"),
         ):
             _overlay_safe_raw(row, {"description": "safe"}, ("Description",))

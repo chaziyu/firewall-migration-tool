@@ -11,7 +11,7 @@ from fwmigrate.vendors.juniper_srx.model import (
     JuniperContextConfig, JuniperScheduler, JuniperProvenanceKind, JuniperSourceProvenance,
 )
 from fwmigrate.vendors.juniper_srx.provenance import record_member_candidate, record_scalar_candidate
-from fwmigrate.vendors.juniper_srx.tokenizer import JunosCommand, extract_value_list
+from fwmigrate.vendors.juniper_srx.tokenizer import JunosCommand
 
 
 _DAYS_OF_WEEK = {

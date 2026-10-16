@@ -36,7 +36,7 @@ export type MigrationDraft = {
   configuration: DraftRow[]
   issues?: MigrationIssue[]
   readiness?: { coverage: { supported: number; manual: number }; deployment: { eligible: false; missing_prerequisites: string[] } }
-  findings: Array<{ code: string; message: string; identity?: string; proposed_value?: string; automation_category?: string; fields?: Array<keyof VPNParameters>; member_keys?: string[]; source_vdom?: string; source_kind?: string }>
+  findings: Array<{ code: string; message?: string; identity?: string; source_name?: string; proposed_value?: string; automation_category?: string; fields?: Array<keyof VPNParameters>; member_keys?: string[]; source_vdom?: string; source_kind?: string; [key: string]: unknown }>
 }
 
 export interface MigrationDecision {
@@ -68,10 +68,13 @@ export interface MigrationDecisionDocument {
 }
 
 export type MigrationStage = 'load' | 'place' | 'review' | 'export'
+export type MigrationReviewTab = 'changes' | 'decisions' | 'manual'
 export type MigrationIssue = {
   id: string; code: string; category: 'CHOICE' | 'PREREQUISITE' | 'CONFLICT' | 'MANUAL'
   source_vdom: string; source_kind: string; source_name: string
   explanation: string; explanations?: string[]; resolution_kind: string; affected_keys: string[]
   affected_sources: Array<{ source_vdom: string; source_kind: string; source_name: string }>
-  prerequisite_keys: string[]; action: { kind: 'EDIT_MAPPING'; decision_key: string } | null
+  prerequisite_keys: string[]; action: { kind: 'EDIT_MAPPING'; decision_key: string }
+    | { kind: 'EDIT_SETTINGS'; section: 'management' | 'vpn' | 'policy'; finding_code: string; source_vdom?: string; source_kind?: string; identity?: string; member_keys: string[] }
+    | { kind: 'REVIEW_SOURCE' } | null
 }

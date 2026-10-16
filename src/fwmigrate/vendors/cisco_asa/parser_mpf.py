@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import ipaddress
 import re
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 
 from fwmigrate.extraction.sanitize import sanitize_raw_text
 from .model.dhcp import CiscoDHCPGlobalSettings, CiscoDHCPOption, CiscoDHCPReservation
@@ -913,7 +913,6 @@ def _is_ip(value: str) -> bool:
 def _parse_management_command(self: Any, line: str, line_number: int) -> None:
     safe = sanitize_raw_text(line)
     parts = line.split()
-    lower = line.lower()
     negated = parts[:1] == ["no"]
     effective_parts = parts[1:] if negated else parts
     effective_lower = " ".join(effective_parts).lower()
@@ -980,53 +979,6 @@ def _parse_management_command(self: Any, line: str, line_number: int) -> None:
             self._legacy_management(line)
             return
     return self._parse_management_command_base(line, line_number)
-
-
-def _build_context_ownership(lines: List[str]) -> Dict[int, Optional[str]]:
-    admin_name: Optional[str] = None
-    for raw in lines:
-        if raw[:1].isspace():
-            continue
-        match = re.fullmatch(r"admin-context\s+(\S+)", raw.strip(), re.I)
-        if match:
-            admin_name = match.group(1)
-        elif re.fullmatch(r"no\s+admin-context(?:\s+\S+)?", raw.strip(), re.I):
-            admin_name = None
-
-    ownership: Dict[int, Optional[str]] = {}
-    active: Optional[str] = None
-    for index, raw in enumerate(lines):
-        line = raw.strip()
-        ownership[index + 1] = active
-        if not line or line.startswith(("!", ":")) or raw[:1].isspace():
-            continue
-        switch = re.fullmatch(r"changeto\s+context\s+(\S+)", line, re.I)
-        if switch:
-            active = switch.group(1)
-            ownership[index + 1] = active
-            continue
-        if re.fullmatch(r"changeto\s+system", line, re.I):
-            active = None
-            ownership[index + 1] = None
-            continue
-        if re.fullmatch(r"changeto\s+admin", line, re.I):
-            active = admin_name
-            ownership[index + 1] = active
-            continue
-        context = re.fullmatch(r"context\s+(\S+)", line, re.I)
-        if not context:
-            continue
-        next_index = index + 1
-        while next_index < len(lines) and not lines[next_index].strip():
-            next_index += 1
-        has_definition_children = (
-            next_index < len(lines)
-            and not lines[next_index].strip().startswith(("!", ":"))
-            and bool(lines[next_index][:1].isspace())
-        )
-        active = None if has_definition_children else context.group(1)
-        ownership[index + 1] = active
-    return ownership
 
 
 def _parse_trustpoint_block(self: Any, lines: List[str], index: int) -> int:

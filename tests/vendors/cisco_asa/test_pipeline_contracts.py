@@ -6,11 +6,9 @@ from openpyxl import load_workbook
 
 from fwmigrate.vendors.cisco_asa.export.excel import export_asa_excel
 
-from fwmigrate.vendors.cisco_asa.export.excel_schema import SHEET_HEADERS, SHEET_ORDER
 
 from fwmigrate.vendors.cisco_asa.source_report import extract_cisco_asa_source
 
-from fwmigrate.vendors.cisco_asa.web_report import build_asa_preview
 
 from copy import deepcopy
 

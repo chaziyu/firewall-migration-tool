@@ -6,7 +6,6 @@ from fwmigrate.vendors.cisco_asa.export.excel import export_asa_excel
 
 from fwmigrate.vendors.cisco_asa.source_report import extract_cisco_asa_source
 
-from .helpers import assert_source_unchanged, snapshot_source
 
 from fwmigrate.vendors.cisco_asa.parser import CiscoASAParser
 
@@ -14,7 +13,7 @@ from pathlib import Path
 
 from fwmigrate.vendors.cisco_asa import extract_cisco_asa_source
 
-from fwmigrate.vendors.cisco_asa.model import CiscoInterface, CiscoNATRule, CiscoStaticRoute
+from fwmigrate.vendors.cisco_asa.model import CiscoNATRule
 
 from fwmigrate.vendors.cisco_asa.web_report import build_asa_preview
 

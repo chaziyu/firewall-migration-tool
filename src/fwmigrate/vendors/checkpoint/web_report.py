@@ -4,11 +4,13 @@ from __future__ import annotations
 
 from dataclasses import asdict, is_dataclass
 from enum import Enum
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from fwmigrate.extraction.sanitize import sanitize_source_attributes
 from .export.excel_schema import SOURCE_SHEETS
-from .source_report import CheckPointSourceResult
+
+if TYPE_CHECKING:
+    from .source_report import CheckPointSourceResult
 
 
 def _project(value: Any) -> Any:
