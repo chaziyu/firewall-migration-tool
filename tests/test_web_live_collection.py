@@ -60,7 +60,10 @@ def test_collection_validates_vendor_and_port():
     client = create_app({"TESTING": True, "WEB_MODE": "local"}).test_client()
     sources = {item["vendor_id"]: item for item in client.get("/api/vendors").get_json()["sources"]}
     assert sources["juniper_srx"]["collection"]["connection_fields"][1]["default"] == 22
-    assert sources["cisco_ftd"]["collection"]["connection_fields"][-1]["default"] is True
+    for vendor in ('cisco_ftd', 'checkpoint'):
+        assert 'verify_tls' not in {
+            field['name'] for field in sources[vendor]['collection']['connection_fields']
+        }
     assert sources["palo_alto"]["live_collection"] is False
     assert client.post("/api/collection/collect", json={**_payload(), "vendor": "palo_alto"}).status_code == 400
     assert client.post("/api/collection/test", json={**_payload(), "connection": {**_payload()["connection"], "port": 70000}}).status_code == 400

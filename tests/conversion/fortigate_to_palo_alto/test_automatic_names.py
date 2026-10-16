@@ -5,6 +5,24 @@ from fwmigrate.conversion.fortigate_to_palo_alto.models import (
 from fwmigrate.conversion.fortigate_to_palo_alto.planning.naming import allocate_plan_names
 
 
+def test_route_allocator_reserves_nested_names_on_selected_device():
+    from types import SimpleNamespace
+    from fwmigrate.conversion.fortigate_to_palo_alto.models import PlannedStaticRoute
+    routes = tuple(PlannedStaticRoute(source_vdom=vdom, source_name='1', target_name='1',
+        source_object_type='static_route', virtual_router='vr', target_vsys='vsys1') for vdom in ('a', 'b'))
+    source = PANMigrationPlan(static_routes=routes)
+    first = allocate_plan_names(source)
+    reserved = first.static_routes[1].target_name
+    router = SimpleNamespace(name='vr', static_routes=[SimpleNamespace(name=reserved)],
+        scope=SimpleNamespace(device_serial=None, device_name='fw', template_provenance={}))
+    target = SimpleNamespace(config=SimpleNamespace(virtual_routers=[router]))
+    allocated = allocate_plan_names(source, target, 'fw')
+    assert allocated.static_routes[0].target_name == '1'
+    assert allocated.static_routes[1].target_name != reserved
+    router.scope.device_name = 'other'
+    assert allocate_plan_names(source, target, 'fw') == first
+
+
 def test_automatic_names_preserve_valid_names_and_rewrite_scoped_references():
     source = PANMigrationPlan(addresses=tuple(PlannedAddress(source_vdom=vdom, source_name='bad/name', target_name='bad/name',
         target_vsys='vsys1', source_kind='address', source_object_type='address', status=PANMigrationStatus.SUPPORTED,

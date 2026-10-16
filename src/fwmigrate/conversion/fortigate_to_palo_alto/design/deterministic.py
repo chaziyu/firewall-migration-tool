@@ -13,7 +13,8 @@ from ..target.target_validation import validate_against_target
 from ..target.name_validation import zone_name_issue
 from ..target.target_object_reuse import classify_target_object_reuse
 from ..target.target_plan_validation import assess_target_plan, _items, item_key
-from ..plan_dependencies import build_plan_dependency_index
+from ..plan_dependencies import build_plan_dependency_index, target_identity
+from ..target.profile import bind_vip_external_zones
 from ..validation import validate_plan, validate_source_interfaces
 from ..requirements import build_mapping_requirements
 from ..coverage import build_migration_coverage, represented_vip_groups
@@ -241,11 +242,17 @@ def build_deterministic_draft(config, derived, decisions, *, source_digest, targ
         plan = FortiGateToPaloAltoPlanner().plan(config, derived,
             replace(planner_options, service_names=service_names), include_configuration=True)
     plan = allocate_plan_names(plan, destination, target_device, service_names)
+    plan = bind_vip_external_zones(plan, settings, destination, target_device)
     # Discover additive deltas using proposed values, never the executable pipeline.
     classifications = classify_target_object_reuse(plan, destination, target_device, allow_additive=True) if destination is not None else ()
     operations = {}
     classification_by_source = {(row["source_vdom"], row.get("source_kind"), row["source_name"], row["family"]): row
                                 for row in classifications}
+    for zone in plan.zones:
+        classification = classification_by_source.get((zone.source_vdom, zone.source_kind, zone.source_name, 'zone'))
+        if classification:
+            for ref in zone.source_contributors:
+                classification_by_source[(ref.source_vdom, ref.source_kind, ref.source_name, 'zone')] = classification
     classification_by_item = {(row['source_vdom'], row.get('source_kind'), row['source_name'], row['family'], row.get('target_name')): row for row in classifications}
     for key, item in by_key.items():
         operation = None if item.target_field == "vsys" and destination is None else "CREATE"
@@ -264,6 +271,10 @@ def build_deterministic_draft(config, derived, decisions, *, source_digest, targ
     provisional = PANMigrationDecisionSet(tuple(replace(item, approved_operation=operations[item.key]) for item in provisional.decisions))
     target_findings = validate_against_target(config, provisional, destination, target_device)
     findings = [row.to_dict() for row in target_findings]
+    findings.extend({'code': 'VIP_EXTERNAL_ZONE_REQUIRED', 'source_vdom': vip.vdom or 'root',
+        'identity': vip.name, 'message': 'Choose the original-packet destination zone before destination translation.'}
+        for vip in config.vips if not vip.extintf or vip.extintf == 'any'
+        or vip.name in settings.get('vip_external_zones', {}).get(vip.vdom or 'root', {}))
     findings.extend({'code': 'EFFECTIVE_SOURCE_VALUE', 'source_vdom': row.vdom,
         'source_kind': row.kind, 'identity': f'{row.vdom}/{row.name}',
         'message': f'{row.kind} {row.name}: {row.field}={row.value} is a documented FortiOS {row.version} effective value, not explicit source state. Reference: {row.reference}'}
@@ -385,7 +396,7 @@ def build_deterministic_draft(config, derived, decisions, *, source_digest, targ
         reasons.extend(blockers.get(key, ()))
         if any(rows[parent].status != "READY" for parent in required if parent in rows):
             reasons.append("Resolve the related mapping decisions")
-        valid = (item.source_object_type, item.target_vsys, item.target_name or item.source_name) in validation.renderable_item_keys
+        valid = target_identity(item) in validation.renderable_item_keys
         operation = dispositions[key].value
         causes = [_warning_guidance(item, warning, frozenset(by_key)).to_dict()
                   for warning in item.warnings]
@@ -394,7 +405,7 @@ def build_deterministic_draft(config, derived, decisions, *, source_digest, targ
                      for cause in causes)
         configuration.append({"group_key": "item:" + key, "item_key": key,
             "source_vdom": item.source_vdom, "source_kind": item.source_kind, "source_name": item.source_name,
-            "family": item.source_object_type, "target_name": item.target_name, "target_scope": item.target_vsys,
+            "family": item.source_object_type, "target_name": item.target_name, "target_scope": target_identity(item)[1],
             "operation": operation if operation != "BLOCK" else None,
             "status": "READY" if valid and operation != "BLOCK" and not reasons else
                 "UNSUPPORTED" if item.status.value == "UNSUPPORTED" or manual else

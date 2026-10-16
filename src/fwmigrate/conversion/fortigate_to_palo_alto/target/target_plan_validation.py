@@ -115,11 +115,13 @@ def assess_target_plan(plan: PANMigrationPlan, classifications, target_findings,
                 dispositions[item_key(item)] = PANRenderDisposition.REUSE
             elif status == "ADDITIVE":
                 field = "target_interface" if family == "interface" else "target_zone"
-                approved = any(decision.source_vdom == (item.source_vdom or "root")
-                    and decision.source_kind == item.source_kind and decision.source_name == item.source_name
+                contributors = [(ref.source_vdom, ref.source_kind, ref.source_name)
+                    for ref in getattr(item, 'source_contributors', ())] or [(item.source_vdom or 'root', item.source_kind, item.source_name)]
+                approved = all(any(decision.source_vdom == vdom
+                    and decision.source_kind == kind and decision.source_name == name
                     and decision.target_field == field and decision.value == item.target_name
                     and decision.review_state.value == "CONFIRMED" and decision.approved_operation == "CONFIGURE"
-                    for decision in decisions.decisions)
+                    for decision in decisions.decisions) for vdom, kind, name in contributors)
                 dispositions[item_key(item)] = PANRenderDisposition.CONFIGURE if approved else PANRenderDisposition.BLOCK
                 if not approved:
                     blockers[item_key(item)].append("ADDITIVE_CONFIGURATION_REQUIRES_APPROVAL")

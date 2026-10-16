@@ -16,12 +16,16 @@ FAMILIES = {
     'ike_crypto_profiles': 'ike_crypto_profile', 'ipsec_crypto_profiles': 'ipsec_crypto_profile',
     'ike_gateways': 'ike_gateway', 'ipsec_tunnels': 'ipsec_tunnel',
     'management_profiles': 'management_profile',
+    'static_routes': 'static_route',
 }
 
 
 def allocate_plan_names(plan, target=None, target_device=None, service_names=None):
     reserved = defaultdict(set)
     if target is not None:
+        for router in getattr(target.config, 'virtual_routers', ()):
+            if _device(router) == target_device:
+                reserved[(router.name, 'static_route')].update(route.name for route in router.static_routes or ())
         target_families = {**FAMILIES, 'policies': 'security_rule'}
         for attribute, namespace in target_families.items():
             for item in getattr(target.config, attribute, ()):
@@ -31,6 +35,8 @@ def allocate_plan_names(plan, target=None, target_device=None, service_names=Non
     records = [(attribute, index, item) for attribute in FAMILIES for index, item in enumerate(getattr(plan, attribute))]
     def namespace(attribute, item):
         family = FAMILIES[attribute]
+        if family == 'static_route':
+            return item.virtual_router, family
         return (None if family in {'ike_crypto_profile', 'ipsec_crypto_profile', 'ike_gateway', 'ipsec_tunnel', 'management_profile'} else item.target_vsys, family)
     def valid(attribute, name):
         pattern = r'[A-Za-z0-9_.-]{1,31}' if FAMILIES[attribute].endswith('crypto_profile') else r'[A-Za-z0-9_. -]{1,63}'

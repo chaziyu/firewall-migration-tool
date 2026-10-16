@@ -1,5 +1,6 @@
 """Explicit design settings; configured XML interfaces are not hardware inventory."""
 import re
+from dataclasses import replace
 from ipaddress import ip_network
 
 # PA-800 Hardware Reference: data ports 1-12; MGT and HA are separate.
@@ -9,9 +10,19 @@ MODEL_PORTS = {'PA-820': tuple(f'ethernet1/{number}' for number in range(1, 13))
 def parse_conversion_settings(value):
     if value is None:
         return {}
-    if not isinstance(value, dict) or set(value) - {'target_model', 'panos_version', 'excluded_interfaces', 'management_profiles', 'generated_management_profiles', 'existing_vpns', 'vpn_parameters', 'security_profiles', 'identity_mappings', 'identity_prerequisites'}:
+    if not isinstance(value, dict) or set(value) - {'target_model', 'panos_version', 'excluded_interfaces', 'management_profiles', 'generated_management_profiles', 'existing_vpns', 'vpn_parameters', 'security_profiles', 'identity_mappings', 'identity_prerequisites', 'vip_external_zones'}:
         raise ValueError('Invalid conversion settings')
     result = dict(value)
+    from .name_validation import zone_name_issue
+    vip_zones = result.get('vip_external_zones', {})
+    if not isinstance(vip_zones, dict):
+        raise ValueError('VIP external zones must map VDOM to VIP name and target zone')
+    for vdom, mappings in vip_zones.items():
+        if not isinstance(vdom, str) or not vdom or not isinstance(mappings, dict):
+            raise ValueError('Invalid scoped VIP external zones')
+        for name, zone in mappings.items():
+            if not isinstance(name, str) or not name or not isinstance(zone, str) or zone == 'any' or zone_name_issue(zone):
+                raise ValueError('VIP original-packet destination zone must be an explicit valid target zone')
     identities = result.get('identity_mappings', {})
     if not isinstance(identities, dict):
         raise ValueError('Invalid scoped identity mappings')
@@ -81,6 +92,28 @@ def parse_conversion_settings(value):
         if fields.get('dh_group') not in {None, 'group14', 'group15', 'group16', 'group19', 'group20', 'group21'}:
             raise ValueError('Unsupported reviewed DH group')
     return result
+
+
+def bind_vip_external_zones(plan, settings, target=None, device=None):
+    """Verify explicit target choices against planned zones or selected destination evidence."""
+    from .target_suggestions import _device
+    references = set()
+    for vdom, mappings in settings.get('vip_external_zones', {}).items():
+        for name, zone in mappings.items():
+            rules = [rule for rule in plan.nat_rules if (rule.source_vdom or 'root') == vdom
+                     and rule.source_kind == 'vip' and rule.source_name == name]
+            vsys = rules[0].target_vsys if rules else None
+            if not vsys:
+                raise ValueError(f'VIP {vdom}/{name} requires a selected target VSYS')
+            if any(item.target_vsys == vsys and item.target_name == zone for item in plan.zones):
+                continue
+            matches = [item for item in getattr(getattr(target, 'config', None), 'zones', ())
+                       if device and _device(item) == device and getattr(item.scope, 'vsys', None) == vsys
+                       and item.name == zone]
+            if len(matches) != 1 or matches[0].network_type != 'layer3' or matches[0].raw_extra:
+                raise ValueError(f'VIP {vdom}/{name}: original-packet destination zone is unavailable in target VSYS {vsys}')
+            references.add((vsys, zone))
+    return replace(plan, target_zone_references=tuple(sorted(references)))
 
 
 def site_to_site_phase1(source):

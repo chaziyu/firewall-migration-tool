@@ -20,7 +20,6 @@ class CiscoFTDCollector:
         {"name": "username", "label": "Username", "type": "text", "required": True},
         {"name": "password", "label": "Password", "type": "password", "required": True},
         {"name": "domain", "label": "Domain name or UUID", "type": "text", "required": False},
-        {"name": "verify_tls", "label": "Verify TLS certificate", "type": "checkbox", "default": True},
     )
     # FMC roots are grouped by ownership so collection completeness stays diagnosable.
     _domain_objects = {
@@ -89,6 +88,8 @@ class CiscoFTDCollector:
         verify = connection.get("verify_tls", True)
         if not isinstance(verify, bool):
             raise ValueError("verify_tls must be a boolean.")
+        if not verify:
+            raise ValueError("TLS certificate verification cannot be disabled.")
         options["verify_tls"] = verify
         return options
 
@@ -101,7 +102,7 @@ class CiscoFTDCollector:
             session = requests.Session()
         else:
             session = self._session_factory()
-        session.verify = options["verify_tls"]
+        session.verify = True
         base = f'https://{options["host"]}:{options["port"]}'
         try:
             response = session.post(base + "/api/fmc_platform/v1/auth/generatetoken", auth=(options["username"], options["password"]), timeout=(15, 60), allow_redirects=False)

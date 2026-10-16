@@ -12,7 +12,7 @@ from fwmigrate.source_reporting.options import ExcelExportProfile
 
 from fwmigrate.vendors.palo_alto.source_report import PaloAltoSourceReporter, PaloAltoSourceResult
 from fwmigrate.vendors.palo_alto.export.excel_schema import HIDDEN_COLUMNS_BY_DEFAULT, SHEET_HEADERS, SHEET_ORDER
-from fwmigrate.vendors.palo_alto.export.excel import _write_table, _write_table_fast
+from fwmigrate.vendors.palo_alto.export.excel import _write_table
 from fwmigrate.vendors.palo_alto.model import PANAddress, PANOSConfig
 from fwmigrate.vendors.palo_alto.source_model import PANOSDerivedViews, PANScope
 from fwmigrate.vendors.palo_alto.validation.models import PANOSValidationIssue, PANOSValidationResult
@@ -25,7 +25,7 @@ FIXTURES = Path(__file__).parents[2] / "fixtures" / "palo_alto"
 def test_fast_filter_only_covers_sheets_with_data(row_count):
     workbook = Workbook(write_only=True)
     rows = ({"Name": "object"} for _ in range(row_count))
-    assert _write_table_fast(workbook, "Review Required", rows) == row_count
+    assert _write_table(workbook, "Review Required", rows) == row_count
     output = BytesIO()
     workbook.save(output)
     sheet = load_workbook(BytesIO(output.getvalue()))["Review Required"]
@@ -165,7 +165,7 @@ def test_plain_writer_preserves_values_and_layout_after_reload():
         {"Effective Order": "derived"},
         {},
     ))
-    assert _write_table(workbook, "Security Policies", rows) == 5
+    assert _write_table(workbook, "Security Policies", rows, row_count=5) == 5
     output = BytesIO()
     workbook.save(output)
     sheet = load_workbook(BytesIO(output.getvalue()))["Security Policies"]

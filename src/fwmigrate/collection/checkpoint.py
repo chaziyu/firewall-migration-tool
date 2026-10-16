@@ -46,20 +46,20 @@ class CheckPointCollector:
         {"name": "gaia_port", "label": "Gaia SSH port", "type": "number", "required": False, "default": 22},
         {"name": "gaia_username", "label": "Gaia username", "type": "text", "required": False},
         {"name": "gaia_password", "label": "Gaia password", "type": "password", "required": False},
-        {"name": "verify_tls", "label": "Verify TLS certificate", "type": "checkbox", "default": True},
     )
 
     def __init__(self, api_session_factory=None, gaia_connection_factory=None, command_registry=None):
         self.api_session_factory = _default_api_session_factory if api_session_factory is None else api_session_factory
         self.gaia_connection_factory = _default_gaia_connection_factory if gaia_connection_factory is None else gaia_connection_factory
         self.command_registry = R81_COMMAND_REGISTRY if command_registry is None else command_registry
-        self._layer_states = {}
 
     def validate_options(self, connection):
         options = validate_connection(connection, port=443, optional=("domain", "package", "layer", "gateway", "gaia_host", "gaia_username", "gaia_password"))
         options["verify_tls"] = connection.get("verify_tls", True)
         if not isinstance(options["verify_tls"], bool):
             raise ValueError("verify_tls must be a boolean.")
+        if not options["verify_tls"]:
+            raise ValueError("TLS certificate verification cannot be disabled.")
         try:
             options["gaia_port"] = int(connection.get("gaia_port", 22))
         except (TypeError, ValueError) as exc:
@@ -72,7 +72,7 @@ class CheckPointCollector:
 
     def _open(self, options):
         session = self.api_session_factory()
-        session.verify = options["verify_tls"]
+        session.verify = True
         base = f'https://{options["host"]}:{options["port"]}/web_api/'
         payload = {"user": options["username"], "password": options["password"]}
         if options["domain"]:
@@ -116,7 +116,7 @@ class CheckPointCollector:
                                        collection_timestamp=datetime.now(timezone.utc).isoformat(),
                                        requested_scope={key: options[key] or None for key in ("domain", "package", "layer", "gateway")})
         parts = []
-        self._layer_states.clear()
+        layer_states = {}
         try:
             for command, spec in self.command_registry.items():
                 selectors = self._plan_selectors(command, spec, bundle, options)
@@ -129,7 +129,7 @@ class CheckPointCollector:
                     )
                     parts.append(CollectionPart(command, CPStatus.NOT_ATTEMPTED.value, False))
                 for selector in selectors:
-                    self._collect_command(session, base, command, spec, selector, bundle, parts, options)
+                    self._collect_command(session, base, command, spec, selector, bundle, parts, options, layer_states)
                 if command == "show-domains" and not options["domain"]:
                     domains = _discovered_domains(bundle)
                     if len(domains) > 1:
@@ -213,7 +213,7 @@ class CheckPointCollector:
             if isinstance(item, dict) and item.get("name")
         ]
 
-    def _collect_command(self, session, base, command, spec, selector, bundle, parts, options,
+    def _collect_command(self, session, base, command, spec, selector, bundle, parts, options, layer_states,
                          parent_layer_uid=None, parent_rule_uid=None, seen_inline=None):
         offset = 0
         scope = self._response_scope(spec, options, selector)
@@ -224,7 +224,7 @@ class CheckPointCollector:
         if command == "show-access-rulebase" and selector:
             identity = self._layer_identity(scope.get("domain"), selector[1], bundle)
             if identity:
-                self._layer_states[identity] = "in_progress"
+                layer_states[identity] = "in_progress"
         for page in range(100):
             payload = {"limit": 500, "offset": offset} if spec.pagination_required else {}
             if spec.details_level_full:
@@ -278,19 +278,19 @@ class CheckPointCollector:
                                 if item.command == command and item.layer == child_name and encoded_parent not in item.collection_warnings:
                                     item.collection_warnings.append(encoded_parent)
                             if child_identity:
-                                state = self._layer_states.get(child_identity)
+                                state = layer_states.get(child_identity)
                                 if state in {"in_progress", "complete"}:
                                     continue
-                                self._layer_states[child_identity] = "in_progress"
+                                layer_states[child_identity] = "in_progress"
                             if not child_name:
                                 self._record_unresolved_inline(command, spec, reference, parent, scope, bundle, parts)
                                 continue
                             before = len(bundle.responses)
-                            self._collect_command(session, base, command, spec, ("name", child_name), bundle, parts, options,
+                            self._collect_command(session, base, command, spec, ("name", child_name), bundle, parts, options, layer_states,
                                                   parent_layer_uid=root_uid, parent_rule_uid=rule.get("uid"), seen_inline=seen_inline)
                             if child_identity:
                                 child_records = [item for item in bundle.responses[before:] if item.command == command]
-                                self._layer_states[child_identity] = "complete" if child_records and all(
+                                layer_states[child_identity] = "complete" if child_records and all(
                                     collection_status_is_success(item.collection_status) for item in child_records
                                 ) else "failed"
                             # The original response keeps the first parent; every parent edge is
@@ -322,7 +322,7 @@ class CheckPointCollector:
                 if command == "show-access-rulebase" and selector:
                     identity = self._layer_identity(scope.get("domain"), selector[1], bundle)
                     if identity:
-                        self._layer_states[identity] = "failed"
+                        layer_states[identity] = "failed"
                 return
         parts.append(CollectionPart(command, CPStatus.API_ERROR.value, False))
         bundle.collection_completeness[operation_key] = CollectionCompletenessRecord(command=command, status=CPStatus.API_ERROR, complete=False, error_message="Pagination page limit exceeded.", **scope)

@@ -74,7 +74,7 @@ def _objects(*, address_status=PANMigrationStatus.SUPPORTED, service_status=PANM
 
 
 def _rule(**updates):
-    values = dict(source_object_type="security_rule", source_name="allow", target_vsys="vsys1",
+    values = dict(applications=("any",), source_object_type="security_rule", source_name="allow", target_vsys="vsys1",
                   status=PANMigrationStatus.SUPPORTED, from_zones=("trust",), to_zones=("trust",),
                   sources=("hosts",), destinations=("any",), services=("web",), action="allow")
     values.update(updates)

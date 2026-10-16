@@ -11,6 +11,18 @@ def rendered(*commands, plan_status="READY"):
     return RenderedMigration(tuple(commands), {"commands": len(commands), "plan_status": plan_status})
 
 
+@pytest.mark.parametrize('control', ['\r', '\n', '\r\n', '\0', '\x1b', '\t', '\x7f', '\x85', '\u2028', '\u2029'])
+def test_all_commands_are_preflighted_before_config_mode(control):
+    deployer = PANSSHDeployer(PANDeploymentOptions('fw', 'admin', 'secret'))
+    connection = FakeConnection()
+    deployer.connection = connection
+    result = deployer.push_candidate(rendered('set safe', 'set unsafe' + control + 'next'))
+    assert result.commands_attempted == 0
+    assert result.failed_command_index == 1
+    assert result.recovery_state == 'REJECTED_BEFORE_WRITES'
+    assert not connection.in_config_mode
+
+
 class FakeConnection:
     def __init__(self, command_responses=(), validation_responses=(), config_error=None):
         self.command_responses = iter(command_responses)

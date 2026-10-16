@@ -7,6 +7,7 @@ import logging
 from pydantic import ValidationError
 from flask import Flask, Request as FlaskRequest, jsonify, request
 from werkzeug.exceptions import HTTPException
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 from fwmigrate.web_support.request_controls import register_request_controls
 from fwmigrate.web_support.public_errors import safe_validation_message
@@ -59,10 +60,23 @@ def create_app(test_config=None):
     app.config.setdefault('WEB_MODE', os.environ.get('FWMIGRATE_WEB_MODE', 'public'))
     if app.config['WEB_MODE'] not in {'public', 'local'}:
         raise ValueError('WEB_MODE must be public or local')
+    for setting in ('TRUSTED_PROXY_FOR', 'TRUSTED_PROXY_PROTO'):
+        value = app.config.get(setting, os.environ.get('FWMIGRATE_' + setting, '0'))
+        if not ((type(value) is int and value >= 0) or
+                (isinstance(value, str) and value.isascii() and value.isdecimal())):
+            raise ValueError(f'{setting} must be a nonnegative integer')
+        app.config[setting] = int(value)
+    if app.config['TRUSTED_PROXY_FOR'] or app.config['TRUSTED_PROXY_PROTO']:
+        if app.config['WEB_MODE'] == 'local':
+            raise ValueError('Proxy trust is not supported in local mode')
+        app.wsgi_app = ProxyFix(
+            app.wsgi_app, x_for=app.config['TRUSTED_PROXY_FOR'],
+            x_proto=app.config['TRUSTED_PROXY_PROTO'], x_host=0, x_port=0, x_prefix=0,
+        )
     if not app.config.get('ALLOWED_HOSTS'):
         hosts = os.environ.get('FWMIGRATE_ALLOWED_HOSTS', '')
         app.config['ALLOWED_HOSTS'] = [host.strip().lower() for host in hosts.split(',') if host.strip()] or [
-            'localhost', '127.0.0.1', '::1', 'firewall-migration-tool.onrender.com',
+            'localhost', '127.0.0.1', '::1',
         ]
         render_host = os.environ.get('RENDER_EXTERNAL_HOSTNAME')
         if render_host:
@@ -116,6 +130,8 @@ def create_app(test_config=None):
         response.headers.setdefault('X-Frame-Options', 'DENY')
         response.headers.setdefault('Referrer-Policy', 'no-referrer')
         response.headers.setdefault('Permissions-Policy', 'camera=(), microphone=(), geolocation=()')
+        if request.is_secure:
+            response.headers.setdefault('Strict-Transport-Security', 'max-age=31536000')
         if request.path.startswith('/api/'):
             response.headers['Cache-Control'] = 'no-store, private'
             response.headers['Pragma'] = 'no-cache'

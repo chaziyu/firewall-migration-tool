@@ -1,4 +1,6 @@
 import json
+from concurrent.futures import ThreadPoolExecutor
+from threading import Event
 from types import SimpleNamespace
 
 import pytest
@@ -67,6 +69,56 @@ def connection_factory(connection):
 
 def options(**extra):
     return CheckPointCollector().validate_options({"host": "mgmt", "username": "u", "password": "p", **extra})
+
+
+def test_concurrent_collections_do_not_share_inline_layer_state():
+    child_started, second_finished = Event(), Event()
+    first_root_started, second_root_started = Event(), Event()
+    spec = R81CommandSpec("show-access-rulebase", expected_response_shape="rulebase",
+                         scope_type="ACCESS_LAYER", required=True)
+
+    def factory():
+        username = None
+
+        def handle(command, kwargs):
+            nonlocal username
+            if command == 'login':
+                username = kwargs['json']['user']
+                return Response({'sid': 'synthetic'})
+            if command == 'logout':
+                return Response({})
+            name = kwargs['json']['name']
+            if name == 'root' and username == 'first':
+                first_root_started.set()
+                assert second_root_started.wait(5)
+            elif name == 'root':
+                second_root_started.set()
+                assert child_started.wait(5)
+            if name == 'child' and username == 'first':
+                child_started.set()
+                assert second_finished.wait(5)
+            rules = ([{'type': 'access-rule', 'uid': 'parent',
+                       'inline-layer': {'uid': 'child-uid', 'name': 'child'}}]
+                     if name == 'root' else [{'type': 'access-rule', 'uid': 'leaf'}])
+            return Response({'uid': name + '-uid', 'rulebase': rules,
+                             'from': 1, 'to': len(rules), 'total': len(rules)})
+        return FakeSession(handle)
+
+    collector = CheckPointCollector(api_session_factory=factory,
+                                   command_registry={'show-access-rulebase': spec})
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(collector.collect, options(domain='D', layer='root', username='first'))
+        try:
+            assert first_root_started.wait(5)
+            second = pool.submit(collector.collect, options(domain='D', layer='root', username='second'))
+            second_source = second.result(timeout=5)
+        finally:
+            second_finished.set()
+        sources = [first.result(timeout=5), second_source]
+    for source in sources:
+        bundle = json.loads(source.source_text)
+        assert [item['layer'] for item in bundle['responses']] == ['root', 'child']
+        assert all(part.complete for part in source.parts)
 
 
 def test_checkpoint_bundle_keeps_command_status_and_gaia_separate():
@@ -196,7 +248,7 @@ def test_inline_rulebase_collection_is_recursive_and_scoped():
     bundle.responses.append(CheckPointResponse(command="show-access-layers", data={"objects": [{"uid": "child-uid", "name": "child"}]}))
     parts = []
     collector._collect_command(FakeSession(handle), "https://mgmt/web_api/", "show-access-rulebase", spec,
-        ("name", "root"), bundle, parts, {"domain": "D", "package": "P", "layer": "root"})
+        ("name", "root"), bundle, parts, {"domain": "D", "package": "P", "layer": "root"}, {})
     assert [item["name"] for item in requests_seen] == ["root", "child"]
     child = bundle.responses[-1]
     assert child.parent_layer_uid == "root-uid" and child.parent_rule_uid == "parent-rule"
@@ -222,7 +274,7 @@ def test_uid_only_inline_layer_is_resolved_and_child_failure_is_incomplete():
         "data": {"objects": [{"uid": "child-uid", "name": "child"}]}}]})
     parts = []
     collector._collect_command(FakeSession(handle), "https://mgmt/web_api/", "show-access-rulebase", spec,
-        ("name", "root"), bundle, parts, {"domain": "D", "package": None, "layer": "root"})
+        ("name", "root"), bundle, parts, {"domain": "D", "package": None, "layer": "root"}, {})
 
     assert calls == ["root", "child"]
     assert bundle.collection_completeness["show-access-rulebase|domain=D|layer=child"].complete is False
@@ -242,7 +294,7 @@ def test_unresolved_inline_uid_never_becomes_name_selector():
     collector = CheckPointCollector(command_registry={"show-access-rulebase": spec})
     bundle, parts = CheckPointExportBundle(), []
     collector._collect_command(FakeSession(handle), "https://mgmt/web_api/", "show-access-rulebase", spec,
-        ("name", "root"), bundle, parts, {"domain": "D", "package": None, "layer": "root"})
+        ("name", "root"), bundle, parts, {"domain": "D", "package": None, "layer": "root"}, {})
 
     assert len(calls) == 1
     assert any(record.status == CPStatus.NOT_ATTEMPTED and not record.complete
@@ -269,9 +321,10 @@ def test_shared_inline_layer_is_collected_once_and_records_both_parent_edges():
     bundle = CheckPointExportBundle.model_validate({"responses": [{"command": "show-access-layers", "domain": "D",
         "data": {"objects": [{"uid": "shared", "name": "shared-layer"}]}}]})
     session = FakeSession(handle)
+    layer_states = {}
     for root in ("root-a", "root-b"):
         collector._collect_command(session, "https://mgmt/web_api/", "show-access-rulebase", spec,
-            ("name", root), bundle, [], {"domain": "D", "package": None, "layer": root})
+            ("name", root), bundle, [], {"domain": "D", "package": None, "layer": root}, layer_states)
 
     child_records = [item for item in bundle.responses if item.layer == "shared-layer"]
     assert calls == ["root-a", "shared-layer", "root-b"]

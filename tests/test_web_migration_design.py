@@ -121,6 +121,70 @@ def test_conversion_settings_are_bound_to_approval_and_rechecked_at_export():
     assert all(not row['approved'] for row in rebuilt['draft']['decisions'])
 
 
+def test_vip_original_destination_zone_requires_current_signed_approval_and_identical_exports():
+    import hashlib
+    import zipfile
+    source = SOURCE + '''config system zone
+ edit outside
+  set interface port1
+ next
+ edit inside
+  set interface vlan10
+ next
+end
+config firewall vip
+ edit web
+  set type static-nat
+  set extip 203.0.113.10
+  set mappedip 198.51.100.10
+  set extintf any
+ next
+end
+config firewall policy
+ edit 1
+  set srcintf outside
+  set dstintf inside
+  set srcaddr all
+  set dstaddr web
+  set service ALL
+  set action accept
+  set schedule always
+ next
+end
+'''
+    client, payload = setup(None, source=source)
+    data, payload = prepare(client, {**payload, 'workflow_mode': 'OFFLINE_EXPORT'})
+    assert any(row['code'] == 'VIP_EXTERNAL_ZONE_REQUIRED' for row in data['draft']['findings'])
+    assert next(row for row in data['draft']['configuration'] if row['family'] == 'nat_rule')['status'] != 'READY'
+    settings = {'vip_external_zones': {'root': {'web': 'outside'}}}
+    data, payload = prepare(client, {**payload, 'conversion_settings': settings})
+    assert data['draft']['context']['conversion_settings'] == settings
+    nat = next(row for row in data['draft']['configuration'] if row['family'] == 'nat_rule')
+    assert nat['status'] == 'READY', nat
+    assert nat['configuration']['to_zones'] == ['outside']
+    assert client.post('/api/migrate', json=payload).status_code == 400
+    response = approve(client, payload, data)
+    assert response.status_code == 200, response.get_json()
+    approved = {**payload, 'decision_document': response.get_json()['decision_document']}
+    result = client.post('/api/migrate', json=approved)
+    assert result.status_code == 200, result.get_json()
+    artifact = result.get_json()['artifact']
+    commands = artifact['commands']
+    assert any('rulebase nat rules web to [ outside ]' in command for command in commands)
+    downloaded = client.post('/api/migration/download', json={'source': payload['source'], 'artifact': artifact})
+    assert downloaded.status_code == 200
+    assert downloaded.data == '\n'.join(commands).encode()
+    assert artifact['report']['command_sha256'] == hashlib.sha256(downloaded.data).hexdigest()
+    bundle = client.post('/api/migration/bundle', json={'source': payload['source'], 'artifact': artifact})
+    assert bundle.status_code == 200
+    with zipfile.ZipFile(io.BytesIO(bundle.data)) as archive:
+        assert archive.read('palo_alto_config.set') == downloaded.data
+    changed = {**approved, 'conversion_settings': {'vip_external_zones': {'root': {'web': 'inside'}}}}
+    assert client.post('/api/migrate', json=changed).status_code == 400
+    rebuilt, _ = prepare(client, changed)
+    assert not rebuilt['approval_readiness']['current']
+
+
 def test_automatic_names_profile_mapping_and_split_nat_export_the_approved_values():
     from tests.conversion.fortigate_to_palo_alto.test_policy_nat_automation import SOURCE as NAT_SOURCE
     source = NAT_SOURCE.replace('web', 'web/8443')

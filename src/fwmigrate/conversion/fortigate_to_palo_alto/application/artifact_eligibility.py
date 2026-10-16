@@ -61,7 +61,8 @@ def validate_artifact_approval(rendered, document, approval):
         if (not row or row.get("status") != "READY"
                 or row.get("operation") != item.get("render_disposition")
                 or row.get("target_name") != item.get("target_name")
-                or row.get("target_scope") != item.get("target_vsys")):
+                or row.get("target_scope") != (item.get("virtual_router")
+                    if item.get("source_object_type") == "static_route" else item.get("target_vsys"))):
             raise ArtifactEligibilityError("Artifact contains unapproved configuration")
 
 

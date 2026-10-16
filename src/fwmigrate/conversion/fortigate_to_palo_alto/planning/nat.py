@@ -133,6 +133,10 @@ def _packet_disjoint_test(source, derived=None):
 
 
 def plan_nat(source: Any, derived: Any, options: Any):
+    external_zones = getattr(options, 'conversion_settings', {}).get('vip_external_zones', {})
+    identities = {(vip.vdom or 'root', vip.name) for vip in getattr(source, 'vips', ())}
+    if any((vdom, name) not in identities for vdom, mappings in external_zones.items() for name in mappings):
+        raise ValueError('VIP external zones must select current source VIP identities')
     service_names = {}
     service_views = getattr(derived, "services", None)
     service_groups = {(service.vdom, service.name) for service in getattr(service_views, "groups", ())}
@@ -275,6 +279,10 @@ def plan_nat(source: Any, derived: Any, options: Any):
         from_zones = from_contexts[0] if from_contexts and len(from_contexts) == len(referencing) and len(set(from_contexts)) == 1 else ()
         external_zone = (_target_zone(options, vdom, vip.extintf, ())
                          if vip.extintf and vip.extintf != "any" else None)
+        choice = external_zones.get(vdom, {}).get(vip.name)
+        if choice and external_zone and choice != external_zone:
+            raise ValueError(f'VIP {vdom}/{vip.name}: destination-zone choice conflicts with the mapped external interface')
+        external_zone = external_zone or choice
         if not external_zone:
             warnings.append("VIP external interface has no mapped original-packet destination zone")
         result.append(PlannedNATRule(
