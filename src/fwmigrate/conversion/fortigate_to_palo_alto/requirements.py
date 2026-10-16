@@ -1,6 +1,7 @@
 """Explicit target mappings needed by the FortiGate to PAN-OS planner."""
 
 from .planning.vips import vip_policy_consumers
+from .planning.interfaces import aggregate_member_owners
 
 
 def build_mapping_requirements(config, derived, *, include_configuration=False):
@@ -15,6 +16,7 @@ def build_mapping_requirements(config, derived, *, include_configuration=False):
     required = {}
     required_vdom_fields = {}
     zone_names = {(item.vdom or "root", item.name) for item in getattr(config, "zones", ())}
+    member_owners = aggregate_member_owners(config)
 
     def need_vdom(vdom, *fields):
         vdom = vdom or "root"
@@ -39,15 +41,16 @@ def build_mapping_requirements(config, derived, *, include_configuration=False):
 
     if include_configuration:
         for interface in getattr(config, "interfaces", ()):
+            fields = ("target_interface",) if (interface.vdom or "root", interface.name) in member_owners else ("target_interface", "target_zone")
             need(interface.vdom, interface.name, "interface", "design_configuration",
-                 ("interface", interface.vdom or "root", interface.name), "target_interface", "target_zone")
+                 ("interface", interface.vdom or "root", interface.name), *fields)
         for zone in getattr(config, "zones", ()):
             need(zone.vdom, zone.name, "zone", "design_configuration",
                  ("zone", zone.vdom or "root", zone.name), "target_zone")
             need_vdom(zone.vdom, "vsys")
 
     # VSYS-scoped families that the planner currently produces directly.
-    for section in ("addresses", "address_groups", "recurring_schedules", "one_time_schedules"):
+    for section in ("addresses", "address_groups", "recurring_schedules", "one_time_schedules", "ipsec_phase1", "ipsec_phase2"):
         for item in getattr(config, section, ()):
             need_vdom(getattr(item, "vdom", None), "vsys")
     service_views = getattr(derived, "services", None)
@@ -179,6 +182,10 @@ def build_mapping_requirements(config, derived, *, include_configuration=False):
             if item and item.interface:
                 need(vdom, item.interface, "interface", "interface_parent",
                      ("interface_parent", vdom, name), "target_interface")
+            if item and (item.type or "").casefold() == "aggregate":
+                for member in item.members:
+                    need(vdom, member, "interface", "aggregate_membership",
+                         ("aggregate_membership", vdom, name), "target_interface")
 
     interfaces = []
     for _, value in sorted(required.items()):

@@ -71,7 +71,7 @@ def test_dynamic_or_unknown_interface_semantics_fail_closed():
     assert by_name["wan"].status is PANMigrationStatus.MANUAL_REVIEW
     assert any("dynamic interface mode" in warning for warning in by_name["wan"].warnings)
     assert by_name["agg1"].status is PANMigrationStatus.MANUAL_REVIEW
-    assert any("unsupported FortiGate interface type" in warning for warning in by_name["agg1"].warnings)
+    assert any("explicit supported lacp-mode" in warning for warning in by_name["agg1"].warnings)
 
 
 def test_interface_planning_never_infers_missing_ownership():
@@ -102,3 +102,10 @@ def test_loopback_identifier_is_validated(name):
     config = FGConfig(interfaces=[FGInterface(name='lo', type='loopback')])
     item, = plan_interfaces(config, _options({'lo': {'target_interface': name}}))
     assert item.status is PANMigrationStatus.MANUAL_REVIEW
+
+
+def test_loopback_bare_address_does_not_infer_a_host_mask():
+    config = FGConfig(interfaces=[FGInterface(name='lo', type='loopback', ip='192.0.2.1')])
+    item, = plan_interfaces(config, _options({'lo': {'target_interface': 'loopback.1'}}))
+    assert item.status is PANMigrationStatus.MANUAL_REVIEW
+    assert not item.ipv4_addresses

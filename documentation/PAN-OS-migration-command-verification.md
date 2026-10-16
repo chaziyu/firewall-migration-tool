@@ -42,6 +42,29 @@ confirms explicit `vsys` prefixes for scoped configuration.
   not translated into a PAN-OS metric.
 - DHCP: device interface server, explicit lease, pools, gateway, mask and DNS.
 
+## Limited VPN subset
+
+- Only standalone, non-secret IKE and ESP IPsec crypto profiles are executable.
+  Each profile requires a separate signed configuration approval.
+- Input must be interface-based Phase 1/Phase 2. Policy-based namespaces remain
+  recommendation-only. Phase 2 must reference Phase 1 in the same VDOM.
+- Accept one explicit `aes128-sha256` or `aes256-sha256` proposal. These map to
+  AES-CBC and SHA256. Multiple proposals stay manual to avoid creating algorithm
+  combinations absent from the source.
+- Require one explicit DH group in 14, 15, 16, 19, 20 or 21. Explicit disabled
+  Phase 2 PFS maps to `no-pfs`. Missing PFS never implies disabled.
+- Require explicit lifetime seconds from 180 through 65535. Byte lifetimes,
+  unsupported proposals, preserved unknown settings and invalid names block output.
+- Device-scoped names include source VDOM; collisions block all affected profiles.
+  Existing target profiles need manual reuse review.
+- Gateway peer identities, selectors, Phase 1/Phase 2 relationships and credentials
+  remain visible in recommendations. No IKE gateway, tunnel, authentication,
+  certificate or PSK command is emitted. Tunnel interfaces and dependent traffic
+  remain blocked. Exporting profiles is always a partial VPN migration.
+
+Full tunnel conversion needs a separately reviewed credential/reference contract.
+Sanitized input intentionally cannot supply usable authentication material.
+
 Regression tests assert exact ordered commands. Signed artifact and web tests
 check approval, dependency exclusion and identical preview/download/bundle
 content. Candidate validation and explicit commit remain separate operations.

@@ -53,6 +53,7 @@ class PANSetRenderer:
             for item in plan.interfaces
             if item.status is PANMigrationStatus.SUPPORTED and _key(item) in allowed and can_create(item)
         ]
+        interface_items.sort(key=lambda entry: bool(entry[0].parent))
         interface_pre = [
             (item, [path for path in paths if path[0] == "device_pre"])
             for item, paths in interface_items
@@ -95,12 +96,16 @@ class PANSetRenderer:
                   if item.status is PANMigrationStatus.SUPPORTED and _key(item) in allowed and can_create(item)]
         dhcp_servers = [(item, cli_paths.dhcp_server(item)) for item in plan.dhcp_servers
                         if item.status is PANMigrationStatus.SUPPORTED and _key(item) in allowed and can_create(item)]
+        crypto_profiles = [(item, paths_for(item, path)) for family, path in (
+            (plan.ike_crypto_profiles, cli_paths.ike_crypto_profile), (plan.ipsec_crypto_profiles, cli_paths.ipsec_crypto_profile))
+            for item in family if item.status is PANMigrationStatus.SUPPORTED and _key(item) in allowed and can_create(item)]
+        item_commands.update({_key(item): [_serialize(path[1:]) for path in paths] for item, paths in crypto_profiles})
         item_commands.update({_key(item): [_serialize(path[1:]) for path in paths] for item, paths in routes})
         item_commands.update({_key(item): [_serialize(path[1:]) for path in paths] for item, paths in dhcp_servers})
         commands.extend(self._render_device_scope(interface_pre))
         commands[0:0] = [_serialize(("network", "virtual-router", name)) for name in dict.fromkeys(virtual_router_names)]
         commands.extend(vsys_commands)
-        device_tail = [*interface_post, *dhcp_servers, *routes]
+        device_tail = [*interface_post, *dhcp_servers, *crypto_profiles, *routes]
         commands.extend(self._render_device_scope(device_tail))
         return RenderedMigration(tuple(commands), _report(plan, commands, validation, item_commands,
                                                           dispositions, render_blockers, decision_keys))
@@ -188,5 +193,5 @@ def _report(plan, commands, validation, item_commands=None, dispositions=None, r
 
 
 def _items(plan):
-    for name in ("addresses", "address_groups", "services", "service_groups", "schedules", "interfaces", "zones", "static_routes", "dhcp_servers", "security_rules", "nat_rules"):
+    for name in ("addresses", "address_groups", "services", "service_groups", "schedules", "interfaces", "zones", "static_routes", "dhcp_servers", "security_rules", "nat_rules", "ike_crypto_profiles", "ipsec_crypto_profiles"):
         yield from getattr(plan, name)

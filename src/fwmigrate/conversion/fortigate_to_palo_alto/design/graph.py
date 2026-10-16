@@ -3,6 +3,7 @@ from __future__ import annotations
 from .models import PANDecisionDependency, PANDecisionGraph
 from ..decisions import PANMigrationDecisionSet, make_decision_key
 from ..requirements import build_mapping_requirements
+from ..planning.interfaces import aggregate_member_owners
 
 
 def build_decision_graph(config, derived, decisions: PANMigrationDecisionSet, requirements=None) -> PANDecisionGraph:
@@ -10,6 +11,7 @@ def build_decision_graph(config, derived, decisions: PANMigrationDecisionSet, re
     requirements = requirements or build_mapping_requirements(config, derived)
     by_key = {item.key: item for item in decisions.decisions}
     parents: dict[str, set[str]] = {key: set() for key in by_key}
+    member_owners = aggregate_member_owners(config)
     interfaces = {
         (item.vdom or "root", item.name): item
         for item in getattr(config, "interfaces", ())
@@ -34,6 +36,8 @@ def build_decision_graph(config, derived, decisions: PANMigrationDecisionSet, re
             for field in vdom_requirements.get(decision.source_vdom, ()):
                 add_if_present(decision.key, make_decision_key(decision.source_vdom, "vdom", decision.source_vdom, field))
             source = interfaces.get((decision.source_vdom, decision.source_name))
+            for owner in member_owners.get((decision.source_vdom, decision.source_name), ()):
+                add_if_present(decision.key, make_decision_key(decision.source_vdom, "interface", owner.name, "target_interface"))
             if source and source.interface:
                 add_if_present(
                     decision.key,
