@@ -1,0 +1,112 @@
+"""Transport for reviewed FortiGate to Check Point offline artifacts."""
+
+import io
+import json
+import zipfile
+
+import yaml
+from flask import jsonify, request, send_file
+
+from fwmigrate.conversion.fortigate_to_checkpoint.application import (
+    BINDINGS_FILE, GAIA_FILE, MANAGEMENT_FILE, approve_design, build_artifact,
+    build_review, export_decisions, import_decisions, verify_export_artifact,
+)
+from fwmigrate.source_reporting import source_reporters
+from fwmigrate.web_support.artifact_signing import sign_envelope, verify_envelope
+from fwmigrate.web_support.request_source import analyze_request_source, _require_complete_collection
+
+
+def register_fortigate_to_checkpoint_routes(app, signing_key):
+    prefix = "/api/migration/fortigate_to_checkpoint"
+    file_names = {
+        "management-operations": (MANAGEMENT_FILE, "application/json"),
+        "gaia-config": (GAIA_FILE, "text/plain"),
+        "bindings": (BINDINGS_FILE, "application/json"),
+    }
+
+    def source_entry(payload):
+        if payload.get("target_source") is not None or request.files.get("target_file"):
+            raise ValueError("Check Point destination comparison is unavailable")
+        entry = analyze_request_source(payload, "fortigate")
+        _require_complete_collection(entry)
+        return entry
+
+    def approved_artifact(payload, entry):
+        artifact = verify_export_artifact(verify_envelope(payload.get("artifact"), signing_key))
+        if artifact.get("source_digest") != entry.source_digest:
+            raise ValueError("Check Point artifact belongs to a different source")
+        return artifact
+
+    def handle(action):
+        payload = request.get_json(silent=True)
+        try:
+            if not isinstance(payload, dict):
+                raise ValueError("A JSON object is required")
+            if action in {"artifact-preview", "management-operations", "gaia-config", "bindings", "bundle"}:
+                entry = source_entry(payload)
+                artifact = approved_artifact(payload, entry)
+                if action == "artifact-preview":
+                    return jsonify({"success": True,
+                                    "files": {name: {"text": row["content"],
+                                                     "sha256": row["sha256"],
+                                                     "byte_count": row["byte_count"]}
+                                               for name, row in artifact["files"].items()},
+                                    "report": artifact["report"]})
+                if action in file_names:
+                    name, mimetype = file_names[action]
+                    raw = artifact["files"][name]["content"].encode("utf-8")
+                    return send_file(io.BytesIO(raw), mimetype=mimetype,
+                                     as_attachment=True, download_name=name)
+                bundle = io.BytesIO()
+                with zipfile.ZipFile(bundle, "w", zipfile.ZIP_DEFLATED) as archive:
+                    for name in (MANAGEMENT_FILE, GAIA_FILE, BINDINGS_FILE):
+                        archive.writestr(name, artifact["files"][name]["content"].encode("utf-8"))
+                    archive.writestr("migration_report.json",
+                                     json.dumps(artifact["report"], ensure_ascii=False,
+                                                sort_keys=True, indent=2) + "\n")
+                    archive.writestr("migration_decisions.json", json.dumps(
+                        export_decisions(artifact["source_digest"], artifact["options"]),
+                        ensure_ascii=False, sort_keys=True, indent=2) + "\n")
+                bundle.seek(0)
+                return send_file(bundle, mimetype="application/zip", as_attachment=True,
+                                 download_name="migration_fortigate_to_checkpoint.zip")
+
+            entry = source_entry(payload)
+            if action == "decisions/import":
+                return jsonify({"success": True,
+                                "options": import_decisions(payload.get("document"), entry.source_digest)})
+            options = payload.get("options", {})
+            if not isinstance(options, dict):
+                raise ValueError("Check Point target mapping options must be an object")
+            if action == "decisions/export":
+                return jsonify({"success": True,
+                                "document": export_decisions(entry.source_digest, options)})
+            review = build_review(entry.analysis, options, entry.source_digest)
+            if action == "requirements":
+                return jsonify({"success": True, "source_digest": entry.source_digest,
+                                "requirements": review["requirements"], "report": review["report"]})
+            if action == "design/prepare":
+                return jsonify({"success": True, "source_digest": entry.source_digest,
+                                "draft": sign_envelope(review["draft"], signing_key),
+                                "requirements": review["requirements"], "report": review["report"]})
+            if action == "design/approve":
+                draft = verify_envelope(payload.get("draft"), signing_key)
+                approval = approve_design(review, draft, payload.get("selected_items"))
+                return jsonify({"success": True,
+                                "approval": sign_envelope(approval, signing_key)})
+            if action == "build":
+                approval = verify_envelope(payload.get("approval"), signing_key)
+                artifact = build_artifact(entry.analysis, options, entry.source_digest, approval)
+                return jsonify({"success": True,
+                                "artifact": sign_envelope(artifact, signing_key)})
+            raise ValueError("Unsupported Check Point migration action")
+        except (ValueError, TypeError, KeyError):
+            return jsonify({"success": False,
+                            "error": "Invalid, blocked or stale FortiGate to Check Point request. Check source scope, target mapping, approval, and dependencies."}), 400
+
+    actions = ("requirements", "design/prepare", "design/approve", "build",
+               "artifact-preview", "management-operations", "gaia-config", "bindings",
+               "bundle", "decisions/import", "decisions/export")
+    for action in actions:
+        app.add_url_rule(f"{prefix}/{action}", "fg_checkpoint_migration_" + action.replace("/", "_"),
+                         lambda action=action: handle(action), methods=["POST"])

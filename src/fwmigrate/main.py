@@ -4,7 +4,8 @@ import yaml
 
 from fwmigrate.source_reporting.builtin import register_builtin_source_reporters
 from fwmigrate.source_reporting import source_reporters
-from fwmigrate.conversion.builtin import register_builtin_migration_planners
+from fwmigrate.conversion.builtin import register_builtin_migration_planners, register_builtin_migration_workflows
+from fwmigrate.conversion.workflow_registry import migration_workflows
 from fwmigrate.conversion.fortigate_to_palo_alto import (
     PANAutomationMode,
     PANMigrationOptions,
@@ -12,9 +13,12 @@ from fwmigrate.conversion.fortigate_to_palo_alto import (
 )
 from fwmigrate.conversion.fortigate_to_palo_alto.rendering.renderer import PANSetRenderer
 from fwmigrate.conversion.fortigate_to_palo_alto.target.target_suggestions import target_devices
+from fwmigrate.conversion.palo_alto_to_fortigate.application import run_migration_pipeline as run_reverse_pipeline, write_files as write_reverse_files
+from fwmigrate.collection.snapshot import sanitize_source
 
 register_builtin_source_reporters()
 register_builtin_migration_planners()
+register_builtin_migration_workflows()
 
 @click.group()
 def cli():
@@ -31,15 +35,15 @@ def vendors():
             f"(Ext: {', '.join(s.supported_extensions)})"
         )
 
-    click.echo("\nMigration planning: FortiGate -> Palo Alto PAN-OS")
+    click.echo("\nMigration planning: FortiGate -> Palo Alto PAN-OS / Juniper SRX / Cisco ASA / Check Point; Palo Alto PAN-OS -> FortiGate (CLI export)")
 
 @cli.command()
-@click.option('--input', '-i', required=True, type=click.Path(exists=True), help='Input FortiGate configuration file')
+@click.option('--input', '-i', required=True, type=click.Path(exists=True), help='Vendor-native source configuration file')
 @click.option('--output', '-o', required=True, type=click.Path(), help='Output directory')
 @click.option('--source-vendor', type=str, default='fortigate', help='Registered source vendor identifier')
 @click.option('--target-vendor', type=str, default='palo_alto', help='Registered target vendor identifier')
 @click.option('--zone-map', type=click.Path(exists=True), help='YAML file with explicit pair-specific target mappings')
-@click.option('--target-config', type=click.Path(exists=True, dir_okay=False), help='PAN-OS XML used as target evidence')
+@click.option('--target-config', type=click.Path(exists=True, dir_okay=False), help='Vendor-native target configuration evidence')
 @click.option('--target-device', type=str, help='Target PAN-OS device/serial when XML contains more than one device')
 @click.option('--target-intent', type=click.Path(exists=True, dir_okay=False), help='Engineer target-intent YAML')
 @click.option(
@@ -49,14 +53,39 @@ def vendors():
     show_default=True,
     help='Deterministic mapping automation policy',
 )
-@click.option('--format', type=click.Choice(['xml', 'set', 'cli']), default='set', show_default=True, help='Output format')
-def migrate(input, output, source_vendor, target_vendor, zone_map, target_config,
+@click.option('--format', type=click.Choice(['xml', 'set', 'cli', 'cfg', 'bundle', 'json']), default='set', show_default=True, help='Output format')
+@click.pass_context
+def migrate(ctx, input, output, source_vendor, target_vendor, zone_map, target_config,
             target_device, target_intent, automation_mode, format):
-    """Plan and render the supported FortiGate -> PAN-OS migration."""
-    if (source_vendor.casefold(), target_vendor.casefold()) != ("fortigate", "palo_alto"):
-        raise click.ClickException("Only fortigate -> palo_alto is supported")
-    if format != "set":
-        raise click.ClickException("The MVP supports only --format set")
+    """Plan and render a supported directional migration pair."""
+    pair = (source_vendor.casefold(), target_vendor.casefold())
+    if pair not in {("fortigate", "palo_alto"), ("palo_alto", "fortigate")}:
+        try:
+            workflow = migration_workflows.get(source_vendor, target_vendor)
+        except KeyError as exc:
+            raise click.ClickException("Migration pair is not implemented") from exc
+        explicit_pan_options = any(
+            ctx.get_parameter_source(name).name != "DEFAULT"
+            for name in ("target_device", "target_intent", "automation_mode")
+        )
+        if explicit_pan_options:
+            raise click.ClickException("--target-device, --target-intent and --automation-mode are PAN-OS-specific options")
+        if not workflow.export_available or workflow.cli_application is None:
+            raise click.ClickException("Migration pair is registered but its CLI export is not available")
+        if format not in workflow.supported_formats:
+            raise click.ClickException(
+                f"Use --format {' or '.join(workflow.supported_formats)} for {workflow.source_vendor} -> {workflow.target_vendor}"
+            )
+        workflow.cli_application(
+            input_path=input,
+            output_path=output,
+            format=format,
+            mapping_path=zone_map,
+            target_config_path=target_config,
+        )
+        return
+    if format != ("cli" if pair[0] == "palo_alto" else "set"):
+        raise click.ClickException("Use --format cli for FortiGate output or --format set for PAN-OS output")
 
     mapping = {}
     if zone_map:
@@ -64,6 +93,27 @@ def migrate(input, output, source_vendor, target_vendor, zone_map, target_config
             mapping = yaml.safe_load(stream) or {}
         if not isinstance(mapping, dict):
             raise click.ClickException("Target mapping YAML must contain an object")
+
+    if pair == ("palo_alto", "fortigate"):
+        if target_device or target_intent:
+            raise click.ClickException("Reverse-pair target choices belong in --zone-map; target-device and target-intent are PAN-OS target options")
+        try:
+            with open(input, encoding="utf-8") as stream:
+                reverse_source = source_reporters.get("palo_alto").analyze_source(sanitize_source("palo_alto", stream.read()))
+            reverse_target = None
+            target_digest = None
+            if target_config:
+                with open(target_config, encoding="utf-8") as stream:
+                    text = sanitize_source("fortigate", stream.read())
+                reverse_target = source_reporters.get("fortigate").analyze_source(text)
+                target_digest = hashlib.sha256(text.encode() + b"\0fortigate").hexdigest()
+            _, rendered, _ = run_reverse_pipeline(reverse_source, mapping, target=reverse_target, target_digest=target_digest)
+            write_reverse_files(rendered, output)
+        except (ValueError, TypeError, KeyError) as exc:
+            raise click.ClickException("Invalid PAN-OS to FortiGate migration input or mappings") from exc
+        click.echo(f"Generated {len(rendered.commands)} CLI lines in {output}")
+        click.echo(f"Plan status: {rendered.report['plan_status']}; FortiGate live deployment is disabled")
+        return
 
     intent = None
     if target_intent:

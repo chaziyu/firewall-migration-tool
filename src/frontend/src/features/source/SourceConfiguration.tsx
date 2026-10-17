@@ -8,15 +8,17 @@ import { FileUpload } from './FileUpload'
 import { SourceReport } from '../report/SourceReport'
 import { ExcelExportControls } from '../report/ExcelExportControls'
 import { downloadSourceWorkbook, importCollectionSnapshot, loadSourceVendors, previewSource } from './sourceApi'
-import type { SourcePreviewData, SourceVendor, SourceVendorOption } from './types'
+import type { MigrationPairOption, SourcePreviewData, SourceVendor, SourceVendorOption } from './types'
 import { SourceOverview } from './SourceOverview'
 import { VendorSelect } from './VendorSelect'
 import { LiveCollection, type CollectionResult } from './LiveCollection'
 import { MigrationWorkflow } from '../migration/MigrationWorkflow'
 import { MigrationReview } from '../migration/MigrationReview'
+import { FortiGateMigrationWorkflow } from '../migration/paloAltoToFortigate/MigrationWorkflow'
+import { loadMigrationPairs } from '../migration/pairApi'
+import { MigrationPairWorkflow } from '../migration/MigrationPairWorkflow'
 import type { MigrationReviewTab } from '../migration/types'
 import type { MigrationStage, MigrationDecisionDocument } from '../migration/types'
-import { asRecord } from '../report/reportPresentation'
 
 export type WorkflowView = 'report' | 'collect' | 'migration' | 'live'
 
@@ -29,6 +31,10 @@ export function SourceConfiguration({ view, onViewChange, liveDeviceAccess }: {
   const [vendors, setVendors] = useState<SourceVendorOption[]>([])
   const [vendorsLoading, setVendorsLoading] = useState(true)
   const [vendorsError, setVendorsError] = useState<string | null>(null)
+  const [migrationPairs, setMigrationPairs] = useState<MigrationPairOption[]>([])
+  const [migrationPairsLoading, setMigrationPairsLoading] = useState(true)
+  const [migrationPairsError, setMigrationPairsError] = useState<string | null>(null)
+  const [migrationPairId, setMigrationPairId] = useState('')
   const [file, setFile] = useState<File | null>(null)
   const [preview, setPreview] = useState<SourcePreviewData | null>(null)
   const [sourceExpanded, setSourceExpanded] = useState(true)
@@ -45,7 +51,13 @@ export function SourceConfiguration({ view, onViewChange, liveDeviceAccess }: {
   const [error, setError] = useState<string | null>(null)
   const [migrationVisited, setMigrationVisited] = useState(false)
   const [migrationView, setMigrationView] = useState<MigrationStage>('load')
-  const reviewContextKey = JSON.stringify([previewId, targetSource, targetDevice])
+  const availableMigrationPairs = migrationPairs.filter((pair) => pair.source_vendor === vendor)
+  const preferredPairId = vendor === 'fortigate' ? 'fortigate_to_palo_alto' : 'palo_alto_to_fortigate'
+  const selectedMigrationPair = availableMigrationPairs.find((pair) => pair.pair_id === migrationPairId)
+    ?? availableMigrationPairs.find((pair) => pair.pair_id === preferredPairId)
+    ?? availableMigrationPairs[0]
+  const activeMigrationPairId = selectedMigrationPair?.pair_id ?? ''
+  const reviewContextKey = JSON.stringify([previewId, activeMigrationPairId, targetSource, targetDevice])
   const [reviewTabState, setReviewTabState] = useState({ contextKey: reviewContextKey, tab: 'changes' as MigrationReviewTab })
   const migrationReviewTab = reviewTabState.contextKey === reviewContextKey ? reviewTabState.tab : 'changes'
   const setMigrationReviewTab = (tab: MigrationReviewTab) => setReviewTabState({ contextKey: reviewContextKey, tab })
@@ -68,18 +80,25 @@ export function SourceConfiguration({ view, onViewChange, liveDeviceAccess }: {
   }, [])
 
   useEffect(() => {
+    loadMigrationPairs()
+      .then((available) => setMigrationPairs(available.filter((pair) => pair.export_available)))
+      .catch((cause) => setMigrationPairsError(cause instanceof Error ? cause.message : 'Could not load migration targets'))
+      .finally(() => setMigrationPairsLoading(false))
+  }, [])
+
+  useEffect(() => {
     let active = true
     restoreWorkspace().then((saved) => {
       if (!active) return
-      if (saved.preview) { setPreview(saved.preview); setSourceExpanded(false); setVendor(saved.preview.vendor || ''); setExcelProfile(saved.preview.vendor === 'palo_alto' ? 'full' : 'fast'); setDecisionDocument(saved.decisionDocument); setTargetSource(saved.targetSource); setTargetDevice(saved.targetDevice); setMigrationView(saved.workflowMode === 'destination' ? 'load' : 'place') }
+      if (saved.preview) { setPreview(saved.preview); setSourceExpanded(false); setVendor(saved.preview.vendor || ''); setExcelProfile(saved.preview.vendor === 'palo_alto' ? 'full' : 'fast'); setDecisionDocument(saved.decisionDocument); setTargetSource(saved.targetSource); setTargetDevice(saved.targetDevice); setMigrationPairId(saved.migrationPairId || ''); setMigrationView(saved.workflowMode === 'destination' ? 'load' : 'place') }
     }).catch((cause) => { if (active) setError(`Workspace restore failed: ${String(cause)}`) })
       .finally(() => { if (active) setWorkspaceReady(true) })
     return () => { active = false }
   }, [])
 
   useEffect(() => {
-    if (workspaceReady) void saveWorkspace({ preview, decisionDocument, targetSource, targetDevice }).catch((cause) => setError(`Workspace save failed: ${String(cause)}`))
-  }, [workspaceReady, preview, decisionDocument, targetSource, targetDevice])
+    if (workspaceReady && !migrationPairsLoading) void saveWorkspace({ preview, decisionDocument, targetSource, targetDevice, migrationPairId: activeMigrationPairId }).catch((cause) => setError(`Workspace save failed: ${String(cause)}`))
+  }, [workspaceReady, migrationPairsLoading, activeMigrationPairId, preview, decisionDocument, targetSource, targetDevice])
 
   async function analyse(sourceFile = file) {
     if (!sourceFile) return
@@ -128,10 +147,20 @@ export function SourceConfiguration({ view, onViewChange, liveDeviceAccess }: {
   function changeVendor(nextVendor: SourceVendor) {
     if (nextVendor === vendor) return
     setVendor(nextVendor)
+    setMigrationPairId('')
     setExcelProfile(nextVendor === 'palo_alto' ? 'full' : 'fast')
     setFile(null)
     clearAnalysis()
     setError(null)
+  }
+
+  function changeMigrationPair(nextPairId: string) {
+    if (nextPairId === migrationPairId) return
+    setMigrationPairId(nextPairId)
+    setMigrationView('load')
+    setDecisionDocument(null)
+    setTargetSource(null)
+    setTargetDevice('')
   }
 
   function acceptCollection(result: CollectionResult) {
@@ -194,7 +223,7 @@ export function SourceConfiguration({ view, onViewChange, liveDeviceAccess }: {
   if (!workspaceReady) return <LoadingState label="Restoring browser workspace…" />
   if (!liveDeviceAccess && (view === 'collect' || view === 'live')) return <p role="status">Live device access is available only in the local application.</p>
   return <main className="feature-content">
-    <section id="source-configuration" className={`panel source-configuration${sourceCollapsed ? ' source-collapsed' : ''}`} hidden={view !== 'collect' && Boolean(preview) && view !== 'report' && !(view === 'migration' && migrationView === 'load')} aria-labelledby="source-title">
+    <section id="source-configuration" className={`panel source-configuration${sourceCollapsed ? ' source-collapsed' : ''}`} hidden={view === 'live' || (view !== 'collect' && Boolean(preview) && view !== 'report' && !(view === 'migration' && migrationView === 'load'))} aria-labelledby="source-title">
       <div className="source-panel-heading">
         <h2 id="source-title" className={sourceCollapsed ? 'visually-hidden' : undefined}><span className="step-num">01</span> Source configuration</h2>
         {sourceCollapsed && <div className="source-compact-summary"><span className="source-loaded" role="status">✓ Configuration loaded</span><strong>{selectedVendor?.display_name || vendor}</strong><span>{preview?.source_evidence?.source_name || file?.name || String(preview?.acquisition || 'Loaded source configuration')}</span></div>}
@@ -203,10 +232,12 @@ export function SourceConfiguration({ view, onViewChange, liveDeviceAccess }: {
       <div id="source-configuration-controls" hidden={sourceCollapsed}>
       <div className={`source-vendor-grid${view === 'migration' || view === 'live' ? ' with-target' : ''}`}>
         <VendorSelect value={vendor} onChange={changeVendor} vendors={vendors} />
-        {(view === 'migration' || view === 'live') && <label className="field"><span>Target platform</span><span className="vendor-select-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path d="m12 3 10 5-10 5L2 8Zm-10 9 10 5 10-5M2 17l10 5 10-5" /></svg><select className="vendor-select" value="palo_alto" disabled><option value="palo_alto">Palo Alto Networks</option></select></span></label>}
+        {view === 'migration' && <label className="field"><span>Target platform</span><span className="vendor-select-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path d="m12 3 10 5-10 5L2 8Zm-10 9 10 5 10-5M2 17l10 5 10-5" /></svg><select className="vendor-select" value={selectedMigrationPair?.pair_id || ''} disabled={migrationPairsLoading || availableMigrationPairs.length === 0} onChange={(event) => changeMigrationPair(event.target.value)}><option value="" disabled>Choose a target</option>{availableMigrationPairs.map((pair) => <option key={pair.pair_id} value={pair.pair_id}>{pair.display_name}</option>)}</select></span></label>}
+        {view === 'live' && <label className="field"><span>Target platform</span><span className="vendor-select-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path d="m12 3 10 5-10 5L2 8Zm-10 9 10 5 10-5M2 17l10 5 10-5" /></svg><select className="vendor-select" value={vendor === 'palo_alto' ? 'fortigate' : 'palo_alto'} disabled><option value="palo_alto">Palo Alto Networks</option><option value="fortigate">Fortinet FortiGate</option></select></span></label>}
       </div>
       {vendorsLoading && <LoadingState label="Loading vendors…" />}
       {vendorsError && <ErrorBanner message={vendorsError} />}
+      {view === 'migration' && migrationPairsError && <ErrorBanner message={migrationPairsError} />}
       {view === 'collect' ? <>{selectedVendor?.live_collection ? <LiveCollection key={vendor} vendor={selectedVendor} onCollected={acceptCollection} /> : !vendorsLoading && <p>Live collection is not available for this vendor.</p>}</> : <>
         {(!preview || (view === 'report' && sourceExpanded)) && <><div className="ingest-tabs" role="tablist" aria-label="Configuration source">
           <button className={`ingest-tab-btn${ingestMode === 'config' ? ' active' : ''}`} role="tab" aria-selected={ingestMode === 'config'} type="button" onClick={() => setIngestMode('config')}>↑ Upload Config</button>
@@ -236,35 +267,32 @@ export function SourceConfiguration({ view, onViewChange, liveDeviceAccess }: {
     </div>
 
     <div className="workflow-panel" hidden={view !== 'migration' && view !== 'live'}>
-      {preview && previewId && vendor === 'fortigate' ? migrationVisited && <>
-        {view === 'live' && <div className="report-source-context">
-          <strong>{selectedVendor?.display_name ?? vendor} → PAN-OS</strong>
-          {file && <span className="report-source-item report-source-filename">{file.name}</span>}
-          <span>{String(preview.acquisition ?? 'Uploaded configuration')}</span>
-          {preview.collection != null && <span>Collection: {String(asRecord(preview.collection).status ?? 'Unknown')}</span>}
-        </div>}
-        {view === 'migration' && <div className="report-source-context"><strong>FortiGate → PAN-OS</strong><span>{preview.source_evidence?.source_name || file?.name || 'Loaded source configuration'}</span><span>{targetDevice ? `Destination: ${targetDevice}` : 'Destination checks optional for offline export'}</span></div>}
+      {preview?.source_evidence && previewId && vendor === 'palo_alto' && selectedMigrationPair?.pair_id === 'palo_alto_to_fortigate' && migrationVisited && <div hidden={view !== 'migration'}><FortiGateMigrationWorkflow key={`${selectedMigrationPair.pair_id}:${previewId}`} source={preview.source_evidence} sourceKey={previewId} onStageChange={setMigrationView} /></div>}
+      {preview?.source_evidence && previewId && vendor === 'fortigate' && migrationVisited && selectedMigrationPair ? <>
+        {view === 'migration' && <div className="report-source-context"><strong>{selectedMigrationPair.display_name}</strong><span>{preview.source_evidence.source_name || file?.name || 'Loaded source configuration'}</span>{selectedMigrationPair.pair_id === 'fortigate_to_palo_alto' && <span>{targetDevice ? `Destination: ${targetDevice}` : 'Destination checks optional for offline export'}</span>}</div>}
         {view === 'migration' && <nav className="migration-view-nav" aria-label="Migration workspace">
           {([['load', 'Source'], ['place', 'Target setup'], ['review', 'Review migration'], ['export', 'Download']] as const).map(([stage, label], index) =>
             <button key={stage} type="button" aria-current={migrationView === stage ? 'step' : undefined} onClick={() => setMigrationView(stage)}>{index + 1}. {label}</button>)}
         </nav>}
-        <section hidden={view !== 'migration' || migrationView === 'export'}>
-        <MigrationReview key={previewId} preview={preview} vendor={vendor} requestedDecision={requestedDecision}
-          stage={migrationView} onStageChange={setMigrationView} reviewTab={migrationReviewTab} onReviewTabChange={setMigrationReviewTab}
-          onApproved={() => { setGenerationRequest((value) => value + 1); setMigrationView('export') }}
-          onDecisionDocument={setDecisionDocument}
-          onContextChange={(nextSource, nextDevice) => { setTargetSource(nextSource); setTargetDevice(nextDevice) }} />
-        </section>
-        <div hidden={view === 'migration' && migrationView !== 'export'}>
-        <MigrationWorkflow key={previewId}
+        {view === 'migration' && selectedMigrationPair.pair_id !== 'fortigate_to_palo_alto' && <MigrationPairWorkflow pairId={selectedMigrationPair.pair_id} source={preview.source_evidence} sourceKey={previewId} stage={migrationView} onStageChange={setMigrationView} />}
+        {(view === 'live' || selectedMigrationPair.pair_id === 'fortigate_to_palo_alto') && <>
+          <section hidden={view !== 'migration' || migrationView === 'export'}>
+            <MigrationReview key={previewId} preview={preview} vendor={vendor} requestedDecision={requestedDecision}
+              stage={migrationView} onStageChange={setMigrationView} reviewTab={migrationReviewTab} onReviewTabChange={setMigrationReviewTab}
+              onApproved={() => { setGenerationRequest((value) => value + 1); setMigrationView('export') }}
+              onDecisionDocument={setDecisionDocument}
+              onContextChange={(nextSource, nextDevice) => { setTargetSource(nextSource); setTargetDevice(nextDevice) }} />
+          </section>
+        </>}
+      </> : !loading && view !== 'live' && (vendor !== 'palo_alto' || !preview?.source_evidence || selectedMigrationPair?.pair_id !== 'palo_alto_to_fortigate') && <section className="panel"><h2>Migration source required</h2><p>Upload a supported source configuration above and choose an available migration target.</p><Button onClick={() => onViewChange('report')}>Open configuration report</Button></section>}
+        {migrationVisited && (view === 'live' || (vendor === 'fortigate' && selectedMigrationPair?.pair_id === 'fortigate_to_palo_alto')) && <div hidden={view === 'migration' && migrationView !== 'export'}>
+        <MigrationWorkflow key={previewId || 'uploaded-commands'}
           liveDeviceAccess={liveDeviceAccess}
-          preview={preview} decisionDocument={decisionDocument}
+          preview={preview ?? {}} decisionDocument={decisionDocument}
           targetSource={targetSource} targetDevice={targetDevice} generationRequest={generationRequest} activeSection={view === 'live' ? 'live' : 'plan'}
           onReviewDecision={(key) => { setRequestedDecision({ key, request: Date.now() }); setMigrationView('place'); onViewChange('migration'); requestAnimationFrame(() => document.getElementById('migration-review-title')?.scrollIntoView({ block: 'start' })) }}
            onViewChange={onViewChange} />
-        </div>
-        {!decisionDocument && view === 'live' && <section className="panel"><h2>Migration plan required</h2><p>Review source mappings and generate a plan before preparing a target candidate.</p><Button onClick={() => onViewChange('migration')}>Open plan migration</Button></section>}
-      </> : !loading && <section className="panel"><h2>Migration source required</h2><p>Upload a FortiGate configuration above to start planning. Configuration report also accepts the same source.</p><Button onClick={() => onViewChange('report')}>Open configuration report</Button></section>}
+        </div>}
     </div>
     {error && !(file && !preview && ingestMode === 'config' && view !== 'collect') && <ErrorBanner message={error} />}
   </main>

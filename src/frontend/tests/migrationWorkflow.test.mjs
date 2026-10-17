@@ -105,11 +105,17 @@ function component(file, name, modules, { strictEffectReplay = false } = {}) {
   const requireModule = (key) => {
     if (key === 'react') return hooks
     if (key === 'react/jsx-runtime') return jsxRuntime
+    if (key in modules) return modules[key]
     if (key.endsWith('/components/common/Button')) return { Button: 'Button' }
+    if (key.endsWith('/components/common/ErrorBanner')) return { ErrorBanner: 'ErrorBanner' }
+    if (key.endsWith('/components/common/LoadingState')) return { LoadingState: 'LoadingState' }
     if (key.endsWith('/components/common/tabKeyboard')) return { tabKeyboard: () => {} }
     if (key === './components/MigrationTargetSetup') return { MigrationTargetSetup: 'TargetSetup' }
+    if (key === './components/MigrationSetUpload') return { MigrationSetUpload: 'SetUpload' }
     if (key === './components/MigrationConversionSettings') return { MigrationConversionSettings: 'ConversionSettings' }
     if (key === './components/MigrationIssueWorkspace') return { MigrationIssueWorkspace: 'IssueWorkspace' }
+    if (key === '../migration/fortigateToJuniperSrx/MigrationWorkflow') return { JuniperSRXMigrationWorkflow: 'JuniperSRX' }
+    if (key === '../migration/fortigateToCiscoAsa/MigrationWorkflow') return { CiscoAsaMigrationWorkflow: 'CiscoAsa' }
     if (key.endsWith('/MigrationMappingSummary')) return { MigrationMappingSummary: 'MappingSummary' }
     if (key === './hooks/useMigrationReviewActivity') {
       const hook = ts.transpileModule(readFileSync(new URL('../src/features/migration/hooks/useMigrationReviewActivity.ts', import.meta.url), 'utf8'), {
@@ -195,9 +201,16 @@ test('offline setup removes duplicate tools and moves exceptions to review; dest
   assert.ok(!options.props.open)
   const changedTabs = []
   tree = await harness.render({ ...props, stage: 'review', onReviewTabChange: (tab) => changedTabs.push(tab) })
+  const initialContext = elements(tree).find((node) => node.type === 'IssueWorkspace' && node.props.tab === 'decisions').props.contextKey
   elements(tree).find((node) => node.type === 'Design').props.onSelectIssue('issue-1')
   assert.deepEqual(changedTabs, ['decisions'])
   tree = await harness.render(props)
+  const inputWorkspace = elements(tree).find((node) => node.type === 'IssueWorkspace' && node.props.tab === 'decisions')
+  assert.equal(inputWorkspace.props.selectedId, 'issue-1')
+  assert.notEqual(inputWorkspace.props.contextKey, initialContext, 'Linked inputs reset old task filters')
+  elements(tree).find((node) => node.type === 'Design').props.onResolveInputs()
+  tree = await harness.render(props)
+  assert.equal(elements(tree).find((node) => node.type === 'IssueWorkspace' && node.props.tab === 'decisions').props.selectedId, '')
   assert.ok(!JSON.stringify(tree).includes('Candidate prerequisites missing'))
   assert.ok(!elements(tree).map((node) => [node.props.children].flat().filter((value) => typeof value === 'string').join(' ')).join(' ').includes('baseline_sha256'))
   assert.ok(!JSON.stringify(tree).includes('migration-review-intro'))
@@ -221,12 +234,19 @@ test('source panel collapses after successful analysis and preserves manual expa
     './FileUpload': { FileUpload: 'FileUpload' }, '../report/SourceReport': { SourceReport: 'SourceReport' },
     '../report/ExcelExportControls': { ExcelExportControls: 'ExcelExportControls' },
     './sourceApi': {
+      loadMigrationPairs: async () => [{ pair_id: 'fortigate_to_palo_alto', source_vendor: 'fortigate', target_vendor: 'palo_alto', display_name: 'FortiGate → PAN-OS', export_available: true }],
       loadSourceVendors: async () => [{ vendor_id: 'fortigate', display_name: 'FortiGate', file_extensions: ['.conf'] }],
       previewSource: () => new Promise((resolve, reject) => { completePreview = resolve; rejectPreview = reject }),
       importCollectionSnapshot: () => new Promise((resolve) => { completeSnapshot = resolve }),
     },
     './SourceOverview': { SourceOverview: 'SourceOverview' }, './VendorSelect': { VendorSelect: 'VendorSelect' }, './LiveCollection': { LiveCollection: 'LiveCollection' },
     '../migration/MigrationWorkflow': { MigrationWorkflow: 'MigrationWorkflow' }, '../migration/MigrationReview': { MigrationReview: 'MigrationReview' },
+    '../migration/paloAltoToFortigate/MigrationWorkflow': { FortiGateMigrationWorkflow: 'FortiGateMigrationWorkflow' },
+    '../migration/MigrationPairWorkflow': { MigrationPairWorkflow: 'MigrationPairWorkflow' },
+    '../migration/pairApi': { loadMigrationPairs: async () => [
+      { pair_id: 'fortigate_to_palo_alto', source_vendor: 'fortigate', target_vendor: 'palo_alto', display_name: 'FortiGate → PAN-OS', export_available: true },
+      { pair_id: 'fortigate_to_juniper_srx', source_vendor: 'fortigate', target_vendor: 'juniper_srx', display_name: 'FortiGate → Juniper SRX', export_available: true },
+    ] },
     '../report/reportPresentation': { asRecord: (value) => value ?? {} },
   }
   const harness = component('../src/features/source/SourceConfiguration.tsx', 'SourceConfiguration', modules)
@@ -293,12 +313,22 @@ test('a new source analysis opens target setup and keeps source settings reachab
     '../../components/common/LoadingState': { LoadingState: 'LoadingState' }, './FileUpload': { FileUpload: 'FileUpload' },
     '../report/SourceReport': { SourceReport: 'SourceReport' },
     '../report/ExcelExportControls': { ExcelExportControls: 'ExcelExportControls' },
-    './sourceApi': { loadSourceVendors: async () => [{ vendor_id: 'fortigate', display_name: 'FortiGate', file_extensions: ['.conf'] }], previewSource: async () => ({ source_digest: 'source', source_evidence: {} }), downloadSourceWorkbook: async () => {}, importCollectionSnapshot: async () => {} },
+    './sourceApi': { loadMigrationPairs: async () => [{ pair_id: 'fortigate_to_palo_alto', source_vendor: 'fortigate', target_vendor: 'palo_alto', display_name: 'FortiGate → PAN-OS', export_available: true }], loadSourceVendors: async () => [{ vendor_id: 'fortigate', display_name: 'FortiGate', file_extensions: ['.conf'] }], previewSource: async () => ({ source_digest: 'source', source_evidence: {} }), downloadSourceWorkbook: async () => {}, importCollectionSnapshot: async () => {} },
     './SourceOverview': { SourceOverview: 'SourceOverview' }, './VendorSelect': { VendorSelect: 'VendorSelect' }, './LiveCollection': { LiveCollection: 'LiveCollection' },
     '../migration/MigrationWorkflow': { MigrationWorkflow: 'MigrationWorkflow' }, '../migration/MigrationReview': { MigrationReview: 'MigrationReview' },
+    '../migration/paloAltoToFortigate/MigrationWorkflow': { FortiGateMigrationWorkflow: 'FortiGateMigrationWorkflow' },
+    '../migration/MigrationPairWorkflow': { MigrationPairWorkflow: 'MigrationPairWorkflow' },
+    '../migration/pairApi': { loadMigrationPairs: async () => [
+      { pair_id: 'fortigate_to_palo_alto', source_vendor: 'fortigate', target_vendor: 'palo_alto', display_name: 'FortiGate → PAN-OS', export_available: true },
+      { pair_id: 'fortigate_to_juniper_srx', source_vendor: 'fortigate', target_vendor: 'juniper_srx', display_name: 'FortiGate → Juniper SRX', export_available: true },
+    ] },
     '../report/reportPresentation': { asRecord: (value) => value ?? {} },
   })
   let tree = await harness.render({ view: 'migration', onViewChange: () => {} })
+  const liveTree = await harness.render({ view: 'live', liveDeviceAccess: true, onViewChange: () => {} })
+  assert.deepEqual(elements(liveTree).find((node) => node.type === 'MigrationWorkflow').props.preview, {})
+  assert.equal(elements(liveTree).find((node) => node.props.id === 'source-configuration').props.hidden, true)
+  tree = await harness.render({ view: 'migration', onViewChange: () => {} })
   assert.ok(!JSON.stringify(tree).includes('Download project'))
   assert.ok(!JSON.stringify(tree).includes('Resume project'))
   const upload = elements(tree).find((node) => node.type === 'FileUpload')
@@ -325,6 +355,10 @@ test('a new source analysis opens target setup and keeps source settings reachab
     tree = await harness.render({ view: 'migration', onViewChange: () => {} })
     assert.equal(elements(tree).find((node) => node.type === 'MigrationReview').props.stage, stages[index])
   }
+  const target = elements(tree).find((node) => node.type === 'select' && node.props.value === 'fortigate_to_palo_alto')
+  target.props.onChange({ target: { value: 'fortigate_to_juniper_srx' } })
+  tree = await harness.render({ view: 'migration', onViewChange: () => {} })
+  assert.equal(elements(tree).find((node) => node.type === 'MigrationPairWorkflow').props.pairId, 'fortigate_to_juniper_srx')
 })
 
 function elements(tree) {
@@ -885,6 +919,130 @@ function workflowHarness(migrationApi) {
   })
 }
 
+function uploadedReview(count = 1) {
+  return { filename: 'commands.set', commands: Array.from({ length: count }, (_, index) => `set vsys vsys1 address host-${index} ip-netmask 192.0.2.1`),
+    line_numbers: Array.from({ length: count }, (_, index) => index + 2), command_count: count, command_sha256: 'command-hash', file_sha256: 'file-hash',
+    signature: 'signature', expires_at: 2000000000, context: { host: 'fw', port: 22, target_device: 'fw', target_serial: '012345678901' } }
+}
+
+test('uploaded command review is paged, requires explicit approval, and ignores replaced or stale inputs', async () => {
+  let complete
+  let invalidations = 0
+  const approvals = []
+  const harness = component('../src/features/migration/components/MigrationSetUpload.tsx', 'MigrationSetUpload', {
+    '../../source/FileUpload': { FileUpload: 'FileUpload' }, '../../../components/common/ErrorBanner': { ErrorBanner: 'Error' },
+    '../migrationApi': { prepareSetReview: async () => new Promise((resolve) => { complete = resolve }) },
+  })
+  const props = { host: 'fw', port: '22', busy: false, approved: false, canPrepare: true,
+    onInvalidate: () => { invalidations++ }, onPrepare: (review) => approvals.push(review) }
+  let tree = await harness.render(props)
+  elements(tree).find((node) => node.props.title === 'Choose PAN-OS .set file').props.onChange(new File(['set commands'], 'commands.set'))
+  elements(tree).find((node) => node.props.title === 'Choose actual destination XML').props.onChange(new File(['<config/>'], 'destination.xml'))
+  tree = await harness.render(props)
+  elements(tree).find((node) => node.type === 'Button' && node.props.children === 'Review uploaded commands').props.onClick()
+  tree = await harness.render(props)
+  assert.equal(approvals.length, 0)
+  complete({ review: uploadedReview(60), devices: ['fw'] })
+  tree = await harness.render(props)
+  assert.equal(elements(tree).find((node) => node.type === 'pre').props.children.split('\n').length, 50)
+  elements(tree).find((node) => node.type === 'Button' && node.props.children === 'Next commands').props.onClick()
+  tree = await harness.render(props)
+  assert.equal(elements(tree).find((node) => node.type === 'pre').props.children.split('\n').length, 10)
+  elements(tree).find((node) => node.type === 'Button' && node.props.children === 'Approve and prepare candidate').props.onClick()
+  assert.equal(approvals.length, 1)
+  tree = await harness.render({ ...props, host: 'other' })
+  assert.equal(elements(tree).find((node) => node.props['aria-label'] === 'Uploaded command review'), undefined)
+  elements(tree).find((node) => node.type === 'Button' && node.props.children === 'Review uploaded commands').props.onClick()
+  tree = await harness.render({ ...props, host: 'other' })
+  elements(tree).find((node) => node.props.title === 'Choose PAN-OS .set file').props.onChange(new File(['replacement'], 'other.set'))
+  complete({ review: uploadedReview(), devices: ['fw'] })
+  tree = await harness.render({ ...props, host: 'other' })
+  assert.equal(elements(tree).find((node) => node.type === 'pre'), undefined)
+  assert.ok(invalidations >= 4)
+})
+
+test('live upload works without a source and approves before pushing with explicit commit', async () => {
+  const calls = []
+  const review = uploadedReview()
+  const artifact = { ...review, artifact_id: 'upload-artifact', envelope_type: 'panos_set_import_v1' }
+  const harness = workflowHarness({
+    buildPlan: () => assert.fail('Upload must not invoke the planner'),
+    approveSetReview: async (value) => { calls.push('approve'); assert.equal(value, review); return { artifact } },
+    deployArtifact: async (value) => { calls.push('push'); assert.equal(value.artifact, artifact); return { deployment_session_id: 'session', candidate_validated: true, result: { commands_succeeded: 1, validation: { status: 'SUCCESS' } } } },
+    commitCandidate: async () => { calls.push('commit'); return { result: { job_id: 'job' } } },
+  })
+  const props = { preview: {}, decisionDocument: null, targetSource: null, targetDevice: '', activeSection: 'live', liveDeviceAccess: true }
+  let tree = await harness.render(props)
+  assert.ok(elements(tree).some((node) => node.type === 'SetUpload'))
+  assert.equal(elements(tree).find((node) => node.type === 'Button' && node.props.children === 'Prepare Candidate').props.disabled, true)
+  elements(tree).find((node) => node.type === 'input' && node.props.type === 'password').props.onChange({ target: { value: 'secret' } })
+  tree = await harness.render(props)
+  elements(tree).find((node) => node.type === 'SetUpload').props.onPrepare(review)
+  tree = await harness.render(props)
+  assert.deepEqual(calls, ['approve', 'push'])
+  assert.equal(elements(tree).find((node) => node.type === 'input' && node.props.type === 'password').props.value, '')
+  const previousWindow = globalThis.window
+  globalThis.window = { confirm: () => true }
+  try {
+    await elements(tree).find((node) => node.type === 'Button' && node.props.children === 'Commit').props.onClick()
+    tree = await harness.render(props)
+    assert.deepEqual(calls, ['approve', 'push', 'commit'])
+    elements(tree).find((node) => node.type === 'SetUpload').props.onInvalidate()
+    tree = await harness.render(props)
+    assert.equal(elements(tree).find((node) => node.props['aria-label'] === 'Candidate recovery'), undefined)
+  } finally { globalThis.window = previousWindow }
+})
+
+test('failed upload approval cannot push and a superseded approval cannot resume execution', async () => {
+  let complete
+  let fail = true
+  let pushes = 0
+  const harness = workflowHarness({
+    approveSetReview: async () => { if (fail) throw new Error('Review expired'); return new Promise((resolve) => { complete = resolve }) },
+    deployArtifact: async () => { pushes++; assert.fail('Stale approval must not push') },
+  })
+  const props = { preview: {}, decisionDocument: null, targetSource: null, targetDevice: '', activeSection: 'live', liveDeviceAccess: true }
+  let tree = await harness.render(props)
+  elements(tree).find((node) => node.type === 'SetUpload').props.onPrepare(uploadedReview())
+  tree = await harness.render(props)
+  assert.ok(JSON.stringify(tree).includes('No commands were submitted'))
+  assert.equal(elements(tree).find((node) => node.props['aria-label'] === 'Candidate recovery'), undefined)
+  fail = false
+  elements(tree).find((node) => node.type === 'SetUpload').props.onPrepare(uploadedReview())
+  tree = await harness.render(props)
+  elements(tree).find((node) => node.type === 'SetUpload').props.onInvalidate()
+  complete({ artifact: { ...uploadedReview(), artifact_id: 'superseded' } })
+  tree = await harness.render(props)
+  assert.equal(pushes, 0)
+  assert.equal(elements(tree).find((node) => node.type === 'SetUpload').props.approved, false)
+})
+
+test('a replaced upload retains read-only recovery after partial writes and cannot replay', async () => {
+  const artifact = { ...uploadedReview(), artifact_id: 'upload', envelope_type: 'panos_set_import_v1' }
+  let pushes = 0
+  const inspected = []
+  const harness = workflowHarness({
+    approveSetReview: async () => ({ artifact }),
+    deployArtifact: async () => { pushes++; const error = new api.RequestError('Rejected'); error.details = { failed_line_number: 2, recovery: { state: 'PARTIAL_PUSH', commands_attempted: 1, commands_succeeded: 0 } }; throw error },
+    inspectCandidate: async (value) => { inspected.push(value.artifact.artifact_id); return { inspection: { state: 'CLEAN_BASELINE', device_serial: '012345678901', baseline_matches: true, candidate_clean: true }, recovery: { state: 'CLEAN_BASELINE' } } },
+  })
+  const props = { preview: {}, decisionDocument: null, targetSource: null, targetDevice: '', activeSection: 'live', liveDeviceAccess: true }
+  let tree = await harness.render(props)
+  elements(tree).find((node) => node.type === 'SetUpload').props.onPrepare(uploadedReview())
+  tree = await harness.render(props)
+  assert.equal(elements(tree).find((node) => node.type === 'Button' && node.props.children === 'Commit').props.disabled, true)
+  assert.ok(JSON.stringify(tree).includes('Uploaded file line 2 failed'))
+  elements(tree).find((node) => node.type === 'SetUpload').props.onInvalidate()
+  tree = await harness.render(props)
+  elements(tree).find((node) => node.type === 'SetUpload').props.onPrepare(uploadedReview())
+  tree = await harness.render(props)
+  assert.equal(pushes, 1)
+  await elements(tree).find((node) => node.type === 'Button' && node.props.children === 'Inspect candidate (read-only)').props.onClick()
+  tree = await harness.render(props)
+  assert.deepEqual(inspected, ['upload'])
+  assert.equal(pushes, 1)
+})
+
 async function buildArtifact(harness, props) {
   let tree = await harness.render({ ...props, activeSection: 'plan' })
   await elements(tree).find((node) => node.type === 'Button' && String(node.props.children).startsWith('Build approved')).props.onClick()
@@ -1386,14 +1544,14 @@ test('approved selection closes its preview and does not remain ready; failed ap
   const props = { draft: { decisions: [], configuration: [row], findings: [] }, approvedItems: [], busy: false,
     onApprove: () => { throw new Error('approval failed') } }
   let tree = await harness.render(props)
-  elements(tree).find((node) => node.type === 'Button' && node.props.children?.[0] === 'Review ready (').props.onClick()
+  elements(tree).find((node) => node.type === 'Button' && node.props.children?.[0] === 'Review all ready changes (').props.onClick()
   tree = await harness.render(props)
-  assert.throws(() => elements(tree).find((node) => node.type === 'Button' && node.props.children === 'Approve selection').props.onClick(), /approval failed/)
+  assert.throws(() => elements(tree).find((node) => node.type === 'Button' && node.props.children === 'Approve selection and generate commands').props.onClick(), /approval failed/)
   tree = await harness.render(props)
   assert.ok(elements(tree).some((node) => node.props['aria-label'] === 'Approval preview'))
   tree = await harness.render({ ...props, approvedItems: ['address'] })
   assert.ok(!elements(tree).some((node) => node.props['aria-label'] === 'Approval preview'))
-  assert.equal(elements(tree).find((node) => node.type === 'Button' && node.props.children?.[0] === 'Review ready (').props.disabled, true)
+  assert.equal(elements(tree).find((node) => node.type === 'Button' && node.props.children?.[0] === 'Review all ready changes (').props.disabled, true)
 })
 
 test('review list keeps cross-page selections and reviews all ready items across filters', async () => {
@@ -1402,17 +1560,17 @@ test('review list keeps cross-page selections and reviews all ready items across
   })
   const mapping = { decision_key: 'vsys', item_key: 'vsys', source_vdom: 'root', source_kind: 'vdom', source_name: 'root', target_field: 'vsys',
     status: 'READY', proposed_value: 'vsys1', dependencies: [], blocking_reasons: [] }
-  const configuration = Array.from({ length: 12 }, (_, index) => ({ group_key: `host-${index}`, item_key: `host-${index}`, source_vdom: 'root', source_kind: 'address',
+  const configuration = Array.from({ length: 27 }, (_, index) => ({ group_key: `host-${index}`, item_key: `host-${index}`, source_vdom: 'root', source_kind: 'address',
     source_name: `host-${index}`, target_name: `host-${index}`, target_scope: 'vsys1', family: 'address', operation: 'CREATE', status: 'READY', dependencies: ['vsys'], blocking_reasons: [] }))
   const props = { draft: { decisions: [mapping], configuration, findings: [] }, approvedItems: [], busy: false, onApprove: () => assert.fail('Review must not approve') }
   const articles = (tree) => elements(tree).filter((node) => node.props.className === 'migration-proposal-row')
   const button = (tree, label) => elements(tree).find((node) => node.props.children === label)
   let tree = await harness.render(props)
-  assert.equal(articles(tree).length, 10)
+  assert.equal(articles(tree).length, 25)
   assert.equal(elements(tree).filter((node) => node.type === 'Button' && node.props.children?.[0] === 'Review selected (').length, 0)
   assert.equal(elements(tree).find((node) => node.props['aria-label'] === 'Configuration status'), undefined)
-  assert.ok(elements(tree).some((node) => node.props.summary === 'By type'))
-  assert.equal(elements(tree).filter((node) => node.type === 'table').length, 0)
+  assert.ok(elements(tree).some((node) => node.props.children === 'Configuration by type'))
+  assert.equal(elements(tree).filter((node) => node.type === 'table').length, 1)
   elements(articles(tree)[0]).find((node) => node.type === 'input').props.onChange({ target: { checked: true } })
   button(tree, 'Next').props.onClick()
   tree = await harness.render(props)
@@ -1424,16 +1582,22 @@ test('review list keeps cross-page selections and reviews all ready items across
   assert.equal(articles(tree).length, 0)
   assert.equal(elements(tree).filter((node) => node.type === 'select').length, 0)
   const preview = elements(tree).find((node) => node.props['aria-label'] === 'Approval preview')
-  assert.deepEqual(elements(preview).find((node) => node.props.items).props.items, ['host-0', 'host-10', 'vsys'])
+  assert.deepEqual(elements(preview).find((node) => node.props.items).props.items, ['host-0', 'host-25', 'vsys'])
   button(tree, 'Back').props.onClick()
   tree = await harness.render(props)
-  elements(tree).find((node) => node.type === 'input' && node.props.placeholder === 'Source or target name').props.onChange({ target: { value: 'host-11' } })
+  elements(tree).find((node) => node.type === 'input' && node.props.placeholder === 'Source or target name').props.onChange({ target: { value: 'host-26' } })
   tree = await harness.render(props)
   assert.equal(articles(tree).length, 1)
-  elements(tree).find((node) => node.type === 'Button' && node.props.children?.[0] === 'Review ready (').props.onClick()
+  assert.ok(JSON.stringify(tree).includes('selected across all pages and filters'))
+  elements(tree).find((node) => node.type === 'Button' && node.props.children?.[0] === 'Review matching changes (').props.onClick()
+  tree = await harness.render(props)
+  assert.deepEqual(elements(tree).find((node) => node.props.items).props.items, ['host-26', 'vsys'])
+  button(tree, 'Back').props.onClick()
+  tree = await harness.render(props)
+  elements(tree).find((node) => node.type === 'Button' && node.props.children?.[0] === 'Review all ready changes (').props.onClick()
   tree = await harness.render(props)
   const allPreview = elements(tree).find((node) => node.props['aria-label'] === 'Approval preview')
-  assert.equal(elements(allPreview).find((node) => node.props.items).props.items.length, 13)
+  assert.equal(elements(allPreview).find((node) => node.props.items).props.items.length, 28)
 })
 
 test('migration summary counts ready, blocked, excluded and approved configuration separately', async () => {
@@ -1453,6 +1617,76 @@ test('migration summary counts ready, blocked, excluded and approved configurati
   assert.ok(JSON.stringify(tree).includes('Excluded'))
   assert.ok(JSON.stringify(tree).includes('Approved'))
   assert.ok(JSON.stringify(tree).includes('explicitly excluded interfaces'))
+  const counts = elements(tree).filter((node) => node.type === 'span').map((node) => [node.props.children].flat().join(''))
+  assert.deepEqual(counts, ['Ready 1', 'Blocked 1', 'Manual / unsupported 1', 'Excluded by you 1', 'Approved 1'])
+})
+
+test('change browsing supports page sizes, page jumps, type filters and shrinking results', async () => {
+  const harness = component('../src/features/migration/components/MigrationDesignReview.tsx', 'MigrationDesignReview', {
+    '../reviewDrafts': drafts, '../reviewPresentation': presentation,
+  })
+  const configuration = Array.from({ length: 126 }, (_, index) => ({ group_key: `item-${index}`, source_vdom: 'root', source_kind: 'address',
+    source_name: `host-${index}`, family: index === 125 ? 'service' : 'address', status: 'READY', dependencies: [], blocking_reasons: [] }))
+  const props = { draft: { decisions: [], configuration, findings: [] }, approvedItems: [], busy: false, onApprove: () => assert.fail('Browsing cannot approve') }
+  const articles = (tree) => elements(tree).filter((node) => node.props.className === 'migration-proposal-row')
+  let tree = await harness.render(props)
+  assert.equal(articles(tree).length, 25)
+  for (const size of [50, 100]) {
+    elements(tree).find((node) => node.props['aria-label'] === 'Changes per page').props.onChange({ target: { value: String(size) } })
+    tree = await harness.render(props)
+    assert.equal(articles(tree).length, size)
+    assert.equal(elements(tree).find((node) => node.props['aria-label'] === 'Changes page').props.value, 1)
+  }
+  elements(tree).find((node) => node.props['aria-label'] === 'Changes page').props.onChange({ target: { value: '999' } })
+  tree = await harness.render(props)
+  assert.equal(articles(tree).length, 26)
+  assert.equal(elements(tree).find((node) => node.props['aria-label'] === 'Changes page').props.value, 2)
+  tree = await harness.render({ ...props, draft: { ...props.draft, configuration: configuration.slice(0, 1) } })
+  assert.equal(articles(tree).length, 1)
+  assert.equal(elements(tree).find((node) => node.props['aria-label'] === 'Changes page').props.value, 1)
+  tree = await harness.render(props)
+  elements(tree).find((node) => node.type === 'button' && node.props.children === 'service').props.onClick()
+  tree = await harness.render(props)
+  assert.equal(articles(tree).length, 1)
+  assert.equal(articles(tree)[0].key, 'item-125')
+})
+
+test('blocked changes link only existing scoped input tasks and keep manual reasons visible', async () => {
+  const harness = component('../src/features/migration/components/MigrationDesignReview.tsx', 'MigrationDesignReview', {
+    '../reviewDrafts': drafts, '../reviewPresentation': presentation,
+  })
+  const row = { group_key: 'root-policy', source_vdom: 'root', source_kind: 'policy', source_name: 'policy', family: 'security_rule',
+    status: 'NEEDS_INPUT', dependencies: ['root-port'], blocking_reasons: ['Missing placement'] }
+  const issue = { id: 'direct', source_vdom: 'root', source_name: 'policy', explanation: 'Choose target', affected_keys: ['root-policy'], action: { kind: 'EDIT_SETTINGS' } }
+  const issues = [issue,
+    { ...issue, id: 'prerequisite', source_name: 'port1', affected_keys: [], action: { kind: 'EDIT_MAPPING', decision_key: 'root-port' } },
+    { ...issue, id: 'other-vdom', source_vdom: 'branch', affected_keys: ['branch-policy'] },
+    { ...issue, id: 'manual', action: null }]
+  const routes = []
+  const props = { draft: { decisions: [], configuration: [row], findings: [], issues }, approvedItems: [], busy: false,
+    onApprove: () => assert.fail('Blocked items cannot approve'), onSelectIssue: (id) => routes.push(id), onResolveInputs: () => routes.push('inputs') }
+  let tree = await harness.render(props)
+  elements(tree).find((node) => node.type === 'Button' && node.props.children?.[0] === 'Resolve required inputs (').props.onClick()
+  elements(tree).find((node) => node.type === 'select' && node.props.value === 'READY').props.onChange({ target: { value: 'all' } })
+  tree = await harness.render(props)
+  elements(tree).find((node) => node.type === 'button' && node.props.children === 'Details').props.onClick()
+  tree = await harness.render(props)
+  const links = elements(tree).filter((node) => node.type === 'Button' && node.props.children?.[0] === 'Open required input: ')
+  assert.equal(links.length, 2)
+  links.forEach((link) => link.props.onClick())
+  assert.deepEqual(routes, ['inputs', 'direct', 'prerequisite'])
+  tree = await harness.render({ ...props, draft: { ...props.draft,
+    decisions: [{ decision_key: 'root-port', status: 'NEEDS_INPUT', dependencies: ['root-vsys', 'root-policy'] }],
+    issues: [...issues, { ...issue, id: 'ancestor', affected_keys: ['root-vsys'] }],
+  } })
+  assert.equal(elements(tree).filter((node) => node.type === 'Button' && node.props.children?.[0] === 'Open required input: ').length, 3,
+    'Transitive and missing prerequisites remain linked even with a dependency cycle')
+  tree = await harness.render({ ...props, draft: { ...props.draft, issues: [issues[3]] } })
+  assert.ok(JSON.stringify(tree).includes('Missing placement'))
+  assert.equal(elements(tree).filter((node) => node.type === 'Button' && node.props.children?.[0] === 'Open required input: ').length, 0)
+  tree = await harness.render({ ...props, draft: { ...props.draft, configuration: [{ ...row, status: 'READY' }] } })
+  assert.equal(elements(tree).find((node) => node.type === 'Button' && node.props.id === 'review-ready').props.disabled, true)
+  assert.equal(elements(tree).find((node) => node.type === 'article').props.children[0].props.children[0].props.disabled, true, 'A missing prerequisite cannot seed approval')
 })
 
 test('issue workspace paginates task groups and resets filters on context changes', async () => {
@@ -1553,11 +1787,11 @@ test('approval preview expands prerequisites, shows exact scopes, and leaves man
   const another = { ...config, group_key: 'other', source_name: 'vlan20' }
   const props = { draft: { decisions: [mapping], configuration: [config, another, manual], findings: [] }, approvedItems: [], busy: false, onApprove: (keys) => calls.push(keys) }
   let tree = await harness.render(props)
-  const bulk = elements(tree).find((node) => node.type === 'Button' && node.props.children?.[0] === 'Review ready (')
+  const bulk = elements(tree).find((node) => node.type === 'Button' && node.props.children?.[0] === 'Review all ready changes (')
   bulk.props.onClick()
   tree = await harness.render(props)
   let bulkPreview = elements(tree).find((node) => node.props['aria-label'] === 'Approval preview')
-  assert.deepEqual(elements(bulkPreview).find((node) => node.props.items).props.items, ['port', 'vlan', 'other'])
+  assert.deepEqual(elements(bulkPreview).find((node) => node.props.items).props.items, ['vlan', 'other', 'port'])
   assert.equal(calls.length, 0, 'Bulk selection must not approve automatically')
   elements(tree).find((node) => node.type === 'Button' && node.props.children === 'Back').props.onClick()
   tree = await harness.render(props)
@@ -1572,9 +1806,181 @@ test('approval preview expands prerequisites, shows exact scopes, and leaves man
   assert.deepEqual(list.props.items, ['vlan', 'port'])
   assert.ok(JSON.stringify(list.props.render('vlan')).includes('vsys1'))
   assert.ok(JSON.stringify(list.props.render('vlan')).includes('vlan tag: 10'))
-  elements(preview).find((node) => node.type === 'Button' && node.props.children === 'Approve selection').props.onClick()
+  elements(preview).find((node) => node.type === 'Button' && node.props.children === 'Approve selection and generate commands').props.onClick()
   assert.deepEqual(calls, [['vlan', 'port']])
   assert.deepEqual(drafts.draftDependencies([mapping, config], ['vlan'], ['port']), ['vlan'])
   tree = await harness.render({ ...props, draft: { ...props.draft, decisions: [{ ...mapping, status: 'NEEDS_INPUT' }] } })
-  assert.equal(elements(tree).find((node) => node.type === 'Button' && node.props.children === 'Approve selection').props.disabled, true)
+  assert.equal(elements(tree).find((node) => node.type === 'Button' && node.props.children === 'Approve selection and generate commands').props.disabled, true)
+})
+
+test('SRX approval preview expands dependencies and atomic groups before signed approval', async () => {
+  const calls = []
+  const items = [
+    { key: 'address', family: 'address', source_vdom: 'root', source_name: 'web', target_name: 'web', settings: { prefix: '192.0.2.1/32' }, dependencies: [], decision_keys: [], blockers: [], guidance: [], render_disposition: 'CREATE' },
+    { key: 'policy', family: 'policy', source_vdom: 'root', source_name: 'allow-web', target_name: 'allow-web', settings: { action: 'permit' }, dependencies: ['address'], decision_keys: [], blockers: [], guidance: [], approval_group: 'traffic', render_disposition: 'CREATE' },
+    { key: 'schedule', family: 'schedule', source_vdom: 'root', source_name: 'work-hours', target_name: 'work-hours', settings: { timezone: 'Asia/Kuala_Lumpur' }, dependencies: [], decision_keys: [], blockers: [], guidance: [], approval_group: 'traffic', render_disposition: 'CREATE' },
+  ]
+  const requirements = [{ key: 'scope', source_vdom: null, source_kind: 'source', source_name: 'FortiGate', target_field: 'source_vdom', label: 'FortiGate VDOM', value: null, choices: ['root'] }]
+  const report = { plan_status: 'READY_FOR_REVIEW', items, findings: [], deployment_available: false, destination_verified: false }
+  const draft = { envelope_type: 'draft', digest: 'draft-1' }
+  const artifact = { artifact_id: 'artifact-1', envelope_type: 'fortigate_to_juniper_srx_artifact_v1', command_text: 'set system host-name srx\n', command_count: 1, command_sha256: 'sha', expires_at: 9999999999, report: { ...report, verification: 'Offline only' } }
+  const source = { vendor: 'fortigate', source_text: 'config system global\nend\n' }
+  const harness = component('../src/features/migration/fortigateToJuniperSrx/MigrationWorkflow.tsx', 'JuniperSRXMigrationWorkflow', {
+    '../../../storage/workspaceStore': { workspace: () => ({}), saveWorkspace: async () => {} },
+    '../migrationApi': { downloadFile: () => {} },
+    './migrationApi': {
+      requirements: async () => ({ requirements, report }),
+      prepare: async () => ({ draft, requirements, report }),
+      approve: async (_source, _options, _draft, selected) => { calls.push(selected); return { approval: { signature: 'signed' } } },
+      build: async () => ({ artifact }),
+      commandPreview: async () => ({ text: artifact.command_text, command_sha256: artifact.command_sha256 }),
+      exportDecisions: async () => ({ document: {} }),
+      importDecisions: async () => ({ options: {} }),
+      download: async () => new Blob(),
+    },
+  })
+  const props = { source, sourceKey: 'source-1', stage: 'place', onStageChange: () => {} }
+  let tree = await harness.render(props)
+  elements(tree).find((node) => node.type === 'Button' && node.props.children === 'Prepare migration review').props.onClick()
+  tree = await harness.render({ ...props, stage: 'review' })
+  elements(tree).find((node) => node.props['aria-label'] === 'Select root allow-web').props.onChange({ target: { checked: true } })
+  tree = await harness.render({ ...props, stage: 'review' })
+  elements(tree).find((node) => node.type === 'Button' && node.props.children === 'Review selected changes').props.onClick()
+  tree = await harness.render({ ...props, stage: 'review' })
+  assert.ok(JSON.stringify(tree).includes('Approve these exact changes'))
+  elements(tree).find((node) => node.type === 'Button' && node.props.children === 'Approve these changes and build export').props.onClick()
+  tree = await harness.render({ ...props, stage: 'export' })
+  assert.deepEqual(calls, [['address', 'policy', 'schedule']])
+  assert.equal(elements(tree).find((node) => node.type === 'textarea' && node.props['aria-label'] === 'Juniper SRX command preview').props.value, artifact.command_text)
+})
+
+test('a failed SRX revalidation keeps staged target choices for correction', async () => {
+  const requirements = [{ key: 'scope', source_vdom: null, source_kind: 'source', source_name: 'FortiGate', target_field: 'source_vdom', label: 'FortiGate VDOM', value: null, choices: ['root'] }]
+  const report = { plan_status: 'BLOCKED', items: [], findings: [], deployment_available: false, destination_verified: false }
+  const harness = component('../src/features/migration/fortigateToJuniperSrx/MigrationWorkflow.tsx', 'JuniperSRXMigrationWorkflow', {
+    '../../../storage/workspaceStore': { workspace: () => ({}), saveWorkspace: async () => {} },
+    '../migrationApi': { downloadFile: () => {} },
+    './migrationApi': {
+      requirements: async () => ({ requirements, report }),
+      prepare: async () => { throw new Error('A target mapping is incomplete') },
+    },
+  })
+  const props = { source: { vendor: 'fortigate', source_text: 'config system global\nend\n' }, sourceKey: 'source-2', stage: 'place', onStageChange: () => {} }
+  let tree = await harness.render(props)
+  const scope = elements(tree).find((node) => node.type === 'select' && elements(node).some((child) => child.type === 'option' && child.props.children === 'root'))
+  scope.props.onChange({ target: { value: 'root' } })
+  tree = await harness.render(props)
+  elements(tree).find((node) => node.type === 'Button' && node.props.children === 'Prepare migration review').props.onClick()
+  tree = await harness.render(props)
+  const retainedScope = elements(tree).find((node) => node.type === 'select' && elements(node).some((child) => child.type === 'option' && child.props.children === 'root'))
+  assert.equal(retainedScope.props.value, 'root')
+})
+
+test('ASA approval preview expands dependencies and previews the signed export bytes', async () => {
+  const approvals = []
+  const downloads = []
+  const items = [
+    { key: 'address', family: 'address', source_vdom: 'root', source_name: 'clients', target_name: 'clients', settings: { subnet: '10.0.0.0/24' }, dependencies: [], blockers: [], render_disposition: 'CREATE' },
+    { key: 'policy', family: 'policy', source_vdom: 'root', source_name: 'allow-https', target_name: 'allow-https', settings: { action: 'permit' }, dependencies: ['address'], blockers: [], render_disposition: 'CREATE' },
+  ]
+  const requirements = [
+    { key: 'scope', source_vdom: null, source_kind: 'source', source_name: 'FortiGate', target_field: 'source_vdom', label: 'FortiGate VDOM', value: null, choices: ['root'] },
+    { key: 'context', source_vdom: null, source_kind: 'target', source_name: 'Cisco ASA', target_field: 'target_context', label: 'ASA context', value: null, choices: ['single'] },
+    { key: 'version', source_vdom: null, source_kind: 'target', source_name: 'Cisco ASA', target_field: 'target_version', label: 'Cisco ASA syntax baseline', value: null, choices: ['9.20'] },
+    { key: 'mode', source_vdom: null, source_kind: 'target', source_name: 'Cisco ASA', target_field: 'target_mode', label: 'ASA firewall mode', value: null, choices: ['routed'] },
+    { key: 'inside', source_vdom: 'root', source_kind: 'interface', source_name: 'inside', target_field: 'asa_interface', label: 'ASA interface, nameif, and security level', value: null, choices: [] },
+  ]
+  const report = { plan_status: 'READY_FOR_REVIEW', items, findings: [], deployment_available: false, destination_verified: false }
+  const draft = { envelope_type: 'draft', digest: 'draft-asa' }
+  const artifact = { artifact_id: 'asa-1', envelope_type: 'fortigate_to_cisco_asa_artifact_v1', command_text: 'access-list inside_access extended permit tcp object clients object web eq 443\n', command_count: 1, command_sha256: 'asa-sha', expires_at: 9999999999, report }
+  const source = { vendor: 'fortigate', source_text: 'config system global\nend\n' }
+  const harness = component('../src/features/migration/fortigateToCiscoAsa/MigrationWorkflow.tsx', 'CiscoAsaMigrationWorkflow', {
+    '../../../storage/workspaceStore': { workspace: () => ({}), saveWorkspace: async () => {} },
+    '../migrationApi': { downloadFile: (_blob, name) => downloads.push(name) },
+    './migrationApi': {
+      requirements: async () => ({ requirements, report }),
+      prepare: async (_source, options) => { approvals.push(['prepare', options]); return { draft, requirements, report } },
+      approve: async (_source, _options, _draft, selected) => { approvals.push(['approve', selected]); return { approval: { signature: 'signed' } } },
+      build: async () => ({ artifact }),
+      commandPreview: async () => ({ text: artifact.command_text, command_sha256: artifact.command_sha256 }),
+      exportDecisions: async () => ({ document: {} }),
+      importDecisions: async () => ({ options: {} }),
+      download: async (_source, passedArtifact, kind) => { approvals.push(['download', passedArtifact, kind]); return new Blob([artifact.command_text]) },
+    },
+  })
+  let stage = 'place'
+  const props = { source, sourceKey: 'asa-source', stage, onStageChange: (value) => { stage = value } }
+  const setField = async (label, value, elementType) => {
+    const tree = await harness.render({ ...props, stage })
+    const fieldLabel = elements(tree).find((node) => node.type === 'label' && JSON.stringify(node.props.children).includes(label))
+    const field = elements(fieldLabel).find((node) => node.type === elementType)
+    field.props.onChange({ target: { value } })
+  }
+  let tree = await harness.render(props)
+  await setField('FortiGate VDOM', 'root', 'select')
+  await setField('ASA context', 'single', 'select')
+  await setField('Cisco ASA syntax baseline', '9.20', 'select')
+  await setField('ASA firewall mode', 'routed', 'select')
+  await setField('ASA interface', 'GigabitEthernet0/1', 'input')
+  await setField('ASA nameif', 'inside', 'input')
+  await setField('ASA security level', '100', 'input')
+  tree = await harness.render({ ...props, stage })
+  const prepareButton = elements(tree).find((node) => node.type === 'Button' && node.props.children === 'Prepare migration review')
+  assert.ok(prepareButton, `ASA stage ${stage} did not expose review preparation: ${JSON.stringify(tree).slice(0, 1800)}`)
+  prepareButton.props.onClick()
+  await harness.render({ ...props, stage })
+  tree = await harness.render({ ...props, stage: 'review' })
+  assert.equal(approvals[0][1].interfaces.root.inside.security_level, 100)
+  assert.equal(stage, 'review')
+  assert.ok(JSON.stringify(tree).includes('allow-https'), `ASA review did not render: ${JSON.stringify(tree).slice(0, 2400)}`)
+  elements(tree).find((node) => node.props['aria-label'] === 'Select root allow-https').props.onChange({ target: { checked: true } })
+  tree = await harness.render({ ...props, stage })
+  elements(tree).find((node) => node.type === 'Button' && node.props.children === 'Review selected changes').props.onClick()
+  tree = await harness.render({ ...props, stage })
+  assert.ok(JSON.stringify(tree).includes('address'))
+  elements(tree).find((node) => node.type === 'Button' && node.props.children === 'Approve these changes and build export').props.onClick()
+  await harness.render({ ...props, stage })
+  tree = await harness.render({ ...props, stage: 'export' })
+  assert.deepEqual(approvals.find(([kind]) => kind === 'approve')[1], ['address', 'policy'])
+  assert.equal(elements(tree).find((node) => node.type === 'textarea' && node.props['aria-label'] === 'Cisco ASA command preview').props.value, artifact.command_text)
+  elements(tree).find((node) => node.type === 'Button' && node.props.children === 'Download ASA configuration').props.onClick()
+  await harness.render({ ...props, stage })
+  assert.deepEqual(downloads, ['asa_config.cfg'])
+  assert.equal(approvals.find(([kind]) => kind === 'download')[1], artifact)
+})
+
+test('a failed ASA review preserves target choices for correction', async () => {
+  const requirements = [{ key: 'scope', source_vdom: null, source_kind: 'source', source_name: 'FortiGate', target_field: 'source_vdom', label: 'FortiGate VDOM', value: null, choices: ['root'] }]
+  const harness = component('../src/features/migration/fortigateToCiscoAsa/MigrationWorkflow.tsx', 'CiscoAsaMigrationWorkflow', {
+    '../../../storage/workspaceStore': { workspace: () => ({}), saveWorkspace: async () => {} },
+    '../migrationApi': { downloadFile: () => {} },
+    './migrationApi': {
+      requirements: async () => ({ requirements, report: { items: [], findings: [] } }),
+      prepare: async () => { throw new Error('A target mapping is incomplete') },
+    },
+  })
+  const props = { source: { vendor: 'fortigate', source_text: 'config system global\nend\n' }, sourceKey: 'asa-source-2', stage: 'place', onStageChange: () => {} }
+  let tree = await harness.render(props)
+  const scope = elements(tree).find((node) => node.type === 'select' && elements(node).some((child) => child.type === 'option' && child.props.children === 'root'))
+  scope.props.onChange({ target: { value: 'root' } })
+  tree = await harness.render(props)
+  elements(tree).find((node) => node.type === 'Button' && node.props.children === 'Prepare migration review').props.onClick()
+  tree = await harness.render(props)
+  const retainedScope = elements(tree).find((node) => node.type === 'select' && elements(node).some((child) => child.type === 'option' && child.props.children === 'root'))
+  assert.equal(retainedScope.props.value, 'root')
+})
+
+test('migration pair discovery reads the server registered workflow list', async () => {
+  const compiled = ts.transpileModule(readFileSync(new URL('../src/features/migration/pairApi.ts', import.meta.url), 'utf8'), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS },
+  }).outputText
+  const exports = {}
+  new Function('require', 'exports', compiled)((key) => {
+    assert.equal(key, '../../api/client')
+    return { apiFetch: async (path) => {
+      assert.equal(path, '/api/migration/pairs')
+      return { ok: true, json: async () => ({ pairs: [{ pair_id: 'fortigate_to_juniper_srx', export_available: true }] }) }
+    } }
+  }, exports)
+  assert.deepEqual(await exports.loadMigrationPairs(), [{ pair_id: 'fortigate_to_juniper_srx', export_available: true }])
 })

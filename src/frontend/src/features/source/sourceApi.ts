@@ -1,5 +1,6 @@
 import { apiFetch, postBlob, postForm } from '../../api/client'
 import type { SourcePreviewData, SourceVendor, SourceVendorOption } from './types'
+export { loadMigrationPairs } from '../migration/pairApi'
 
 export async function loadSourceVendors(): Promise<SourceVendorOption[]> {
   const response = await apiFetch('/api/vendors')

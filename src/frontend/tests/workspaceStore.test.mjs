@@ -2,6 +2,16 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { clearWorkspace, restoreWorkspace, saveWorkspace, workspace, workspaceExpired } from '../src/storage/workspaceStore.ts'
 
+test('reverse migration authority is memory-only and clears when source context changes', async () => {
+  await clearWorkspace()
+  await saveWorkspace({ preview: { source_evidence: { vendor: 'palo_alto', source_text: '<config />' } } })
+  await saveWorkspace({ fortigateMigration: { sourceKey: 'old', options: { vdom: 'root' }, approval: { signature: 'signed' }, artifact: { artifact_id: 'old' } } })
+  assert.equal(workspace().fortigateMigration.approval.signature, 'signed')
+  await saveWorkspace({ preview: { source_evidence: { vendor: 'palo_alto', source_text: '<config version="11.1" />' } } })
+  assert.equal(workspace().fortigateMigration, null)
+  await clearWorkspace()
+})
+
 // Minimal asynchronous IndexedDB surface used only to verify legacy data is cleared.
 let saved
 globalThis.indexedDB = {
@@ -114,4 +124,23 @@ test('switching workflow mode revokes approval and artifacts without persisting 
   assert.equal(workspace().deterministicDraft, null)
   assert.equal(workspace().decisionDocument, null)
   assert.equal(saved, undefined)
+})
+
+test('switching migration pairs revokes approvals, artifacts, and pair workspace state', async () => {
+  await clearWorkspace()
+  await saveWorkspace({ migrationPairId: 'fortigate_to_palo_alto', preview: { vendor: 'fortigate' } })
+  await saveWorkspace({
+    decisionDocument: { design_approval: { signature: 'old' } },
+    deterministicDraft: { digest: 'old' },
+    artifact: { artifact_id: 'old' },
+    fortigateMigration: { sourceKey: 'source', approval: { signature: 'pan' } },
+    newPairMigration: { pairId: 'fortigate_to_juniper_srx', sourceKey: 'source', approval: { signature: 'srx' } },
+  })
+  await saveWorkspace({ migrationPairId: 'fortigate_to_juniper_srx' })
+  assert.equal(workspace().decisionDocument, null)
+  assert.equal(workspace().deterministicDraft, null)
+  assert.equal(workspace().artifact, null)
+  assert.equal(workspace().fortigateMigration, null)
+  assert.equal(workspace().newPairMigration, null)
+  await clearWorkspace()
 })

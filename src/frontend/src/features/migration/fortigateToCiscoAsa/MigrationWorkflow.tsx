@@ -1,0 +1,257 @@
+import { useEffect, useRef, useState } from 'react'
+import { Button } from '../../../components/common/Button'
+import { ErrorBanner } from '../../../components/common/ErrorBanner'
+import { LoadingState } from '../../../components/common/LoadingState'
+import { workspace, saveWorkspace } from '../../../storage/workspaceStore'
+import type { SourceEvidence } from '../../../storage/workspaceTypes'
+import type { MigrationStage } from '../types'
+import { downloadFile } from '../migrationApi'
+import * as api from './migrationApi'
+import type { AsaOptions, AsaPlanItem, CiscoAsaWorkspace } from './types'
+
+const PAIR_ID = 'fortigate_to_cisco_asa' as const
+const emptyOptions = (): AsaOptions => ({
+  source_vdom: '', target_context: '', target_version: '', target_mode: '', interfaces: {},
+  source_timezone: '', target_timezone: '', nat_evidence: {},
+})
+
+function payloadOptions(options: AsaOptions): AsaOptions {
+  const interfaces = Object.fromEntries(Object.entries(options.interfaces).flatMap(([vdom, mappings]) => {
+    const complete = Object.fromEntries(Object.entries(mappings).filter(([, mapping]) =>
+      Boolean(mapping.interface?.trim()) && Boolean(mapping.nameif?.trim()) && Number.isInteger(mapping.security_level)
+      && mapping.security_level! >= 0 && mapping.security_level! <= 100,
+    ).map(([name, mapping]) => [name, { interface: mapping.interface!.trim(), nameif: mapping.nameif!.trim(), security_level: mapping.security_level! }]))
+    return Object.keys(complete).length ? [[vdom, complete]] : []
+  }))
+  return { ...options, interfaces }
+}
+
+function expandSelection(items: AsaPlanItem[], selected: string[]): string[] {
+  const byKey = new Map(items.map((item) => [item.key, item]))
+  const expanded = new Set<string>()
+  const visiting = new Set<string>()
+  const add = (key: string) => {
+    if (visiting.has(key)) throw new Error('A dependency cycle blocks this selection')
+    if (expanded.has(key)) return
+    const item = byKey.get(key)
+    if (!item || item.render_disposition !== 'CREATE' || item.blockers.length) throw new Error('A selected item or required dependency is blocked')
+    visiting.add(key)
+    item.dependencies.forEach(add)
+    visiting.delete(key)
+    expanded.add(key)
+  }
+  selected.forEach(add)
+  return items.filter((item) => expanded.has(item.key)).map((item) => item.key)
+}
+
+export function CiscoAsaMigrationWorkflow({ source, sourceKey, stage, onStageChange }: {
+  source: SourceEvidence
+  sourceKey: string
+  stage: MigrationStage
+  onStageChange: (stage: MigrationStage) => void
+}) {
+  const [state, setState] = useState<CiscoAsaWorkspace>(() => {
+    const saved = workspace().newPairMigration
+    return saved?.pairId === PAIR_ID && saved.sourceKey === sourceKey
+      ? saved
+      : { pairId: PAIR_ID, sourceKey, options: emptyOptions(), requirements: [], review: null, approval: null, artifact: null, previewText: null }
+  })
+  const [hasSchedules, setHasSchedules] = useState(Boolean(state.review?.report.items.some((item) => item.family === 'schedule')))
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [selected, setSelected] = useState<string[]>([])
+  const [approvalPreview, setApprovalPreview] = useState<string[] | null>(null)
+  const requests = useRef(0)
+  const pending = useRef(false)
+  const initialOptions = useRef(payloadOptions(state.options))
+  const { options, requirements, review, approval, artifact } = state
+
+  useEffect(() => { void saveWorkspace({ newPairMigration: state }) }, [state])
+  useEffect(() => () => { requests.current++ }, [])
+  useEffect(() => {
+    let active = true
+    api.requirements(source, { ...initialOptions.current, source_vdom: options.source_vdom }).then((result) => {
+      if (active) {
+        setState((current) => ({ ...current, requirements: result.requirements }))
+        setHasSchedules(Boolean(result.report.items.some((item) => item.family === 'schedule')))
+      }
+    }).catch((cause) => { if (active) setError(cause instanceof Error ? cause.message : 'Could not load ASA placement requirements') })
+    return () => { active = false }
+  }, [source, sourceKey, options.source_vdom])
+
+  function changeOptions(next: AsaOptions) {
+    requests.current++
+    setState((current) => ({ ...current, options: next, review: null, approval: null, artifact: null, previewText: null }))
+    setApprovalPreview(null); setSelected([]); setError(null)
+  }
+
+  async function run(action: () => Promise<void>) {
+    if (pending.current) return
+    pending.current = true; setBusy(true); setError(null)
+    try { await action() }
+    catch (cause) { setError(cause instanceof Error ? cause.message : 'ASA migration request failed') }
+    finally { pending.current = false; setBusy(false) }
+  }
+
+  async function prepareReview() {
+    const request = ++requests.current
+    setState((current) => ({ ...current, approval: null, artifact: null, previewText: null }))
+    const result = await api.prepare(source, payloadOptions(options))
+    if (request !== requests.current) return
+    setState((current) => ({ ...current, requirements: result.requirements, review: result }))
+    setHasSchedules(result.report.items.some((item) => item.family === 'schedule'))
+    setSelected([]); setApprovalPreview(null); onStageChange('review')
+  }
+
+  async function generate(currentApproval = approval) {
+    if (!currentApproval) return
+    const request = ++requests.current
+    const result = await api.build(source, payloadOptions(options), currentApproval)
+    if (request !== requests.current) return
+    setState((current) => ({ ...current, artifact: result.artifact, previewText: null }))
+    onStageChange('export')
+    const preview = await api.commandPreview(result.artifact)
+    if (request !== requests.current) return
+    if (preview.command_sha256 !== result.artifact.command_sha256
+      || (result.artifact.command_text !== undefined && preview.text !== result.artifact.command_text)) {
+      throw new Error('Command preview integrity check failed')
+    }
+    setState((current) => ({ ...current, previewText: preview.text }))
+  }
+
+  async function confirmApproval() {
+    if (!review || !approvalPreview?.length) return
+    const request = ++requests.current
+    const result = await api.approve(source, payloadOptions(options), review.draft, approvalPreview)
+    if (request !== requests.current) return
+    setState((current) => ({ ...current, approval: result.approval, artifact: null, previewText: null }))
+    setApprovalPreview(null); onStageChange('export')
+    await generate(result.approval)
+  }
+
+  function setGlobal(field: 'source_vdom' | 'target_context' | 'target_version' | 'target_mode', value: string) {
+    changeOptions({ ...options, [field]: value })
+  }
+
+  function setInterface(vdom: string, name: string, field: 'interface' | 'nameif' | 'security_level', value: string) {
+    const mapping = { ...options.interfaces[vdom]?.[name] }
+    if (field === 'security_level') {
+      if (value === '') delete mapping.security_level
+      else mapping.security_level = Number(value)
+    } else if (value) mapping[field] = value
+    else delete mapping[field]
+    const vdomMappings = { ...options.interfaces[vdom] }
+    if (Object.keys(mapping).length) vdomMappings[name] = mapping
+    else delete vdomMappings[name]
+    const interfaces = { ...options.interfaces }
+    if (Object.keys(vdomMappings).length) interfaces[vdom] = vdomMappings
+    else delete interfaces[vdom]
+    changeOptions({ ...options, interfaces })
+  }
+
+  function setTimezone(field: 'source_timezone' | 'target_timezone', value: string) {
+    changeOptions({ ...options, [field]: value })
+  }
+
+  function openApprovalPreview(keys: string[]) {
+    if (review) setApprovalPreview(expandSelection(review.report.items, keys))
+  }
+
+  const sourceScope = requirements.find((item) => item.target_field === 'source_vdom')
+  const scoped = requirements.filter((item) => item.source_vdom === options.source_vdom)
+  const interfaceRequirements = scoped.filter((item) => item.target_field === 'asa_interface')
+  const targetChoice = (field: string) => requirements.find((item) => item.target_field === field)
+  const ready = review?.report.items.filter((item) => item.render_disposition === 'CREATE' && !item.blockers.length) ?? []
+  const approvalItems = review?.report.items.filter((item) => approvalPreview?.includes(item.key)) ?? []
+
+  return <section className="panel" aria-labelledby="cisco-asa-migration-title">
+    <h2 id="cisco-asa-migration-title">FortiGate → Cisco ASA</h2>
+    <p>Review and export a Cisco ASA 9.20 routed configuration. Export is offline; device execution is unavailable.</p>
+    {stage === 'load' && <>
+      <p>Source: {source.source_name || 'Loaded FortiGate configuration'}</p>
+      <p>The source stays unchanged. Unsupported and unmapped items remain visible as manual work.</p>
+      <Button disabled={busy} onClick={() => onStageChange('place')}>Set up ASA target</Button>
+    </>}
+    {stage === 'place' && <>
+      <h3>Target context</h3>
+      <label className="field">FortiGate VDOM<select disabled={busy} value={options.source_vdom} onChange={(event) => setGlobal('source_vdom', event.target.value)}><option value="">Choose source VDOM</option>{sourceScope?.choices.map((choice) => <option key={choice}>{choice}</option>)}</select></label>
+      {(['target_context', 'target_version', 'target_mode'] as const).map((field) => {
+        const requirement = targetChoice(field)
+        return <label className="field" key={field}>{requirement?.label ?? field}<select disabled={busy} value={options[field]} onChange={(event) => setGlobal(field, event.target.value)}><option value="">Choose explicitly</option>{requirement?.choices.map((choice) => <option key={choice}>{choice}</option>)}</select></label>
+      })}
+      {options.source_vdom && <>
+        <h3>Interface placement</h3>
+        {interfaceRequirements.map((item) => {
+          const mapping = options.interfaces[options.source_vdom]?.[item.source_name] ?? {}
+          return <div className="connection-grid" key={item.key}>
+            <strong>{item.source_name}</strong>
+            <label className="field">ASA interface<input disabled={busy} value={mapping.interface ?? ''} onChange={(event) => setInterface(options.source_vdom, item.source_name, 'interface', event.target.value)} placeholder="GigabitEthernet0/1" /></label>
+            <label className="field">ASA nameif<input disabled={busy} value={mapping.nameif ?? ''} onChange={(event) => setInterface(options.source_vdom, item.source_name, 'nameif', event.target.value)} /></label>
+            <label className="field">ASA security level<input disabled={busy} type="number" min="0" max="100" step="1" value={mapping.security_level ?? ''} onChange={(event) => setInterface(options.source_vdom, item.source_name, 'security_level', event.target.value)} /></label>
+          </div>
+        })}
+      </>}
+      {hasSchedules && <>
+        <h3>Schedule time zone</h3>
+        <label className="field">Confirmed FortiGate time zone<input disabled={busy} value={options.source_timezone} onChange={(event) => setTimezone('source_timezone', event.target.value)} placeholder="Asia/Kuala_Lumpur" /></label>
+        <label className="field">Confirmed ASA time zone<input disabled={busy} value={options.target_timezone} onChange={(event) => setTimezone('target_timezone', event.target.value)} placeholder="Asia/Kuala_Lumpur" /></label>
+      </>}
+      <details>
+        <summary>Mapping proposals</summary>
+        <p>Imported values are proposals. They do not restore or create engineer approval.</p>
+        <Button disabled={busy} onClick={() => void run(async () => {
+          const result = await api.exportDecisions(source, payloadOptions(options))
+          downloadFile(new Blob([JSON.stringify(result.document, null, 2)], { type: 'application/json' }), 'fortigate_to_cisco_asa_decisions.json')
+        })}>Download mapping proposals</Button>
+        <label className="field">Import mapping proposals<input disabled={busy} type="file" accept=".json,application/json" onChange={(event) => {
+          const file = event.target.files?.[0]
+          if (file) void run(async () => {
+            const result = await api.importDecisions(source, JSON.parse(await file.text()))
+            changeOptions({ ...emptyOptions(), ...result.options })
+          })
+          event.target.value = ''
+        }} /></label>
+      </details>
+      <Button disabled={busy} onClick={() => void run(prepareReview)}>Prepare migration review</Button>
+    </>}
+    {stage === 'review' && <>
+      {!review ? <><p>Prepare the current target choices before review.</p><Button disabled={busy} onClick={() => void run(prepareReview)}>Prepare migration review</Button></> : <>
+        <p>{ready.length} items ready for review · {review.report.items.length - ready.length} blocked or manual.</p>
+        {review.report.findings.map((finding, index) => <p role="status" key={`${String(finding.code)}-${index}`}>{String(finding.message ?? finding.code)}</p>)}
+        <Button disabled={busy || !ready.length} onClick={() => openApprovalPreview(ready.map((item) => item.key))}>Review all ready changes</Button>
+        <Button disabled={busy || !selected.length} onClick={() => void run(async () => openApprovalPreview(selected))}>Review selected changes</Button>
+        <div className="report-table-wrap"><table className="report-table"><caption>Planned Cisco ASA configuration</caption><thead><tr><th>Select</th><th>Source</th><th>Target</th><th>Operation</th><th>Blockers</th><th>Review details</th></tr></thead><tbody>{review.report.items.map((item) => <tr key={item.key}>
+          <td><input aria-label={`Select ${item.source_vdom} ${item.source_name}`} type="checkbox" disabled={busy || item.render_disposition !== 'CREATE' || Boolean(item.blockers.length)} checked={selected.includes(item.key)} onChange={(event) => setSelected(event.target.checked ? [...selected, item.key] : selected.filter((key) => key !== item.key))} /></td>
+          <td>{item.source_vdom} / {item.source_name}<small>{item.family}</small></td><td>{item.target_name}</td><td>{item.render_disposition}</td><td>{item.blockers.join(', ')}</td>
+          <td><details><summary>Settings and dependencies</summary><pre>{JSON.stringify({ settings: item.settings, dependencies: item.dependencies }, null, 2)}</pre></details></td>
+        </tr>)}</tbody></table></div>
+        {approvalPreview && <section className="review-work-card" aria-label="ASA approval preview">
+          <h3>Approve these exact changes</h3><p>{approvalItems.length} items, including required dependencies.</p>
+          {approvalItems.map((item) => <details key={item.key}><summary>{item.render_disposition}: {item.source_vdom} / {item.source_name} → {item.target_name}</summary><pre>{JSON.stringify({ settings: item.settings, dependencies: item.dependencies }, null, 2)}</pre></details>)}
+          <Button disabled={busy || !approvalPreview.length} onClick={() => void run(confirmApproval)}>Approve these changes and build export</Button>
+          <Button disabled={busy} onClick={() => setApprovalPreview(null)}>Cancel approval preview</Button>
+        </section>}
+        <Button disabled={busy} onClick={() => onStageChange('place')}>Change target choices</Button>
+      </>}
+    </>}
+    {stage === 'export' && <>
+      {approval && !artifact && <Button disabled={busy} onClick={() => void run(() => generate())}>Retry with current approval</Button>}
+      {!approval && <p>Review and approve the current plan before exporting.</p>}
+      {artifact && <>
+        <h3>{artifact.report.plan_status === 'READY_WITH_MANUAL_WORK' ? 'Partial offline export' : artifact.report.plan_status === 'BLOCKED' ? 'No approved commands' : 'Offline export ready'}</h3>
+        <p>{artifact.command_count} ASA commands · SHA-256: {artifact.command_sha256}</p>
+        <p>Only signed, approved configuration is included. Destination compatibility and device acceptance are unverified.</p>
+        {artifact.report.plan_status === 'READY_WITH_MANUAL_WORK' && <p role="status">Blocked, unsupported and unapproved work is excluded from this export.</p>}
+        {!state.previewText ? <Button disabled={busy} onClick={() => void run(async () => {
+          const result = await api.commandPreview(artifact)
+          if (result.command_sha256 !== artifact.command_sha256 || (artifact.command_text !== undefined && result.text !== artifact.command_text)) throw new Error('Command preview integrity check failed')
+          setState((current) => ({ ...current, previewText: result.text }))
+        })}>Load command preview</Button> : <details open><summary>Command preview</summary><textarea aria-label="Cisco ASA command preview" readOnly value={state.previewText} rows={14} /></details>}
+        <Button disabled={busy || !artifact.command_count} onClick={() => void run(async () => downloadFile(await api.download(source, artifact, 'commands'), 'asa_config.cfg'))}>Download ASA configuration</Button>
+        <Button disabled={busy} onClick={() => void run(async () => downloadFile(await api.download(source, artifact, 'bundle'), 'migration_fortigate_to_cisco_asa.zip'))}>Download reviewed migration bundle</Button>
+      </>}
+    </>}
+    {busy && <LoadingState label="Preparing reviewed ASA migration…" />}
+    {error && <ErrorBanner message={error} />}
+  </section>
+}
