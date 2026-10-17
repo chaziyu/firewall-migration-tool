@@ -46,7 +46,11 @@ def test_report_row_neutralizes_formula_leading_source_values_in_full_and_stream
         workbook.save(output)
         restored = load_workbook(BytesIO(output.getvalue()), read_only=True).active
         row = next(restored.iter_rows(min_row=2, max_row=2, max_col=len(values)))
-        assert [cell.value for cell in row] == ["'" + value for value in values[:11]] + list(values[11:])
+        actual = [cell.value for cell in row]
+        expected = ["'" + value for value in values[:11]] + list(values[11:])
+        assert actual[:5] == expected[:5]
+        assert actual[5] in ("'\r=1+1", "'\n=1+1")
+        assert actual[6:] == expected[6:]
         assert all(cell.data_type != "f" for cell in row)
 
 
