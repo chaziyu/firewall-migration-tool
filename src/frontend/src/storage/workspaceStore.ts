@@ -1,7 +1,7 @@
 import type { Workspace } from './workspaceTypes'
 
 const TTL = 24 * 60 * 60 * 1000
-const empty = (): Workspace => ({ updatedAt: Date.now(), preview: null, targetSource: null, targetDevice: '', decisionDocument: null, deterministicDraft: null, referenceRole: 'TEMPLATE', artifact: null })
+const empty = (): Workspace => ({ updatedAt: Date.now(), migrationPairId: '', fortigateMigration: null, newPairMigration: null, preview: null, targetSource: null, targetDevice: '', decisionDocument: null, deterministicDraft: null, referenceRole: 'TEMPLATE', artifact: null })
 let current = empty()
 
 function open(): Promise<IDBDatabase> {
@@ -43,18 +43,22 @@ export function saveWorkspace(update: Partial<Workspace>): Promise<void> {
   // Workflow state can contain sanitized customer configuration and target topology.
   // Keep it in memory only; connection forms and credentials never enter this object.
   const modeChanged = update.workflowMode !== undefined && update.workflowMode !== (current.workflowMode ?? 'offline')
+  const pairChanged = update.migrationPairId !== undefined && update.migrationPairId !== current.migrationPairId
   const contextChanged = (update.preview !== undefined && JSON.stringify(update.preview?.source_evidence) !== JSON.stringify(current.preview?.source_evidence))
     || (update.targetSource !== undefined && JSON.stringify(update.targetSource) !== JSON.stringify(current.targetSource))
     || (update.targetDevice !== undefined && update.targetDevice !== current.targetDevice)
     || (update.referenceRole !== undefined && update.referenceRole !== current.referenceRole)
-    || modeChanged
+    || modeChanged || pairChanged
   const decisionsChanged = update.decisionDocument !== undefined
     && JSON.stringify(update.decisionDocument) !== JSON.stringify(current.decisionDocument)
   const derivedStateChanged = contextChanged || decisionsChanged
   current = {
+    fortigateMigration: contextChanged ? null : update.fortigateMigration === undefined ? current.fortigateMigration : update.fortigateMigration,
+    newPairMigration: contextChanged ? null : update.newPairMigration === undefined ? current.newPairMigration : update.newPairMigration,
     proposals: update.proposals ?? (contextChanged ? {} : current.proposals ?? {}),
     serviceNames: update.serviceNames ?? (contextChanged ? {} : current.serviceNames ?? {}),
     workflowMode: update.workflowMode ?? current.workflowMode ?? 'offline',
+    migrationPairId: update.migrationPairId ?? (contextChanged ? '' : current.migrationPairId ?? ''),
     updatedAt: Date.now(),
     preview: update.preview === undefined ? current.preview : update.preview,
     targetSource: update.targetSource === undefined ? current.targetSource : update.targetSource,

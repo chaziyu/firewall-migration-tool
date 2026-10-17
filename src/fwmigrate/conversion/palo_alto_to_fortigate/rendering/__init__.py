@@ -1,0 +1,1 @@
+"""FortiOS CLI rendering."""

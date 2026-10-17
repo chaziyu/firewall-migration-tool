@@ -7,6 +7,17 @@ export type SourceVendorOption = {
   live_collection?: boolean
   collection?: { method: string; connection_fields: CollectionField[] } | null
 }
+export type MigrationPairOption = {
+  pair_id: string
+  source_vendor: string
+  target_vendor: string
+  display_name: string
+  api_prefix: string
+  supported_formats: string[]
+  export_available: boolean
+  destination_aware_available: boolean
+  deployment_available: boolean
+}
 export type SourcePreviewData = {
   source_evidence?: import('../../storage/workspaceTypes').SourceEvidence
   source_digest?: string
