@@ -50,7 +50,11 @@ def test_planning_boundary_does_not_depend_on_target_config_or_shared_ir():
 
 
 def test_pair_package_uses_grouped_modules_without_top_level_compatibility_shims():
-    pair_root = Path(__file__).parents[2] / "src" / "fwmigrate" / "conversion" / "fortigate_to_palo_alto"
+    conversion_root = Path(__file__).parents[2] / "src" / "fwmigrate" / "conversion"
+    pair_roots = tuple(conversion_root / name for name in (
+        "fortigate_to_palo_alto", "palo_alto_to_fortigate", "fortigate_to_juniper_srx",
+        "fortigate_to_cisco_asa", "fortigate_to_checkpoint",
+    ))
     retired_shims = {
         "addresses.py", "admin_suggestions.py", "cli_paths.py", "dhcp.py",
         "external_resource_suggestions.py", "identity_suggestions.py", "interfaces.py",
@@ -63,4 +67,5 @@ def test_pair_package_uses_grouped_modules_without_top_level_compatibility_shims
         "topology.py", "vpn_suggestions.py",
     }
 
-    assert not {path.name for path in pair_root.iterdir() if path.is_file()} & retired_shims
+    for package in pair_roots:
+        assert not {path.name for path in package.iterdir() if path.is_file()} & retired_shims

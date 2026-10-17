@@ -75,6 +75,13 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
   const [selectedIssueState, setSelectedIssueState] = useState({ contextKey: issueContextKey, id: '' })
   const selectedIssueId = selectedIssueState.contextKey === issueContextKey ? selectedIssueState.id : ''
   const setSelectedIssueId = (id: string) => setSelectedIssueState({ contextKey: issueContextKey, id })
+  const [inputNavigation, setInputNavigation] = useState(0)
+  function openInputIssue(id = '') {
+    onReviewTabChange('decisions')
+    setSelectedIssueId(id)
+    setInputNavigation((value) => value + 1)
+    requestAnimationFrame(() => document.getElementById('migration-tab-decisions')?.focus())
+  }
   const [setupFocus, setSetupFocus] = useState<{ key: string; request: number } | null>(null)
   const [reviewCurrent, setReviewCurrent] = useState(false)
   const lastReviewContext = useRef('')
@@ -558,7 +565,7 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
     const action = issue.action
     if (!action) return
     if (action.kind === 'REVIEW_SOURCE') { setReviewSection('target'); return }
-    if (action.kind === 'EDIT_SETTINGS') { onReviewTabChange('decisions'); setSelectedIssueId(issue.id); return }
+    if (action.kind === 'EDIT_SETTINGS') { openInputIssue(issue.id); return }
     setReviewSection('mappings')
     setSetupFocus((current) => ({ key: action.decision_key, request: (current?.request ?? 0) + 1 }))
     setMappingView('guided')
@@ -654,23 +661,24 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
           <div role="tablist" aria-label="Review migration" className="migration-review-tabs" onKeyDown={tabKeyboard}>
             {reviewTabs.map(([key, label, count]) => <button key={key} id={`migration-tab-${key}`} role="tab" type="button"
               aria-selected={reviewTab === key} aria-controls={`migration-panel-${key}`} tabIndex={reviewTab === key ? 0 : -1}
-              onClick={() => onReviewTabChange(key)}>{label} <span>{count}</span></button>)}
+              onClick={() => onReviewTabChange(key)}>{label} <span>{count.toLocaleString()} {key === 'changes' ? 'items' : 'issues'}</span></button>)}
           </div>
           <div id="migration-panel-changes" role="tabpanel" aria-labelledby="migration-tab-changes" hidden={reviewTab !== 'changes'}>
           <MigrationDesignReview draft={deterministicDraft} busy={busy || !reviewCurrent || !!changedMappings.length || settingsDirty || approvalRevoked}
           approvedItems={approvedItems}
-          onSelectIssue={(issueId) => { onReviewTabChange('decisions'); setSelectedIssueId(issueId) }}
+          onResolveInputs={() => openInputIssue()}
+          onSelectIssue={openInputIssue}
           onApprove={(groups) => void run(() => approveDesign(groups), 'Selected design groups approved.')}
           onRenameService={(row, name) => { const names = deterministicDraft.context.service_names ?? {}; void run(async () => { await loadReview(currentDocument(), targetSource, targetDevice, referenceRole, deterministicDraft.context.overrides, { ...names, [row.source_vdom]: { ...names[row.source_vdom], [row.source_name]: name } }) }, 'Service name proposed. Review and approve the rebuilt configuration.') }} /></div>
           <div id="migration-panel-decisions" role="tabpanel" aria-labelledby="migration-tab-decisions" hidden={reviewTab !== 'decisions'}>
-            <MigrationIssueWorkspace issues={deterministicDraft.issues ?? []} configurationKeys={configurationKeys} tab="decisions" contextKey={JSON.stringify([previewId, targetSource, targetDevice, referenceRole, workflowMode])}
+            <MigrationIssueWorkspace issues={deterministicDraft.issues ?? []} configurationKeys={configurationKeys} tab="decisions" contextKey={`${issueContextKey}/${inputNavigation}`}
               selectedId={selectedIssueId} onSelect={setSelectedIssueId} onRoute={routeIssue} renderAction={renderIssueAction} />
           </div>
           <div id="migration-panel-manual" role="tabpanel" aria-labelledby="migration-tab-manual" hidden={reviewTab !== 'manual'}>
             <MigrationIssueWorkspace issues={deterministicDraft.issues ?? []} configurationKeys={configurationKeys} tab="manual" contextKey={JSON.stringify([previewId, targetSource, targetDevice, referenceRole, workflowMode])}
               selectedId={selectedIssueId} onSelect={setSelectedIssueId} onRoute={routeIssue} />
           </div>
-          <details className="conversion-options"><summary>Conversion options</summary>
+          <details className="conversion-options"><summary>Edit conversion settings</summary>
             {settingsEditor('vpn')}{settingsEditor('policy')}
             {workflowMode === 'destination' && settingsEditor('management')}
           </details>

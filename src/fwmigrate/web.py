@@ -15,18 +15,24 @@ from fwmigrate.web_support.public_errors import safe_validation_message
 from fwmigrate.collection.builtin import register_builtin_collectors
 from fwmigrate.collection.snapshot import MAX_BYTES
 from fwmigrate.conversion import migration_planners
-from fwmigrate.conversion.builtin import register_builtin_migration_planners
+from fwmigrate.conversion.builtin import register_builtin_migration_planners, register_builtin_migration_workflows
 from fwmigrate.conversion.fortigate_to_palo_alto.application import classify_target_object_reuse
 from fwmigrate.deployment import PANSSHDeployer
 from fwmigrate.source_reporting import source_reporters as source_reporters
 from fwmigrate.source_reporting.builtin import register_builtin_source_reporters
 from fwmigrate.web_api.deployment import DeploymentCoordinator, register_deployment_routes
 from fwmigrate.web_api.migration import register_migration_routes
+from fwmigrate.web_api.migration_pairs import register_migration_pair_routes
+from fwmigrate.web_api.fortigate_to_juniper_srx import register_fortigate_to_juniper_srx_routes
+from fwmigrate.web_api.fortigate_to_cisco_asa import register_fortigate_to_cisco_asa_routes
+from fwmigrate.web_api.fortigate_to_checkpoint import register_fortigate_to_checkpoint_routes
+from fwmigrate.web_api.palo_alto_to_fortigate import register_palo_alto_to_fortigate_routes
 from fwmigrate.web_api.source import register_source_routes
 from fwmigrate.web_support.frontend import register_frontend_routes
 
 register_builtin_source_reporters()
 register_builtin_migration_planners()
+register_builtin_migration_workflows()
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -164,6 +170,11 @@ def create_app(test_config=None):
 
     register_frontend_routes(app)
     register_source_routes(app)
+    register_migration_pair_routes(app)
+    register_fortigate_to_juniper_srx_routes(app, signing_key)
+    register_fortigate_to_cisco_asa_routes(app, signing_key)
+    register_fortigate_to_checkpoint_routes(app, signing_key)
+    register_palo_alto_to_fortigate_routes(app, signing_key)
     register_migration_routes(
         app,
         signing_key,

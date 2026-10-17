@@ -1,0 +1,95 @@
+"""Iterative dependency checks for Check Point operation plans."""
+
+from collections import defaultdict
+import heapq
+
+
+_MANAGEMENT_PATHS = {
+    "/web_api/add-host",
+    "/web_api/add-network",
+    "/web_api/add-service-tcp",
+    "/web_api/add-service-udp",
+    "/web_api/add-access-rule",
+}
+
+
+def ordered_items(plan):
+    by_key = {item.key: item for item in plan.items}
+    indegree = {key: 0 for key in by_key}
+    dependents = defaultdict(list)
+    for item in plan.items:
+        for dependency in item.dependencies:
+            if dependency not in by_key:
+                raise ValueError("Check Point plan contains an unresolved dependency")
+            indegree[item.key] += 1
+            dependents[dependency].append(item.key)
+    order = {item.key: index for index, item in enumerate(plan.items)}
+    ready = [(order[item.key], item.key) for item in plan.items if indegree[item.key] == 0]
+    heapq.heapify(ready)
+    result = []
+    while ready:
+        _, key = heapq.heappop(ready)
+        result.append(by_key[key])
+        for dependent in dependents[key]:
+            indegree[dependent] -= 1
+            if indegree[dependent] == 0:
+                heapq.heappush(ready, (order[dependent], dependent))
+    if len(result) != len(plan.items):
+        raise ValueError("Check Point plan contains a dependency cycle")
+    return tuple(result)
+
+
+def validate_plan(plan):
+    keys = [item.key for item in plan.items]
+    if len(keys) != len(set(keys)):
+        raise ValueError("Check Point plan contains duplicate item keys")
+    ordered = ordered_items(plan)
+    bindings = {}
+    for item in ordered:
+        settings = dict(item.settings)
+        operation = settings.get("management_operation")
+        if operation is not None:
+            if operation.get("path") not in _MANAGEMENT_PATHS:
+                raise ValueError("Check Point plan contains an unverified Management API path")
+            binding = operation.get("response_binding", {}).get("binding_id")
+            if binding:
+                if binding in bindings:
+                    raise ValueError("Check Point plan contains a duplicate response binding")
+                bindings[binding] = item.key
+        for line in settings.get("gaia_commands", ()):
+            low = line.strip().casefold()
+            if not low.startswith(("set static-route ", "set ipv6 static-route ")):
+                raise ValueError("Gaia export contains a command outside the verified static-route subset")
+            if any(word in low for word in (" save config", " publish", " install-policy", " commit", " delete ")):
+                raise ValueError("Gaia export contains a prohibited activation or destructive command")
+    for item in ordered:
+        operation = dict(item.settings).get("management_operation")
+        if operation is None:
+            continue
+        allowed_dependencies = set(item.dependencies)
+        for binding in _response_bindings(operation.get("request_body_template")):
+            dependency = bindings.get(binding)
+            if dependency is None or dependency not in allowed_dependencies:
+                raise ValueError("Management API request references an unbound or undeclared UID dependency")
+    return plan
+
+
+def _response_bindings(value):
+    if isinstance(value, dict):
+        if set(value) == {"$response_binding"}:
+            yield value["$response_binding"]
+        else:
+            for child in value.values():
+                yield from _response_bindings(child)
+    elif isinstance(value, (tuple, list)):
+        for child in value:
+            yield from _response_bindings(child)
+
+
+def dispositions(plan):
+    validate_plan(plan)
+    result = {}
+    for item in ordered_items(plan):
+        blocked_dependency = any(result[dependency] == "BLOCK" for dependency in item.dependencies)
+        result[item.key] = "BLOCK" if item.blockers or blocked_dependency else "CREATE"
+    return result

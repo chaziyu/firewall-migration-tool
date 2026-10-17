@@ -7,6 +7,46 @@ confirms explicit `vsys` prefixes for scoped configuration.
 
 ## Scope
 
+### Reviewed .set uploads
+
+Local Live migration also accepts ordinary UTF-8 `.set` files through **Upload
+.set file**. No signed file or FortiGate source is required. Upload actual
+destination XML with explicit device serial evidence and enter the destination
+host/port, then review the commands before choosing **Approve and prepare
+candidate**. Approval is recorded internally; uploading or reviewing alone never
+pushes commands. Candidate validation follows preparation and commit stays
+explicit.
+
+The importer accepts only the configuration paths covered by this renderer:
+explicit VSYS objects/rules, interface ownership/zones, supported network
+interfaces, legacy virtual routers/static routes, DHCP, interface management
+profiles, and non-secret IKE/ESP crypto profiles. It does not reconstruct source
+mappings, prove migration equivalence, classify target reuse, or verify hardware
+capacity/licensing. Existing configuration can be changed by these commands.
+
+Limits: 5 MB, 50,000 commands, 16,384 characters per line. UTF-8 BOM and CRLF are
+accepted; blank lines are ignored. Execution preserves all other command text,
+order and duplicates. The preview retains original file line numbers. Reject the
+whole file on errors; do not silently fix or skip commands. Unknown paths,
+implicit VSYS targeting, Panorama wrappers, comments/session commands,
+destructive/operational commands, control characters, malformed quoting and
+secret-bearing commands are excluded. Secret-like names/text are conservatively
+rejected rather than altered and deployed.
+
+The uploaded file receives a fresh review bound to its command hash, destination
+serial, sanitized XML baseline, host/port and expiry. This does not promote an
+offline planning artifact into an eligible artifact. Existing source-reporting
+formats and disabled CLI deployment remain unchanged. Source files, approval and
+connection state remain memory-only. Review must be repeated after input changes;
+partial or unknown writes require inspection and operator reconciliation.
+
+This feature uses the same SSH candidate checks, sessions and explicit commit
+boundary as planner-generated artifacts. Application coordination is not an
+exclusive device lock. Documentation and mocked tests do not establish live
+device compatibility.
+
+### Planner-generated commands
+
 - Syntax baseline: PAN-OS 11.1, standalone firewall, explicit VSYS ownership,
   legacy virtual routers, IPv4 only for executable interface conversion.
 - Documentation verification is not device validation. No hardware or PAN-OS

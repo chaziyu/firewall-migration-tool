@@ -6,7 +6,7 @@ import os
 
 from flask import request
 from fwmigrate.collection import CollectionStatus
-from fwmigrate.collection.snapshot import MAX_BYTES, parse_snapshot, sanitize_source, make_snapshot
+from fwmigrate.collection.snapshot import FORMAT, MAX_BYTES, parse_snapshot, sanitize_source, make_snapshot
 from fwmigrate.source_reporting import source_reporters
 from .reporting import _decode_configuration
 
@@ -75,3 +75,9 @@ def _clone_preview(entry):
 def _require_complete_collection(entry):
     if getattr(entry, 'collection_status', None) is not None and entry.collection_status != CollectionStatus.SUCCESS:
         raise ValueError('Migration requires a complete live collection; this source is PARTIAL or FAILED.')
+    evidence = getattr(entry, 'evidence', None)
+    if isinstance(evidence, dict) and evidence.get('format') == FORMAT and any(
+        not part.get('complete') or part.get('status') not in {'SUCCESS', 'SUCCESS_WITH_DATA', 'SUCCESS_EMPTY', 'EMPTY'}
+        for part in evidence.get('parts', ())
+    ):
+        raise ValueError('Migration requires a complete live collection; one or more collection parts are incomplete.')

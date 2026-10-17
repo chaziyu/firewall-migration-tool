@@ -10,6 +10,8 @@ Vendor-native firewall configuration extraction, validation, reporting, live col
 >
 > FortiGate → Palo Alto PAN-OS migration planning is implemented for a supported subset of configuration, including reviewed target mappings, PAN-OS `set` command generation, migration artifacts, and optional candidate deployment.
 >
+> Palo Alto PAN-OS XML → FortiGate now supports a restricted, reviewed FortiOS 7.4.6 CLI export. FortiGate live deployment is disabled. See [reverse-pair coverage and usage](documentation/PAN-OS-to-FortiGate-migration.md).
+>
 > Other migration pairs are not implemented.
 
 Website: https://firewall-migration-tool.onrender.com/
@@ -92,8 +94,11 @@ Unsupported or partially understood source configuration is preserved where prac
 - Live source collection for supported vendors.
 - Sanitized collection snapshots.
 - FortiGate → Palo Alto migration planning.
+- FortiGate → Juniper SRX and Cisco ASA reviewed offline exports.
+- FortiGate → Check Point Management API request specifications and separate Gaia static-route files.
 - Explicit migration mapping and decision review.
 - PAN-OS `set` command generation.
+- PAN-OS XML → FortiGate planning, explicit approval, and FortiOS `.conf` export for the documented subset.
 - Migration reports and downloadable migration bundles.
 - Optional PAN-OS candidate deployment and validation.
 
@@ -350,12 +355,19 @@ Collection snapshots are acquisition envelopes, not normalized firewall models.
 
 ## FortiGate → Palo Alto Migration
 
-The currently implemented migration pair is:
+The implemented directional migration pairs are:
 
 ```text
-FortiGate
-→ Palo Alto PAN-OS
+FortiGate → Palo Alto PAN-OS
+FortiGate → Juniper SRX (offline export)
+FortiGate → Cisco ASA (offline export)
+FortiGate → Check Point (offline request files)
+Palo Alto PAN-OS → FortiGate (CLI export)
 ```
+
+PAN-OS is the only target with destination-aware comparison and live candidate
+deployment. FMC-managed FTD export remains disabled while exact writable FMC
+request schemas are unverified.
 
 Plan a migration from the CLI:
 
@@ -437,6 +449,13 @@ check reuse. Changing workflow mode revokes the previous approval and artifact.
 Offline artifacts cannot prepare, validate or commit a live candidate. Live
 execution requires a newly approved destination-aware design and the existing
 serial, sanitized baseline, clean candidate and explicit commit checks.
+
+## FortiGate → Check Point Migration
+
+The Check Point workflow is an offline, engineer-reviewed export. It does not
+connect to Management or Gaia, publish a package, install policy, or save Gaia
+configuration. See [Check Point coverage and usage](documentation/fortigate_to_checkpoint-migration.md)
+for the verified subset, CLI command, manual checks, and limitations.
 
 ## Migration Artifacts
 

@@ -7,8 +7,13 @@ WEB_PATHS = (
     ROOT / "src" / "fwmigrate" / "web.py",
     *(ROOT / "src" / "fwmigrate" / "web_api").glob("*.py"),
 )
-PAIR_PACKAGE = "fwmigrate.conversion.fortigate_to_palo_alto"
-APPLICATION_FACADE = f"{PAIR_PACKAGE}.application"
+PAIR_PACKAGES = (
+    "fwmigrate.conversion.fortigate_to_palo_alto",
+    "fwmigrate.conversion.palo_alto_to_fortigate",
+    "fwmigrate.conversion.fortigate_to_juniper_srx",
+    "fwmigrate.conversion.fortigate_to_cisco_asa",
+    "fwmigrate.conversion.fortigate_to_checkpoint",
+)
 
 
 def _imports(path: Path) -> set[str]:
@@ -27,9 +32,9 @@ def test_web_uses_pair_application_facade_for_migration_semantics():
     for path in WEB_PATHS:
         pair_imports = {
             name for name in _imports(path)
-            if name == PAIR_PACKAGE or name.startswith(f"{PAIR_PACKAGE}.")
+            if any(name == package or name.startswith(f"{package}.") for package in PAIR_PACKAGES)
         }
-        forbidden = pair_imports - {APPLICATION_FACADE}
+        forbidden = pair_imports - {f"{package}.application" for package in PAIR_PACKAGES}
         if forbidden:
             violations[str(path.relative_to(ROOT))] = sorted(forbidden)
 
@@ -40,6 +45,8 @@ def test_web_composition_root_delegates_migration_and_deployment_routes():
     source = (ROOT / "src" / "fwmigrate" / "web.py").read_text(encoding="utf-8")
 
     assert "register_migration_routes(" in source
+    assert "register_palo_alto_to_fortigate_routes(" in source
+    assert "register_fortigate_to_checkpoint_routes(" in source
     assert "migration_planner_registry=migration_planners" in source
     assert "object_reuse_classifier=classify_target_object_reuse" in source
     assert "register_deployment_routes(" in source

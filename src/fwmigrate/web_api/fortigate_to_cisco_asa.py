@@ -1,0 +1,103 @@
+"""Transport for reviewed FortiGate to Cisco ASA offline exports."""
+
+import io
+import json
+import zipfile
+
+import yaml
+from flask import jsonify, request, send_file
+
+from fwmigrate.collection.snapshot import parse_snapshot
+from fwmigrate.conversion.fortigate_to_cisco_asa.application import (
+    approve_design, build_artifact, build_review, export_decisions,
+    import_decisions, verify_export_artifact,
+)
+from fwmigrate.source_reporting import source_reporters
+from fwmigrate.web_support.artifact_signing import sign_envelope, verify_envelope
+from fwmigrate.web_support.request_source import analyze_request_source, _require_complete_collection
+
+
+def register_fortigate_to_cisco_asa_routes(app, signing_key):
+    prefix = "/api/migration/fortigate_to_cisco_asa"
+
+    def target_source(payload):
+        if payload.get("target_source") is None and not request.files.get("target_file"):
+            return None, None, None
+        entry = analyze_request_source(payload, "cisco_asa", target=True)
+        _require_complete_collection(entry)
+        text = entry.evidence.get("source_text") if isinstance(entry.evidence, dict) else None
+        if not isinstance(text, str):
+            text = parse_snapshot(json.dumps(entry.evidence).encode("utf-8")).source_text
+        return entry.analysis, text, payload.get("target_metadata")
+
+    def handle(action):
+        payload = request.get_json(silent=True)
+        try:
+            if not isinstance(payload, dict):
+                raise ValueError("A JSON object is required")
+            if action in {"command-preview", "commands", "bundle"}:
+                artifact = verify_export_artifact(verify_envelope(payload.get("artifact"), signing_key))
+                command_bytes = artifact["command_text"].encode("utf-8")
+                if action == "command-preview":
+                    return jsonify({"success": True, "text": artifact["command_text"],
+                                    "command_sha256": artifact["command_sha256"]})
+                if action == "commands":
+                    return send_file(io.BytesIO(command_bytes), mimetype="text/plain",
+                                     as_attachment=True, download_name="asa_config.cfg")
+                entry = analyze_request_source(payload, "fortigate")
+                _require_complete_collection(entry)
+                if entry.source_digest != artifact["source_digest"]:
+                    raise ValueError("Bundle source differs from the approved artifact")
+                workbook = io.BytesIO()
+                source_reporters.get("fortigate").export_excel(entry.analysis, workbook, source_name=entry.source_name)
+                bundle = io.BytesIO()
+                with zipfile.ZipFile(bundle, "w", zipfile.ZIP_DEFLATED) as archive:
+                    archive.writestr("asa_config.cfg", command_bytes)
+                    archive.writestr("migration_report.json", json.dumps(artifact["report"], indent=2))
+                    archive.writestr("migration_decisions.json", json.dumps(
+                        export_decisions(artifact["source_digest"], artifact["options"]), indent=2))
+                    archive.writestr("target_mapping.yaml", yaml.safe_dump(artifact["options"], sort_keys=False))
+                    archive.writestr("source_inventory.xlsx", workbook.getvalue())
+                bundle.seek(0)
+                return send_file(bundle, mimetype="application/zip", as_attachment=True,
+                                 download_name="migration_fortigate_to_cisco_asa.zip")
+
+            entry = analyze_request_source(payload, "fortigate")
+            _require_complete_collection(entry)
+            if action == "decisions/import":
+                return jsonify({"success": True, "options": import_decisions(payload.get("document"), entry.source_digest)})
+            options = payload.get("options", {})
+            if not isinstance(options, dict):
+                raise ValueError("ASA target mapping options must be an object")
+            if action == "decisions/export":
+                return jsonify({"success": True, "document": export_decisions(entry.source_digest, options)})
+            target, target_text, metadata = target_source(payload)
+            if action == "build":
+                approval = verify_envelope(payload.get("approval"), signing_key)
+                artifact = build_artifact(entry.analysis, options, entry.source_digest, approval,
+                                          target=target, target_source_text=target_text,
+                                          target_metadata=metadata)
+                return jsonify({"success": True, "artifact": sign_envelope(artifact, signing_key)})
+            review = build_review(entry.analysis, options, entry.source_digest, target=target,
+                                  target_source_text=target_text, target_metadata=metadata)
+            if action == "design/approve":
+                draft = verify_envelope(payload.get("draft"), signing_key)
+                approval = approve_design(review, draft, payload.get("selected_items"))
+                return jsonify({"success": True, "approval": sign_envelope(approval, signing_key)})
+            if action == "requirements":
+                return jsonify({"success": True, "source_digest": entry.source_digest,
+                                "requirements": review["requirements"], "report": review["report"]})
+            if action == "design/prepare":
+                return jsonify({"success": True, "source_digest": entry.source_digest,
+                                "draft": sign_envelope(review["draft"], signing_key),
+                                "requirements": review["requirements"], "report": review["report"]})
+            raise ValueError("Unsupported ASA migration action")
+        except (ValueError, TypeError, KeyError):
+            return jsonify({"success": False,
+                            "error": "Invalid, blocked or stale FortiGate to ASA request. Check source scope, target evidence, choices, approval, and dependencies."}), 400
+
+    actions = ("requirements", "design/prepare", "design/approve", "build",
+               "command-preview", "commands", "bundle", "decisions/import", "decisions/export")
+    for action in actions:
+        app.add_url_rule(f"{prefix}/{action}", "fg_asa_migration_" + action.replace("/", "_"),
+                         lambda action=action: handle(action), methods=["POST"])

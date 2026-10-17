@@ -16,6 +16,10 @@ from fwmigrate.deployment import PANDeploymentOptions, PANDeploymentSession
 from fwmigrate.web_support.artifact_signing import verify_artifact, verify_envelope
 from fwmigrate.web_support.reporting import _parse_bool
 from fwmigrate.web_support.request_controls import live_device_access_allowed
+from fwmigrate.deployment.panos_set_import import MAX_SET_BYTES, SetImportError
+from fwmigrate.web_support.set_import_artifacts import (
+    SET_ARTIFACT, approve_set_review, create_set_review, verify_set_artifact,
+)
 
 _LOGGER = logging.getLogger(__name__)
 _DEPLOYMENT_SESSION_TTL_SECONDS = 30 * 60
@@ -102,13 +106,45 @@ def register_deployment_routes(
     target_locks = coordinator.target_locks
     coordination_lock = coordinator.lock
 
+    @app.route('/api/deployment/set/prepare-review', methods=['POST'])
+    def prepare_set_review():
+        if not live_device_access_allowed(app):
+            return jsonify({'success': False, 'error': 'Remote deployment is disabled on this server.'}), 403
+        try:
+            uploaded = request.files.get('file')
+            if not uploaded or not (uploaded.filename or '').lower().endswith('.set'):
+                raise SetImportError('Choose a .set command file.')
+            payload = request.form.to_dict()
+            payload['port'] = int(payload.get('port', 22))
+            result = create_set_review(uploaded.read(MAX_SET_BYTES + 1), uploaded.filename, payload, signing_key)
+            return jsonify({'success': True, **result})
+        except SetImportError as exc:
+            return jsonify({'success': False, 'error': str(exc)}), 400
+        except (ValueError, KeyError, TypeError):
+            return jsonify({'success': False, 'error': 'Invalid upload or destination evidence. Select actual destination XML with device serial evidence.'}), 400
+
+    @app.route('/api/deployment/set/approve', methods=['POST'])
+    def approve_uploaded_set():
+        if not live_device_access_allowed(app):
+            return jsonify({'success': False, 'error': 'Remote deployment is disabled on this server.'}), 403
+        try:
+            payload = request.get_json(silent=True) or {}
+            artifact = approve_set_review(payload['review'], payload['command_sha256'], signing_key)
+            return jsonify({'success': True, 'artifact': artifact})
+        except ArtifactEligibilityError as exc:
+            return jsonify({'success': False, 'error': str(exc), 'error_code': 'artifact_ineligible'}), 400
+        except (ValueError, KeyError, TypeError):
+            return jsonify({'success': False, 'error': 'Upload review changed; review and approve the file again.'}), 400
+
     def _request_artifact(payload):
         artifact = payload.get('artifact')
+        if isinstance(artifact, dict) and artifact.get('envelope_type') == SET_ARTIFACT:
+            return verify_set_artifact(artifact, payload, signing_key)
         rendered = verify_artifact(artifact, signing_key)
         document = artifact.get('decision_document') or {}
         approval = verify_envelope(document.get('design_approval'), signing_key)
         deployment_serial(rendered, document, approval)
-        return rendered
+        return rendered, approval['context'], document
 
     def _candidate_operation(function):
         @wraps(function)
@@ -121,7 +157,7 @@ def register_deployment_routes(
             payload = request.get_json(silent=True) or {}
             try:
                 if request.path in {'/api/deploy', '/api/inspect-candidate'}:
-                    rendered = _request_artifact(payload)
+                    rendered, _context, _document = _request_artifact(payload)
                     if rendered is None:
                         raise ValueError('A current validated rendered migration is required')
                     if not rendered.commands:
@@ -184,7 +220,7 @@ def register_deployment_routes(
         artifact_id = (payload.get('artifact') or {}).get('artifact_id')
         if artifact_id != session.artifact_id:
             raise _CandidateSessionError('artifact_mismatch')
-        rendered = _request_artifact(payload)
+        rendered, _context, _document = _request_artifact(payload)
         if rendered is None:
             deployment_sessions.pop(session_id, None)
             raise _CandidateSessionError('artifact_expired')
@@ -211,7 +247,7 @@ def register_deployment_routes(
         try:
             payload = request.get_json(silent=True) or {}
             artifact_id = (payload.get('artifact') or {}).get('artifact_id')
-            rendered = _request_artifact(payload)
+            rendered, context, decision_document = _request_artifact(payload)
             if rendered is None:
                 raise ValueError('A current validated rendered migration is required')
             if not rendered.commands:
@@ -220,14 +256,12 @@ def register_deployment_routes(
             for session_id, session in tuple(deployment_sessions.items()):
                 if (session.host.casefold(), session.port) == (options.host.casefold(), options.port):
                     deployment_sessions.pop(session_id, None)
-            serial = payload['artifact']['decision_document']['design_approval']['context']['target_serial']
-            context = payload['artifact']['decision_document']['design_approval']['context']
+            serial = context['target_serial']
             options = replace(options, expected_serial=serial,
                 expected_baseline_sha256=context['baseline_sha256'], baseline_format=context['baseline_format'])
             submitted = True
             result = deployer_factory(options).deploy(rendered)
-            decision_document = payload['artifact']['decision_document']
-            validation_feedback = deployment_validation_feedback(rendered, decision_document, result.validation)
+            validation_feedback = deployment_validation_feedback(rendered, decision_document, result.validation) if decision_document is not None else None
             if validation_feedback and validation_feedback.get('message'):
                 validation_feedback['message'] = _public_deployment_error(validation_feedback['message'], 'Candidate validation failed')
             succeeded = (
@@ -259,6 +293,8 @@ def register_deployment_routes(
                 'validation_feedback': validation_feedback,
                 'deployment_session_id': deployment_session_id,
                 'candidate_validated': succeeded,
+                'failed_line_number': (rendered.report.get('line_numbers', [])[result.failed_command_index]
+                    if rendered.report.get('provenance') == 'UPLOADED_SET' and result.failed_command_index is not None else None),
                 'recovery': _recovery('VALIDATED' if succeeded else ('VALIDATION_FAILED' if result.commands_succeeded == result.commands_attempted and result.commands_attempted else result.recovery_state), result=result, artifact_id=artifact_id),
             }), (200 if succeeded else 502)
         except (ValueError, KeyError, TypeError):
@@ -273,8 +309,7 @@ def register_deployment_routes(
     def inspect_candidate():
         payload = request.get_json(silent=True) or {}
         try:
-            _request_artifact(payload)
-            context = payload['artifact']['decision_document']['design_approval']['context']
+            _rendered, context, _document = _request_artifact(payload)
             options = replace(_deployment_options(payload), expected_serial=context['target_serial'],
                 expected_baseline_sha256=context['baseline_sha256'], baseline_format=context['baseline_format'])
             result = deployer_factory(options).inspect()
@@ -291,8 +326,8 @@ def register_deployment_routes(
             payload = request.get_json(silent=True) or {}
             session, rendered, options = _require_deployment_session(payload)
             result = deployer_factory(replace(options, validate=True)).validate()
-            decision_document = payload['artifact']['decision_document']
-            validation_feedback = deployment_validation_feedback(rendered, decision_document, result)
+            decision_document = payload['artifact'].get('decision_document')
+            validation_feedback = deployment_validation_feedback(rendered, decision_document, result) if decision_document is not None else None
             if validation_feedback and validation_feedback.get('message'):
                 validation_feedback['message'] = _public_deployment_error(validation_feedback['message'], 'Candidate validation failed')
             valid = (result.status == 'SUCCESS' and result.device_serial == session.device_serial
