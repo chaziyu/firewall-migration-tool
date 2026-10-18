@@ -16,6 +16,8 @@ class MigrationWorkflowRegistration:
     destination_aware_available: bool
     deployment_available: bool
     cli_application: Callable[..., object] | None = field(default=None, repr=False, compare=False)
+    supported_target_versions: tuple[str, ...] = ()
+    coverage_documentation: str | None = None
 
     def __post_init__(self) -> None:
         source = self.source_vendor.strip().casefold()
@@ -39,6 +41,8 @@ class MigrationWorkflowRegistration:
             "export_available": self.export_available,
             "destination_aware_available": self.destination_aware_available,
             "deployment_available": self.deployment_available,
+            "supported_target_versions": list(self.supported_target_versions),
+            "coverage_documentation": self.coverage_documentation,
         }
 
 

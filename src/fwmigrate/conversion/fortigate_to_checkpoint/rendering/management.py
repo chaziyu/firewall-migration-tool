@@ -53,8 +53,24 @@ class CPManagementRenderer:
         validate_plan(plan)
         state = dispositions(plan)
         selected = None if approved_items is None else set(approved_items)
+        by_key = {item.key: item for item in plan.items}
+        if selected is not None and any(key not in by_key or state[key] == "BLOCK"
+                or not set(by_key[key].dependencies) <= selected for key in selected):
+            raise ValueError("Check Point selection contains blocked or missing dependencies")
+        existing_uids = {f"{item.key}.uid": dict(item.settings)["target_uid"]
+                         for item in plan.items if state[item.key] == "REUSE"}
+
+        def resolve_uids(value):
+            if isinstance(value, dict):
+                if set(value) == {"$response_binding"} and value["$response_binding"] in existing_uids:
+                    return existing_uids[value["$response_binding"]]
+                return {key: resolve_uids(child) for key, child in value.items()}
+            if isinstance(value, (tuple, list)):
+                return [resolve_uids(child) for child in value]
+            return value
+
         management_keys = {item.key for item in plan.items
-                           if dict(item.settings).get("management_operation")}
+                           if state[item.key] == "CREATE" and dict(item.settings).get("management_operation")}
         operations, bindings = [], []
         for item in ordered_items(plan):
             if state[item.key] != "CREATE" or (selected is not None and item.key not in selected):
@@ -70,7 +86,7 @@ class CPManagementRenderer:
                 "source": {"vdom": item.source_vdom, "kind": item.family, "name": item.source_name},
                 "method": "POST",
                 "path": operation["path"],
-                "request_body_template": operation["request_body_template"],
+                "request_body_template": resolve_uids(operation["request_body_template"]),
                 "response_binding": binding,
                 "depends_on": [key for key in item.dependencies if key in management_keys],
                 "policy_context": operation.get("policy_context"),
@@ -121,12 +137,13 @@ class CPManagementRenderer:
         bindings_hash = hashlib.sha256(bindings_bytes).hexdigest()
         records = [_item_record(item, state[item.key]) for item in plan.items]
         for record in records:
-            if selected is not None and record["render_disposition"] == "CREATE" and record["key"] not in selected:
+            if selected is not None and record["render_disposition"] in {"CREATE", "REUSE"} and record["key"] not in selected:
                 record["render_disposition"] = "NOT_APPROVED"
         counts = {name: sum(record["render_disposition"] == name for record in records)
-                  for name in ("CREATE", "BLOCK", "NOT_APPROVED")}
-        status = "READY_WITH_MANUAL_WORK" if counts["CREATE"] and (counts["BLOCK"] or plan.findings) else (
-            "READY_FOR_REVIEW" if counts["CREATE"] else "BLOCKED")
+                  for name in ("CREATE", "REUSE", "BLOCK", "NOT_APPROVED")}
+        satisfied = counts["CREATE"] + counts["REUSE"]
+        status = "READY_WITH_MANUAL_WORK" if satisfied and (counts["BLOCK"] or counts["NOT_APPROVED"] or plan.findings) else (
+            "READY_FOR_REVIEW" if satisfied else "BLOCKED")
         report = {
             "pair_id": "fortigate_to_checkpoint",
             "source_vendor": "fortigate",

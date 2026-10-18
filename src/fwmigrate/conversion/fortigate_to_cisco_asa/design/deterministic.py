@@ -47,6 +47,8 @@ def _selected(plan, selected_items):
             continue
         chosen.add(key)
         pending.extend(item.dependencies)
+        if item.approval_group:
+            pending.extend(row.key for row in plan.items if row.approval_group == item.approval_group)
     return sorted(chosen)
 
 

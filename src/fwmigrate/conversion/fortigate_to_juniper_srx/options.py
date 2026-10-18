@@ -26,8 +26,15 @@ class SRXMigrationOptions:
     interfaces: dict[str, dict[str, SRXInterfaceMapping | dict]] = field(default_factory=dict)
     zones: dict[str, dict[str, str]] = field(default_factory=dict)
     timezone: str | None = None
+    nat_return_routing_confirmed: bool = False
+    target_platform: str | None = None
+    vlan_interfaces_available: bool = False
 
     def __post_init__(self) -> None:
+        if self.target_platform not in {None, "", "vsrx"} or type(self.vlan_interfaces_available) is not bool:
+            raise ValueError("VLAN planning requires explicit vSRX platform and interface availability choices")
+        if type(self.nat_return_routing_confirmed) is not bool:
+            raise ValueError("NAT return routing confirmation must be explicit boolean evidence")
         object.__setattr__(self, "interfaces", {
             vdom: {
                 name: value if isinstance(value, SRXInterfaceMapping) else SRXInterfaceMapping(**value)

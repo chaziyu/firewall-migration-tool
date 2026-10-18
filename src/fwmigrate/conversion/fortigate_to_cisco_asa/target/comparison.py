@@ -17,7 +17,7 @@ def classify_target_reuse(plan, source, options, evidence):
     complete = set(evidence["complete_families"])
     updated = []
     for item in plan.items:
-        families = _FAMILY_EVIDENCE.get(item.family)
+        families = {"objects", "nat"} if item.family == "nat_pool" else _FAMILY_EVIDENCE.get(item.family)
         if families is None:
             updated.append(item)
             continue
@@ -26,30 +26,46 @@ def classify_target_reuse(plan, source, options, evidence):
             continue
         if item.family == "interface":
             mapping = options.interfaces.get(item.source_vdom, {}).get(item.source_name)
+            vlan_id = dict(item.settings).get("vlan_id")
+            if vlan_id is not None and any(row.vlan_id == vlan_id for row in config.interfaces):
+                updated.append(replace(item, blockers=tuple(dict.fromkeys((*item.blockers, "TARGET_VLAN_TAG_CONFLICT")))))
+                continue
             target = next((row for row in config.interfaces if row.name == getattr(mapping, "interface", None)), None)
             if target:
                 source_if = next((row for row in source.interfaces if (row.vdom or "root") == item.source_vdom and row.name == item.source_name), None)
                 try:
                     source_ip = str(source_if.ip).split() if source_if and source_if.ip else []
                     address_matches = not source_ip or (target.ip and target.mask and
-                        ip_interface(f"{source_ip[0]}/{source_ip[1]}").ip == ip_interface(f"{target.ip}/{target.mask}").ip)
+                        ip_interface(f"{source_ip[0]}/{source_ip[1]}") == ip_interface(f"{target.ip}/{target.mask}"))
                 except (ValueError, TypeError):
                     address_matches = False
                 expected_shutdown = source_if.status == "down" if source_if and source_if.status in {"up", "down"} else None
                 state_matches = (expected_shutdown is not None and "shutdown" in target.explicit_fields
                                  and target.shutdown is expected_shutdown)
                 if (target.nameif == mapping.nameif and target.security_level == mapping.security_level
-                        and address_matches and state_matches):
+                        and address_matches and state_matches and not target.raw_extra
+                        and not target.requires_manual_review and target.interface_type == "physical"
+                        and not any((target.standby_ip, target.management_only, target.ipv6_addresses,
+                                     target.ipv6_autoconfig, target.ipv6_dhcp, target.policy_route_maps,
+                                     target.traffic_zone_members, target.channel_group, target.mtu))):
                     updated.append(replace(item, settings=(("commands", ()),), target_disposition="REUSE"))
                 else:
                     updated.append(replace(item, blockers=tuple(dict.fromkeys((*item.blockers, "TARGET_INTERFACE_CONFLICT")))))
                 continue
-        elif item.family in {"address", "address_group", "service", "service_group", "schedule"}:
+        elif item.family in {"address", "nat_pool", "address_group", "service", "service_group", "schedule"}:
             collections = {"address": config.network_objects, "address_group": config.network_groups,
+                           "nat_pool": config.network_objects,
                            "service": config.service_objects, "service_group": config.service_groups,
                            "schedule": config.time_ranges}
             target = next((row for row in collections[item.family] if row.name == item.target_name), None)
             if target:
+                expected = tuple(" ".join(line.split()) for line in dict(item.settings).get("commands", ())[1:])
+                actual = tuple(" ".join(line.split()) for line in target.raw_lines)
+                if (item.family in {"address", "nat_pool"} and expected and expected == actual
+                        and len([row for row in config.network_objects if row.name == item.target_name]) == 1
+                        and not target.raw_extra and not target.nat_lines and not target.requires_manual_review):
+                    updated.append(replace(item, settings=(("commands", ()),), target_disposition="REUSE"))
+                    continue
                 updated.append(replace(item, blockers=tuple(dict.fromkeys((*item.blockers, "TARGET_OBJECT_CONFLICT")))))
                 continue
         elif item.family == "static_route":

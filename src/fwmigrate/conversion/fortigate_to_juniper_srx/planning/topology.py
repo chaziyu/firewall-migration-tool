@@ -71,6 +71,7 @@ def plan_topology(source, derived, options: SRXMigrationOptions, vdom):
     target_owners = {}
     physical_target_owners = {}
     global_blockers = _global_blockers(options)
+    tagged_parents = {row.interface for row in interfaces if row.type == "vlan" and row.interface}
 
     for order, interface in enumerate(interfaces):
         blockers = list(global_blockers)
@@ -93,6 +94,7 @@ def plan_topology(source, derived, options: SRXMigrationOptions, vdom):
         if interface.vrf not in {None, 0}:
             blockers.append("INTERFACE_VRF_UNSUPPORTED")
         address = _ipv4_interface(interface.ip)
+        tagged_only = interface.name in tagged_parents and str(interface.ip).split() == ["0.0.0.0", "0.0.0.0"]
         if address is None:
             blockers.append("INTERFACE_IPV4_ADDRESS_AND_MASK_INVALID")
         mapping = _mapped_interface(options, vdom, interface.name)
@@ -106,9 +108,18 @@ def plan_topology(source, derived, options: SRXMigrationOptions, vdom):
             if topology is not None and topology.kind == "physical":
                 physical_target_owners.setdefault(mapping.target_interface.casefold(), []).append(interface.name)
             if topology is not None and topology.kind == "vlan":
-                blockers.append("VLAN_PLATFORM_COMPATIBILITY_UNVERIFIED")
+                if "type" not in interface.explicit_fields or interface.type != "vlan":
+                    blockers.append("VLAN_TYPE_NOT_EXPLICIT")
+                if interface.explicit_fields - {"type", "interface", "vlanid", "ip", "status", "mode", "vdom", "description", "alias"}:
+                    blockers.append("VLAN_HAS_UNSUPPORTED_SOURCE_SETTINGS")
+                if options.target_platform != "vsrx" or not options.vlan_interfaces_available:
+                    blockers.append("VLAN_PLATFORM_COMPATIBILITY_UNVERIFIED")
                 parent = topology.parent
                 parent_mapping = _mapped_interface(options, vdom, parent or "")
+                source_parent = next((row for row in interfaces if row.name == parent), None)
+                # shortcut: tagged-only trunks avoid inventing a native VLAN for source untagged traffic.
+                if source_parent is None or str(source_parent.ip).split() != ["0.0.0.0", "0.0.0.0"]:
+                    blockers.append("VLAN_UNTAGGED_PARENT_ADDRESS_UNSUPPORTED")
                 if not parent or not parent_mapping:
                     blockers.append("VLAN_PARENT_MAPPING_REQUIRED")
                 elif mapping.target_interface.casefold() != parent_mapping.target_interface.casefold():
@@ -117,6 +128,20 @@ def plan_topology(source, derived, options: SRXMigrationOptions, vdom):
                     blockers.append("VLAN_ID_NOT_EXPLICIT_OR_VALID")
                 if mapping.unit == 0:
                     blockers.append("VLAN_REQUIRES_NONZERO_TARGET_UNIT")
+                if sum(row.interface == parent and row.type == "vlan" and row.vlanid == interface.vlanid
+                       for row in interfaces) != 1:
+                    blockers.append("VLAN_TAG_OWNERSHIP_AMBIGUOUS")
+            if interface.name in tagged_parents and (tagged_only or options.target_platform == "vsrx"):
+                if (options.target_platform != "vsrx" or not options.vlan_interfaces_available or not tagged_only
+                        or interface.type != "physical" or "type" not in interface.explicit_fields
+                        or interface.explicit_fields - {"type", "ip", "status", "mode", "vdom", "description", "alias"}
+                        or not re.fullmatch(r"ge-0/0/\d+", mapping.target_interface)):
+                    blockers.append("VLAN_TAGGED_ONLY_VSRX_PARENT_REQUIRED")
+                if (any(interface.name in (zone.members or ()) for zone in zones)
+                        or any(interface.name in (policy.srcintf or ()) or interface.name in (policy.dstintf or ())
+                               for policy in source.policies if policy.vdom == vdom)
+                        or any(route.device == interface.name for route in source.static_routes if route.vdom == vdom)):
+                    blockers.append("VLAN_PARENT_LAYER3_MEMBERSHIP_UNSUPPORTED")
         item = SRXPlanItem(
             key=item_key(vdom, "interface", interface.name),
             family="interface",
@@ -127,7 +152,8 @@ def plan_topology(source, derived, options: SRXMigrationOptions, vdom):
                 physical_interface=mapping.target_interface if mapping else None,
                 unit=mapping.unit if mapping else None,
                 vlan_id=interface.vlanid if topology is not None and topology.kind == "vlan" else None,
-                ipv4_address=str(address) if address else None,
+                ipv4_address=str(address) if address and not tagged_only else None,
+                vlan_trunk=tagged_only,
                 source_kind=topology.kind if topology else None,
             ),
             dependencies=(item_key(vdom, "interface", topology.parent),)
@@ -210,6 +236,8 @@ def plan_topology(source, derived, options: SRXMigrationOptions, vdom):
     route_items = []
     for order, route in enumerate(routes):
         blockers = list(global_blockers)
+        if "status" not in route.explicit_fields or route.status != "enable":
+            blockers.append("STATIC_ROUTE_STATUS_NOT_EXPLICITLY_ENABLED")
         if route.address_family != "ipv4":
             blockers.append("IPV6_STATIC_ROUTE_UNSUPPORTED")
         destination = _route_destination(route.dst) if "dst" in route.explicit_fields else None
@@ -229,7 +257,7 @@ def plan_topology(source, derived, options: SRXMigrationOptions, vdom):
             blockers.append("STATIC_ROUTE_DISTANCE_NOT_EXPLICIT")
         elif type(route.distance) is not int or not 0 <= route.distance <= 4_294_967_295:
             blockers.append("STATIC_ROUTE_DISTANCE_INVALID_FOR_TARGET")
-        if route.priority is not None or route.vrf not in {None, 0} or route.src or route.preferred_source:
+        if route.raw_extra or route.dstaddr or route.priority is not None or route.vrf not in {None, 0} or route.src or route.preferred_source:
             blockers.append("STATIC_ROUTE_HAS_UNSUPPORTED_SOURCE_SETTINGS")
         if route.dynamic_gateway or route.sdwan_zone or route.blackhole:
             blockers.append("STATIC_ROUTE_FORWARDING_MODE_UNSUPPORTED")

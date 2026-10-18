@@ -45,6 +45,42 @@ class NormalizedSourceNAT:
     ]
     policy_disabled: bool = False
     pool_types: tuple[str | None, ...] = ()
+    fixedport: str | None = None
+    port_preserve: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class NormalizedCentralSNAT:
+    vdom: str | None
+    policy_id: int | None
+    source_order: int
+    translation_type: str | None
+    pool_names: tuple[str, ...]
+    original_port: str | None
+    translated_port: str | None
+    port_preserve: str | None
+    issues: tuple[str, ...]
+
+
+def transform_central_nat(config):
+    result = []
+    for order, rule in enumerate(config.central_snat):
+        issues = []
+        if rule.raw_extra:
+            issues.append("Central SNAT has unsupported source settings.")
+        if rule.status not in {"enable", "disable"} or rule.type not in {"ipv4", "ipv6"}:
+            issues.append("Central SNAT requires explicit state and address family.")
+        if rule.policy_id is None or rule.policy_id <= 0:
+            issues.append("Central SNAT identity is missing or dynamically allocated.")
+        translation = "no_nat" if rule.nat == "disable" else None
+        if rule.nat == "enable" and rule.nat_ippool:
+            translation = "ip_pool"
+        if translation is None:
+            issues.append("Central SNAT translation mode is not explicit or supported.")
+        result.append(NormalizedCentralSNAT(rule.vdom, rule.policy_id, order, translation,
+                      tuple(rule.nat_ippool or ()), rule.orig_port, rule.nat_port,
+                      rule.port_preserve, tuple(issues)))
+    return tuple(result)
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,6 +125,7 @@ def transform_nat(
             ]
             result.append(NormalizedSourceNAT(
                 vdom=policy.vdom,
+                fixedport=policy.fixedport, port_preserve=policy.port_preserve,
                 policy_id=policy.policy_id,
                 policy_name=policy.name,
                 translation_type="unsupported_" + "_".join(name.lower().replace(" ", "_") for name in modes),
@@ -221,6 +258,7 @@ def _pool_nat(
 
     return NormalizedSourceNAT(
         vdom=policy.vdom,
+        fixedport=policy.fixedport, port_preserve=policy.port_preserve,
         policy_id=policy.policy_id,
         policy_name=policy.name,
         translation_type=translation_type,
@@ -347,6 +385,7 @@ def _interface_nat(
 
     return NormalizedSourceNAT(
         vdom=policy.vdom,
+        fixedport=policy.fixedport, port_preserve=policy.port_preserve,
         policy_id=policy.policy_id,
         policy_name=policy.name,
         translation_type=(

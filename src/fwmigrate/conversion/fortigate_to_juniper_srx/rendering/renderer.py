@@ -17,6 +17,8 @@ _FAMILY_ORDER = {
     "zone": 5,
     "static_route": 6,
     "schedule": 7,
+    "source_nat_pool": 8,
+    "source_nat": 9,
     "policy": 8,
 }
 
@@ -72,6 +74,16 @@ def _membership_command(item, member, by_target_name):
 def _commands_for(item, by_target_name):
     values = _settings(item)
     name = item.target_name
+    if item.family == "source_nat_pool" and values.get("translated_address"):
+        prefix = f"set security nat source pool {name}"
+        return [f"{prefix} address {values['translated_address']}/32", f"{prefix} port no-translation"]
+    if item.family == "source_nat" and all(values.get(field) for field in ("source_prefix", "destination_prefix", "from_zone", "to_zone", "pool_name")):
+        prefix = f"set security nat source rule-set {name}"
+        rule = f"{prefix} rule {name}"
+        return [f"{prefix} from zone {values['from_zone']}", f"{prefix} to zone {values['to_zone']}",
+                f"{rule} match source-address {values['source_prefix']}",
+                f"{rule} match destination-address {values['destination_prefix']}",
+                f"{rule} then source-nat pool {values['pool_name']}"]
     if item.family == "address":
         if values.get("address_type") == "prefix" and values.get("value"):
             return [f"set security address-book global address {name} {values['value']}"]
@@ -96,8 +108,14 @@ def _commands_for(item, by_target_name):
             return [_membership_command(item, member, by_target_name) for member in members]
     elif item.family == "interface":
         address, unit = values.get("ipv4_address"), values.get("unit")
+        physical = name.rsplit('.', 1)[0]
+        if values.get("vlan_trunk"):
+            return [f"set interfaces {physical} vlan-tagging"]
         if address and type(unit) is int:
-            return [f"set interfaces {name.rsplit('.', 1)[0]} unit {unit} family inet address {address}"]
+            commands = [f"set interfaces {physical} unit {unit} family inet address {address}"]
+            if values.get("vlan_id") is not None:
+                commands.insert(0, f"set interfaces {physical} unit {unit} vlan-id {values['vlan_id']}")
+            return commands
     elif item.family == "zone":
         interfaces = values.get("interfaces") or ()
         if interfaces:

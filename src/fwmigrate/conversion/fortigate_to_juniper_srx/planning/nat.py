@@ -5,6 +5,7 @@ from dataclasses import replace
 
 from ..models import SRXFinding, SRXPlanItem
 from .naming import item_key, target_name
+from .fixed_pool_nat import plan_fixed_pool_nat
 
 
 _UNSUPPORTED_NAT_SECTIONS = {
@@ -47,7 +48,7 @@ def _nat_blockers(policy, entries, duplicate_policy_id):
     return list(dict.fromkeys(blockers))
 
 
-def plan_nat(source, derived, vdom, policies, source_inventory=None):
+def plan_nat(source, derived, vdom, policies, source_inventory=None, *, options=None):
     entries_by_policy = defaultdict(list)
     for entry in derived.nat:
         if entry.vdom == vdom:
@@ -81,6 +82,13 @@ def plan_nat(source, derived, vdom, policies, source_inventory=None):
 
         group_identity = str(policy.policy_id if policy.policy_id is not None else f"unidentified-{order}")
         approval_group = item_key(vdom, "approval_group", f"source-nat:{group_identity}")
+        fixed = plan_fixed_pool_nat(source, vdom, policy,
+                    candidate_policies[0] if len(candidate_policies) == 1 else None, options, approval_group)
+        if fixed is not None:
+            pool_item, nat_item = fixed
+            items.extend((pool_item, nat_item))
+            links[candidate_policies[0].key] = (nat_item.key, approval_group)
+            continue
         for pair_index, policy_item in enumerate(candidate_policies or [None]):
             identity = f"{group_identity}:{pair_index}:{policy_item.key if policy_item else 'unresolved'}"
             key = item_key(vdom, "source_nat", identity)

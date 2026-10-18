@@ -10,6 +10,7 @@ from ..options import ASAMigrationOptions
 from ..planner import FortiGateToCiscoASAPlanner
 from ..rendering.renderer import ASACLIRenderer
 from ..review.workflow import build_review_report
+from ..review.coverage import build_coverage
 from ..target.comparison import _FAMILY_EVIDENCE, classify_target_reuse
 from ..target.evidence import build_target_evidence
 
@@ -32,7 +33,7 @@ def _target_evidence(target, target_text, metadata):
         return None
     if not isinstance(target_text, str) or not metadata:
         raise ValueError("ASA destination comparison requires a target snapshot and completeness metadata")
-    return build_target_evidence(target, digest({"text": target_text, "vendor": "cisco_asa"}), metadata)
+    return build_target_evidence(target, digest({"text": target_text, "vendor": "cisco_asa", "metadata": metadata}), metadata)
 
 
 def _prepare(analysis, options, source_digest, *, target=None, target_source_text=None,
@@ -56,7 +57,8 @@ def _prepare(analysis, options, source_digest, *, target=None, target_source_tex
     report = {**build_review_report(plan),
               "destination_snapshot_compared": evidence is not None,
               "snapshot_evidence_complete": bool(evidence and required <= set(evidence["complete_families"])),
-              "destination_verified": False}
+              "destination_verified": False,
+              "coverage": build_coverage(plan, analysis.extracted.source_objects, analysis.derived)}
     draft = build_draft(plan, parsed, source_digest, evidence["digest"] if evidence else None)
     return {"plan": plan, "options": parsed, "rendered": rendered, "report": report,
             "draft": draft, "target_evidence": evidence}
@@ -87,6 +89,8 @@ def build_artifact(analysis, options, source_digest, approval, *, target=None,
     approved = validate_approval(review["plan"], review["draft"], approval)
     rendered = ASACLIRenderer().render(review["plan"], approved_items=approved)
     report = {**review["report"], "command_count": rendered.command_count,
+              "coverage": build_coverage(review["plan"], analysis.extracted.source_objects,
+                                         analysis.derived, approved_items=approved),
               "command_sha256": rendered.command_sha256,
               "approved_design_digest": approval["draft_digest"],
               "approved_items": sorted(approved), "destination_verified": False,

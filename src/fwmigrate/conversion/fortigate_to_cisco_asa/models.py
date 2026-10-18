@@ -38,6 +38,7 @@ class ASAPlanItem:
     blockers: tuple[str, ...] = ()
     source_order: int = 0
     target_disposition: str | None = None
+    approval_group: str | None = None
 
     @property
     def disposition(self) -> str:
