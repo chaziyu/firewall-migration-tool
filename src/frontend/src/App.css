@@ -84,6 +84,7 @@
 .migration-proposal-detail { grid-column: 1 / -1; display: grid; gap: 12px; padding: 12px; background: var(--surface); }
 .migration-approval-preview { padding: 16px; border: 2px solid var(--color-primary); border-radius: 10px; }
 .migration-approval-preview li { overflow-wrap: anywhere; }
+.migration-approval-item { overflow-wrap: anywhere; }
 .migration-changes .action-row, .migration-changes-pager { flex-wrap: wrap; }
 .migration-changes-pager label { display: flex; align-items: center; gap: 6px; }
 .migration-changes-pager input { width: 72px; }

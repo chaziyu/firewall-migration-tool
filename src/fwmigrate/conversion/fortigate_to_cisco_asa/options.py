@@ -29,8 +29,12 @@ class ASAMigrationOptions:
     source_timezone: str | None = None
     target_timezone: str | None = None
     nat_evidence: dict[str, dict[str, bool]] = field(default_factory=dict)
+    target_platform: str | None = None
+    vlan_interfaces_available: bool = False
 
     def __post_init__(self) -> None:
+        if self.target_platform not in {None, "", "asav"} or type(self.vlan_interfaces_available) is not bool:
+            raise ValueError("VLAN planning requires explicit ASAv platform and interface availability choices")
         parsed = {}
         for vdom, mappings in self.interfaces.items():
             if not isinstance(vdom, str) or not isinstance(mappings, dict):
@@ -61,4 +65,6 @@ class ASAMigrationOptions:
             "source_timezone": self.source_timezone,
             "target_timezone": self.target_timezone,
             "nat_evidence": self.nat_evidence,
+            "target_platform": self.target_platform,
+            "vlan_interfaces_available": self.vlan_interfaces_available,
         }

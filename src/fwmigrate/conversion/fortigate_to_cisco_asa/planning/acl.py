@@ -24,8 +24,8 @@ def _interface_names(source, vdom, requested):
     return list(dict.fromkeys(result)), issues
 
 
-def _address_operand(name, address_names, groups):
-    if name.casefold() == "all":
+def _address_operand(name, address_names, groups, explicit_names):
+    if name.casefold() == "all" and name not in explicit_names:
         return "any"
     if name.casefold() == "none":
         raise ValueError
@@ -33,8 +33,8 @@ def _address_operand(name, address_names, groups):
     return f"{'object-group' if name in groups else 'object'} {target}"
 
 
-def _service_leaves(name, vdom, services, groups, path=()):
-    if name.casefold() in {"all", "any"}:
+def _service_leaves(name, vdom, services, groups, explicit_names, path=()):
+    if name.casefold() in {"all", "any"} and name not in explicit_names:
         return [("ip", None, None)]
     if name in path:
         raise ValueError
@@ -49,7 +49,7 @@ def _service_leaves(name, vdom, services, groups, path=()):
     if name in groups:
         rows = []
         for child in groups[name].members or ():
-            rows.extend(_service_leaves(child, vdom, services, groups, (*path, name)))
+            rows.extend(_service_leaves(child, vdom, services, groups, explicit_names, (*path, name)))
         return rows
     raise ValueError
 
@@ -68,19 +68,37 @@ def _port_clause(port):
     return f" eq {value}"
 
 
-def plan_policies(source, derived, options, address_names, service_names, *, target_evidence=None):
+def plan_policies(source, derived, options, address_names, service_names, *, target_evidence=None,
+                  source_inventory=()):
     vdom = options.source_vdom
     groups = {item.name for item in source.address_groups if (item.vdom or "root") == vdom}
+    explicit_addresses = {item.name for family in (source.addresses, source.address_groups, source.vips, source.vip_groups)
+                          for item in family if (item.vdom or "root") == vdom}
+    explicit_services = {item.name for family in (source.services, source.service_groups)
+                        for item in family if (item.vdom or "root") == vdom}
     services = {item.name: item for item in derived.services.services if item.vdom == vdom}
     service_groups = {item.name: item for item in derived.services.groups if item.vdom == vdom}
+    central_snat = any(
+        str(getattr(row, "source_path", "")).strip().casefold() == "firewall central-snat-map"
+        and (getattr(row, "vdom", None) or "root") == vdom
+        and getattr(row, "object_name", None) is not None
+        for row in source_inventory
+    )
     per_interface = defaultdict(list)
+    previous_by_interface = {}
+    interface_names = [item.name for item in source.interfaces if (item.vdom or "root") == vdom]
     items = []
-    for policy in sorted((p for p in source.policies if (p.vdom or "root") == vdom),
-                         key=lambda row: (row.policy_id is None, row.policy_id or 0)):
+    for order, policy in enumerate(p for p in source.policies if (p.vdom or "root") == vdom):
         source_name = str(policy.policy_id if policy.policy_id is not None else policy.name or "unknown")
         key = item_key(vdom, "policy", source_name)
-        blockers, dependencies = [], []
+        ingress, interface_issues = _interface_names(source, vdom, policy.srcintf)
+        # An unresolved ingress may overlap any later ACL in this VDOM.
+        affected_interfaces = interface_names if interface_issues or not ingress else ingress
+        blockers = list(interface_issues)
+        dependencies = [previous_by_interface[name] for name in affected_interfaces if name in previous_by_interface]
         try:
+            if central_snat:
+                raise ValueError("UNREPRESENTED_CENTRAL_SNAT_BLOCKS_POLICY_EXPORT")
             if policy.srcaddr6 or policy.dstaddr6 or _enabled(policy.srcaddr6_negate) or _enabled(policy.dstaddr6_negate):
                 raise ValueError("IPV6_POLICY_UNSUPPORTED")
             if not policy.srcaddr or not policy.dstaddr or not policy.service:
@@ -101,32 +119,30 @@ def plan_policies(source, derived, options, address_names, service_names, *, tar
                     policy.internet_service_custom, policy.internet_service_src,
                     policy.internet_service_src_name, policy.internet_service_src_group,
                     policy.internet_service_src_custom, policy.users, policy.groups, policy.vpntunnel,
-                    policy.utm_status, policy.profile_group, policy.profile_type,
+                    policy.utm_status not in {None, "disable"}, policy.profile_group, policy.profile_type,
                     policy.profile_protocol_options, policy.av_profile, policy.ips_sensor,
                     policy.application_list, policy.webfilter_profile, policy.dnsfilter_profile,
                     policy.ssl_ssh_profile)):
                 raise ValueError("POLICY_IDENTITY_OR_INSPECTION_UNSUPPORTED")
             if policy.raw_extra:
                 raise ValueError("POLICY_UNMODELED_SOURCE_SETTINGS")
-            ingress, interface_issues = _interface_names(source, vdom, policy.srcintf)
-            blockers.extend(interface_issues)
             if not ingress:
                 raise ValueError("POLICY_INGRESS_INTERFACE_UNRESOLVED")
-            src = [_address_operand(name, address_names, groups) for name in policy.srcaddr]
-            dst = [_address_operand(name, address_names, groups) for name in policy.dstaddr]
+            src = [_address_operand(name, address_names, groups, explicit_addresses) for name in policy.srcaddr]
+            dst = [_address_operand(name, address_names, groups, explicit_addresses) for name in policy.dstaddr]
             service_rows = []
             for name in policy.service:
-                service_rows.extend(_service_leaves(name, vdom, services, service_groups))
+                service_rows.extend(_service_leaves(name, vdom, services, service_groups, explicit_services))
             if len(src) * len(dst) * len(service_rows) * len(ingress) > 256:
                 raise ValueError("POLICY_ACE_EXPANSION_LIMIT_EXCEEDED")
             for source_name_addr in policy.srcaddr:
-                if source_name_addr.casefold() != "all":
+                if source_name_addr in explicit_addresses or source_name_addr.casefold() != "all":
                     dependencies.append(item_key(vdom, "address_group" if source_name_addr in groups else "address", source_name_addr))
             for destination_name_addr in policy.dstaddr:
-                if destination_name_addr.casefold() != "all":
+                if destination_name_addr in explicit_addresses or destination_name_addr.casefold() != "all":
                     dependencies.append(item_key(vdom, "address_group" if destination_name_addr in groups else "address", destination_name_addr))
             for service_name in policy.service:
-                if service_name.casefold() not in {"all", "any"}:
+                if service_name in explicit_services or service_name.casefold() not in {"all", "any"}:
                     dependencies.append(item_key(vdom, "service_group" if service_name in service_groups else "service", service_name))
             if str(policy.schedule).casefold() != "always":
                 schedule_key = item_key(vdom, "schedule", policy.schedule)
@@ -146,7 +162,6 @@ def plan_policies(source, derived, options, address_names, service_names, *, tar
                         for destination_operand in dst:
                             suffix = f" {icmp_type}" if proto == "icmp" and icmp_type is not None else _port_clause(port) if proto in {"tcp", "udp"} else ""
                             commands.append(f"access-list {acl_name} extended {action} {proto} {source_operand} {destination_operand}{suffix}{schedule}{inactive}")
-                per_interface[ingress_name].append((policy.policy_id or 0, key))
             if policy.policy_id is None:
                 blockers.append("POLICY_ORDER_UNAVAILABLE")
             if policy.nat and policy.nat.casefold() in {"enable", "enabled", "yes", "true"}:
@@ -154,12 +169,16 @@ def plan_policies(source, derived, options, address_names, service_names, *, tar
                 dependencies.append(nat_key)
             items.append(ASAPlanItem(key, "policy", vdom, source_name, "",
                                      (("commands", tuple(commands)),), tuple(dict.fromkeys(dependencies)),
-                                     tuple(dict.fromkeys(blockers)), int(policy.policy_id or 0)))
+                                     tuple(dict.fromkeys(blockers)), order))
         except (KeyError, ValueError) as exc:
             code = str(exc) if str(exc) else "POLICY_MATCH_UNSUPPORTED"
             blockers.append(code)
-            items.append(ASAPlanItem(key, "policy", vdom, source_name, "", blockers=tuple(dict.fromkeys(blockers)),
-                                     source_order=int(policy.policy_id or 0)))
+            items.append(ASAPlanItem(key, "policy", vdom, source_name, "",
+                                     dependencies=tuple(dict.fromkeys(dependencies)),
+                                     blockers=tuple(dict.fromkeys(blockers)), source_order=order))
+        for name in affected_interfaces:
+            per_interface[name].append((order, key))
+            previous_by_interface[name] = key
 
     for interface in source.interfaces:
         if (interface.vdom or "root") != vdom:

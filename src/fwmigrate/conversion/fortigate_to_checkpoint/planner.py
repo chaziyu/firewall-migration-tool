@@ -5,7 +5,7 @@ from .options import CPMigrationOptions
 from .planning.access_policy import plan_access_rules
 from .planning.gaia import plan_gaia_routes
 from .planning.naming import item_key
-from .planning.objects import plan_addresses, plan_services
+from .planning.objects import plan_addresses, plan_ipv6_addresses, plan_services
 from .requirements import build_mapping_requirements, source_vdoms
 
 
@@ -40,6 +40,7 @@ class FortiGateToCheckPointPlanner:
         address_items, address_names = plan_addresses(source, derived, vdom, context_blockers)
         service_items, service_names, normalized_service_names = plan_services(source, derived, vdom, context_blockers)
         items.extend(address_items)
+        items.extend(plan_ipv6_addresses(source, derived, vdom, context_blockers))
         items.extend(service_items)
         policy_items, central_snat = plan_access_rules(
             source, derived, vdom, options, address_names, service_names,

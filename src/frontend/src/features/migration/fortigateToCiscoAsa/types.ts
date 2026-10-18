@@ -1,3 +1,6 @@
+import type { MigrationCoverageReport } from '../components/MigrationCoverage'
+import type { DestinationEvidence } from '../components/DestinationSnapshot'
+
 export type AsaInterfaceMapping = { interface?: string; nameif?: string; security_level?: number }
 export type AsaOptions = {
   source_vdom: string
@@ -8,6 +11,8 @@ export type AsaOptions = {
   source_timezone: string
   target_timezone: string
   nat_evidence: Record<string, Record<string, boolean>>
+  target_platform?: string
+  vlan_interfaces_available?: boolean
 }
 export type AsaRequirement = {
   key: string
@@ -28,9 +33,11 @@ export type AsaPlanItem = {
   settings: Record<string, unknown>
   dependencies: string[]
   blockers: string[]
+  approval_group?: string | null
   render_disposition: string
 }
 export type AsaReport = {
+  coverage?: MigrationCoverageReport
   plan_status: string
   items: AsaPlanItem[]
   findings: Array<Record<string, unknown>>
@@ -56,6 +63,7 @@ export type AsaArtifact = {
 export type CiscoAsaWorkspace = {
   pairId: 'fortigate_to_cisco_asa'
   sourceKey: string
+  destination?: DestinationEvidence | null
   options: AsaOptions
   requirements: AsaRequirement[]
   review: AsaReview | null

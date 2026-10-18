@@ -468,6 +468,13 @@ register_section(
 # Firewall policy
 # ----------------------------------------------------------------------
 
+register_section(SectionSpec(
+    source_path="firewall central-snat-map",
+    list_fields=_fields("srcintf", "dstintf", "orig-addr", "orig-addr6", "dst-addr", "dst-addr6", "nat-ippool", "nat-ippool6"),
+    integer_fields=_fields("protocol"),
+    scalar_fields=_fields("orig-port", "dst-port", "nat-port", "port-preserve", "nat", "nat46", "nat64", "status", "type", "uuid", "comments"),
+))
+
 register_section(
     SectionSpec(
         source_path="firewall policy",
@@ -518,6 +525,8 @@ register_section(
             "natoutbound",
             "natip",
             "ippool",
+            "fixedport",
+            "port-preserve",
 
             "session-ttl",
 

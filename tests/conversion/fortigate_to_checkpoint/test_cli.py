@@ -26,7 +26,7 @@ def test_cli_writes_unapproved_split_review_files(tmp_path):
     assert report["deployment_available"] is False
 
 
-def test_cli_rejects_destination_comparison_for_checkpoint(tmp_path):
+def test_cli_rejects_invalid_destination_snapshot_for_checkpoint(tmp_path):
     source = tmp_path / "source.conf"
     source.write_text(SOURCE, encoding="utf-8")
     target = tmp_path / "target.json"
@@ -38,4 +38,4 @@ def test_cli_rejects_destination_comparison_for_checkpoint(tmp_path):
     ])
 
     assert result.exit_code != 0
-    assert "target comparison is unavailable" in result.output
+    assert "Invalid Check Point destination snapshot" in result.output

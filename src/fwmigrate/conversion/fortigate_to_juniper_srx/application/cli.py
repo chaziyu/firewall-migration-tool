@@ -51,10 +51,11 @@ def run_cli(*, input_path, output_path, format, mapping_path, target_config_path
             report = write_files(
                 plan, rendered, output_path, source_digest, options,
                 destination_report=review["report"], target_digest=review["draft"]["target_digest"],
+                analysis=analysis,
             )
         else:
             plan, rendered, options = run_migration_pipeline(analysis, mapping)
-            report = write_files(plan, rendered, output_path, source_digest, options)
+            report = write_files(plan, rendered, output_path, source_digest, options, analysis=analysis)
     except (TypeError, ValueError, KeyError) as exc:
         raise click.ClickException("Invalid FortiGate to Juniper SRX migration input or mappings") from exc
     click.echo(f"Generated {rendered.command_count} Junos set lines in {output_path}")

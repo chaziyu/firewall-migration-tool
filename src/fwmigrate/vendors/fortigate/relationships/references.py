@@ -514,6 +514,16 @@ def collect_broken_references(
     # Policies
     # --------------------------------------------------------------
 
+    for rule in config.central_snat:
+        for field, kinds in (("orig_addr", ipv4_address_like), ("dst_addr", ipv4_address_like),
+                             ("orig_addr6", (ReferenceKind.ADDRESS6, ReferenceKind.ADDRESS_GROUP6)),
+                             ("dst_addr6", (ReferenceKind.ADDRESS6, ReferenceKind.ADDRESS_GROUP6)),
+                             ("srcintf", policy_interface_like), ("dstintf", policy_interface_like),
+                             ("nat_ippool", (ReferenceKind.IP_POOL,)),
+                             ("nat_ippool6", (ReferenceKind.IP_POOL6,))):
+            check(source_kind="central_snat", vdom=rule.vdom, source_name=str(rule.policy_id),
+                  source_field=field, names=getattr(rule, field) or (), kinds=kinds)
+
     for policy in config.policies:
         source_name = (
             policy.name

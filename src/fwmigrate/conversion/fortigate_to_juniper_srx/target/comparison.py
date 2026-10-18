@@ -22,6 +22,8 @@ def _item_prefix(item):
         kind = "application" if item.family == "service" else "application-set"
         return ("applications", kind, name)
     if item.family == "interface":
+        if values.get("vlan_trunk"):
+            return ("interfaces", name.rsplit(".", 1)[0])
         return ("interfaces", name.rsplit(".", 1)[0], "unit", str(values["unit"]))
     if item.family == "zone":
         return ("security", "zones", "security-zone", name)
@@ -32,8 +34,8 @@ def _item_prefix(item):
     if item.family == "policy":
         return ("security", "policies", "from-zone", str(values["from_zone"]),
                 "to-zone", str(values["to_zone"]), "policy", name)
-    if item.family == "source_nat":
-        return ("security", "nat", "source")
+    if item.family in {"source_nat", "source_nat_pool"}:
+        return ("security", "nat")
     raise ValueError(f"Unsupported SRX target comparison family: {item.family}")
 
 

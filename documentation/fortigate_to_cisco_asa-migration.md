@@ -6,6 +6,7 @@ The pair produces an offline, reviewed Cisco ASA 9.20 configuration for one sele
 
 - IPv4 `ipmask` and `iprange` addresses, static address groups, explicit TCP/UDP destination-port services, and service groups.
 - Explicit physical Ethernet interfaces with mapped ASA interface, `nameif`, security level, IPv4 address, and source up/down state.
+- ASAv VLAN subinterfaces with explicit platform/capacity confirmation, a mapped physical parent, unique tag and target interface, explicit IPv4 address and source state. A child's approval includes its parent. Existing target tags block creation.
 - Explicit IPv4 static routes with a mapped egress interface.
 - Recurring weekly time ranges with a confirmed matching source and target time zone.
 - Ordered extended ACL entries for explicit, supported FortiGate policy fields and source ingress interfaces. Rule combinations are expanded into ACEs. Disabled source policies produce inactive ACEs.
@@ -15,17 +16,21 @@ Unsupported or unknown source fields block the affected object, route, schedule,
 
 ## NAT and manual work
 
-No ASA NAT commands are enabled. FortiGate policy NAT, VIPs, and VIP groups remain blocked until source/target ordering, identity NAT interactions, real/mapped address behavior, directionality, return routing, and proxy ARP can be proven for the affected case. An ASA syntax example alone does not prove FortiGate equivalence.
+A constrained static source NAT case is enabled: one active HTTPS policy from one IPv4 host to a distinct IPv4 host, destination interface `any`, and a one-to-one pool containing one translated IPv4 address. Source fixed-port and port-preservation controls must be explicitly enabled, pool proxy ARP explicitly disabled, and routed return traffic explicitly confirmed. Central SNAT, VIPs and additional policies disqualify this case.
+
+It requires complete empty destination NAT, access-rule and ACL-binding evidence, complete object evidence, and full interface mappings. The export uses `no-proxy-arp`. NAT, its mapped object, policy and default-deny bindings on every ingress interface form one atomic approval group. Reverse initiation is denied by those ACLs. Conflicts block the entire group. PAT, other pool allocation, DNAT/VIPs and uncertain ordering remain manual.
 
 Schedules only emit weekly intervals with explicit matching time-zone choices. ASA time ranges use the appliance system clock; this export does not configure or validate the target clock or NTP state.
 
-Hardware fit, interface availability, existing target objects and bindings, routing adjacency, ARP behavior, licensing, and device acceptance require separate review. Destination-aware comparison is not exposed in this browser workflow yet.
+Optional browser destination uploads compare native ASA evidence with explicit context, version, mode and complete-family declarations. Exact address objects can be reused when their native command evidence matches without extra behavior. Destination text and metadata are bound to approval. Hardware fit, interface availability, routing adjacency, ARP behavior, licensing and device acceptance require separate review.
 
 ## Review and artifacts
 
 The browser and API require current signed approval bound to the source, pair options, selected items, and dependencies. Mapping imports are proposals and do not create approval. Command preview and downloads are served from the same signed artifact bytes. The bundle contains `asa_config.cfg`, the migration report, mapping proposals, the target mapping, and a sanitized FortiGate source workbook.
 
 The ASA artifact is not accepted by PAN-OS deployment transport. There is no ASA live execution, configuration commit, `write memory`, or automatic access-group replacement.
+
+Reviews and artifact reports include scoped source coverage. Unknown source records remain manual work; rendered commands do not imply complete migration. See the [support matrix](migration-support-matrix.md).
 
 ## Cisco references checked
 

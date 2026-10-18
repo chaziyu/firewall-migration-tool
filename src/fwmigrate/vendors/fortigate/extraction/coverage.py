@@ -32,6 +32,7 @@ TypedSourceIdentityIndex = dict[TypedSourceIdentity, TypedSourceObject]
 
 
 _SPECS = (
+    TypedSourceSpec("firewall central-snat-map", "central_snat", object_field="policy_id"),
     TypedSourceSpec("system interface", "interfaces"),
     TypedSourceSpec("system session-helper", "session_helpers", object_field="id"),
     TypedSourceSpec("user nac-policy", "nac_policies"),

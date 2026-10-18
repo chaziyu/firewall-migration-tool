@@ -35,6 +35,12 @@ def test_exact_interface_reuse_requires_explicit_matching_admin_state(asa_source
     interface = next(item for item in compared.items if item.key == item_key("root", "interface", "inside"))
     assert "TARGET_INTERFACE_CONFLICT" in interface.blockers
 
+    for changed in (text.replace("255.255.255.0", "255.255.0.0"),
+                    text.replace(" no shutdown", " management-only\n no shutdown")):
+        compared = classify_target_reuse(plan, asa_source.extracted.config, asa_options, evidence(changed))
+        interface = next(item for item in compared.items if item.key == item_key("root", "interface", "inside"))
+        assert "TARGET_INTERFACE_CONFLICT" in interface.blockers
+
 
 def test_policy_comparison_requires_acl_binding_and_nat_completeness(asa_source, asa_options):
     plan = FortiGateToCiscoASAPlanner().plan(asa_source.extracted.config, asa_source.derived, asa_options)
@@ -42,3 +48,31 @@ def test_policy_comparison_requires_acl_binding_and_nat_completeness(asa_source,
     compared = classify_target_reuse(plan, asa_source.extracted.config, asa_options, target)
     policy = next(item for item in compared.items if item.family == "policy")
     assert "TARGET_FAMILY_COMPLETENESS_REQUIRED" in policy.blockers
+
+
+def test_exact_address_definition_reuses_but_nat_or_changed_values_do_not(asa_source, asa_options):
+    from fwmigrate.conversion.fortigate_to_cisco_asa.rendering.renderer import ASACLIRenderer
+
+    plan = FortiGateToCiscoASAPlanner().plan(asa_source.extracted.config, asa_source.derived, asa_options)
+    address = next(item for item in plan.items if item.family == "address" and item.source_name == "clients")
+    text = "\n".join(dict(address.settings)["commands"]) + "\n"
+    compared = classify_target_reuse(plan, asa_source.extracted.config, asa_options, evidence(text))
+    reused = next(item for item in compared.items if item.key == address.key)
+    assert reused.target_disposition == "REUSE"
+    assert not reused.blockers
+    assert f"object network {address.target_name}" not in ASACLIRenderer().render(compared).command_text
+    changed = classify_target_reuse(plan, asa_source.extracted.config, asa_options,
+                                    evidence(text.replace("10.0.0.0", "10.1.0.0")))
+    assert "TARGET_OBJECT_CONFLICT" in next(item for item in changed.items if item.key == address.key).blockers
+
+
+def test_destination_digest_binds_completeness_metadata(asa_source, asa_options):
+    from fwmigrate.conversion.fortigate_to_cisco_asa.application.workflow import build_review
+
+    target = CiscoASASourceReporter().analyze_source("! reviewed target\n")
+    metadata = {"context": "single", "version": "9.20", "mode": "routed", "complete_families": COMPLETE}
+    first = build_review(asa_source, asa_options, "source", target=target,
+                         target_source_text="! reviewed target\n", target_metadata=metadata)
+    second = build_review(asa_source, asa_options, "source", target=target,
+                          target_source_text="! reviewed target\n", target_metadata={**metadata, "complete_families": ["objects"]})
+    assert first["draft"]["target_digest"] != second["draft"]["target_digest"]

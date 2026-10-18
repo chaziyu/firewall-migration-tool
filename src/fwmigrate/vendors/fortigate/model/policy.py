@@ -50,6 +50,8 @@ class FGPolicy(BaseModel):
     ippool: str | None = None
     poolname: list[str] | None = None
     poolname6: list[str] | None = None
+    fixedport: str | None = None
+    port_preserve: str | None = None
 
     # Internet Service matching
     internet_service: str | None = None
