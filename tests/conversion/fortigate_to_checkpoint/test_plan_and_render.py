@@ -112,6 +112,29 @@ def test_only_a_real_source_all_reference_maps_to_checkpoint_any(checkpoint_anal
     assert "$response_binding" in source_ref
 
 
+@pytest.mark.parametrize("group", [False, True])
+def test_explicit_all_address_preserves_uid_dependencies(checkpoint_source_text, checkpoint_options, group):
+    source = checkpoint_source_text.replace('set srcaddr "client-group"', 'set srcaddr "all"')
+    source = source.replace('"client-group"', '"all"') if group else source.replace('"clients"', '"all"')
+    analysis = FortiGateSourceReporter().analyze_source(source)
+    rendered = CPManagementRenderer().render(_plan(analysis, checkpoint_options))
+    operations = json.loads(rendered.management_text)["operations"]
+    rule = next(row for row in operations if row["path"] == "/web_api/add-access-rule")
+    address = next(row for row in operations if row["source"]["name"] == ("clients" if group else "all"))
+    assert rule["request_body_template"]["source"] == [{"$response_binding": f"{address['operation_id']}.uid"}]
+    assert address["operation_id"] in rule["depends_on"]
+
+
+def test_explicit_all_service_preserves_uid_dependencies(checkpoint_source_text, checkpoint_options):
+    analysis = FortiGateSourceReporter().analyze_source(checkpoint_source_text.replace('"https"', '"ALL"'))
+    rendered = CPManagementRenderer().render(_plan(analysis, checkpoint_options))
+    operations = json.loads(rendered.management_text)["operations"]
+    service = next(row for row in operations if row["path"] == "/web_api/add-service-tcp")
+    rule = next(row for row in operations if row["path"] == "/web_api/add-access-rule")
+    assert rule["request_body_template"]["service"] == [{"$response_binding": f"{service['operation_id']}.uid"}]
+    assert service["operation_id"] in rule["depends_on"]
+
+
 def test_destination_comparison_and_unsupported_route_paths_remain_blocked(checkpoint_analysis, checkpoint_options):
     plan = _plan(checkpoint_analysis, checkpoint_options)
     changed_options = replace(checkpoint_options, gaia_target="")
@@ -309,7 +332,7 @@ end
 
 def test_dependency_order_handles_long_chain_and_rejects_cycle():
     chain = [SimpleNamespace(key=f"item-{index}", dependencies=(() if index == 0 else (f"item-{index - 1}",)),
-                             blockers=(), settings=()) for index in range(2500)]
+                             blockers=(), settings=(), target_disposition=None) for index in range(2500)]
     assert len(ordered_items(SimpleNamespace(items=chain))) == 2500
     assert all(value == "CREATE" for value in dispositions(SimpleNamespace(items=chain)).values())
 

@@ -103,6 +103,8 @@ function component(file, name, modules, { strictEffectReplay = false } = {}) {
   }).outputText
   const exports = {}
   const requireModule = (key) => {
+    if (key.endsWith('/components/MigrationCoverage')) return { MigrationCoverage: 'MigrationCoverage' }
+    if (key.endsWith('/components/DestinationSnapshot')) return { DestinationSnapshot: 'DestinationSnapshot' }
     if (key === 'react') return hooks
     if (key === 'react/jsx-runtime') return jsxRuntime
     if (key in modules) return modules[key]
@@ -151,6 +153,74 @@ function component(file, name, modules, { strictEffectReplay = false } = {}) {
     },
   }
 }
+
+test('destination uploads discard replaced responses and retain only sanitized evidence', async () => {
+  const requests = []
+  let value = null
+  let uploading = false
+  const onChange = (next) => { value = next }
+  const onPendingChange = (next) => { uploading = next }
+  const harness = component('../src/features/migration/components/DestinationSnapshot.tsx', 'DestinationSnapshot', {
+    '../../source/FileUpload': { FileUpload: 'FileUpload' },
+    '../../source/sourceApi': { previewSource: () => new Promise((resolve) => requests.push(resolve)) },
+  })
+  const props = () => ({ vendor: 'cisco_asa', families: ['objects'], value, disabled: false,
+    onChange, onPendingChange })
+  let tree = await harness.render(props())
+  elements(tree).find((node) => node.type === 'FileUpload').props.onChange(new File(['raw first'], 'first.cfg'))
+  tree = await harness.render(props())
+  elements(tree).find((node) => node.type === 'FileUpload').props.onChange(new File(['raw second'], 'second.cfg'))
+  requests[1]({ source_evidence: { vendor: 'cisco_asa', source_text: 'sanitized second', source_name: 'second.cfg' } })
+  tree = await harness.render(props())
+  requests[0]({ source_evidence: { vendor: 'cisco_asa', source_text: 'sanitized first' } })
+  tree = await harness.render(props())
+  assert.equal(value.source.source_text, 'sanitized second')
+  assert.equal(uploading, false)
+  const checkbox = elements(tree).find((node) => node.type === 'input' && node.props.type === 'checkbox')
+  checkbox.props.onChange({ target: { checked: true } })
+  assert.deepEqual(value.metadata.complete_families, ['objects'])
+  tree = await harness.render(props())
+  elements(tree).find((node) => node.type === 'Button' && node.props.children === 'Remove destination evidence').props.onClick()
+  assert.equal(value, null)
+})
+
+for (const [folder, name, pairId] of [
+  ['fortigateToCiscoAsa', 'CiscoAsaMigrationWorkflow', 'fortigate_to_cisco_asa'],
+  ['fortigateToJuniperSrx', 'JuniperSRXMigrationWorkflow', 'fortigate_to_juniper_srx'],
+  ['fortigateToCheckPoint', 'CheckPointMigrationWorkflow', 'fortigate_to_checkpoint'],
+]) test(`${pairId}: destination edits invalidate approval and discard stale preparation`, async () => {
+  const source = { vendor: 'fortigate', source_text: 'source' }
+  const destination = { source: { vendor: 'target', source_text: 'one' }, metadata: { context: 'scope', version: 'version', mode: 'mode', complete_families: [] } }
+  const options = { source_vdom: 'root', interfaces: {}, zones: {}, install_on: [] }
+  const report = { items: [], findings: [] }
+  let saved = { pairId, sourceKey: 'source', options, destination, requirements: [], review: { report }, approval: { signature: 'old' }, artifact: { artifact_id: 'old' }, previewText: 'old', preview: {} }
+  let finish
+  const calls = []
+  const harness = component(`../src/features/migration/${folder}/MigrationWorkflow.tsx`, name, {
+    '../../../storage/workspaceStore': { workspace: () => ({ newPairMigration: saved }), saveWorkspace: async (update) => { saved = update.newPairMigration } },
+    '../migrationApi': { downloadFile: () => {} },
+    './migrationApi': { requirements: async () => ({ requirements: [], report }), prepare: (...args) => {
+      calls.push(args)
+      return new Promise((resolve) => { finish = resolve })
+    } },
+  })
+  const props = { source, sourceKey: 'source', stage: 'place', onStageChange: () => {} }
+  let tree = await harness.render(props)
+  const snapshot = elements(tree).find((node) => node.type === 'DestinationSnapshot')
+  const next = { ...destination, metadata: { ...destination.metadata, complete_families: ['objects'] } }
+  snapshot.props.onChange(next)
+  tree = await harness.render(props)
+  assert.equal(saved.approval, null)
+  assert.equal(saved.artifact, null)
+  elements(tree).find((node) => (node.type === 'Button' || node.type === 'button') && /^Prepare/.test(node.props.children)).props.onClick()
+  tree = await harness.render(props)
+  assert.deepEqual(calls[0].at(-1), next)
+  elements(tree).find((node) => node.type === 'DestinationSnapshot').props.onChange(null)
+  finish({ draft: { digest: 'stale' }, requirements: [], report })
+  tree = await harness.render(props)
+  assert.equal(saved.review, null)
+  assert.equal(saved.destination, null)
+})
 
 test('initial migration preparation starts once when StrictMode replays effects', async () => {
   const requests = []
@@ -1983,4 +2053,69 @@ test('migration pair discovery reads the server registered workflow list', async
     } }
   }, exports)
   assert.deepEqual(await exports.loadMigrationPairs(), [{ pair_id: 'fortigate_to_juniper_srx', export_available: true }])
+})
+
+test('source coverage paginates repeated scoped records and clamps after replacement', async () => {
+  const harness = component('../src/features/migration/components/MigrationCoverage.tsx', 'MigrationCoverage', {})
+  const coverage = {
+    source_record_count: 26, inventory_available: true, status_counts: { MANUAL: 26 },
+    records: Array.from({ length: 26 }, (_, index) => ({ source_scope: 'vdom', source_vdom: 'root',
+      source_path: 'firewall address', source_name: `host-${index}`, status: 'MANUAL' })),
+  }
+  let tree = await harness.render({ coverage })
+  assert.equal(elements(tree).filter((node) => node.type === 'tr').length, 26)
+  assert.ok(!JSON.stringify(tree).includes('host-25'))
+  elements(tree).find((node) => node.type === 'Button' && node.props.children === 'Next coverage page').props.onClick()
+  tree = await harness.render({ coverage })
+  assert.ok(JSON.stringify(tree).includes('host-25'))
+  assert.equal(elements(tree).filter((node) => node.type === 'tr').length, 2)
+  tree = await harness.render({ coverage: { ...coverage, records: coverage.records.slice(0, 1), source_record_count: 1 } })
+  assert.ok(JSON.stringify(tree).includes('host-0'))
+  assert.equal(elements(tree).find((node) => node.type === 'Button' && node.props.children === 'Next coverage page').props.disabled, true)
+  assert.equal(await harness.render({}), null)
+})
+
+test('Check Point VDOM choices survive review preparation and workspace restoration', async () => {
+  for (const restored of [false, true]) {
+    let saved = restored ? {
+      pairId: 'fortigate_to_checkpoint', sourceKey: 'cp-source',
+      options: { source_vdom: 'root', management_target: '', management_domain: '', management_api_version: '1.8.1',
+        gaia_target: '', policy_package: '', access_layer: '', install_on: [], insertion_anchor: '', insertion_relation: '', target_cleanup_action: '' },
+      requirements: [], review: null, approval: null, artifact: null, preview: null,
+    } : undefined
+    let stage = 'place'
+    const report = { items: [], findings: [], plan_status: 'BLOCKED' }
+    const harness = component('../src/features/migration/fortigateToCheckPoint/MigrationWorkflow.tsx', 'CheckPointMigrationWorkflow', {
+      '../../../storage/workspaceStore': {
+        workspace: () => ({ newPairMigration: saved }),
+        saveWorkspace: async (value) => { saved = value.newPairMigration },
+      },
+      './migrationApi': {
+        requirements: async (_source, options) => {
+          assert.equal(options.source_vdom, '')
+          return { requirements: [{ key: 'checkpoint:source_vdom', choices: ['root', 'branch'] }], report }
+        },
+        prepare: async () => ({ draft: { digest: 'current' }, requirements: [], report }),
+      },
+    })
+    const props = { source: { vendor: 'fortigate', source_text: 'config vdom\nend\n' }, sourceKey: 'cp-source', onStageChange: (value) => { stage = value } }
+    const render = () => harness.render({ ...props, stage })
+    const selector = (tree) => elements(tree).find((node) => node.type === 'select' && elements(node).some((child) => child.type === 'option' && child.props.value === 'branch'))
+    let tree = await render()
+    assert.ok(selector(tree))
+    selector(tree).props.onChange({ target: { value: 'root' } })
+    tree = await render()
+    elements(tree).find((node) => node.type === 'button' && node.props.children === 'Prepare review').props.onClick()
+    await render()
+    tree = await render()
+    assert.equal(stage, 'review')
+    assert.deepEqual(saved.requirements, [])
+    assert.equal(selector(tree).props.value, 'root')
+    selector(tree).props.onChange({ target: { value: 'branch' } })
+    await render()
+    assert.equal(saved.options.source_vdom, 'branch')
+    assert.equal(saved.review, null)
+    assert.equal(saved.approval, null)
+    assert.equal(saved.artifact, null)
+  }
 })

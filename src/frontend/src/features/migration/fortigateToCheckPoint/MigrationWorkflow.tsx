@@ -1,3 +1,6 @@
+import { MigrationCoverage } from '../components/MigrationCoverage'
+import { DestinationSnapshot } from '../components/DestinationSnapshot'
+import type { DestinationEvidence } from '../components/DestinationSnapshot'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { saveWorkspace, workspace } from '../../../storage/workspaceStore'
 import type { SourceEvidence } from '../../../storage/workspaceTypes'
@@ -17,7 +20,7 @@ const emptyCheckPointOptions = (): CheckPointOptions => ({
   insertion_relation: '', target_cleanup_action: '',
 })
 
-function eligible(item: CheckPointPlanItem) { return item.render_disposition === 'CREATE' }
+function eligible(item: CheckPointPlanItem) { return ['CREATE', 'REUSE'].includes(item.render_disposition) }
 
 function fileName(kind: 'management-operations' | 'gaia-config' | 'bindings' | 'bundle') {
   return kind === 'management-operations' ? MANAGEMENT_FILE : kind === 'gaia-config' ? GAIA_FILE : kind === 'bindings' ? BINDINGS_FILE : 'migration_fortigate_to_checkpoint.zip'
@@ -35,12 +38,14 @@ export function CheckPointMigrationWorkflow({ source, sourceKey, stage, onStageC
       ? saved
       : { pairId: 'fortigate_to_checkpoint', sourceKey, options: emptyCheckPointOptions(), requirements: [], review: null, approval: null, artifact: null, preview: null }
   })
+  const [targetLoading, setTargetLoading] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [selected, setSelected] = useState<string[]>([])
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
   const [previewFile, setPreviewFile] = useState(MANAGEMENT_FILE)
+  const [sourceVdoms, setSourceVdoms] = useState<string[]>([])
   const requests = useRef(0)
   const pending = useRef(false)
   const { options, review, artifact, preview } = state
@@ -50,8 +55,11 @@ export function CheckPointMigrationWorkflow({ source, sourceKey, stage, onStageC
   useEffect(() => () => { requests.current++ }, [])
   useEffect(() => {
     let active = true
-    api.requirements(source, initialOptions.current).then((result) => {
-      if (active) setState((current) => ({ ...current, requirements: result.requirements }))
+    api.requirements(source, { ...initialOptions.current, source_vdom: '' }).then((result) => {
+      if (active) {
+        setState((current) => ({ ...current, requirements: result.requirements }))
+        setSourceVdoms(result.requirements.find((item) => item.key === 'checkpoint:source_vdom')?.choices ?? [])
+      }
     }).catch((cause) => { if (active) setError(cause instanceof Error ? cause.message : 'Could not load Check Point requirements') })
     return () => { active = false }
   }, [source, sourceKey])
@@ -61,6 +69,12 @@ export function CheckPointMigrationWorkflow({ source, sourceKey, stage, onStageC
     setState((current) => ({ ...current, options: next, review: null, approval: null, artifact: null, preview: null }))
     setSelected([])
     setError(null)
+  }
+
+  function changeDestination(destination: DestinationEvidence | null) {
+    requests.current++
+    setState((current) => ({ ...current, destination, review: null, approval: null, artifact: null, preview: null }))
+    setSelected([]); setError(null)
   }
 
   async function run(action: () => Promise<void>) {
@@ -76,7 +90,7 @@ export function CheckPointMigrationWorkflow({ source, sourceKey, stage, onStageC
   async function prepareReview() {
     const request = ++requests.current
     setState((current) => ({ ...current, approval: null, artifact: null, preview: null }))
-    const result = await api.prepare(source, options)
+    const result = await api.prepare(source, options, state.destination)
     if (request !== requests.current) return
     setState((current) => ({ ...current, requirements: result.requirements, review: result }))
     setSelected(result.report.items.filter(eligible).map((item) => item.key))
@@ -101,10 +115,10 @@ export function CheckPointMigrationWorkflow({ source, sourceKey, stage, onStageC
   async function approveAndBuild() {
     if (!review || !selected.length) return
     const request = ++requests.current
-    const result = await api.approve(source, options, review.draft, selected)
+    const result = await api.approve(source, options, review.draft, selected, state.destination)
     if (request !== requests.current) return
     setState((current) => ({ ...current, approval: result.approval, artifact: null, preview: null }))
-    const built = await api.build(source, options, result.approval)
+    const built = await api.build(source, options, result.approval, state.destination)
     if (request !== requests.current) return
     setState((current) => ({ ...current, artifact: built.artifact, preview: null }))
     onStageChange('export')
@@ -161,10 +175,11 @@ export function CheckPointMigrationWorkflow({ source, sourceKey, stage, onStageC
     <h2 id="checkpoint-migration-title">FortiGate to Check Point</h2>
     <p>Review a Check Point R81 Management API 1.8.1 request specification and a separate Gaia Clish file. Nothing is sent to a firewall.</p>
     {stage !== 'export' && <>
+      <DestinationSnapshot vendor="checkpoint" families={['objects', 'services', 'packages', 'layers', 'gateways', 'policies', 'nat']} value={state.destination ?? null} disabled={busy} onChange={changeDestination} onPendingChange={setTargetLoading} />
       <div className="source-vendor-grid with-target">
         <label className="field"><span>Source FortiGate VDOM</span><select disabled={busy} value={options.source_vdom}
           onChange={(event) => changeOptions({ ...options, source_vdom: event.target.value })}>
-          <option value="">Choose a VDOM</option>{state.requirements.find((item) => item.key === 'checkpoint:source_vdom')?.choices.map((value) => <option key={value} value={value}>{value}</option>)}
+          <option value="">Choose a VDOM</option>{sourceVdoms.map((value) => <option key={value} value={value}>{value}</option>)}
         </select></label>
         {textField('management_target', 'Management server label', options.management_target)}
         {textField('management_domain', 'Management Domain', options.management_domain)}
@@ -186,19 +201,20 @@ export function CheckPointMigrationWorkflow({ source, sourceKey, stage, onStageC
         </select></label>
         {textField('gaia_target', 'Gaia gateway or cluster label', options.gaia_target)}
       </div>
-      <p>Interface-bound rules, non-always schedules, NAT, ranges, inline layers and unsupported services stay manual. Verify the cleanup rule and destination names before applying the request specification.</p>
+      <p>Interface-bound rules, non-always schedules, NAT, inline layers and unsupported services stay manual. Verify the cleanup rule and destination names before applying the request specification.</p>
       <div className="report-actions">
         <button type="button" disabled={busy} onClick={() => void run(exportProposal)}>Export mapping proposal</button>
         <label className="field"><span>Import mapping proposal</span><input disabled={busy} type="file" accept="application/json,.json"
           onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ''; if (file) void run(() => importProposal(file)) }} /></label>
       </div>
-      <button type="button" disabled={busy || !options.source_vdom} onClick={() => void run(prepareReview)}>Prepare review</button>
+      <button type="button" disabled={busy || targetLoading || !options.source_vdom} onClick={() => void run(prepareReview)}>Prepare review</button>
     </>}
 
     {error && <div className="error-banner" role="alert">{error}</div>}
 
     {stage === 'review' && review && <>
       <h3>Review generated operations</h3>
+      <MigrationCoverage coverage={review.report.coverage} />
       <p>{review.report.plan_status}. {eligibleCount} items can be included; {items.length - eligibleCount} remain blocked or manual. Selecting a rule also approves its prior rule and object dependencies.</p>
       <label className="field"><span>Search plan items</span><input value={search} onChange={(event) => { setSearch(event.target.value); setPage(1) }} /></label>
       <div className="migration-approval-list" aria-label="Check Point plan items">
@@ -215,7 +231,7 @@ export function CheckPointMigrationWorkflow({ source, sourceKey, stage, onStageC
 
     {stage === 'export' && artifact && <>
       <h3>Reviewed offline files</h3>
-      <p>Approval expires {new Date(artifact.expires_at * 1000).toLocaleString()}. Destination comparison, policy publish, installation, and Gaia save remain manual.</p>
+      <p>Approval expires {new Date(artifact.expires_at * 1000).toLocaleString()}. Live device acceptance, policy publish, installation, and Gaia save remain manual.</p>
       <div className="migration-view-nav" aria-label="Reviewed Check Point files">
         {[MANAGEMENT_FILE, GAIA_FILE, BINDINGS_FILE].map((name) => <button type="button" key={name} aria-pressed={previewFile === name} onClick={() => setPreviewFile(name)}>{name}</button>)}
       </div>

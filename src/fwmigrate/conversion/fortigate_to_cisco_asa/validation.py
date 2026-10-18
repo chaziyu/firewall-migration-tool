@@ -45,4 +45,13 @@ def dispositions(plan):
         return value
     for key in by_key:
         assess(key)
+    changed = True
+    while changed:
+        changed = False
+        blocked_groups = {item.approval_group for item in plan.items if item.approval_group and result[item.key] == "BLOCK"}
+        for item in plan.items:
+            if result[item.key] != "BLOCK" and (item.approval_group in blocked_groups
+                    or any(result[dep] == "BLOCK" for dep in item.dependencies)):
+                result[item.key] = "BLOCK"
+                changed = True
     return result

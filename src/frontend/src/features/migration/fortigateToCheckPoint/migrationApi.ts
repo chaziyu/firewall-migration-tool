@@ -1,20 +1,23 @@
+import type { DestinationEvidence } from '../components/DestinationSnapshot'
 import { postBlob, postJson } from '../../../api/client'
 import type { SourceEvidence } from '../../../storage/workspaceTypes'
 import type { CheckPointArtifact, CheckPointOptions, CheckPointReview } from './types'
 
+const destinationPayload = (destination?: DestinationEvidence | null) => destination ? { target_source: destination.source, target_metadata: destination.metadata } : {}
+
 const prefix = '/api/migration/fortigate_to_checkpoint'
 
-export const requirements = (source: SourceEvidence, options: CheckPointOptions) =>
-  postJson<{ requirements: CheckPointReview['requirements']; report: CheckPointReview['report'] }>(`${prefix}/requirements`, { source, options })
+export const requirements = (source: SourceEvidence, options: CheckPointOptions, destination?: DestinationEvidence | null) =>
+  postJson<{ requirements: CheckPointReview['requirements']; report: CheckPointReview['report'] }>(`${prefix}/requirements`, { source, options, ...destinationPayload(destination) })
 
-export const prepare = (source: SourceEvidence, options: CheckPointOptions) =>
-  postJson<CheckPointReview>(`${prefix}/design/prepare`, { source, options })
+export const prepare = (source: SourceEvidence, options: CheckPointOptions, destination?: DestinationEvidence | null) =>
+  postJson<CheckPointReview>(`${prefix}/design/prepare`, { source, options, ...destinationPayload(destination) })
 
-export const approve = (source: SourceEvidence, options: CheckPointOptions, draft: Record<string, unknown>, selected: string[]) =>
-  postJson<{ approval: Record<string, unknown> }>(`${prefix}/design/approve`, { source, options, draft, selected_items: selected })
+export const approve = (source: SourceEvidence, options: CheckPointOptions, draft: Record<string, unknown>, selected: string[], destination?: DestinationEvidence | null) =>
+  postJson<{ approval: Record<string, unknown> }>(`${prefix}/design/approve`, { source, options, draft, selected_items: selected, ...destinationPayload(destination) })
 
-export const build = (source: SourceEvidence, options: CheckPointOptions, approval: Record<string, unknown>) =>
-  postJson<{ artifact: CheckPointArtifact }>(`${prefix}/build`, { source, options, approval })
+export const build = (source: SourceEvidence, options: CheckPointOptions, approval: Record<string, unknown>, destination?: DestinationEvidence | null) =>
+  postJson<{ artifact: CheckPointArtifact }>(`${prefix}/build`, { source, options, approval, ...destinationPayload(destination) })
 
 export const preview = (source: SourceEvidence, artifact: CheckPointArtifact) =>
   postJson<{ files: Record<string, { text: string; sha256: string; byte_count: number }>; report: CheckPointReview['report'] }>(`${prefix}/artifact-preview`, { source, artifact })

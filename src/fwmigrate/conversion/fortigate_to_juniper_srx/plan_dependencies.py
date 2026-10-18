@@ -77,9 +77,15 @@ def assess_render_disposition(plan):
     by_key = {item.key: item for item in plan.items}
     while changed:
         changed = False
+        blocked_groups = {
+            item.approval_group for item in plan.items
+            if item.approval_group and dispositions[item.key] == "BLOCK"
+        }
         for key, disposition in tuple(dispositions.items()):
-            if disposition in {"CREATE", "REUSE"} and any(
-                dispositions.get(dependency) == "BLOCK" for dependency in by_key[key].dependencies
+            if disposition in {"CREATE", "REUSE"} and (
+                by_key[key].approval_group in blocked_groups or any(
+                    dispositions.get(dependency) == "BLOCK" for dependency in by_key[key].dependencies
+                )
             ):
                 dispositions[key] = "BLOCK"
                 changed = True

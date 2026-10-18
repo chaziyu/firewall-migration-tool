@@ -59,11 +59,14 @@ Source changes, expiration, and server signing-key changes can require reapprova
 The target must already use central NAT, or the engineer must declare that mode
 for offline planning. Generated commands do not enable central NAT.
 
-- Isolated single-rule dynamic-IP-and-port SNAT supports an explicit mapped
+- Dynamic-IP-and-port SNAT supports an explicit mapped
   interface address equal to that interface's sole IPv4 address, or one literal
   translated pool IPv4 address. Original zone members resolve to explicit target
   interfaces. Pool proxy ARP is disabled; routed return traffic needs explicit
   engineer confirmation.
+- Multiple source NAT rules require pairwise disjoint literal IPv4 source
+  prefixes referenced directly by each rule. Source order is preserved. Groups,
+  `any` and uncertain overlaps cannot prove isolation and remain blocked.
 - Static DNAT supports one address-only rule and one exactly matched security
   rule. It requires a public `/32` object, literal mapped IPv4 host, one ingress
   interface, a verified connected post-NAT zone, explicit VIP proxy-ARP choice,
@@ -71,7 +74,7 @@ for offline planning. Generated commands do not enable central NAT.
 - DNAT generates a mapped-host address and VIP. The security policy matches the
   translated host and sets `match-vip-only enable`, preventing direct private-IP
   packets from matching that policy. VIP source-interface filtering is explicit.
-- Port-translated DNAT, combined SNAT/DNAT, multiple NAT rules, no-NAT exception
+- Port-translated DNAT, combined SNAT/DNAT, multiple DNAT rules, no-NAT exception
   ordering, dynamic DNAT, bidirectional static SNAT, NAT64/46, and uncertain
   overlaps remain blocked. Unsupported or unapproved NAT blocks consuming policies.
 

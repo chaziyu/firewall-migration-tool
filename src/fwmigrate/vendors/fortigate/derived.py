@@ -16,6 +16,8 @@ from .relationships.references import (
 from .transform.nat import (
     NormalizedSourceNAT,
     transform_nat,
+    NormalizedCentralSNAT,
+    transform_central_nat,
 )
 from .transform.services import (
     ServiceTransformResult,
@@ -40,6 +42,7 @@ class DerivedViews:
 
     vpn: VPNTransformResult
     effective_values: tuple[FGEffectiveValue, ...] = ()
+    central_nat: tuple[NormalizedCentralSNAT, ...] = ()
 
 
 def build_derived_views(
@@ -76,4 +79,5 @@ def build_derived_views(
             references=references,
         ),
         effective_values=derive_effective_values(config, source_metadata),
+        central_nat=transform_central_nat(config),
     )

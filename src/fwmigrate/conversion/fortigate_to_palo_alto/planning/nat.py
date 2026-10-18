@@ -369,6 +369,8 @@ def _combine_single_policy_nat(source, rules):
 
 def _nat_policy_warnings(policy, service_groups):
     warnings = []
+    if getattr(policy, "fixedport", None) is not None or getattr(policy, "port_preserve", None) is not None:
+        warnings.append("Explicit FortiOS NAT source-port controls require target-specific equivalence review")
     if getattr(policy, "status", None) not in {None, "enable", "disable", "disabled", "no", "0"}:
         warnings.append("NAT policy state is unsupported")
     if getattr(policy, "poolname", None) and getattr(policy, "ippool", None) not in {None, "enable"}:

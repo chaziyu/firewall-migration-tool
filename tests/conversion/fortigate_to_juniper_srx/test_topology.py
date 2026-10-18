@@ -15,8 +15,11 @@ def _settings(item):
 
 
 def test_explicit_interfaces_vlan_parent_zones_and_static_routes_are_mapped(explicit_analysis, complete_options):
+    source = explicit_analysis.extracted.config.model_copy(deep=True)
+    source.static_routes[0].status = "enable"
+    source.static_routes[0].explicit_fields.add("status")
     plan = FortiGateToJuniperSRXPlanner().plan(
-        explicit_analysis.extracted.config, explicit_analysis.derived, complete_options
+        source, build_derived_views(source), complete_options
     )
     items = {item.family + ":" + item.source_name: item for item in plan.items}
     vlan = items["interface:app-vlan"]
@@ -37,6 +40,43 @@ def test_explicit_interfaces_vlan_parent_zones_and_static_routes_are_mapped(expl
     assert _settings(route)["destination"] == "0.0.0.0/0"
     assert _settings(route)["next_hop"] == "203.0.113.1"
     assert route.dependencies == (items["interface:wan"].key,)
+
+
+@pytest.mark.parametrize("status", [None, "disable", "unknown", "enable"])
+def test_route_requires_explicit_enabled_state(explicit_analysis, complete_options, status):
+    from fwmigrate.conversion.fortigate_to_juniper_srx.application.workflow import (
+        approve_design, build_review,
+    )
+    from fwmigrate.conversion.fortigate_to_juniper_srx.rendering.renderer import JunosSetRenderer
+
+    source = explicit_analysis.extracted.config
+    source.static_routes[0].status = status
+    if status is not None:
+        source.static_routes[0].explicit_fields.add("status")
+    review = build_review(explicit_analysis, complete_options, "source")
+    route = next(item for item in review["plan"].items if item.family == "static_route" and item.source_name == "1")
+    rendered = JunosSetRenderer().render(review["plan"])
+    if status == "enable":
+        assert not route.blockers
+        assert any("static route 0.0.0.0/0 " in line for line in rendered.commands)
+    else:
+        assert "STATIC_ROUTE_STATUS_NOT_EXPLICITLY_ENABLED" in route.blockers
+        assert not any("static route 0.0.0.0/0 " in line for line in rendered.commands)
+        with pytest.raises(ValueError, match="blocked|Blocked"):
+            approve_design(review, review["draft"], [route.key])
+
+
+def test_route_with_unknown_source_settings_cannot_render(explicit_analysis, complete_options):
+    from fwmigrate.conversion.fortigate_to_juniper_srx.rendering.renderer import JunosSetRenderer
+
+    source = explicit_analysis.extracted.config
+    source.static_routes[0].status = "enable"
+    source.static_routes[0].explicit_fields.add("status")
+    source.static_routes[0].raw_extra["future-route-setting"] = "preserved"
+    plan = FortiGateToJuniperSRXPlanner().plan(source, explicit_analysis.derived, complete_options)
+    route = next(item for item in plan.items if item.family == "static_route" and item.source_name == "1")
+    assert "STATIC_ROUTE_HAS_UNSUPPORTED_SOURCE_SETTINGS" in route.blockers
+    assert not any("static route 0.0.0.0/0 " in line for line in JunosSetRenderer().render(plan).commands)
 
 
 def test_missing_scope_target_choices_and_interface_mapping_fail_closed(explicit_analysis):

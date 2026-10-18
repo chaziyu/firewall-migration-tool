@@ -7,6 +7,7 @@ import heapq
 _MANAGEMENT_PATHS = {
     "/web_api/add-host",
     "/web_api/add-network",
+    "/web_api/add-address-range",
     "/web_api/add-service-tcp",
     "/web_api/add-service-udp",
     "/web_api/add-access-rule",
@@ -45,8 +46,15 @@ def validate_plan(plan):
         raise ValueError("Check Point plan contains duplicate item keys")
     ordered = ordered_items(plan)
     bindings = {}
+    blocked = set()
     for item in ordered:
         settings = dict(item.settings)
+        if item.target_disposition not in {None, "CREATE", "REUSE", "BLOCK"}:
+            raise ValueError("Invalid Check Point target disposition")
+        if item.target_disposition == "REUSE" and not isinstance(settings.get("target_uid"), str):
+            raise ValueError("Reused Management objects require a verified UID")
+        if item.blockers or item.target_disposition == "BLOCK" or any(key in blocked for key in item.dependencies):
+            blocked.add(item.key)
         operation = settings.get("management_operation")
         if operation is not None:
             if operation.get("path") not in _MANAGEMENT_PATHS:
@@ -64,7 +72,7 @@ def validate_plan(plan):
                 raise ValueError("Gaia export contains a prohibited activation or destructive command")
     for item in ordered:
         operation = dict(item.settings).get("management_operation")
-        if operation is None:
+        if operation is None or item.key in blocked:
             continue
         allowed_dependencies = set(item.dependencies)
         for binding in _response_bindings(operation.get("request_body_template")):
@@ -91,5 +99,5 @@ def dispositions(plan):
     result = {}
     for item in ordered_items(plan):
         blocked_dependency = any(result[dependency] == "BLOCK" for dependency in item.dependencies)
-        result[item.key] = "BLOCK" if item.blockers or blocked_dependency else "CREATE"
+        result[item.key] = "BLOCK" if item.blockers or blocked_dependency else item.target_disposition or "CREATE"
     return result
