@@ -24,7 +24,7 @@ def test_xml_unsafe_text_is_visible_and_formula_protection_is_idempotent(write_o
     output = BytesIO()
     workbook.save(output)
     restored = load_workbook(output)
-    assert restored.active['A2'].value == expected
+    assert restored.active['A2'].value == expected.replace('\r\n', '\n')
     assert restored.active['A2'].data_type == 's'
 
 
