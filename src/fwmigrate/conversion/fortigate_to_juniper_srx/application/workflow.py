@@ -140,6 +140,12 @@ def build_artifact(analysis, options, source_digest, approval, *, target=None, t
     command_digest = hashlib.sha256(command_bytes).hexdigest()
     report = {
         **review["report"],
+<<<<<<< Updated upstream
+=======
+        **build_review_report(review["plan"], approved_items=selected_items),
+        "coverage": build_coverage(review["plan"], analysis.extracted.source_objects,
+                                   analysis.derived, approved_items=selected_items),
+>>>>>>> Stashed changes
         "source_digest": source_digest,
         "target_digest": review["draft"].get("target_digest"),
         "selected_items": list(selected_items),

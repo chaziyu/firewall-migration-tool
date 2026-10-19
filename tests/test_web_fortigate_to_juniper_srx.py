@@ -181,7 +181,7 @@ def test_srx_destination_comparison_binds_target_snapshot_to_approval():
     assert review["report"]["destination_snapshot_compared"] is True
     assert review["report"]["snapshot_evidence_complete"] is True
     assert review["draft"]["target_digest"] == review["report"]["target_digest"]
-    assert any(item["render_disposition"] == "BLOCK" and item["family"] == "policy"
+    assert any(item["render_disposition"] == "CREATE" and item["family"] == "policy"
                for item in review["report"]["items"])
 
     selected = [item["key"] for item in review["report"]["items"]
@@ -197,8 +197,12 @@ def test_srx_destination_comparison_binds_target_snapshot_to_approval():
     assert built.status_code == 200
     artifact = built.get_json()["artifact"]
     assert artifact["target_digest"] == approval["target_digest"]
+    assert "set security policies from-zone" in artifact["command_text"]
     assert artifact["report"]["destination_verified"] is False
     assert artifact["report"]["destination_snapshot_compared"] is True
+    downloaded = client.post(f"{PREFIX}/commands", json={"artifact": artifact})
+    assert downloaded.status_code == 200
+    assert downloaded.data == artifact["command_text"].encode("utf-8")
 
     changed_target = {**payload, **_target("set system host-name changed\n")}
     changed = client.post(f"{PREFIX}/build", json={**changed_target, "approval": approval})

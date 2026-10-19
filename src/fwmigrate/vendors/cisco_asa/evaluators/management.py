@@ -62,7 +62,7 @@ class ManagementEvaluator:
         if self._parse_ntp_authentication_command(line, line_number):
             return
         self._legacy_management(line)
-        system = self._ensure_system_settings()
+        system = self._ensure_system_settings(line_number)
         system.raw_lines.append(sanitize_raw_text(line))
         system.source_attributes.setdefault("raw_commands", []).append(sanitize_raw_text(line))
         if command == "hostname" and len(parts) == 2:
@@ -72,7 +72,11 @@ class ManagementEvaluator:
             return
         if lower.startswith("domain-name ") and len(parts) == 2:
             system.domain_name = parts[1]
-            self._ensure_dns_settings().domain_name = parts[1]
+            _mark_explicit(system, "domain_name")
+            dns = self._ensure_dns_settings(line_number)
+            dns.domain_name = parts[1]
+            dns.raw_lines.append(sanitize_raw_text(line))
+            _mark_explicit(dns, "domain_name")
             return
         if lower.startswith("clock timezone ") and len(parts) >= 4:
             system.timezone_name = parts[2]
@@ -192,13 +196,15 @@ class ManagementEvaluator:
         from ..parser_mpf import _parse_management_command
         return _parse_management_command(self, line, line_number)
 
-    def _parse_hostname_line(self, line):
+    def _parse_hostname_line(self, line, line_number):
         parts = line.split(maxsplit=1)
         if len(parts) == 2:
-            self.config.hostname = parts[1]
-            system = self._ensure_system_settings()
+            if self._line_contexts.get(line_number) is None:
+                self.config.hostname = parts[1]
+                _mark_explicit(self.config, "hostname")
+            system = self._ensure_system_settings(line_number)
             system.hostname = parts[1]
-            _mark_explicit(self.config, "hostname")
+            system.raw_lines.append(sanitize_raw_text(line))
             _mark_explicit(system, "hostname")
 
     def _parse_sysopt_permit_vpn(self, line, line_number, enabled):
@@ -262,12 +268,10 @@ class ManagementEvaluator:
         return i
 
     def _parse_no_http_server(self, line, line_number):
-        self._parse_management_command(line[3:].strip(), line_number)
-        self.config.management_settings[-1].enabled = False
-        self.config.management_settings[-1].raw_lines = [sanitize_raw_text(line)]
-        self.config.management_settings[-1].source_attributes["raw_command"] = sanitize_raw_text(line)
+        self._parse_management_command(line, line_number)
 
-    def _parse_dns_group_selection(self, line):
-        dns_settings = self._ensure_dns_settings()
+    def _parse_dns_group_selection(self, line, line_number):
+        dns_settings = self._ensure_dns_settings(line_number)
         dns_settings.default_server_group = line.split()[1]
+        _mark_explicit(dns_settings, "default_server_group")
         dns_settings.command_history.append(sanitize_raw_text(line))

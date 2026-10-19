@@ -101,6 +101,96 @@ EXCEL_SOURCE_CASES = (
 )
 
 
+@pytest.mark.parametrize("profile", ["fast", "full"])
+@pytest.mark.parametrize("fixture", ["fmc_selected_domains.json", "fdm_object_pipeline_conformance.json",
+                                     "fdm_nat_pipeline_conformance.json", "cli"])
+def test_ftd_supported_formats_reach_preview_and_excel_through_all_transports(profile, fixture):
+    from fwmigrate.collection.contracts import CollectedSource
+    from fwmigrate.collection.snapshot import make_snapshot
+
+    if fixture == "cli":
+        source = ("configure network ipv4 manual 192.0.2.42 255.255.255.0 192.0.2.1\n"
+                  "interface inside\n description WEB_CLI_MARKER\n ipv6 address 2001:db8::42/64\n"
+                  "access-list WEB_UNSUPPORTED extended permit ip any any\n password WEB_FTD_SECRET\n")
+        markers = ["WEB_CLI_MARKER", "192.0.2.42", "2001:db8::42", "WEB_UNSUPPORTED"]
+    else:
+        payload = json.loads((Path(__file__).parent / "fixtures/cisco_ftd" / fixture).read_text())
+        objects = payload["objects"]
+        hosts = objects["networkaddresses"] if "networkaddresses" in objects else objects["hosts"]
+        hosts[0]["customField"] = "WEB_CUSTOM_MARKER"
+        hosts[0]["apiToken"] = "WEB_FTD_SECRET"
+        markers = ["WEB_CUSTOM_MARKER"]
+        source = json.dumps(payload)
+    client = create_app({"TESTING": True}).test_client()
+    preview = client.post("/api/preview", data={"source_vendor": "cisco_ftd",
+        "file": (io.BytesIO(source.encode()), "ftd-source.txt")})
+    assert preview.status_code == 200, preview.get_json()
+    evidence = preview.get_json()["source_evidence"]
+    assert "WEB_FTD_SECRET" not in str(preview.get_json())
+    snapshot = make_snapshot(CollectedSource("cisco_ftd", source, "ftd-source.txt", "offline"))
+    exports = [client.post("/api/extract/excel", data={"source_vendor": "cisco_ftd", "excel_profile": profile,
+        "file": (io.BytesIO(source.encode()), "ftd-source.txt")})]
+    for item in (evidence, {"vendor": "cisco_ftd", "source_text": source}, snapshot):
+        exports.append(client.post("/api/extract/excel", json={"source_vendor": "cisco_ftd",
+            "excel_profile": profile, "source": item}))
+    for response in exports:
+        assert response.status_code == 200, response.get_json()
+        workbook = load_workbook(io.BytesIO(response.data), read_only=True)
+        try:
+            values = str([row for sheet in workbook for row in sheet.values])
+            assert all(marker in values for marker in markers)
+            assert "WEB_FTD_SECRET" not in values
+        finally:
+            workbook.close()
+
+
+@pytest.mark.parametrize("source", ['{"format":"other"}', '{"format":\ninterface inside',
+                                     '[\ninterface inside', "unrecognized source"])
+def test_ftd_web_rejects_invalid_source_without_cli_fallback(source):
+    client = create_app({"TESTING": True}).test_client()
+    for route in ("/api/preview", "/api/extract/excel"):
+        response = client.post(route, data={"source_vendor": "cisco_ftd",
+            "file": (io.BytesIO(source.encode()), "invalid.json")})
+        assert response.status_code == 400
+
+
+@pytest.mark.parametrize('profile', ['fast', 'full'])
+@pytest.mark.parametrize('vendor,source', EXCEL_SOURCE_CASES, ids=[case[0] for case in EXCEL_SOURCE_CASES])
+def test_all_vendor_exports_preserve_oversized_sanitized_evidence(profile, vendor, source):
+    warning = 'x' * 32767 + '=retained-tail\x01 password overflow-secret'
+    reporter = source_reporters.get(vendor)
+    output = io.BytesIO()
+    reporter.export_excel(reporter.analyze_source(source), output, profile=profile,
+                          collection_status='PARTIAL', collection_warnings=[warning])
+    workbook = load_workbook(output)
+    rows = [row for row in list(workbook['Text Overflow'].values)[1:] if row[0] == 'Collection Evidence']
+    reconstructed = ''.join(row[4] for row in rows)
+    assert reconstructed == 'x' * 32767 + '=retained-tail\\u0001 password [REDACTED]'
+    assert 'overflow-secret' not in str([row for sheet in workbook for row in sheet.values])
+    assert all(cell.data_type != 'f' for row in workbook['Text Overflow'] for cell in row)
+
+
+@pytest.mark.parametrize('profile', ['fast', 'full'])
+def test_fortigate_excel_keeps_control_characters_and_all_large_group_members(profile):
+    names = [f'member-{index:04}-' + 'x' * 48 for index in range(600)]
+    source = ('config firewall address\n' + ''.join(
+        f'edit {name}\nset subnet 192.0.2.1 255.255.255.255\nnext\n' for name in names)
+        + 'end\nconfig firewall addrgrp\nedit large\nset comment "visible\x01é"\nset member '
+        + ' '.join(names) + '\nnext\nend\n')
+    client = create_app({'TESTING': True}).test_client()
+    response = client.post('/api/extract/excel', data={'source_vendor': 'fortigate', 'excel_profile': profile,
+        'file': (io.BytesIO(source.encode()), 'large.conf')}, content_type='multipart/form-data')
+    assert response.status_code == 200, response.get_json()
+    workbook = load_workbook(io.BytesIO(response.data))
+    rows = list(workbook['Text Overflow'].values)[1:]
+    members = ''.join(row[4] for row in rows if row[:2] == ('Address Groups', 'D4'))
+    assert members.splitlines() == names
+    assert any(cell.value == 'visible\\u0001é' for row in workbook['Address Groups'] for cell in row)
+    if profile == 'full':
+        inventory = ''.join(row[4] for row in rows if row[0] == 'FortiGate Source Inventory')
+        assert all(name in inventory for name in names)
+
+
 @pytest.mark.parametrize("profile", ("fast", "full"))
 @pytest.mark.parametrize("vendor,source", EXCEL_SOURCE_CASES)
 @pytest.mark.parametrize("status", ("PARTIAL", "SUCCESS"))

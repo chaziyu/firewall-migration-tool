@@ -3,6 +3,7 @@
 from openpyxl.cell import WriteOnlyCell
 from datetime import datetime, timezone
 from textwrap import wrap
+from re import compile as compile_regex
 
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
@@ -14,6 +15,7 @@ _TITLE_FILL = PatternFill("solid", fgColor="17324D")
 _TITLE_FONT = Font(color="FFFFFF", bold=True, size=14)
 _HEADER_ALIGNMENT = Alignment(wrap_text=True, vertical="center")
 _HEADER_BORDER = Border(bottom=Side(style="thin", color="D9E2DF"))
+_XML_UNSAFE = compile_regex(r"[\x00-\x08\x0b\x0c\x0e-\x1f\ud800-\udfff\ufffe\uffff]")
 
 
 def style_report_header(cell) -> None:
@@ -64,7 +66,7 @@ def write_report_summary(
         cells = []
         for index, value in enumerate((*values, *([None] * (6 - len(values))))):
             value = "Not reported" if value is None and index < len(values) else value
-            cell = WriteOnlyCell(sheet, excel_safe_value(value))
+            cell = WriteOnlyCell(sheet, report_cell_value(sheet, row_number, index + 1, value))
             cell.row, cell.column = row_number, index + 1
             cell.alignment = Alignment(
                 vertical="center", wrap_text=not title_band,
@@ -119,12 +121,40 @@ def write_report_summary(
 
 
 def excel_safe_value(value):
-    """Prevent untrusted source strings from being interpreted as Excel formulas."""
-    if isinstance(value, str) and (
+    """Make XML-prohibited characters visible and prevent source formulas."""
+    if not isinstance(value, str):
+        return value
+    value = _XML_UNSAFE.sub(lambda match: f"\\u{ord(match.group()):04x}", value)
+    if (
         value.lstrip().startswith(("=", "+", "-", "@")) or value.startswith(("\t", "\r", "\n"))
     ):
         return "'" + value
     return value
+
+
+def report_cell_value(sheet, row, column, value):
+    """Preserve oversized sanitized text in ordered, worksheet-linked parts."""
+    value = excel_safe_value(value)
+    if not isinstance(value, str) or len(value) <= 32767:
+        return value
+    workbook = sheet.parent
+    overflow = getattr(workbook, "_report_text_overflow", None)
+    if overflow is None:
+        overflow = workbook.create_sheet("Text Overflow")
+        workbook._report_text_overflow = overflow
+        overflow.column_dimensions["E"].width = 60
+        append_report_row(overflow, ("Source Sheet", "Source Cell", "Part", "Total Parts", "Text"))
+        if not workbook.write_only:
+            style_fast_sheet(overflow)
+    coordinate = f"{get_column_letter(column)}{row}"
+    total = (len(value) + 32766) // 32767
+    for part, start in enumerate(range(0, len(value), 32767), 1):
+        cell = WriteOnlyCell(overflow, value[start:start + 32767])
+        # Explicit string cells protect chunks that happen to start with '='.
+        cell.data_type = "s"
+        append_report_row(overflow, (sheet.title, coordinate, part, total, cell))
+    overflow.auto_filter.ref = f"A1:E{overflow._report_row_count}"
+    return f"See {overflow.title}: {sheet.title}!{coordinate} ({total} parts)"
 
 
 def style_fast_sheet(sheet, *, header_row: int = 1) -> None:
@@ -147,8 +177,9 @@ def style_fast_sheet(sheet, *, header_row: int = 1) -> None:
 
 def append_report_row(sheet, values) -> None:
     """Append vendor-owned values to either a normal or streaming worksheet."""
-    values = tuple(excel_safe_value(value) for value in values)
     count = getattr(sheet, "_report_row_count", 0)
+    row = count + 1 if sheet.parent.write_only else sheet._current_row + 1
+    values = tuple(report_cell_value(sheet, row, column, value) for column, value in enumerate(values, 1))
     if not sheet.parent.write_only:
         sheet.append(values)
         sheet._report_row_count = count + 1

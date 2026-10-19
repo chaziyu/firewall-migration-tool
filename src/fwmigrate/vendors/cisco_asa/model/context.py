@@ -2,6 +2,7 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 from .base import CiscoSourceModel, CiscoSourceRecord
+from .management import CiscoDNSSettings, CiscoHTTPServerConfig, CiscoSystemSettings
 
 
 class CiscoAllocatedInterface(CiscoSourceModel):
@@ -27,3 +28,6 @@ class CiscoASAContext(CiscoSourceRecord):
     allocated_interfaces: List[str] = Field(default_factory=list)
     resource_class: Optional[str] = None
     review_reasons: List[str] = Field(default_factory=list)
+    system_settings: Optional[CiscoSystemSettings] = None
+    dns_settings: Optional[CiscoDNSSettings] = None
+    http_server: Optional[CiscoHTTPServerConfig] = None

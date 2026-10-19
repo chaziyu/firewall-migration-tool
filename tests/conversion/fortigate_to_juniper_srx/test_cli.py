@@ -83,5 +83,5 @@ def test_cli_compares_target_and_reports_bound_snapshot(tmp_path, complete_optio
     assert report["destination_snapshot_compared"] is True
     assert report["snapshot_evidence_complete"] is True
     assert report["target_digest"]
-    assert any(item["render_disposition"] == "BLOCK" and item["family"] == "policy"
+    assert any(item["render_disposition"] == "CREATE" and item["family"] == "policy"
                for item in report["items"])
