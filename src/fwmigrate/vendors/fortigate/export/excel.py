@@ -6,7 +6,7 @@ from pathlib import Path
 from time import perf_counter
 from typing import Any, BinaryIO, Iterable, Mapping, Sequence
 
-from ....source_reporting.excel_style import style_report_header, write_report_summary
+from ....source_reporting.excel_style import report_cell_value, style_report_header, write_report_summary
 
 from openpyxl import Workbook
 from openpyxl.cell import WriteOnlyCell
@@ -468,7 +468,8 @@ def _write_table_sheet(
     row_count = 0
     for row in rows:
         row_count += 1
-        values = [_excel_safe(row.get(header)) for header in headers]
+        values = [report_cell_value(sheet, row_count + 3, column, _excel_safe(row.get(header)))
+                  for column, header in enumerate(headers, 1)]
         sheet.append(values)
         if sheet_name == "Review Summary" and row.get("First Detail"):
             column = headers.index("First Detail") + 1
@@ -545,7 +546,8 @@ def _write_table_sheet_fast(
     row_count = 0
     for row in rows:
         row_count += 1
-        values = [_excel_safe(row.get(header)) for header in headers]
+        values = [report_cell_value(sheet, row_count + 3, column, _excel_safe(row.get(header)))
+                  for column, header in enumerate(headers, 1)]
         if sheet_name == "Review Summary" and row.get("First Detail"):
             column = headers.index("First Detail")
             target_sheet, target_cell = row["First Detail"].split("!", 1)
@@ -597,7 +599,8 @@ def _write_source_inventory_sheet(
     row_count = 0
     source_rows = rows if rows is not None else _iter_fortigate_source_inventory_rows(context)
     for values in source_rows:
-        sheet.append(values)
+        sheet.append([report_cell_value(sheet, row_count + 4, column, value)
+                      for column, value in enumerate(values, 1)])
         row_count += 1
 
     note.value = _sheet_note(sheet_name, row_count, context.profile)

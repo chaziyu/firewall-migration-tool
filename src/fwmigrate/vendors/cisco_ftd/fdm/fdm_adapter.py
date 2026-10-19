@@ -11,17 +11,10 @@ from ..model import (
     CiscoFTDConfig, CiscoFTDDeviceInterface, CiscoFTDNetworkAddress, CiscoFTDNetworkGroup,
     CiscoFTDPortObjectGroup, CiscoFTDProtocolPortObject, CiscoFTDReference, CiscoFTDSecurityZone,
     CiscoFTDFDMNATRule, CiscoFTDNATPolicy, CiscoFTDRoute,
+    CiscoFTDCollectionMetadata, CiscoFTDCollectionPart,
 )
 
 FDM_BUNDLE_FORMAT = "cisco-fdm-rest-export-v1"
-
-
-def _items(value: Any) -> list[dict]:
-    if isinstance(value, list):
-        return [item for item in value if isinstance(item, dict)]
-    if isinstance(value, dict) and isinstance(value.get("items"), list):
-        return [item for item in value["items"] if isinstance(item, dict)]
-    return []
 
 
 def is_fdm_bundle(content: str) -> bool:
@@ -43,34 +36,75 @@ class CiscoFDMBundleParser:
         self.domain_id = domain.get("id") or self.payload.get("domainUUID")
         self.domain_name = domain.get("name") or "Default"
         self.context = f"fdm:{self.domain_name}"
+        self.unsupported_evidence = []
+        self.consumed_collections = set()
+
+    def _evidence(self, path: str, value: Any, reason: str) -> None:
+        self.unsupported_evidence.append(sanitize_source_attributes({
+            "source_path": path, "source_plane": "fdm-rest-bundle", "source_context": self.context,
+            "domain_id": self.domain_id, "reason": reason, "raw": value,
+        }))
+
+    def _items(self, value: Any, path: str) -> list[dict]:
+        evidence_count = len(self.unsupported_evidence)
+        if isinstance(value, dict) and isinstance(value.get("items"), list):
+            extra = {key: item for key, item in value.items() if key != "items"}
+            if extra:
+                self._evidence(path, extra, "Unhandled FDM collection envelope fields")
+            value = value["items"]
+        if not isinstance(value, list):
+            self._evidence(path, value, "Unsupported FDM collection shape")
+            self.collection_states[path.removeprefix("fdm/")] = "unknown"
+            return []
+        result = []
+        for index, item in enumerate(value):
+            if isinstance(item, dict):
+                result.append(item)
+            else:
+                self._evidence(f"{path}/{index}", item, "Unsupported FDM collection item shape")
+        self.collection_states[path.removeprefix("fdm/")] = (
+            "partial" if len(self.unsupported_evidence) > evidence_count else "present" if result else "known-empty")
+        return result
 
     def _collection(self, *names: str) -> list[dict]:
         objects = self.payload.get("objects") if isinstance(self.payload.get("objects"), dict) else {}
+        result = []
         for name in names:
-            values = _items(objects.get(name))
-            if values:
-                return values
-        return []
-
-    def _nat_rules(self) -> list[dict]:
-        if isinstance(self.payload.get("nat_rules"), list):
-            return _items(self.payload.get("nat_rules"))
-        policy = self.payload.get("nat_policy")
-        if isinstance(policy, dict):
-            return _items(policy.get("rules"))
-        rules = []
-        for item in _items(self.payload.get("nat_policies")):
-            rules.extend(_items(item.get("rules")))
-        return rules
+            if name in objects:
+                self.consumed_collections.add(name)
+                result.extend(self._items(objects[name], f"fdm/objects/{name}"))
+        return result
 
     def parse_source(self) -> CiscoFTDConfig:
         plane = "fdm-rest-bundle"
+        self.unsupported_evidence = []
+        self.consumed_collections = set()
+        self.collection_states = {}
+        collection = self.payload.get("collection")
+        metadata = CiscoFTDCollectionMetadata()
+        if isinstance(collection, dict):
+            metadata.provided = True
+            metadata.status = str(collection.get("status") or "UNKNOWN")
+            for part in self._items(collection["parts"], "fdm/collection/parts") if "parts" in collection else []:
+                try:
+                    metadata.parts.append(CiscoFTDCollectionPart.model_validate(part))
+                    extra = {key: value for key, value in part.items() if key not in CiscoFTDCollectionPart.model_fields}
+                    if extra:
+                        self._evidence("fdm/collection/parts", extra, "Unhandled FDM collection part fields")
+                except ValueError:
+                    self._evidence("fdm/collection/parts", part, "Malformed FDM collection metadata part")
+            extra = {key: value for key, value in collection.items() if key not in {"status", "parts"}}
+            if extra:
+                self._evidence("fdm/collection", extra, "Unhandled FDM collection metadata fields")
+        elif "collection" in self.payload:
+            self._evidence("fdm/collection", collection, "Unsupported FDM collection metadata shape")
 
         def items(*names: str) -> list[dict]:
             return self._collection(*names)
 
         def record(item: dict, index: int, cls, **values):
-            source_attributes = {"provenance": "FDM REST", "domain_id": self.domain_id}
+            source_attributes = {"provenance": "FDM REST", "domain_id": self.domain_id,
+                                 **({"source_name_explicit": False} if "name" not in item else {})}
             source_attributes.update(values.pop("source_attributes", {}))
             return cls(
                 name=str(item.get("name") or item.get("id") or index),
@@ -198,14 +232,19 @@ class CiscoFDMBundleParser:
                 gateway=reference(item["gateway"]) if item.get("gateway") else None)
             for index, item in enumerate(items("routes", "static_routes"), 1)
         ]
-        policy_records = _items(self.payload.get("nat_policies"))
-        if not policy_records and isinstance(self.payload.get("nat_policy"), dict):
-            policy_records = [self.payload["nat_policy"]]
-        synthetic_policy = not policy_records and bool(self._nat_rules())
-        if synthetic_policy:
-            policy_records = [{"id": None, "name": "default", "rules": self._nat_rules()}]
+        policy_records = self._items(self.payload["nat_policies"], "fdm/nat_policies") if "nat_policies" in self.payload else []
+        if "nat_policy" in self.payload:
+            if isinstance(self.payload["nat_policy"], dict):
+                policy_records.append(self.payload["nat_policy"])
+                self.collection_states["nat_policy"] = "present"
+            else:
+                self._evidence("fdm/nat_policy", self.payload["nat_policy"], "Unsupported FDM NAT policy shape")
+        standalone_rules = self._items(self.payload["nat_rules"], "fdm/nat_rules") if "nat_rules" in self.payload else []
+        synthetic_policy = {"id": None, "name": "default", "rules": standalone_rules} if standalone_rules else None
+        if synthetic_policy is not None:
+            policy_records.append(synthetic_policy)
         nat_policies = [record(policy, pindex, CiscoFTDNATPolicy, source_attributes={
-            **({"synthetic_container": True, "source_collection": "nat_rules"} if synthetic_policy else {})
+            **({"synthetic_container": True, "source_collection": "nat_rules"} if policy is synthetic_policy else {})
         }, rules=[
             record(item, index, CiscoFTDFDMNATRule,
                 source_interface=reference(item["sourceInterface"]) if item.get("sourceInterface") else None,
@@ -218,21 +257,41 @@ class CiscoFDMBundleParser:
                 rule_type=item.get("type"), sequence=item.get("sequence"), observed_collection_order=index,
                 enabled=item.get("enabled"), source_translation_mode=item.get("sourceTranslationMode"),
                 destination_translation_mode=item.get("destinationTranslationMode"))
-            for index, item in enumerate(_items(policy.get("rules")), 1)] if "rules" in policy else None)
+            for index, item in enumerate(self._items(policy["rules"], f"fdm/nat_policies/{pindex}/rules"), 1)] if "rules" in policy else None)
             for pindex, policy in enumerate(policy_records, 1)]
+        objects = self.payload.get("objects")
+        if isinstance(objects, dict):
+            for name, value in objects.items():
+                if name not in self.consumed_collections:
+                    self._evidence(f"fdm/objects/{name}", value, "Unhandled FDM object collection")
+        elif "objects" in self.payload:
+            self._evidence("fdm/objects", objects, "Unsupported FDM objects shape")
+        domain = self.payload.get("domain")
+        if isinstance(domain, dict):
+            extra = {key: value for key, value in domain.items() if key not in {"id", "name"}}
+            if extra:
+                self._evidence("fdm/domain", extra, "Unhandled FDM domain fields")
+        elif "domain" in self.payload:
+            self._evidence("fdm/domain", domain, "Unsupported FDM domain shape")
+        for key, value in self.payload.items():
+            if key not in {"format", "source", "domain", "domainUUID", "objects", "nat_policies", "nat_policy", "nat_rules", "collection"}:
+                self._evidence(f"fdm/{key}", value, "Unhandled FDM bundle content")
         return CiscoFTDConfig(
             input_source_type=plane, source_plane=plane,
             source_metadata={
                 "domain_id": self.domain_id, "domain_name": self.domain_name,
                 "source": self.payload.get("source", "fdm-rest-api"),
+                "collection_states": self.collection_states,
+                **({"collection": sanitize_source_attributes(collection)} if "collection" in self.payload else {}),
             },
             network_addresses=network_addresses, network_groups=network_groups,
             protocol_port_objects=services, port_object_groups=port_groups,
             security_zones=zones, device_interfaces=interfaces, routes=routes,
             nat_policies=nat_policies,
-            unsupported_evidence=[] if nat_policies else [
+            collection_metadata=metadata,
+            unsupported_evidence=self.unsupported_evidence + ([] if nat_policies else [
                 {"source_path": "fdm/nat-policies", "reason": "No NAT policy data in FDM bundle"}
-            ],
+            ]),
         )
 
 

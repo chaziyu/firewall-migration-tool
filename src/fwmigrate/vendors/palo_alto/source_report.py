@@ -12,6 +12,7 @@ from .source_builder import build_panos_config
 from .model.source import PANOSConfig
 from .source_model import PANOSDerivedViews
 from .validation.models import PANOSValidationResult
+from .source_accounting import PANSourceAccounting, build_source_accounting
 
 
 @dataclass(frozen=True)
@@ -19,6 +20,11 @@ class PaloAltoSourceResult:
     config: PANOSConfig
     derived: PANOSDerivedViews
     validation: PANOSValidationResult
+    accounting: PANSourceAccounting | None = None
+
+    def __post_init__(self):
+        if self.accounting is None:
+            object.__setattr__(self, "accounting", build_source_accounting(self.config, self.derived))
 
 
 class PaloAltoSourceReporter:

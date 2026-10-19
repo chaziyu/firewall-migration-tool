@@ -1696,9 +1696,12 @@
         "admin_context",
         "allocated_interfaces",
         "resource_class",
-        "review_reasons"
+        "review_reasons",
+        "system_settings",
+        "dns_settings",
+        "http_server"
       ],
-      "sha256": "db39f567d359aefb7d81784916a25a78b05b50b126f7b8a5cc8cf6aabd2fc057"
+      "sha256": "581eecebb5fb2d81cd34e892a67930c745d6a52e18a80c31edb5bd3b211a317d"
     },
     "CiscoDiagnostic": {
       "fields": [

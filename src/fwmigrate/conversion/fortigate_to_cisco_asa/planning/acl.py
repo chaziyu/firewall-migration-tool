@@ -103,9 +103,25 @@ def plan_policies(source, derived, options, address_names, service_names, *, tar
                 raise ValueError("IPV6_POLICY_UNSUPPORTED")
             if not policy.srcaddr or not policy.dstaddr or not policy.service:
                 raise ValueError("POLICY_MATCH_FIELDS_UNVERIFIED")
-            if _enabled(policy.srcaddr_negate) or _enabled(policy.dstaddr_negate) or _enabled(policy.service_negate):
-                raise ValueError("POLICY_NEGATION_UNSUPPORTED")
-            if policy.dstintf is None or any(name.casefold() != "any" for name in policy.dstintf):
+            for field in ("srcaddr_negate", "dstaddr_negate", "service_negate", "utm_status",
+                          "nat64", "nat46", "natinbound", "natoutbound"):
+                value = getattr(policy, field)
+                if value is None:
+                    raise ValueError(f"POLICY_{field.upper()}_EVIDENCE_REQUIRED")
+                if value != "disable":
+                    raise ValueError(f"POLICY_{field.upper()}_UNSUPPORTED")
+            if policy.nat is None:
+                raise ValueError("POLICY_NAT_EVIDENCE_REQUIRED")
+            if policy.nat not in {"disable", "enable"}:
+                raise ValueError("POLICY_NAT_STATE_UNSUPPORTED")
+            if policy.natip is not None or policy.poolname6:
+                raise ValueError("POLICY_TRANSLATION_CONTROLS_UNSUPPORTED")
+            if policy.nat == "disable" and (policy.poolname or any(
+                getattr(policy, field) not in {None, "disable"}
+                for field in ("ippool", "fixedport", "port_preserve")
+            )):
+                raise ValueError("POLICY_TRANSLATION_CONTROLS_UNSUPPORTED")
+            if not policy.dstintf or any(name.casefold() != "any" for name in policy.dstintf):
                 raise ValueError("POLICY_EGRESS_CONSTRAINT_UNREPRESENTABLE")
             if not policy.srcintf or policy.action is None or policy.status is None or policy.schedule is None:
                 raise ValueError("POLICY_EXPLICIT_MATCH_OR_STATE_REQUIRED")

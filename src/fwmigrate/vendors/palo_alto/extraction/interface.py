@@ -50,7 +50,7 @@ def extract_interface(element: ET.Element, path: tuple[str, ...], context: PANWa
     if spec.name in {"interface_import", "virtual_router_import"}:
         interfaces = [child.text.strip() for child in element if child.tag == "member" and child.text]
         extra, explicit = source_fields(element, spec)
-        return PANInterfaceImport(scope=context.scope, interfaces=interfaces if spec.name == "interface_import" else None, virtual_routers=interfaces if spec.name == "virtual_router_import" else None, source_path="/".join(path), raw_extra=extra, explicit_fields=explicit)
+        return PANInterfaceImport(scope=context.scope, interfaces=interfaces if spec.name == "interface_import" else None, virtual_routers=interfaces if spec.name == "virtual_router_import" else None, source_path="/".join(path), source_order=source_order, raw_extra=extra, explicit_fields=explicit)
     if spec.name == "interface_unit":
         extra, explicit = source_fields(element, spec)
         sdwan_enabled, ipv6_sdwan_enabled, sdwan_profile, upstream_nat, sdwan_fields = _sdwan_link_settings(element)

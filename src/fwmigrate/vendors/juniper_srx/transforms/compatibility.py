@@ -19,7 +19,7 @@ def build_compatibility_views(config, effective_lookup=None):
         views["address_books"].extend({"context": scope, "name": name, "zones": list(book.attached_zones),
                                        "addresses": list(book.addresses), "address_sets": list(book.address_sets)}
                                       for name, book in context.address_books.items())
-        views["applications"].extend({"context": scope, "name": name, "terms": list(getattr(item, "terms", []))}
+        views["applications"].extend({"context": scope, "name": name, "terms": [term.name for term in item.terms]}
                                      for name, item in context.applications.items())
         policy_view = build_policy_relationships(context, scope, effective_lookup)
         views["policies"].extend(row for group in policy_view["zone_policy_sets"] for row in group["policies"])

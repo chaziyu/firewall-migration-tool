@@ -145,6 +145,32 @@ def test_policy_creation_requires_an_insertion_anchor_and_exact_policy_reuse_is_
     assert JunosSetRenderer().render(exact).commands == ()
 
 
+def test_policy_creation_on_verified_empty_destination_needs_no_anchor():
+    compared = compare_target_plan(policy_plan(), evidence(policy_zones()))
+    assert assess_render_disposition(compared)["policy:allow"] == "CREATE"
+    assert JunosSetRenderer().render(compared).commands
+
+
+@pytest.mark.parametrize("extra", [
+    "set security policies global policy g then permit\n",
+    "set security policies from-zone trust to-zone untrust policy existing then deny\n",
+    "set groups common security policies from-zone trust to-zone untrust policy inherited then deny\nset apply-groups common\n",
+    "set security policies default-policy permit-all\n",
+    "set security nat source rule-set rs rule r then source-nat interface\n",
+    "set routing-instances ri interface ge-0/0/0.0\n",
+    "deactivate security policies\n",
+])
+def test_empty_destination_creation_blocks_ambiguous_or_populated_state(extra):
+    compared = compare_target_plan(policy_plan(), evidence(policy_zones() + extra))
+    assert assess_render_disposition(compared)["policy:allow"] == "BLOCK"
+
+
+@pytest.mark.parametrize("missing", COMPLETE)
+def test_empty_destination_creation_requires_complete_evidence(missing):
+    compared = compare_target_plan(policy_plan(), evidence(policy_zones(), families=[f for f in COMPLETE if f != missing]))
+    assert assess_render_disposition(compared)["policy:allow"] == "BLOCK"
+
+
 def test_policy_order_conflict_and_destination_nat_block_reuse():
     commands = JunosSetRenderer().render(policy_plan()).commands
     extra = "set security policies from-zone trust to-zone untrust policy other then deny\n"

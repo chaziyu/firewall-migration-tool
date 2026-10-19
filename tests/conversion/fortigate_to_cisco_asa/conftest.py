@@ -41,6 +41,15 @@ config firewall policy
         set service "https"
         set schedule "always"
         set action accept
+        set nat disable
+        set nat64 disable
+        set nat46 disable
+        set natinbound disable
+        set natoutbound disable
+        set srcaddr-negate disable
+        set dstaddr-negate disable
+        set service-negate disable
+        set utm-status disable
         set logtraffic disable
         set status enable
     next

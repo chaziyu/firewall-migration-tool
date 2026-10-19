@@ -1,6 +1,6 @@
 # Migration support matrix
 
-Updated 2026-10-18. These are partial, directional migration workflows. A successful export is not a complete replacement firewall configuration.
+Updated 2026-10-19. These are partial, directional migration workflows. A successful export is not a complete replacement firewall configuration.
 
 ## Version and execution boundaries
 
@@ -16,6 +16,8 @@ The browser accepts optional destination snapshots for every listed pair. Snapsh
 
 Destination text, selected scope, version, mode, completeness declarations, mappings, operations and dependencies are bound to the design. Changes require a new review and approval. Proposal imports do not restore approval. Unsupported directions fail closed.
 
+Only FortiGate to PAN-OS has assisted mapping with evidence-based suggestions and guided review. The other four pairs require manual target mappings and choices. Discovery retains its existing availability flags and adds descriptive mapping, comparison, execution and activation limits. These descriptions do not authorize execution or enable unsupported capabilities.
+
 ## Source accounting
 
 ASA, SRX and Check Point reviews and artifact reports include scoped source inventory accounting. Repeated source edits retain separate records. Unknown sections remain visible as manual work. Counts describe source records, not command counts.
@@ -25,6 +27,8 @@ ASA, SRX and Check Point reviews and artifact reports include scoped source inve
 - `PENDING`: representable source evidence has not been selected for this artifact.
 - `REUSED`: selected target evidence satisfies the item without creation commands.
 - `RENDERED`: selected source evidence contributes to the export.
+
+ASA and SRX artifact item rows use `NOT_APPROVED` for eligible but unselected work. Review-time eligibility stays unchanged. Selected reuse counts as satisfied work even when it emits zero commands. Reports retain omitted and blocked rows and source coverage.
 
 The report always retains `export_is_complete_migration: false`. Source inventory is evidence accounting; it does not prove traffic equivalence. CLI output remains unapproved review material even when records are labeled rendered.
 
@@ -47,6 +51,10 @@ See [ASA usage and limits](fortigate_to_cisco_asa-migration.md).
 - This NAT case is limited to one active HTTPS policy between distinct source and destination hosts, destination interface `any`, one ingress, no central SNAT/VIPs, and full interface mapping.
 - NAT, its mapped object, policy and every ingress ACL binding form one approval group. Explicit default denies prevent reverse initiation. A blocked or unapproved group emits no NAT traffic changes.
 - PAT, broad pool allocation, VIP/DNAT and uncertain NAT order remain manual.
+- Policies require explicit match, action, state, logging, disabled inspection/negation and supported NAT evidence. Missing fields block approval. NAT46/NAT64, inbound/outbound translation and unverified typed translation controls block ordinary ACL export. A blocked predecessor also blocks later rules on the same ingress.
+- Existing destination object or manual NAT blocks traffic exports until independence can be proven. Complete NAT evidence is not proof of compatibility. Independent address and service objects remain exportable.
+- Nested network and service groups use `group-object`. Groups and traffic render in stable dependency order; unresolved dependencies and cycles are rejected. Reused dependencies emit no creation commands.
+- Preview, commands and bundle export reject expired or malformed approval expiry. Downloads do not renew approval. Already downloaded files cannot be revoked.
 
 ### Juniper SRX
 
@@ -55,6 +63,7 @@ See [ASA usage and limits](fortigate_to_cisco_asa-migration.md).
 - The new fixed-pool case requires one source host, one active policy, builtin `all`/`ALL`, one translated IPv4 address, explicit fixed-port preservation, disabled pool proxy ARP and confirmed routed return traffic.
 - The pool emits `port no-translation`. Pool, source NAT rule and policy share an atomic approval group. A target conflict on any member blocks the entire group.
 - Interface PAT, shared pools, multiple policy allocation, central SNAT, VIP/DNAT and unverified topology remain manual.
+- Destination-aware new policies are allowed only with all relevant families declared complete, no existing local/global/inherited policy rules, no destination NAT or routing-instance ambiguity, and verified or planned zone/topology dependencies. An explicit local default `deny-all` is allowed; other policy settings, inactive policy hierarchies and populated placement remain blocked. Exact policy reuse remains separate. Source order and target snapshot approval binding are preserved.
 
 ### Check Point
 
@@ -67,6 +76,7 @@ See [Check Point usage and limits](fortigate_to_checkpoint-migration.md).
 - Existing target NAT, other access rules, ambiguous domain ownership and incomplete collection prevent policy creation.
 - Management evidence cannot prove Gaia route safety. Gaia and Management remain separate planes.
 - NAT, non-always schedules, interface-bound policies and inline layers remain manual. No publish, policy installation or API execution is added.
+- Before approval, the browser shows selected operations plus required predecessor rules and object dependencies, request settings, placement and UID bindings. Confirmation is explicit. Failed file generation can retry the current approval without granting a new one. Target edits clear the preview, approval and executable files.
 
 ### PAN-OS to FortiGate
 
@@ -88,6 +98,8 @@ This increment does not claim VLAN support beyond the ASAv/vSRX cases above, gen
 
 - [FortiOS 7.4.6 CLI reference](https://fortinetweb.s3.amazonaws.com/docs.fortinet.com/v2/attachments/cb8d6b09-b8b3-11ef-9411-ae1fcf29f169/FortiOS-7.4.6-CLI_Reference.pdf), including central SNAT and explicit policy port controls.
 - [ASA 9.20 NAT guide](https://www.cisco.com/c/en/us/td/docs/security/asa/asa920/configuration/firewall/asa-920-firewall-config/nat-basics.html). `unidirectional` and `no-proxy-arp` are alternative static NAT options; the constrained implementation uses `no-proxy-arp` plus reviewed ACL isolation.
+- [ASA 9.20 objects and groups](https://www.cisco.com/c/en/us/td/docs/security/asa/asa920/configuration/firewall/asa-920-firewall-config/access-objects.html): object members and nested group members use different commands.
+- [Junos security policy order](https://www.juniper.net/documentation/us/en/software/junos/security-policies/topics/concept/policy-overview.html) and [global policy lookup](https://www.juniper.net/documentation/us/en/software/junos/security-policies/topics/topic-map/security-global-policies.html). The empty-target extension does not merge populated policy contexts or ignore global policies.
 - Junos 25.2R1 selected CLI references under `documentation/official-cli-references-selected version/`, including source NAT pools and `port no-translation`.
 - [ASA 9.20 VLAN subinterfaces](https://www.cisco.com/c/en/us/td/docs/security/asa/asa920/configuration/general/asa-920-general-config/interface-vlan.html), plus [ASAv interface support](https://www.cisco.com/c/en/us/td/docs/security/asa/asa92/configuration/general/asa-general-cli/interface-basic-asav.html).
 - [Junos VLAN tagging](https://www.juniper.net/documentation/us/en/software/junos/cli-reference/topics/ref/statement/vlan-tagging-edit-interfaces.html). The implemented vSRX case excludes mixed untagged/tagged routing.

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import shlex
+import json
 from typing import Any, Dict, List, Mapping, Sequence
 from fwmigrate.extraction.sanitize import sanitize_raw_text
 
@@ -250,40 +250,52 @@ def sanitize_junos_command(tokens: Sequence[str]) -> str:
     sanitized = sanitize_tokens(tokens)
     parts: List[str] = []
     for t in sanitized:
-        if " " in t or "\t" in t or '"' in t or "'" in t or not t:
-            # Quote if contains spaces or special characters
-            escaped = t.replace('"', '\\"')
-            parts.append(f'"{escaped}"')
+        if any(char.isspace() for char in t) or any(marker in t for marker in ('"', "'", "#", "/*", "*/", "\\")) or not t:
+            parts.append(json.dumps(t, ensure_ascii=False))
         else:
             parts.append(t)
     return " ".join(parts)
 
 
 def sanitize_junos_source_text(content: str) -> str:
-    """Sanitize Junos display-set text while preserving NTP key IDs."""
-    lines = []
-    for line in content.splitlines():
-        try:
-            tokens = shlex.split(line, comments=True)
-        except ValueError:
-            lines.append(sanitize_raw_text(line))
-            continue
-        if not tokens:
-            lines.append(sanitize_raw_text(line))
-            continue
-        safe_key = None
-        lowered = [token.lower() for token in tokens]
-        if len(tokens) >= 7 and lowered[:3] == ["set", "system", "ntp"] and "server" in lowered and "key" in lowered:
-            key_index = lowered.index("key", lowered.index("server") + 2)
-            if key_index + 1 < len(tokens):
-                safe_key = tokens[key_index + 1]
-                tokens[key_index] = "__JUNOS_NTP_KEY__"
-                tokens[key_index + 1] = "__JUNOS_NTP_KEY_ID__"
-        sanitized = sanitize_junos_command(tokens)
-        if safe_key is not None:
-            sanitized = sanitized.replace("__JUNOS_NTP_KEY__ __JUNOS_NTP_KEY_ID__", f"key {safe_key}")
-        lines.append(sanitized)
-    return "\n".join(lines)
+    """Redact credential spans without rewriting source syntax or line numbers."""
+    from .hierarchy_parser import hierarchy_commands, looks_hierarchical
+    from .syntax import lex_junos
+
+    replacements = {}
+    hierarchical = looks_hierarchical(content)
+
+    def redact(tokens, prefix=()):
+        values = [*prefix, *(token.value for token in tokens)]
+        safe = sanitize_tokens(values)[len(prefix):]
+        for token, value in zip(tokens, safe):
+            if value != token.value:
+                replacements[(token.start, token.end)] = f'"{value}"' if hierarchical else value
+
+    if hierarchical:
+        for command in hierarchy_commands(content):
+            redact(command.path, (command.operation,))
+        for token in lex_junos(content):
+            if token.kind == "comment":
+                replacements[(token.start, token.end)] = sanitize_raw_text(token.value)
+    else:
+        command = []
+        for token in lex_junos(content, hierarchical=False):
+            if token.kind == "comment":
+                replacements[(token.start, token.end)] = sanitize_raw_text(token.value)
+                # A multiline comment also separates display-set commands.
+                if "\n" in token.value:
+                    redact(command)
+                    command = []
+            elif token.kind == "newline":
+                redact(command)
+                command = []
+            else:
+                command.append(token)
+        redact(command)
+    for (start, end), value in sorted(replacements.items(), reverse=True):
+        content = content[:start] + value + content[end:]
+    return content
 
 
 def is_sensitive_key(key: str) -> bool:

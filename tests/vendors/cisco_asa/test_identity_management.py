@@ -1,4 +1,5 @@
 from fwmigrate.vendors.cisco_asa.parser import CiscoASAParser
+import pytest
 
 from types import SimpleNamespace
 
@@ -11,6 +12,29 @@ from fwmigrate.vendors.cisco_asa.relationships.identity import build_identity_re
 
 
 from fwmigrate.vendors.cisco_asa.relationships.references import ASAReferenceIndex
+
+
+@pytest.mark.parametrize(("commands", "enabled"), [
+    ("no http server enable", False),
+    ("http server enable\nno http server enable", False),
+    ("no http server enable\nhttp server enable", True),
+    ("http server idle-timeout 10\nno http server idle-timeout", None),
+    ("http server session-timeout 20\nno http server session-timeout", None),
+])
+def test_http_negation_preserves_explicit_state_and_evidence(commands, enabled):
+    config = CiscoASAParser(commands).parse_raw()
+    assert config.http_server.enabled is enabled
+    assert config.http_server.idle_timeout is None
+    assert config.http_server.session_timeout is None
+    assert config.http_server.raw_lines == commands.splitlines()
+    assert not config.parse_errors
+
+
+def test_absent_http_and_invalid_port_are_not_defaults():
+    assert CiscoASAParser("hostname asa").parse_raw().http_server is None
+    config = CiscoASAParser("http server enable 70000").parse_raw()
+    assert config.http_server.port is None
+    assert config.parse_errors
 
 
 

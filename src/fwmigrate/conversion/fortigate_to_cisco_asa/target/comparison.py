@@ -24,6 +24,13 @@ def classify_target_reuse(plan, source, options, evidence):
         if not families <= complete:
             updated.append(replace(item, blockers=tuple(dict.fromkeys((*item.blockers, "TARGET_FAMILY_COMPLETENESS_REQUIRED")))))
             continue
+        if item.family in {"policy", "default_behavior", "nat"} and (
+            config.nat_rules or any(row.nat_lines for row in config.network_objects)
+        ):
+            updated.append(replace(item, blockers=tuple(dict.fromkeys((
+                *item.blockers, "TARGET_NAT_INTERACTIONS_UNVERIFIED",
+            )))))
+            continue
         if item.family == "interface":
             mapping = options.interfaces.get(item.source_vdom, {}).get(item.source_name)
             vlan_id = dict(item.settings).get("vlan_id")
