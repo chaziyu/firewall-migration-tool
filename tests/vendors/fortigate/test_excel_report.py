@@ -1625,8 +1625,7 @@ end
     before = deepcopy(analysis.extracted.config)
     preview = {item['name']: item['value'] for item in reporter.build_preview(analysis)['sections']['addresses']}
     assert preview['range'] == '198.51.100.1-198.51.100.2'
-    assert preview['ambiguous'].startswith('Ambiguous:')
-    assert 'example.com' in preview['ambiguous']
+    assert preview['ambiguous'] == 'Ambiguous: subnet=192.0.2.0 255.255.255.0; fqdn=example.com'
     assert preview['v6'] == '2001:db8::/64'
     for profile in (ExcelExportProfile.FULL, ExcelExportProfile.FAST):
         output = io.BytesIO()

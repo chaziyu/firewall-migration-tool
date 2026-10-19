@@ -77,3 +77,29 @@ def test_pan_os_xml_rejects_dtd_and_entity_declarations_before_parsing():
         load_pan_source(source)
     with pytest.raises(ValueError, match="DTD/entity declarations"):
         PANOSCollectedSourceSanitizer().sanitize(source)
+
+
+@pytest.mark.parametrize('source', [
+    '<config><outer><password>nested-secret</password><keep>value</keep></outer></config>',
+    '<config><password>secret<broken></config>',
+    '<config><password secret',
+    '<config><entry password="attribute-secret',
+    '<config><entry password="attribute-secret">untrusted</entry></config>',
+])
+def test_xml_secret_scanner_redacts_nested_and_malformed_content(source):
+    from fwmigrate.extraction.sanitize import sanitize_raw_text
+
+    safe = sanitize_raw_text(source)
+    assert 'secret' not in safe
+    assert 'attribute-secret' not in safe
+    assert sanitize_raw_text(safe) == safe
+
+
+def test_xml_secret_scanner_handles_long_nested_and_repeated_delimiters():
+    from fwmigrate.extraction.sanitize import sanitize_raw_text
+
+    source = '<config>' + '<container>' * 5_000 + '<password>long-secret' + ('</password>' * 2_000)
+    safe = sanitize_raw_text(source)
+    assert 'long-secret' not in safe
+    assert '[REDACTED]' in safe
+    assert sanitize_raw_text(safe) == safe

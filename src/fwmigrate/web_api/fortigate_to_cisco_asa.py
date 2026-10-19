@@ -5,7 +5,7 @@ import json
 import zipfile
 
 import yaml
-from flask import jsonify, request, send_file
+from flask import Response, jsonify, request, send_file
 
 from fwmigrate.collection.snapshot import parse_snapshot
 from fwmigrate.conversion.fortigate_to_cisco_asa.application import (
@@ -42,8 +42,8 @@ def register_fortigate_to_cisco_asa_routes(app, signing_key):
                     return jsonify({"success": True, "text": artifact["command_text"],
                                     "command_sha256": artifact["command_sha256"]})
                 if action == "commands":
-                    return send_file(io.BytesIO(command_bytes), mimetype="text/plain",
-                                     as_attachment=True, download_name="asa_config.cfg")
+                    return Response(command_bytes, mimetype="text/plain",
+                                    headers={"Content-Disposition": 'attachment; filename="asa_config.cfg"'})
                 entry = analyze_request_source(payload, "fortigate")
                 _require_complete_collection(entry)
                 if entry.source_digest != artifact["source_digest"]:
