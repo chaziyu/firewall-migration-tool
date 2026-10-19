@@ -12,6 +12,7 @@ from .ippool import FGIPPool
 from .ippool6 import FGIPPool6
 from .ips import FGIPSSensor
 from .policy import FGPolicy
+from .central_snat import FGCentralSNAT
 from .route_static import FGStaticRoute
 from .sdwan import FGSDWAN
 from .security_profile import FGProfileGroup
@@ -76,6 +77,7 @@ class FGConfig(BaseModel):
     vip_groups6: list[FGVIPGroup6] = Field(default_factory=list)
 
     policies: list[FGPolicy] = Field(default_factory=list)
+    central_snat: list[FGCentralSNAT] = Field(default_factory=list)
     security_policies: list[FGSecurityPolicy] = Field(default_factory=list)
     protocol_options: list[FGProtocolOptionsProfile] = Field(default_factory=list)
     per_ip_shapers: list[FGPerIPShaper] = Field(default_factory=list)

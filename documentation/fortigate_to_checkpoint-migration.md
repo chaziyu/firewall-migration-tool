@@ -10,8 +10,12 @@ approved file bytes.
 
 - Source scope is one explicitly selected FortiGate VDOM.
 - Check Point Management API baseline is R81 API 1.8.1.
-- IPv4 host and network objects can be proposed with `add-host` and
-  `add-network` requests.
+- IPv4 host, network and range objects can be proposed with `add-host`,
+  `add-network` and `add-address-range` requests.
+- Explicit IPv6 `ipprefix` host/network objects use `add-host` with
+  `ipv6-address`, or `add-network` with `subnet6` and `mask-length6`. Scoped
+  IPv6 identity is separate from IPv4. Unknown types, missing fields and invalid
+  prefixes remain blocked. IPv6 policies and NAT are not enabled.
 - Explicit TCP and UDP custom services can be proposed with
   `add-service-tcp` and `add-service-udp` requests.
 - Static address and service groups are expanded to leaf UID references; no
@@ -38,8 +42,16 @@ than `always`, IPv6 and identity selectors, inspection/UTM, NAT, central SNAT,
 unknown fields, unresolved references, cyclic or ambiguous groups, and any
 unsupported earlier policy that could affect later traffic. Rules need an
 explicit package, access layer, Management Domain, install-on selection, and
-cleanup anchor. Existing object and rulebase collisions are not compared or
-reused; check the destination package and layer before applying requests.
+cleanup anchor. Optional native destination comparison can reuse exact host,
+network, range, IPv6 host/network and service objects by UID. Address reuse requires explicit
+automatic NAT disablement. Unknown settings and name collisions block output.
+
+Destination-aware policy insertion requires complete native Management evidence
+for objects, services, packages, layers, gateways, policies and NAT. Domain,
+Management server and API version must match. The selected layer must contain
+only an active Drop cleanup rule with explicit unrestricted matching and the
+selected gateway coverage. Existing target NAT or other access rules block new
+policy output. Package, layer, cleanup and gateway UIDs are bound to review.
 
 Gaia routes remain manual when their target gateway/cluster label or source
 gateway is unknown, or when route selection includes unsupported topology or
@@ -48,8 +60,10 @@ cluster, or routing topology is inferred between them.
 
 The output does not publish a package, assign a policy, install policy, execute
 Management API calls, run Gaia commands, or include `save config`. No live
-Management API acceptance or Gaia device validation was performed. Destination
-comparison is disabled.
+Management API acceptance or Gaia device validation was performed. Management
+destination evidence does not prove Gaia topology; Gaia route export is blocked
+when using that evidence. Source inventory accounting remains visible in review
+and export reports. See the [support matrix](migration-support-matrix.md).
 
 ## CLI
 
@@ -61,8 +75,11 @@ fwmigrate migrate --input fortigate.conf --output checkpoint-review `
 Optional pair-specific mapping YAML can supply values such as `source_vdom`,
 `management_target`, `management_domain`, `policy_package`, `access_layer`,
 `install_on`, `insertion_anchor`, `insertion_relation`, `target_cleanup_action`,
-and `gaia_target`. CLI output is not engineer approval. `--target-config` is
-rejected because Check Point destination comparison is not implemented.
+and `gaia_target`. CLI output is not engineer approval. `--target-config` accepts
+native Check Point Management JSON when the mapping also supplies
+`target_evidence` with `context`, `version`, `mode: management` and
+`complete_families`. Browser uploads expose the same declarations. Destination
+changes invalidate approval.
 
 ## References
 

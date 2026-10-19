@@ -1,7 +1,7 @@
 """Pair-specific review requirements for ASA target placement."""
 
 from .models import ASAMigrationDecision
-from .planning.naming import decision_key
+from .planning.naming import decision_key, item_key
 
 
 def source_vdoms(source):
@@ -33,6 +33,12 @@ def build_mapping_requirements(source, options):
                                                    "security_level": mapping.security_level}
             result.append(ASAMigrationDecision(decision_key(vdom, "interface", item.name, "asa_interface"), vdom,
                                                "interface", item.name, "asa_interface", "ASA interface, nameif, and security level", value))
+    for policy in source.policies:
+        if policy.vdom == options.source_vdom and policy.nat == "enable":
+            key = item_key(policy.vdom, "nat", str(policy.policy_id))
+            result.append(ASAMigrationDecision(key, policy.vdom, "nat", str(policy.policy_id),
+                "nat_return_routing", "Confirm routed return traffic for the translated pool",
+                options.nat_evidence.get(key, {}).get("return_routing_confirmed")))
     if options.source_timezone or options.target_timezone:
         result.append(ASAMigrationDecision(decision_key(None, "schedule", "time-zone", "equivalence"), None,
                                            "schedule", "Time zone", "equivalence", "Source and ASA local time zone",

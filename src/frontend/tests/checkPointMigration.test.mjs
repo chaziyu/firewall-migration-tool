@@ -9,11 +9,12 @@ const rows = [
   { key: 'first', family: 'policy', source_name: 'deny', target_name: 'deny', settings: { position: { above: 'cleanup-uid' } }, dependencies: ['object'], blockers: [], render_disposition: 'CREATE' },
   { key: 'last', family: 'policy', source_name: 'allow', target_name: 'allow', settings: { uid: { $response_binding: 'first' } }, dependencies: ['first'], blockers: [], render_disposition: 'CREATE' },
 ]
+const destination = { source: { vendor: 'checkpoint', source_text: '{}' }, version: '1.8.1', mode: 'management', complete_families: ['objects', 'policies'] }
 
 function harness(overrides = {}, items = rows) {
   const options = { source_vdom: 'root', management_target: 'server', management_domain: 'domain', policy_package: 'package', access_layer: 'layer', install_on: ['gateway'], insertion_relation: 'above', insertion_anchor: 'cleanup-uid' }
   const review = { draft: { digest: 'draft' }, requirements: [], report: { plan_status: 'READY_FOR_REVIEW', items, findings: [] } }
-  let saved = { pairId: 'fortigate_to_checkpoint', sourceKey: 'source', options, requirements: [], review, approval: null, artifact: null, preview: null }
+  let saved = { pairId: 'fortigate_to_checkpoint', sourceKey: 'source', options, destination, requirements: [], review, approval: null, artifact: null, preview: null }
   const slots = []; let cursor = 0; let dirty = false; let effects = []; let stage = 'review'
   const hooks = {
     useState(value) { const i = cursor++; if (!(i in slots)) slots[i] = typeof value === 'function' ? value() : value; return [slots[i], (next) => { slots[i] = typeof next === 'function' ? next(slots[i]) : next; dirty = true }] },
@@ -48,8 +49,8 @@ test('preview expands prior rules and UID dependencies; retry uses the same sign
   const file = { content: 'bytes', sha256: 'hash', byte_count: 5 }
   const artifact = { files: { [name]: file }, file_sha256: { [name]: 'hash' }, expires_at: 2000000000 }
   const h = harness({
-    approve: async (_s, _o, _d, selected) => { approvals++; assert.deepEqual(selected, approval.selected_items); return { approval } },
-    build: async (_s, _o, current) => { assert.equal(current, approval); builds++; if (builds === 1) throw new Error('Build failed'); return { artifact } },
+    approve: async (_s, _o, _d, selected, target) => { approvals++; assert.equal(target, destination); assert.deepEqual(selected, approval.selected_items); return { approval } },
+    build: async (_s, _o, current, target) => { assert.equal(target, destination); assert.equal(current, approval); builds++; if (builds === 1) throw new Error('Build failed'); return { artifact } },
     preview: async () => ({ files: { [name]: { text: 'bytes', sha256: 'hash', byte_count: 5 } } }),
   })
   let tree = await h.render()
@@ -91,4 +92,18 @@ test('blocked dependencies prevent confirmation', async () => {
   button(tree, 'Review selected operations').props.onClick(); tree = await h.render()
   assert.ok(elements(tree).some((n) => n.props?.role === 'alert' && /blocked dependency/.test(n.props.children)))
   assert.ok(!elements(tree).some((n) => n.props?.children === 'Approve these operations and generate files'))
+})
+
+test('destination edits clear the expanded approval preview', async () => {
+  const h = harness()
+  let tree = await h.render(); selectLast(tree); tree = await h.render()
+  button(tree, 'Review selected operations').props.onClick(); tree = await h.render()
+  assert.ok(elements(tree).some((n) => n.props?.['aria-label'] === 'Check Point approval preview'))
+  elements(tree).find((n) => n.type === 'DestinationSnapshot').props.onChange(null)
+  tree = await h.render()
+  assert.equal(h.state().destination, null)
+  assert.equal(h.state().review, null)
+  assert.equal(h.state().approval, null)
+  assert.equal(h.state().artifact, null)
+  assert.ok(!elements(tree).some((n) => n.props?.['aria-label'] === 'Check Point approval preview'))
 })

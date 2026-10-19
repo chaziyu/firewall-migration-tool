@@ -2,11 +2,15 @@
 
 from .naming import item_key
 from ..models import ASAPlanItem
+from .fixed_pool_nat import plan_fixed_pool_nat
 
 
 def plan_nat(source, derived, options, address_names, target_evidence=None):
     items = []
     vdom = options.source_vdom
+    fixed = plan_fixed_pool_nat(source, options, address_names, target_evidence)
+    if fixed is not None:
+        return list(fixed[:2])
     for nat in derived.nat:
         if nat.vdom != vdom:
             continue

@@ -11,6 +11,7 @@ from fwmigrate.conversion.fortigate_to_checkpoint.application import (
     BINDINGS_FILE, GAIA_FILE, MANAGEMENT_FILE, approve_design, build_artifact,
     build_review, export_decisions, import_decisions, verify_export_artifact,
 )
+from fwmigrate.collection.snapshot import parse_snapshot
 from fwmigrate.source_reporting import source_reporters
 from fwmigrate.web_support.artifact_signing import sign_envelope, verify_envelope
 from fwmigrate.web_support.request_source import analyze_request_source, _require_complete_collection
@@ -25,11 +26,22 @@ def register_fortigate_to_checkpoint_routes(app, signing_key):
     }
 
     def source_entry(payload):
-        if payload.get("target_source") is not None or request.files.get("target_file"):
-            raise ValueError("Check Point destination comparison is unavailable")
         entry = analyze_request_source(payload, "fortigate")
         _require_complete_collection(entry)
         return entry
+
+    def target_evidence(payload):
+        if payload.get("target_source") is None and not request.files.get("target_file"):
+            if payload.get("target_metadata") is not None:
+                raise ValueError("Target metadata requires a destination snapshot")
+            return {}
+        entry = analyze_request_source(payload, "checkpoint", target=True)
+        _require_complete_collection(entry)
+        text = entry.evidence.get("source_text") if isinstance(entry.evidence, dict) else None
+        if not isinstance(text, str):
+            text = parse_snapshot(json.dumps(entry.evidence).encode("utf-8")).source_text
+        return {"target": entry.analysis, "target_source_text": text,
+                "target_metadata": payload.get("target_metadata")}
 
     def approved_artifact(payload, entry):
         artifact = verify_export_artifact(verify_envelope(payload.get("artifact"), signing_key))
@@ -81,7 +93,8 @@ def register_fortigate_to_checkpoint_routes(app, signing_key):
             if action == "decisions/export":
                 return jsonify({"success": True,
                                 "document": export_decisions(entry.source_digest, options)})
-            review = build_review(entry.analysis, options, entry.source_digest)
+            destination = target_evidence(payload)
+            review = build_review(entry.analysis, options, entry.source_digest, **destination)
             if action == "requirements":
                 return jsonify({"success": True, "source_digest": entry.source_digest,
                                 "requirements": review["requirements"], "report": review["report"]})
@@ -96,7 +109,7 @@ def register_fortigate_to_checkpoint_routes(app, signing_key):
                                 "approval": sign_envelope(approval, signing_key)})
             if action == "build":
                 approval = verify_envelope(payload.get("approval"), signing_key)
-                artifact = build_artifact(entry.analysis, options, entry.source_digest, approval)
+                artifact = build_artifact(entry.analysis, options, entry.source_digest, approval, **destination)
                 return jsonify({"success": True,
                                 "artifact": sign_envelope(artifact, signing_key)})
             raise ValueError("Unsupported Check Point migration action")

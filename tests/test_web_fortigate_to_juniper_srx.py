@@ -73,6 +73,28 @@ def _build_artifact(client):
     return payload, built.get_json()["artifact"]
 
 
+def test_disabled_source_route_cannot_be_approved_or_downloaded_as_active():
+    client = create_app({"TESTING": True, "WORKSPACE_SIGNING_KEY": b"s" * 32}).test_client()
+    source = _source()
+    source["source_text"] = source["source_text"].replace("set distance 10", "set distance 10\n                set status disable")
+    payload = {"source": source, "options": _options()}
+    prepared = client.post(f"{PREFIX}/design/prepare", json=payload)
+    assert prepared.status_code == 200
+    review = prepared.json
+    route = next(item for item in review["report"]["items"] if item["family"] == "static_route" and item["source_name"] == "1")
+    assert route["render_disposition"] == "BLOCK"
+    rejected = client.post(f"{PREFIX}/design/approve", json={**payload, "draft": review["draft"], "selected_items": [route["key"]]})
+    assert rejected.status_code == 400
+    selected = [item["key"] for item in review["report"]["items"] if item["render_disposition"] == "CREATE"]
+    approved = client.post(f"{PREFIX}/design/approve", json={**payload, "draft": review["draft"], "selected_items": selected})
+    assert approved.status_code == 200
+    built = client.post(f"{PREFIX}/build", json={**payload, "approval": approved.json["approval"]})
+    assert built.status_code == 200
+    downloaded = client.post(f"{PREFIX}/commands", json={"artifact": built.json["artifact"]})
+    assert downloaded.status_code == 200
+    assert "static route 0.0.0.0/0 " not in downloaded.data.decode()
+
+
 def test_srx_review_approval_build_preview_download_and_bundle_use_same_bytes():
     app = create_app({
         "TESTING": True,

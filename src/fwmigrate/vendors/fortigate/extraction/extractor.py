@@ -12,6 +12,7 @@ from .dhcp import extract_dhcp
 from .external_resource import extract_external_resources
 from .interfaces import extract_interfaces
 from .ip_pools import extract_ip_pools
+from .central_snat import extract_central_snat
 from .ips import extract_ips
 from .policies import extract_policies
 from .protocol_options import extract_protocol_options
@@ -72,6 +73,7 @@ def extract_fortigate_config(
 
         # NAT source objects.
         extract_ip_pools(index, source)
+        extract_central_snat(index, source)
         extract_vips(index, source)
 
         # Policies.

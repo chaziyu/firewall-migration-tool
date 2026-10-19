@@ -3,6 +3,8 @@
 from .models import SRXFinding, SRXMigrationPlan
 from .options import SRXMigrationOptions
 from .planning.nat import attach_nat_review_groups, plan_nat
+from .planning.fixed_pool_nat import NAT_POLICY_BLOCKERS
+from dataclasses import replace
 from .planning.objects import plan_objects
 from .planning.policies import plan_policies
 from .planning.schedules import plan_schedules
@@ -64,8 +66,12 @@ class FortiGateToJuniperSRXPlanner:
             source, derived, options, options.source_vdom, items, schedules, source_inventory,
         )
         nat_items, nat_links, nat_policy_blockers, nat_findings = plan_nat(
-            source, derived, options.source_vdom, policies, source_inventory,
+            source, derived, options.source_vdom, policies, source_inventory, options=options,
         )
+        fixed_policy_keys = {dict(item.settings).get("source_policy_key") for item in nat_items
+                             if item.family == "source_nat" and not item.blockers}
+        policies = [replace(item, blockers=tuple(code for code in item.blockers if code not in NAT_POLICY_BLOCKERS))
+                    if item.key in fixed_policy_keys else item for item in policies]
         policies = attach_nat_review_groups(policies, nat_links, nat_policy_blockers)
         items.extend((*schedules, *nat_items, *policies))
         findings.extend(policy_findings)

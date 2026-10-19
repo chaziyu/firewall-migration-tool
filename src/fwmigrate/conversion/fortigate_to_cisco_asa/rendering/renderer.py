@@ -8,7 +8,7 @@ from pathlib import Path
 from ..validation import dispositions, ordered_items, validate_plan
 
 
-_ORDER = {"interface": 0, "address": 1, "address_group": 2, "service": 3,
+_ORDER = {"interface": 0, "address": 1, "nat_pool": 1, "address_group": 2, "service": 3,
           "service_group": 4, "schedule": 5, "static_route": 6, "nat": 7,
           "policy": 8, "default_behavior": 9, "acl_binding": 10}
 
@@ -34,8 +34,12 @@ class ASACLIRenderer:
             set(item.dependencies) - selected for item in plan.items if item.key in selected
         ):
             raise ValueError("ASA approved selection is missing required dependencies")
+        if selected is not None and any(item.approval_group and any(
+                row.approval_group == item.approval_group and row.key not in selected for row in plan.items)
+                for item in plan.items if item.key in selected):
+            raise ValueError("ASA approved selection is missing an atomic NAT group")
         rows = [item for item in ordered_items(plan, priority=lambda item: (
-                    _ORDER.get(item.family, 50), item.source_order, item.key))
+                    _ORDER.get(item.family, 50), bool(dict(item.settings).get("vlan_id")), item.source_order, item.key))
                 if disposition[item.key] in {"CREATE", "REUSE"}
                 and (selected is None or item.key in selected)]
         commands = []

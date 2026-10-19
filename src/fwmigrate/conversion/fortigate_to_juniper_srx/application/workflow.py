@@ -25,6 +25,7 @@ from ..requirements import build_mapping_requirements
 from ..review.workflow import build_review_report
 from ..target.comparison import compare_target_plan
 from ..target.evidence import build_target_evidence
+from ..review.coverage import build_coverage
 
 
 ARTIFACT_TYPE = "fortigate_to_juniper_srx_artifact_v1"
@@ -81,13 +82,14 @@ def build_review(analysis, options, source_digest, *, target=None, target_source
     plan, parsed, evidence = _plan(analysis, options, target=target,
                                   target_source_text=target_source_text, target_metadata=target_metadata)
     report = build_review_report(plan)
+    report["coverage"] = build_coverage(plan, analysis.extracted.source_objects, analysis.derived)
     if evidence:
         family_requirements = {
             "address": ("addresses",), "address_group": ("addresses",),
             "service": ("applications",), "service_group": ("applications",),
             "interface": ("interfaces",), "zone": ("zones",),
             "static_route": ("static_routes",), "schedule": ("schedules",),
-            "policy": ("policies", "nat"), "source_nat": ("nat",),
+            "policy": ("policies", "nat"), "source_nat": ("nat",), "source_nat_pool": ("nat",),
         }
         required = {family for item in plan.items for family in family_requirements.get(item.family, ())}
         evidence_complete = not evidence.global_blockers and all(
@@ -141,6 +143,8 @@ def build_artifact(analysis, options, source_digest, approval, *, target=None, t
     report = {
         **review["report"],
         **build_review_report(review["plan"], approved_items=selected_items),
+        "coverage": build_coverage(review["plan"], analysis.extracted.source_objects,
+                                   analysis.derived, approved_items=selected_items),
         "source_digest": source_digest,
         "target_digest": review["draft"].get("target_digest"),
         "selected_items": list(selected_items),
@@ -209,7 +213,7 @@ def import_decisions(document, source_digest):
     return import_mapping(document, source_digest)
 
 
-def write_files(plan, rendered, output, source_digest, options, *, destination_report=None, target_digest=None):
+def write_files(plan, rendered, output, source_digest, options, *, destination_report=None, target_digest=None, analysis=None):
     folder = Path(output)
     folder.mkdir(parents=True, exist_ok=True)
     (folder / "juniper_config.set").write_bytes(rendered.command_text.encode("utf-8"))
@@ -227,6 +231,11 @@ def write_files(plan, rendered, output, source_digest, options, *, destination_r
         report.update({key: value for key, value in destination_report.items()
                        if key in {"destination_comparison", "destination_snapshot_compared",
                                   "snapshot_evidence_complete", "workflow_mode"}})
+    if analysis is not None:
+        report["coverage"] = build_coverage(
+            plan, analysis.extracted.source_objects, analysis.derived,
+            approved_items=[item.key for item in plan.items],
+        )
     (folder / "migration_report.json").write_text(
         json.dumps(report, indent=2), encoding="utf-8",
     )

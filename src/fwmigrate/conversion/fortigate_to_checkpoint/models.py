@@ -37,6 +37,7 @@ class CPMigrationItem:
     dependencies: tuple[str, ...] = ()
     blockers: tuple[str, ...] = ()
     source_order: int = 0
+    target_disposition: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

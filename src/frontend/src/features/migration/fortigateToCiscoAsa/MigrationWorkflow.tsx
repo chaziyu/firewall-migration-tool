@@ -1,3 +1,6 @@
+import { MigrationCoverage } from '../components/MigrationCoverage'
+import { DestinationSnapshot } from '../components/DestinationSnapshot'
+import type { DestinationEvidence } from '../components/DestinationSnapshot'
 import { useEffect, useRef, useState } from 'react'
 import { Button } from '../../../components/common/Button'
 import { ErrorBanner } from '../../../components/common/ErrorBanner'
@@ -28,19 +31,31 @@ function payloadOptions(options: AsaOptions): AsaOptions {
 
 function expandSelection(items: AsaPlanItem[], selected: string[]): string[] {
   const byKey = new Map(items.map((item) => [item.key, item]))
+  const groups = new Map<string, string[]>()
+  for (const item of items) {
+    if (item.approval_group) groups.set(item.approval_group, [...(groups.get(item.approval_group) ?? []), item.key])
+  }
+  const expandedGroups = new Set<string>()
   const expanded = new Set<string>()
   const visiting = new Set<string>()
   const add = (key: string) => {
     if (visiting.has(key)) throw new Error('A dependency cycle blocks this selection')
     if (expanded.has(key)) return
     const item = byKey.get(key)
-    if (!item || item.render_disposition !== 'CREATE' || item.blockers.length) throw new Error('A selected item or required dependency is blocked')
+    if (!item || !['CREATE', 'REUSE'].includes(item.render_disposition) || item.blockers.length) throw new Error('A selected item or required dependency is blocked')
     visiting.add(key)
     item.dependencies.forEach(add)
     visiting.delete(key)
     expanded.add(key)
   }
   selected.forEach(add)
+  for (const key of expanded) {
+    const group = byKey.get(key)?.approval_group
+    if (group && !expandedGroups.has(group)) {
+      expandedGroups.add(group)
+      for (const member of groups.get(group) ?? []) add(member)
+    }
+  }
   return items.filter((item) => expanded.has(item.key)).map((item) => item.key)
 }
 
@@ -57,6 +72,7 @@ export function CiscoAsaMigrationWorkflow({ source, sourceKey, stage, onStageCha
       : { pairId: PAIR_ID, sourceKey, options: emptyOptions(), requirements: [], review: null, approval: null, artifact: null, previewText: null }
   })
   const [hasSchedules, setHasSchedules] = useState(Boolean(state.review?.report.items.some((item) => item.family === 'schedule')))
+  const [targetLoading, setTargetLoading] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [selected, setSelected] = useState<string[]>([])
@@ -85,6 +101,12 @@ export function CiscoAsaMigrationWorkflow({ source, sourceKey, stage, onStageCha
     setApprovalPreview(null); setSelected([]); setError(null)
   }
 
+  function changeDestination(destination: DestinationEvidence | null) {
+    requests.current++
+    setState((current) => ({ ...current, destination, review: null, approval: null, artifact: null, previewText: null }))
+    setApprovalPreview(null); setSelected([]); setError(null)
+  }
+
   async function run(action: () => Promise<void>) {
     if (pending.current) return
     pending.current = true; setBusy(true); setError(null)
@@ -96,7 +118,7 @@ export function CiscoAsaMigrationWorkflow({ source, sourceKey, stage, onStageCha
   async function prepareReview() {
     const request = ++requests.current
     setState((current) => ({ ...current, approval: null, artifact: null, previewText: null }))
-    const result = await api.prepare(source, payloadOptions(options))
+    const result = await api.prepare(source, payloadOptions(options), state.destination)
     if (request !== requests.current) return
     setState((current) => ({ ...current, requirements: result.requirements, review: result }))
     setHasSchedules(result.report.items.some((item) => item.family === 'schedule'))
@@ -106,7 +128,7 @@ export function CiscoAsaMigrationWorkflow({ source, sourceKey, stage, onStageCha
   async function generate(currentApproval = approval) {
     if (!currentApproval) return
     const request = ++requests.current
-    const result = await api.build(source, payloadOptions(options), currentApproval)
+    const result = await api.build(source, payloadOptions(options), currentApproval, state.destination)
     if (request !== requests.current) return
     setState((current) => ({ ...current, artifact: result.artifact, previewText: null }))
     onStageChange('export')
@@ -122,7 +144,7 @@ export function CiscoAsaMigrationWorkflow({ source, sourceKey, stage, onStageCha
   async function confirmApproval() {
     if (!review || !approvalPreview?.length) return
     const request = ++requests.current
-    const result = await api.approve(source, payloadOptions(options), review.draft, approvalPreview)
+    const result = await api.approve(source, payloadOptions(options), review.draft, approvalPreview, state.destination)
     if (request !== requests.current) return
     setState((current) => ({ ...current, approval: result.approval, artifact: null, previewText: null }))
     setApprovalPreview(null); onStageChange('export')
@@ -161,7 +183,7 @@ export function CiscoAsaMigrationWorkflow({ source, sourceKey, stage, onStageCha
   const scoped = requirements.filter((item) => item.source_vdom === options.source_vdom)
   const interfaceRequirements = scoped.filter((item) => item.target_field === 'asa_interface')
   const targetChoice = (field: string) => requirements.find((item) => item.target_field === field)
-  const ready = review?.report.items.filter((item) => item.render_disposition === 'CREATE' && !item.blockers.length) ?? []
+  const ready = review?.report.items.filter((item) => ['CREATE', 'REUSE'].includes(item.render_disposition) && !item.blockers.length) ?? []
   const approvalItems = review?.report.items.filter((item) => approvalPreview?.includes(item.key)) ?? []
 
   return <section className="panel" aria-labelledby="cisco-asa-migration-title">
@@ -173,7 +195,11 @@ export function CiscoAsaMigrationWorkflow({ source, sourceKey, stage, onStageCha
       <Button disabled={busy} onClick={() => onStageChange('place')}>Set up ASA target</Button>
     </>}
     {stage === 'place' && <>
+      <DestinationSnapshot vendor="cisco_asa" families={['interfaces', 'objects', 'schedules', 'routes', 'access_rules', 'acl_bindings', 'nat']} value={state.destination ?? null} disabled={busy} onChange={changeDestination} onPendingChange={setTargetLoading} />
       <h3>Target context</h3>
+      <label className="field">Target VLAN platform<select disabled={busy} value={options.target_platform ?? ''} onChange={(event) => changeOptions({ ...options, target_platform: event.target.value })}><option value="">VLAN export unavailable</option><option value="asav">ASAv 9.20</option></select></label>
+      <label className="field"><span><input disabled={busy} type="checkbox" checked={options.vlan_interfaces_available ?? false} onChange={(event) => changeOptions({ ...options, vlan_interfaces_available: event.target.checked })} /> I verified VLAN capacity and mapped parent/subinterface availability</span></label>
+      {requirements.filter((item) => item.target_field === 'nat_return_routing').map((item) => <label className="field" key={item.key}><span><input disabled={busy} type="checkbox" checked={options.nat_evidence?.[item.key]?.return_routing_confirmed ?? false} onChange={(event) => changeOptions({ ...options, nat_evidence: { ...options.nat_evidence, [item.key]: { ...options.nat_evidence?.[item.key], return_routing_confirmed: event.target.checked } } })} /> {item.label} ({item.source_vdom} / {item.source_name})</span></label>)}
       <label className="field">FortiGate VDOM<select disabled={busy} value={options.source_vdom} onChange={(event) => setGlobal('source_vdom', event.target.value)}><option value="">Choose source VDOM</option>{sourceScope?.choices.map((choice) => <option key={choice}>{choice}</option>)}</select></label>
       {(['target_context', 'target_version', 'target_mode'] as const).map((field) => {
         const requirement = targetChoice(field)
@@ -212,16 +238,17 @@ export function CiscoAsaMigrationWorkflow({ source, sourceKey, stage, onStageCha
           event.target.value = ''
         }} /></label>
       </details>
-      <Button disabled={busy} onClick={() => void run(prepareReview)}>Prepare migration review</Button>
+      <Button disabled={busy || targetLoading} onClick={() => void run(prepareReview)}>Prepare migration review</Button>
     </>}
     {stage === 'review' && <>
-      {!review ? <><p>Prepare the current target choices before review.</p><Button disabled={busy} onClick={() => void run(prepareReview)}>Prepare migration review</Button></> : <>
+      {!review ? <><p>Prepare the current target choices before review.</p><Button disabled={busy || targetLoading} onClick={() => void run(prepareReview)}>Prepare migration review</Button></> : <>
+        <MigrationCoverage coverage={review.report.coverage} />
         <p>{ready.length} items ready for review · {review.report.items.length - ready.length} blocked or manual.</p>
         {review.report.findings.map((finding, index) => <p role="status" key={`${String(finding.code)}-${index}`}>{String(finding.message ?? finding.code)}</p>)}
         <Button disabled={busy || !ready.length} onClick={() => openApprovalPreview(ready.map((item) => item.key))}>Review all ready changes</Button>
         <Button disabled={busy || !selected.length} onClick={() => void run(async () => openApprovalPreview(selected))}>Review selected changes</Button>
         <div className="report-table-wrap"><table className="report-table"><caption>Planned Cisco ASA configuration</caption><thead><tr><th>Select</th><th>Source</th><th>Target</th><th>Operation</th><th>Blockers</th><th>Review details</th></tr></thead><tbody>{review.report.items.map((item) => <tr key={item.key}>
-          <td><input aria-label={`Select ${item.source_vdom} ${item.source_name}`} type="checkbox" disabled={busy || item.render_disposition !== 'CREATE' || Boolean(item.blockers.length)} checked={selected.includes(item.key)} onChange={(event) => setSelected(event.target.checked ? [...selected, item.key] : selected.filter((key) => key !== item.key))} /></td>
+          <td><input aria-label={`Select ${item.source_vdom} ${item.source_name}`} type="checkbox" disabled={busy || !['CREATE', 'REUSE'].includes(item.render_disposition) || Boolean(item.blockers.length)} checked={selected.includes(item.key)} onChange={(event) => setSelected(event.target.checked ? [...selected, item.key] : selected.filter((key) => key !== item.key))} /></td>
           <td>{item.source_vdom} / {item.source_name}<small>{item.family}</small></td><td>{item.target_name}</td><td>{item.render_disposition}</td><td>{item.blockers.join(', ')}</td>
           <td><details><summary>Settings and dependencies</summary><pre>{JSON.stringify({ settings: item.settings, dependencies: item.dependencies }, null, 2)}</pre></details></td>
         </tr>)}</tbody></table></div>
