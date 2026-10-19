@@ -40,7 +40,7 @@ _BUILTIN_WORKFLOWS = (
     ),
     MigrationWorkflowRegistration(
         pair_id="palo_alto_to_fortigate",
-        mapping_workflow="Manual target mappings and explicit profile choices.",
+        mapping_workflow="Automatic target proposals with reviewed placement, verified source behavior and grouped remaining choices.",
         destination_comparison="Exact reuse and explicitly empty target tables; populated traffic placement stays blocked.",
         execution_mode="Offline CLI export; live execution unavailable.",
         activation_steps=("Review and approve the export", "Apply and validate on the device manually", "Activate and save manually"),

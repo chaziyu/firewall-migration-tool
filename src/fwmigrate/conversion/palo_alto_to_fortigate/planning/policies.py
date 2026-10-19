@@ -1,9 +1,8 @@
 """Conservative L3/L4 policies; unsupported earlier matches block successors."""
-from dataclasses import replace
-
 from .context import unsupported_fields
 from .source_scope import identity, in_scope
 from .naming import allocate_plan_names
+from fwmigrate.vendors.palo_alto.transform.effective_values import effective_value
 
 
 def policy_choice(ctx, obj, field):
@@ -11,7 +10,32 @@ def policy_choice(ctx, obj, field):
     proposal = ctx.options.policy_settings.get(identity(obj, "policy"), {}).get(field)
     if explicit is not None and proposal is not None:
         raise ValueError("Target policy choices cannot override explicit source values")
-    return explicit if explicit is not None else proposal
+    effective = effective_value(ctx.derived, obj, field)
+    if effective is not None and proposal is not None and proposal != effective:
+        raise ValueError("Target policy choices cannot contradict verified source behavior")
+    return explicit if explicit is not None else effective if effective is not None else proposal
+
+
+def policy_manual_reasons(obj, derived, *, default_rules=False):
+    reasons = unsupported_fields(obj, {"from_zones", "to_zones", "source", "destination", "application", "service", "action", "source_user", "category",
+         "negate_source", "negate_destination", "schedule", "rule_type", "log_start", "log_end", "disabled"})
+    if obj.rulebase_position not in {None, "local"} or obj.source_order is None:
+        reasons.append("Only verified standalone local rule ordering is supported.")
+    if obj.action not in {"allow", "drop"}:
+        reasons.append("Only explicit allow/drop actions are verified; application-dependent deny and reset actions remain manual.")
+    if obj.application != ["any"] or "application-default" in (obj.service or ()):
+        reasons.append("App-ID and application-default conversion require manual implementation.")
+    for field, allowed in (("source_user", (["any"], "any")), ("category", (["any"], "any")), ("rule_type", ("universal",))):
+        value = getattr(obj, field)
+        if value is None:
+            value = effective_value(derived, obj, field)
+        if value is not None and value not in allowed:
+            reasons.append(f"Unsupported explicit {field} requires manual implementation.")
+    if obj.log_start == "yes" and obj.log_end == "no":
+        reasons.append("Start-only logging has no verified equivalent and requires manual implementation.")
+    if default_rules:
+        reasons.append("Explicit default security-rule behavior requires separate manual design.")
+    return reasons
 
 
 def plan_policies(ctx):
@@ -20,15 +44,9 @@ def plan_policies(ctx):
     names = allocate_plan_names(rules, "policy", limit=35)
     result = []
     predecessors = []
+    default_rules = any(in_scope(r, ctx.scope) for r in ctx.source.default_security_rules)
     for number, obj in enumerate(rules, 1):
-        reasons = unsupported_fields(obj, {"from_zones", "to_zones", "source", "destination", "application", "service", "action", "source_user", "category",
-             "negate_source", "negate_destination", "schedule", "rule_type", "log_start", "log_end", "disabled"})
-        if obj.rulebase_position not in {None, "local"} or obj.source_order is None:
-            reasons.append("Only verified standalone local rule ordering is supported.")
-        if obj.action not in {"allow", "drop"}:
-            reasons.append("Only explicit allow/drop actions are verified; application-dependent deny and reset actions remain manual.")
-        if obj.application != ["any"]:
-            reasons.append("App-ID and application-default conversion require manual implementation.")
+        reasons = policy_manual_reasons(obj, ctx.derived, default_rules=default_rules)
         for field in ("source_user", "category"):
             if policy_choice(ctx, obj, field) not in (["any"], "any"):
                 reasons.append(f"Explicit unrestricted {field} or a reviewed target choice is required.")
@@ -74,6 +92,4 @@ def plan_policies(ctx):
         result.append(item)
         # All predecessors are dependencies: omitting even a supported deny from partial approval must not expose later allows.
         predecessors[:] = [item.key]
-    if any(in_scope(r, ctx.scope) for r in ctx.source.default_security_rules):
-        result = [replace(item, reasons=(*item.reasons, "Explicit default security-rule behavior requires separate manual design.")) for item in result]
     return result
