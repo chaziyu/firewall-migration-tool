@@ -166,6 +166,8 @@ SHEET_HEADERS: dict[str, tuple[str, ...]] = {
         "Name",
         "Members",
         "Tags",
+        "Description",
+        "Disable Override",
         "Scope Type",
         "Scope Name",
         "Analysis Status",

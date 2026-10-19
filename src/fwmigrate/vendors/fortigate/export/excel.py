@@ -195,9 +195,12 @@ class _ExcelContext:
             if record.source_path.startswith("system interface "):
                 parent = record.parent_objects[0] if record.parent_objects else None
                 self.nested_source_by_parent[(record.vdom, "system interface", parent)].append(record)
-            ipv6_explicit = ipv6_explicit or any(
+            ipv6_explicit = ipv6_explicit or record.source_path.startswith((
+                "firewall address6", "firewall addrgrp6", "firewall ippool6",
+                "firewall vip6", "firewall vipgrp6", "router static6",
+            )) or any(
                 "ipv6" in _normalize_key(key) or "ip6" in _normalize_key(key)
-                for key in record.values
+                for key in (*record.source_path.split(), *record.values)
             )
 
         self.source_paths = frozenset(self.source_by_path)
