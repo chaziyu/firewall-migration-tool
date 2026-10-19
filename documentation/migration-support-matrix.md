@@ -16,7 +16,7 @@ The browser accepts optional destination snapshots for every listed pair. Snapsh
 
 Destination text, selected scope, version, mode, completeness declarations, mappings, operations and dependencies are bound to the design. Changes require a new review and approval. Proposal imports do not restore approval. Unsupported directions fail closed.
 
-Only FortiGate to PAN-OS has assisted mapping with evidence-based suggestions and guided review. The other four pairs require manual target mappings and choices. Discovery retains its existing availability flags and adds descriptive mapping, comparison, execution and activation limits. These descriptions do not authorize execution or enable unsupported capabilities.
+FortiGate to PAN-OS and PAN-OS to FortiGate have assisted mapping and guided review. The reverse pair prepares deterministic target proposals, derives a bounded documented PAN-OS 11.1 source-behavior subset, and groups remaining policy choices. ASA, SRX and Check Point require manual target mappings and choices. Discovery retains its existing availability flags and adds descriptive mapping, comparison, execution and activation limits. These descriptions do not authorize execution or enable unsupported capabilities.
 
 ## Source accounting
 
@@ -81,6 +81,10 @@ See [Check Point usage and limits](fortigate_to_checkpoint-migration.md).
 ### PAN-OS to FortiGate
 
 See [reverse migration usage and limits](PAN-OS-to-FortiGate-migration.md).
+
+- Source upload opens a proposed conversion. Supported profile, zone, port/VLAN and single-router VRF placement proposals remain subject to engineer review. Ports require declared inventory or explicit eligible destination evidence.
+- Verified local PAN-OS 11.1 effective values remain separate from explicit XML. Unknown fields use individual or reviewed bulk target choices. Unsupported policies retain manual findings without ineffective questions.
+- Signed approval binds requested overrides, resolved mappings and provenance. Preview, download and bundle retain one approved command list. FortiGate execution remains unavailable.
 
 - Multiple dynamic source NAT rules are accepted only when direct literal IPv4 source prefixes prove pairwise disjointness. Source order is preserved.
 - Overlap, group/`any` ambiguity, no-NAT exceptions, combined DNAT and unsupported allocation remain blocked. Consuming policies retain dependencies on the complete NAT set.

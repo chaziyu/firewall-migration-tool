@@ -8,9 +8,12 @@ PAIR = {"source_vendor": "palo_alto", "target_vendor": "fortigate"}
 APPROVAL_TTL = 24 * 60 * 60
 
 
-def build_deterministic_draft(plan, rendered, requirements, options, source_digest, target_digest=None):
+def build_deterministic_draft(plan, rendered, requirements, options, source_digest, target_digest=None, *,
+                              requested_options=None, proposals=(), effective_values=()):
     context = {**PAIR, "source_digest": source_digest, "target_digest": target_digest,
                "options": options.to_dict(), "workflow_mode": "DESTINATION_AWARE" if target_digest else "OFFLINE_EXPORT"}
+    context.update({"proposal_version": 1, "requested_options": requested_options,
+                    "proposals": list(proposals), "effective_values": list(effective_values)})
     body = {"envelope_type": "fg_migration_draft_v1", "schema_version": 1, "context": context,
             "configuration": rendered.report["items"], "decisions": requirements["decisions"], "findings": list(plan.findings),
             "readiness": {"deployment": {"eligible": False, "reason": "FortiGate export only."}}}

@@ -2,5 +2,5 @@
 
 
 def build_decision_set(requirements, confirmed=False):
-    return [{**row, "mode": "REQUIRED", "review_state": "CONFIRMED" if confirmed and row.get("value") is not None else "PENDING"}
+    return [{**row, "mode": row.get("mode", "REQUIRED"), "review_state": "CONFIRMED" if confirmed and row.get("value") is not None else "PENDING"}
             for row in requirements["decisions"]]

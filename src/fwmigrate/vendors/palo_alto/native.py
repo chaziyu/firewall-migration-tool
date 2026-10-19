@@ -13,6 +13,7 @@ from .relationships import build_interface_topology, build_policy_order, build_r
 from .relationships.topology import PANRelationshipIssue
 from .relationships.references import resolve_references
 from .transform.nat import transform_nat
+from .transform.effective_values import derive_effective_values
 from .validation import validate_panos_config
 
 
@@ -89,6 +90,7 @@ def build_derived_views(config: PANOSConfig) -> PANOSDerivedViews:
         policy_order=policy_order,
         nat=transform_nat(config.nat_rules),
         relationship_issues=tuple(relationship_issues),
+        effective_values=derive_effective_values(config),
     )
 
 
