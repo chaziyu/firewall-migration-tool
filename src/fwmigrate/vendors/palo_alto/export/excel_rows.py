@@ -5,6 +5,8 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Iterable, Iterator
 import xml.etree.ElementTree as ET
 
+from ....extraction.sanitize import sanitize_source_attributes
+
 from ..source_model import PANScope, pan_scope_identity
 from ..source_report import PaloAltoSourceResult
 from ..source_accounting import _TYPED_COUNT_FIELDS
@@ -24,6 +26,10 @@ def _text(value: Any) -> Any:
     if isinstance(value, (list, tuple, set)) or (hasattr(value, "__iter__") and not isinstance(value, (str, bytes))):
         return ", ".join(str(item) for item in value)
     return value
+
+
+def _additional_settings(*settings: dict[str, Any]) -> str:
+    return "; ".join(_text(sanitize_source_attributes(value)) for value in settings if value)
 
 
 @dataclass(slots=True)
@@ -105,6 +111,11 @@ def _base(context: _PANExcelContext, item: Any, object_type: str) -> dict[str, A
                     "MTU": getattr(item, "mtu", None), "Management Profile": item.management_profile,
                     "Link State": getattr(item, "link_state", None), "Speed": getattr(item, "speed", None),
                     "Duplex": getattr(item, "duplex", None)})
+        row["Additional Settings"] = _additional_settings(item.raw_extra, {
+            "ipv6_addresses": [address.model_dump(exclude_none=True, exclude_defaults=True,
+                                                   exclude={"explicit_fields"})
+                               for address in item.ipv6_addresses]
+        } if item.ipv6_addresses else {})
     return row
 
 
@@ -244,6 +255,11 @@ def _service_rows(context: _PANExcelContext) -> Iterator[dict[str, Any]]:
                         "Override Enabled": override.enabled if override else None, "Timeout": override.timeout if override else None,
                         "Half-Close Timeout": override.halfclose_timeout if override else None, "Time-Wait Timeout": override.timewait_timeout if override else None,
                         "Tags": _text(item.tags), "Description": item.description})
+            row["Additional Settings"] = _additional_settings(
+                item.raw_extra,
+                {protocol: value.raw_extra} if value and value.raw_extra else {},
+                {"override": override.raw_extra} if override and override.raw_extra else {},
+            )
             yield row
 
 
@@ -304,6 +320,21 @@ def _nat_rows(context: _PANExcelContext) -> Iterator[dict[str, Any]]:
         source, destination, dynamic = item.source_translation, item.destination_translation, item.dynamic_destination_translation
         derived = derived_by_identity.get((item.source_path, item.name, item.source_order))
         row = _base(context, item, "nat")
+        nested = {}
+        for name, translation in (("source_translation", source), ("destination_translation", destination),
+                                  ("dynamic_destination_translation", dynamic)):
+            if translation is None:
+                continue
+            settings = dict(translation.raw_extra)
+            fallback = getattr(translation, "fallback", None)
+            if fallback is not None:
+                settings["fallback"] = fallback
+            rewrite = getattr(translation, "dns_rewrite", None)
+            if rewrite is not None and rewrite.raw_extra:
+                settings["dns_rewrite"] = rewrite.raw_extra
+            if settings:
+                nested[name] = settings
+        row["Additional Settings"] = _additional_settings(item.raw_extra, nested)
         row.update({"Source Order": item.source_order, "Rulebase Position": item.rulebase_position, "Effective Order": None,
                     "From Zones": _text(item.from_zones), "To Zones": _text(item.to_zones), "Source Addresses": _text(item.source), "Destination Addresses": _text(item.destination),
                     "Service": item.service, "NAT Type": item.nat_type, "To Interface": item.to_interface, "Source Translation Type": getattr(source, "translation_type", None),
