@@ -1049,6 +1049,16 @@ SHEET_HEADERS: dict[str, tuple[str, ...]] = {
 }
 
 
+SHEET_HEADERS["Interfaces"] += ("VLAN Tag", "MTU", "Management Profile", "Link State", "Speed", "Duplex")
+
+# Every source-bearing sheet retains the same existing PAN ownership metadata.
+OWNER_COLUMNS = ("Scope Identity", "Source Record", "Device", "Device Serial", "VSYS",
+                  "Device Group", "Template", "Template Stack")
+for _name, _headers in tuple(SHEET_HEADERS.items()):
+    if _name not in {"Summary", "Extraction Coverage"}:
+        SHEET_HEADERS[_name] = tuple(dict.fromkeys((*_headers, *OWNER_COLUMNS)))
+
+
 DERIVED_COLUMNS_BY_SHEET: dict[str, tuple[str, ...]] = {
     # Keep this intentionally small.
     #

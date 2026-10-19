@@ -83,15 +83,6 @@ export function CheckPointMigrationWorkflow({ source, sourceKey, stage, onStageC
     setError(null)
   }
 
-<<<<<<< Updated upstream
-=======
-  function changeDestination(destination: DestinationEvidence | null) {
-    requests.current++
-    setState((current) => ({ ...current, destination, review: null, approval: null, artifact: null, preview: null }))
-    setSelected([]); setApprovalPreview(null); setError(null)
-  }
-
->>>>>>> Stashed changes
   async function run(action: () => Promise<void>) {
     if (pending.current) return
     pending.current = true
@@ -105,13 +96,9 @@ export function CheckPointMigrationWorkflow({ source, sourceKey, stage, onStageC
   async function prepareReview() {
     const request = ++requests.current
     setState((current) => ({ ...current, approval: null, artifact: null, preview: null }))
-<<<<<<< Updated upstream
-    const result = await api.prepare(source, options)
-=======
     setSelected([])
     setApprovalPreview(null)
-    const result = await api.prepare(source, options, state.destination)
->>>>>>> Stashed changes
+    const result = await api.prepare(source, options)
     if (request !== requests.current) return
     setState((current) => ({ ...current, requirements: result.requirements, review: result }))
     setPage(1)
@@ -135,14 +122,7 @@ export function CheckPointMigrationWorkflow({ source, sourceKey, stage, onStageC
   async function generate(currentApproval = approval) {
     if (!currentApproval) return
     const request = ++requests.current
-<<<<<<< Updated upstream
-    const result = await api.approve(source, options, review.draft, selected)
-    if (request !== requests.current) return
-    setState((current) => ({ ...current, approval: result.approval, artifact: null, preview: null }))
-    const built = await api.build(source, options, result.approval)
-=======
-    const built = await api.build(source, options, currentApproval, state.destination)
->>>>>>> Stashed changes
+    const built = await api.build(source, options, currentApproval)
     if (request !== requests.current) return
     setState((current) => ({ ...current, artifact: built.artifact, preview: null }))
     onStageChange('export')
@@ -153,7 +133,7 @@ export function CheckPointMigrationWorkflow({ source, sourceKey, stage, onStageC
     if (!review || !approvalPreview?.length) return
     const request = ++requests.current
     const expanded = expandSelection(review.report.items, approvalPreview)
-    const result = await api.approve(source, options, review.draft, expanded, state.destination)
+    const result = await api.approve(source, options, review.draft, expanded)
     if (request !== requests.current) return
     const signedSelection = result.approval.selected_items
     if (!Array.isArray(signedSelection) || JSON.stringify([...signedSelection].sort()) !== JSON.stringify(expanded)) {

@@ -88,13 +88,7 @@ def build_artifact(analysis, options, source_digest, approval, *, target=None,
                       target_source_text=target_source_text, target_metadata=target_metadata)
     approved = validate_approval(review["plan"], review["draft"], approval)
     rendered = ASACLIRenderer().render(review["plan"], approved_items=approved)
-<<<<<<< Updated upstream
-    report = {**review["report"], "command_count": rendered.command_count,
-=======
     report = {**review["report"], **rendered.report, "command_count": rendered.command_count,
-              "coverage": build_coverage(review["plan"], analysis.extracted.source_objects,
-                                         analysis.derived, approved_items=approved),
->>>>>>> Stashed changes
               "command_sha256": rendered.command_sha256,
               "approved_design_digest": approval["draft_digest"],
               "approved_items": sorted(approved), "destination_verified": False,

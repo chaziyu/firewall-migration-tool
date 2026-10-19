@@ -30,26 +30,14 @@ class ASACLIRenderer:
         validate_plan(plan)
         disposition = dispositions(plan)
         selected = None if approved_items is None else set(approved_items)
-<<<<<<< Updated upstream
-        rows = [item for item in plan.items
-                if disposition[item.key] in {"CREATE", "REUSE"}
-                and (selected is None or item.key in selected)]
-        rows.sort(key=lambda item: (_ORDER.get(item.family, 50), item.target_name,
-                                    item.source_order, item.source_name))
-=======
         if selected is not None and any(
             set(item.dependencies) - selected for item in plan.items if item.key in selected
         ):
             raise ValueError("ASA approved selection is missing required dependencies")
-        if selected is not None and any(item.approval_group and any(
-                row.approval_group == item.approval_group and row.key not in selected for row in plan.items)
-                for item in plan.items if item.key in selected):
-            raise ValueError("ASA approved selection is missing an atomic NAT group")
         rows = [item for item in ordered_items(plan, priority=lambda item: (
                     _ORDER.get(item.family, 50), item.source_order, item.key))
                 if disposition[item.key] in {"CREATE", "REUSE"}
                 and (selected is None or item.key in selected)]
->>>>>>> Stashed changes
         commands = []
         for item in rows:
             if disposition[item.key] == "CREATE":

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from .identity import source_identity
+
 from dataclasses import asdict, is_dataclass
 from collections import defaultdict
 from typing import Any
@@ -30,11 +32,15 @@ def _jsonable(value: Any) -> Any:
 def build_panos_preview(analysis: PaloAltoSourceResult) -> dict[str, Any]:
     config = analysis.config
     records = config.source_inventory
+    identity_reviews = defaultdict(list)
     reviews: dict[tuple[str, str | None, str | None], list[str]] = defaultdict(list)
     review_fallbacks: dict[tuple[str, str | None], list[str]] = defaultdict(list)
     for issue in analysis.validation.issues:
         scope_id = _scope_id(issue.source_scope)
-        reviews[(scope_id, issue.source_path, issue.source_name)].append(issue.message)
+        if issue.source_identity:
+            identity_reviews[issue.source_identity].append(issue.message)
+        else:
+            reviews[(scope_id, issue.source_path, issue.source_name)].append(issue.message)
         if issue.source_path is None:
             review_fallbacks[(scope_id, issue.source_name)].append(issue.message)
 
@@ -58,7 +64,9 @@ def build_panos_preview(analysis: PaloAltoSourceResult) -> dict[str, Any]:
         scope_id = _scope_id(getattr(item, "scope", None))
         name = getattr(item, "name", None)
         path = getattr(item, "source_path", None)
-        return reviews.get((scope_id, path, name), []) or (review_fallbacks.get((scope_id, name), []) if path is None else [])
+        return [*identity_reviews.get(source_identity(item), []),
+                *(reviews.get((scope_id, path, name), []) or
+                  (review_fallbacks.get((scope_id, name), []) if path is None else []))]
 
     addresses = [
         {
@@ -270,11 +278,13 @@ def build_panos_preview(analysis: PaloAltoSourceResult) -> dict[str, Any]:
             "parents": list(analysis.derived.scope_hierarchy.parents),
             "ancestors": list(analysis.derived.scope_hierarchy.ancestors),
         },
+        "extraction_coverage": [_jsonable(item) for item in analysis.accounting.coverage],
         "records_total": len(records),
         "records_returned": min(len(records), _PREVIEW_RECORD_LIMIT),
         "records_truncated": len(records) > _PREVIEW_RECORD_LIMIT,
         "records": [
             {
+                "extraction_status": analysis.accounting.inventory_status(record),
                 "kind": record.kind,
                 "source_path": record.source_path,
                 "name": record.name,

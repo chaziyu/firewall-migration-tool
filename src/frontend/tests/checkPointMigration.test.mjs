@@ -13,7 +13,7 @@ const rows = [
 function harness(overrides = {}, items = rows) {
   const options = { source_vdom: 'root', management_target: 'server', management_domain: 'domain', policy_package: 'package', access_layer: 'layer', install_on: ['gateway'], insertion_relation: 'above', insertion_anchor: 'cleanup-uid' }
   const review = { draft: { digest: 'draft' }, requirements: [], report: { plan_status: 'READY_FOR_REVIEW', items, findings: [] } }
-  let saved = { pairId: 'fortigate_to_checkpoint', sourceKey: 'source', options, review, approval: null, artifact: null, preview: null }
+  let saved = { pairId: 'fortigate_to_checkpoint', sourceKey: 'source', options, requirements: [], review, approval: null, artifact: null, preview: null }
   const slots = []; let cursor = 0; let dirty = false; let effects = []; let stage = 'review'
   const hooks = {
     useState(value) { const i = cursor++; if (!(i in slots)) slots[i] = typeof value === 'function' ? value() : value; return [slots[i], (next) => { slots[i] = typeof next === 'function' ? next(slots[i]) : next; dirty = true }] },
@@ -70,7 +70,7 @@ test('preview expands prior rules and UID dependencies; retry uses the same sign
   assert.equal(h.state().preview[name].text, file.content)
 })
 
-test('cancel and destination edits invalidate preview without creating approval', async () => {
+test('cancel and option edits invalidate preview without creating approval', async () => {
   let approvals = 0
   const h = harness({ approve: async () => { approvals++ } })
   let tree = await h.render(); selectLast(tree); tree = await h.render()
@@ -78,7 +78,7 @@ test('cancel and destination edits invalidate preview without creating approval'
   button(tree, 'Cancel approval preview').props.onClick(); tree = await h.render()
   assert.ok(!elements(tree).some((n) => n.props?.['aria-label'] === 'Check Point approval preview'))
   button(tree, 'Review selected operations').props.onClick(); tree = await h.render()
-  elements(tree).find((n) => n.type === 'DestinationSnapshot').props.onChange({ source_text: 'changed' })
+  elements(tree).find((n) => n.type === 'input' && n.props.value === 'server').props.onChange({ target: { value: 'changed' } })
   tree = await h.render()
   assert.equal(h.state().review, null)
   assert.equal(h.state().approval, null)

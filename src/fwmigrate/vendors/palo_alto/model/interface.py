@@ -67,5 +67,6 @@ class PANInterfaceImport(BaseModel):
     interfaces: list[str] | None = None
     virtual_routers: list[str] | None = None
     source_path: str
+    source_order: int | None = None
     raw_extra: dict[str, Any] = Field(default_factory=dict)
     explicit_fields: set[str] = Field(default_factory=set)

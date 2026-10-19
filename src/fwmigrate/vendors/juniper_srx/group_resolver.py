@@ -64,7 +64,7 @@ def _render(path: tuple[str, ...], base: tuple[str, ...], target: tuple[str, ...
 
 
 def _group_key(scope: tuple[str, ...], name: str) -> tuple[tuple[str, ...], str]:
-    return scope, name.lower()
+    return scope, name
 
 
 def _build_precedence_key(command: JunosCommand) -> tuple[int, int, int, int, int, int]:
@@ -120,7 +120,7 @@ def resolve_group_commands(commands: List[JunosCommand]) -> List[JunosCommand]:
             path = tuple(tokens[group_index + 2:])
             owner = _group_key(scope, group_name)
             marker = apply_group_index(path)
-            if marker is None and _inactive(tuple(t.lower() for t in tokens), inactive_paths):
+            if marker is None and _inactive(tuple(tokens), inactive_paths):
                 inactive_groups[owner].append((path, command))
             elif marker is None:
                 groups[owner].append((path, command))
@@ -151,7 +151,7 @@ def resolve_group_commands(commands: List[JunosCommand]) -> List[JunosCommand]:
     def emit_group(name: str, apply_at: tuple[str, ...], target: tuple[str, ...],
                    chain: tuple[str, ...], stack: tuple[str, ...],
                    application: JunosCommand, group_list_priority: int) -> None:
-        lower_name = name.lower()
+        lower_name = name
         if lower_name in stack:
             application.group_resolution = "GROUP_CYCLE"
             application.requires_manual_review = True
@@ -232,7 +232,7 @@ def resolve_group_commands(commands: List[JunosCommand]) -> List[JunosCommand]:
 
     excluded_by_target: dict[tuple[str, ...], set[str]] = defaultdict(set)
     for target, _, excluded_names, _ in applications:
-        excluded_by_target[target].update(name.lower() for name in excluded_names)
+        excluded_by_target[target].update(name for name in excluded_names)
 
     for target, names, excluded_names, application in sorted(
             applications, key=lambda item: (len(item[0]), item[3].line_number)):
@@ -241,14 +241,14 @@ def resolve_group_commands(commands: List[JunosCommand]) -> List[JunosCommand]:
         application.hierarchy_depth = len(target)
         blocked = excluded_by_target[target]
         for list_priority, name in enumerate(names):
-            if _inactive(tuple(t.lower() for t in target + ("apply-groups", name)), inactive_paths):
+            if _inactive(target + ("apply-groups", name), inactive_paths):
                 application.group_resolution = "GROUP_INACTIVE"
                 application.candidate_records.append(build_candidate(
                     name, "group", application, status=JuniperResolutionStatus.INACTIVE,
                     effective=False, reason="inactive").model_dump()
                 )
                 continue
-            if name.lower() in blocked:
+            if name in blocked:
                 application.group_resolution = "GROUP_EXCLUDED"
                 application.candidate_records.append(build_candidate(
                     name, "group", application, status=JuniperResolutionStatus.EXCLUDED,

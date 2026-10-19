@@ -34,7 +34,8 @@ def test_effective_state_normalizes_only_the_owning_context():
         "target_path": ("logical-systems", "LS2", *path), "status": "EFFECTIVE"},)}
     assert effective_path_state(mismatched, "logical-system LS1", path) is None
     inactive_scope = {"inactive_hierarchies": ({"context": "logical-system ls1", "path": ()},)}
-    assert effective_path_state(inactive_scope, "logical-system LS1", path) == "INACTIVE"
+    assert effective_path_state(inactive_scope, "logical-system LS1", path) is None
+    assert effective_path_state(inactive_scope, "logical-system ls1", path) == "INACTIVE"
     assert effective_path_state(inactive_scope, "logical-system LS2", path) is None
 
 

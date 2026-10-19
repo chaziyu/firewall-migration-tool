@@ -9,6 +9,7 @@ from typing import Any
 from ..model.source import PANOSConfig
 from ..source_model import PANOSDerivedViews, pan_scope_identity
 from .models import PANOSValidationIssue, PANOSValidationResult
+from ..identity import source_identity
 
 _PORT = re.compile(r"^(\d+)(?:\s*-\s*(\d+))?$")
 _SCHEDULE_TIME_RANGE = re.compile(r"^(\d{2}:\d{2})-(\d{2}:\d{2})$")
@@ -17,11 +18,12 @@ _NON_RECURRING_RANGE = re.compile(
 )
 
 
-def _issue(issues, severity, domain, message, item=None, field=None, *, scope=None, object_type=None, source_name=None, source_path=None):
+def _issue(issues, severity, domain, message, item=None, field=None, *, scope=None, object_type=None, source_name=None, source_path=None, identity=None):
     scope = scope or getattr(item, "scope", None)
     issues.append(PANOSValidationIssue(severity, domain, message,
         source_path if source_path is not None else getattr(item, "source_path", None), source_name if source_name is not None else getattr(item, "name", None), field,
-        scope, pan_scope_identity(scope) if scope else None, object_type or domain))
+        scope, pan_scope_identity(scope) if scope else None, object_type or domain,
+        identity if identity is not None else source_identity(item)))
 
 
 def _scope_key(item: Any) -> str:
@@ -115,7 +117,7 @@ def validate_panos_config(config: PANOSConfig, derived: PANOSDerivedViews) -> PA
             "warning", "extraction", f"{diagnostic.exception_type}: {diagnostic.message}", diagnostic.source_path, diagnostic.source_name,
             "typed_extraction", diagnostic.scope,
             pan_scope_identity(diagnostic.scope) if diagnostic.scope else None,
-            diagnostic.domain or "extraction",
+            diagnostic.domain or "extraction", source_identity(diagnostic),
         ))
     if not config.source_inventory:
         _issue(issues, "warning", "source", "PAN-OS XML contains no entry records.")
@@ -200,11 +202,11 @@ def validate_panos_config(config: PANOSConfig, derived: PANOSDerivedViews) -> PA
     for item in derived.reference_resolutions:
         if item.status == "SOURCE_ONLY" and item.resolution_reason.startswith("EXTRACTION_INCOMPLETE"):
             _issue(issues, "warning", "reference", f"source-only PAN-OS reference {item.reference_name!r}: extraction incomplete",
-                   field=item.owner_field, scope=item.source_scope, source_name=item.owner_name, object_type=item.owner_family or "reference", source_path=item.owner_source_path)
+                   field=item.owner_field, scope=item.source_scope, source_name=item.owner_name, object_type=item.owner_family or "reference", source_path=item.owner_source_path, identity=item.owner_identity)
         if item.status in {"UNRESOLVED", "AMBIGUOUS"}:
             _issue(issues, "error" if item.status == "UNRESOLVED" else "warning", "reference",
                    f"{item.status.lower()} PAN-OS reference {item.reference_name!r} in {item.owner_name or '<unnamed>'}.{item.owner_field}",
-                   field=item.owner_field, scope=item.source_scope, source_name=item.owner_name, object_type=item.owner_family or "reference", source_path=item.owner_source_path)
+                   field=item.owner_field, scope=item.source_scope, source_name=item.owner_name, object_type=item.owner_family or "reference", source_path=item.owner_source_path, identity=item.owner_identity)
     for item in derived.relationship_issues:
         _issue(issues, "warning", "relationship", item.message, field=item.field,
                scope=item.source_scope, source_name=item.source_name, object_type=item.category)
