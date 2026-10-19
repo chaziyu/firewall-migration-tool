@@ -47,5 +47,6 @@ _SAFE_VALIDATION_MESSAGES = frozenset({
 
 
 def safe_validation_message(error, fallback):
-    message = str(error)
+    args = error.args
+    message = args[0] if len(args) == 1 and type(args[0]) is str else None
     return message if type(error) is ValueError and message in _SAFE_VALIDATION_MESSAGES else fallback

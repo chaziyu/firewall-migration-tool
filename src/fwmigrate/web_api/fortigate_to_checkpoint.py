@@ -5,7 +5,7 @@ import json
 import zipfile
 
 import yaml
-from flask import jsonify, request, send_file
+from flask import Response, jsonify, request, send_file
 
 from fwmigrate.conversion.fortigate_to_checkpoint.application import (
     BINDINGS_FILE, GAIA_FILE, MANAGEMENT_FILE, approve_design, build_artifact,
@@ -67,8 +67,8 @@ def register_fortigate_to_checkpoint_routes(app, signing_key):
                 if action in file_names:
                     name, mimetype = file_names[action]
                     raw = artifact["files"][name]["content"].encode("utf-8")
-                    return send_file(io.BytesIO(raw), mimetype=mimetype,
-                                     as_attachment=True, download_name=name)
+                    return Response(raw, mimetype=mimetype,
+                                    headers={"Content-Disposition": f'attachment; filename="{name}"'})
                 bundle = io.BytesIO()
                 with zipfile.ZipFile(bundle, "w", zipfile.ZIP_DEFLATED) as archive:
                     for name in (MANAGEMENT_FILE, GAIA_FILE, BINDINGS_FILE):

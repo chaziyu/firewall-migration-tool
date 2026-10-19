@@ -164,18 +164,125 @@ def sanitize_raw_text(text: str) -> str:
         sanitized,
         flags=re.IGNORECASE,
     )
-    sanitized = re.sub(
-        rf"(<(?:{key_pattern}|bind-password|authentication-key)(?:\s[^>]*)?>).*?(</(?:{key_pattern}|bind-password|authentication-key)>)",
-        rf"\1{REDACTED_PLACEHOLDER}\2",
-        sanitized,
-        flags=re.IGNORECASE | re.DOTALL,
-    )
-    sanitized = re.sub(
-        r"(<[^>]*(?:password|secret|token|private-key|shared-secret|psk|community)[^>]*>).*?(</[^>]+>)",
-        rf"\1{REDACTED_PLACEHOLDER}\2",
-        sanitized,
-        flags=re.IGNORECASE | re.DOTALL,
-    )
-    return sanitized
+    return _sanitize_xml_secret_text(sanitized)
+
+
+def _sanitize_xml_secret_text(text: str) -> str:
+    """Redact XML element text with a single pass, preserving other evidence."""
+    output = []
+    stack = []
+    position = 0
+    secret_start = None
+    secret_open_end = None
+    while True:
+        start = text.find("<", position)
+        if start < 0:
+            if stack and any(secret for _, secret, _, _ in stack):
+                output.append(REDACTED_PLACEHOLDER if text[position:].strip() else text[position:])
+            else:
+                output.append(text[position:])
+            break
+        end = text.find(">", start + 1)
+        if end < 0:
+            remainder = text[start + 1:].lstrip("?!/")
+            parts = remainder.split()
+            candidate = parts[0].rstrip("/") if parts else ""
+            sensitive_attribute = any(is_sensitive_key(part.split("=", 1)[0].strip("\"'")) for part in parts[1:])
+            if secret_start is not None:
+                return text[:secret_start] + text[secret_start:secret_open_end] + REDACTED_PLACEHOLDER
+            if candidate and (is_sensitive_key(candidate) or sensitive_attribute):
+                return text[:start] + f"<{candidate}>{REDACTED_PLACEHOLDER}"
+            output.append(text[position:])
+            break
+
+        raw_tag = text[start + 1:end]
+        tag = raw_tag.strip()
+        closing = tag.startswith("/")
+        self_closing = tag.endswith("/")
+        name = (tag[1:].lstrip().split(None, 1)[0] if closing else
+                tag.split(None, 1)[0].rstrip("/") if tag else "")
+        if not name or tag.startswith(("?", "!")):
+            if secret_start is not None:
+                return text[:secret_start] + text[secret_start:secret_open_end] + REDACTED_PLACEHOLDER
+            output.append(text[position:end + 1])
+            position = end + 1
+            continue
+
+        in_secret = any(secret for _, secret, _, _ in stack)
+        segment = text[position:start]
+        output.append(REDACTED_PLACEHOLDER if in_secret and segment.strip() else segment)
+        if closing:
+            if not stack or stack[-1][0].casefold() != name.casefold():
+                if secret_start is not None:
+                    return text[:secret_start] + text[secret_start:secret_open_end] + REDACTED_PLACEHOLDER
+                output.append(text[start:end + 1])
+            else:
+                _, was_secret, _, _ = stack.pop()
+                output.append(text[start:end + 1])
+                if was_secret and not any(secret for _, secret, _, _ in stack):
+                    secret_start = None
+                    secret_open_end = None
+        else:
+            safe_tag, sensitive_attribute = _redact_xml_attributes(raw_tag)
+            sensitive = (is_sensitive_key(name) or name.casefold() in {"bind-password", "authentication-key"}
+                         or sensitive_attribute)
+            output.append(f"<{safe_tag}>")
+            if not self_closing:
+                stack.append((name, sensitive, start, end + 1))
+                if sensitive:
+                    if secret_start is None:
+                        secret_start, secret_open_end = start, end + 1
+        position = end + 1
+
+    if stack and secret_start is not None:
+        return text[:secret_start] + text[secret_start:secret_open_end] + REDACTED_PLACEHOLDER
+    return "".join(output)
+
+
+def _redact_xml_attributes(tag: str) -> tuple[str, bool]:
+    """Mask sensitive XML attribute values without changing other attributes."""
+    replacements = []
+    sensitive = False
+    position = 0
+    length = len(tag)
+    while position < length and not tag[position].isspace() and tag[position] not in "/>?":
+        position += 1
+    while position < length:
+        while position < length and (tag[position].isspace() or tag[position] in "/?"):
+            position += 1
+        start = position
+        while position < length and not tag[position].isspace() and tag[position] not in "=/>?":
+            position += 1
+        if position == start:
+            position += 1
+            continue
+        name = tag[start:position]
+        while position < length and tag[position].isspace():
+            position += 1
+        if position >= length or tag[position] != "=":
+            continue
+        position += 1
+        while position < length and tag[position].isspace():
+            position += 1
+        quote = tag[position] if position < length and tag[position] in "\"'" else ""
+        if quote:
+            value_start = position + 1
+            value_end = tag.find(quote, value_start)
+            if value_end < 0:
+                break
+            position = value_end + 1
+            if is_sensitive_key(name):
+                replacements.append((value_start, value_end))
+                sensitive = True
+        else:
+            value_start = position
+            while position < length and not tag[position].isspace() and tag[position] not in "/>?":
+                position += 1
+            if is_sensitive_key(name):
+                replacements.append((value_start, position))
+                sensitive = True
+    for start, end in reversed(replacements):
+        tag = tag[:start] + REDACTED_PLACEHOLDER + tag[end:]
+    return tag, sensitive
 
 

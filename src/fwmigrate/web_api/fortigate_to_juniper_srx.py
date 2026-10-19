@@ -5,7 +5,7 @@ import json
 import zipfile
 
 import yaml
-from flask import jsonify, request, send_file
+from flask import Response, jsonify, request, send_file
 
 from fwmigrate.conversion.fortigate_to_juniper_srx.application import (
     approve_design,
@@ -53,11 +53,10 @@ def register_fortigate_to_juniper_srx_routes(app, signing_key):
                         "command_sha256": artifact["command_sha256"],
                     })
                 if action == "commands":
-                    return send_file(
-                        io.BytesIO(command_bytes),
+                    return Response(
+                        command_bytes,
                         mimetype="text/plain",
-                        as_attachment=True,
-                        download_name="juniper_config.set",
+                        headers={"Content-Disposition": 'attachment; filename="juniper_config.set"'},
                     )
 
                 entry = analyze_request_source(payload, "fortigate")

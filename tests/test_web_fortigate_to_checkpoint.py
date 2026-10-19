@@ -82,18 +82,23 @@ def test_checkpoint_web_approval_previews_and_downloads_exact_split_bytes(monkey
 
     preview = client.post(prefix + "/artifact-preview", json={"source": source, "artifact": artifact})
     assert preview.status_code == 200, preview.json
-    for route, filename in (("management-operations", "checkpoint_management_operations.json"),
-                            ("gaia-config", "gaia_config.clish"),
-                            ("bindings", "checkpoint_bindings.json")):
+    downloaded = {}
+    for route, filename, mimetype in (("management-operations", "checkpoint_management_operations.json", "application/json"),
+                                      ("gaia-config", "gaia_config.clish", "text/plain"),
+                                      ("bindings", "checkpoint_bindings.json", "application/json")):
         response = client.post(prefix + "/" + route, json={"source": source, "artifact": artifact})
         assert response.status_code == 200
-        assert response.data.decode("utf-8") == preview.json["files"][filename]["text"]
+        assert response.mimetype == mimetype
+        assert "attachment" in response.headers["Content-Disposition"]
+        assert filename in response.headers["Content-Disposition"]
+        downloaded[filename] = response.data
+        assert response.data == preview.json["files"][filename]["text"].encode("utf-8")
 
     bundle = client.post(prefix + "/bundle", json={"source": source, "artifact": artifact})
     assert bundle.status_code == 200
     with zipfile.ZipFile(BytesIO(bundle.data)) as archive:
         for filename in ("checkpoint_management_operations.json", "gaia_config.clish", "checkpoint_bindings.json"):
-            assert archive.read(filename).decode("utf-8") == preview.json["files"][filename]["text"]
+            assert archive.read(filename) == downloaded[filename]
         report = json.loads(archive.read("migration_report.json"))
         assert report["file_sha256"] == artifact["file_sha256"]
 
@@ -103,7 +108,7 @@ def test_checkpoint_web_approval_previews_and_downloads_exact_split_bytes(monkey
     assert transport_calls == []
 
 
-def test_checkpoint_web_rejects_stale_source_target_upload_and_tampered_artifact():
+def test_checkpoint_web_rejects_stale_source_target_upload_and_tampered_artifact(monkeypatch):
     app = create_app({"TESTING": True, "WORKSPACE_SIGNING_KEY": b"x" * 32})
     client = app.test_client()
     source = {"vendor": "fortigate", "source_text": SOURCE}
@@ -129,6 +134,15 @@ def test_checkpoint_web_rejects_stale_source_target_upload_and_tampered_artifact
     tampered["files"]["gaia_config.clish"]["content"] += "save config\n"
     rejected = client.post(prefix + "/artifact-preview", json={"source": source, "artifact": tampered})
     assert rejected.status_code == 400
+    for route in ("management-operations", "gaia-config", "bindings", "bundle"):
+        rejected = client.post(prefix + "/" + route, json={"source": source, "artifact": tampered})
+        assert rejected.status_code == 400
+
+    import time
+    monkeypatch.setattr(time, "time", lambda: artifact["expires_at"] + 1)
+    for route in ("management-operations", "gaia-config", "bindings", "bundle"):
+        rejected = client.post(prefix + "/" + route, json={"source": source, "artifact": artifact})
+        assert rejected.status_code == 400
 
     deployment = client.post("/api/deploy", json={"artifact": artifact})
     assert deployment.status_code in {400, 403}

@@ -11,7 +11,12 @@ from functools import wraps
 
 from flask import jsonify, request
 
-from fwmigrate.conversion.fortigate_to_palo_alto.application import ArtifactEligibilityError, deployment_validation_feedback, deployment_serial
+from fwmigrate.conversion.fortigate_to_palo_alto.application import (
+    ARTIFACT_ELIGIBILITY_MESSAGES,
+    ArtifactEligibilityError,
+    deployment_validation_feedback,
+    deployment_serial,
+)
 from fwmigrate.deployment import PANDeploymentOptions, PANDeploymentSession
 from fwmigrate.web_support.artifact_signing import verify_artifact, verify_envelope
 from fwmigrate.web_support.reporting import _parse_bool
@@ -40,6 +45,40 @@ _SAFE_DEPLOYMENT_ERRORS = frozenset({
 
 def _public_deployment_error(message, fallback):
     return message if message in _SAFE_DEPLOYMENT_ERRORS else fallback
+
+
+def _public_artifact_eligibility_error(error):
+    return ARTIFACT_ELIGIBILITY_MESSAGES.get(getattr(error, 'reason_code', None),
+        'Artifact is not eligible; review approval and try again.')
+
+
+def _public_set_import_error(error):
+    message = str(error)
+    fixed = {
+        'Choose a .set command file.',
+        'Choose a nonempty .set file of at most 5 MB.',
+        'The .set file must use UTF-8 encoding.',
+        'The file must contain between 1 and 50,000 commands.',
+        'Destination XML contains no selectable firewall device.',
+        'Select a device present in the destination XML.',
+        'Destination XML must contain an explicit device serial.',
+        'Only standalone firewall destination evidence is supported.',
+        'A command references a VSYS absent from the selected destination.',
+        'Enter a destination host and valid SSH port before review.',
+    }
+    if message in fixed:
+        return message
+    line, separator, reason = message.partition(': ')
+    number = line.removeprefix('Line ')
+    reasons = {
+        'Command exceeds the line length limit', 'Unsafe control character', 'Malformed quoting',
+        'Secret-bearing commands are not supported', 'Command separators are not supported',
+        'Unsupported command path; use explicit VSYS and supported configuration paths',
+    }
+    reason = reason.removesuffix('.')
+    if separator and number.isdecimal() and 1 <= int(number) <= 50_000 and reason in reasons:
+        return f'Line {int(number)}: {reason}.'
+    return 'The uploaded command file is invalid.'
 
 
 def _public_deployment_result(result):
@@ -119,7 +158,7 @@ def register_deployment_routes(
             result = create_set_review(uploaded.read(MAX_SET_BYTES + 1), uploaded.filename, payload, signing_key)
             return jsonify({'success': True, **result})
         except SetImportError as exc:
-            return jsonify({'success': False, 'error': str(exc)}), 400
+            return jsonify({'success': False, 'error': _public_set_import_error(exc)}), 400
         except (ValueError, KeyError, TypeError):
             return jsonify({'success': False, 'error': 'Invalid upload or destination evidence. Select actual destination XML with device serial evidence.'}), 400
 
@@ -132,7 +171,7 @@ def register_deployment_routes(
             artifact = approve_set_review(payload['review'], payload['command_sha256'], signing_key)
             return jsonify({'success': True, 'artifact': artifact})
         except ArtifactEligibilityError as exc:
-            return jsonify({'success': False, 'error': str(exc), 'error_code': 'artifact_ineligible'}), 400
+            return jsonify({'success': False, 'error': _public_artifact_eligibility_error(exc), 'error_code': 'artifact_ineligible'}), 400
         except (ValueError, KeyError, TypeError):
             return jsonify({'success': False, 'error': 'Upload review changed; review and approve the file again.'}), 400
 
@@ -164,7 +203,7 @@ def register_deployment_routes(
                         return jsonify({'success': False, 'error': 'The migration artifact contains no renderable commands'}), 400
                 options = _deployment_options(payload)
             except ArtifactEligibilityError as exc:
-                return jsonify({'success': False, 'error': str(exc), 'error_code': 'artifact_ineligible'}), 400
+                return jsonify({'success': False, 'error': _public_artifact_eligibility_error(exc), 'error_code': 'artifact_ineligible'}), 400
             except (ValueError, KeyError, TypeError):
                 _LOGGER.warning('Invalid deployment request payload.')
                 return jsonify({'success': False, 'error': 'A signed READY design with approved destination serial evidence is required.'}), 400
@@ -350,7 +389,7 @@ def register_deployment_routes(
             }), (200 if valid else 502)
         except ArtifactEligibilityError as exc:
             deployment_sessions.pop(payload.get('deployment_session_id'), None)
-            return jsonify({'success': False, 'error': str(exc), 'error_code': 'artifact_ineligible'}), 400
+            return jsonify({'success': False, 'error': _public_artifact_eligibility_error(exc), 'error_code': 'artifact_ineligible'}), 400
         except _CandidateSessionError as exc:
             return jsonify({
                 'success': False,
@@ -380,7 +419,7 @@ def register_deployment_routes(
             }), (200 if result.status == 'SUCCESS' else 502)
         except ArtifactEligibilityError as exc:
             deployment_sessions.pop(payload.get('deployment_session_id'), None)
-            return jsonify({'success': False, 'error': str(exc), 'error_code': 'artifact_ineligible'}), 400
+            return jsonify({'success': False, 'error': _public_artifact_eligibility_error(exc), 'error_code': 'artifact_ineligible'}), 400
         except _CandidateSessionError as exc:
             return jsonify({
                 'success': False,

@@ -405,7 +405,7 @@ body:has(.finding-inspector[open]) { overflow: hidden; }
 .source-report .report-table .finding-inline-link { flex-shrink: 0; margin: 0; min-height: 24px; }
 .source-report .report-table th { position: sticky; top: 0; z-index: 1; background: var(--surface-muted); }
 .source-report .report-cell { display: -webkit-box; width: 240px; max-height: 3em; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; white-space: normal; overflow-wrap: break-word; }
-.source-report .report-table-wrap { max-height: max(120px, calc(100dvh - 22rem)); overscroll-behavior: contain; }
+.source-report .report-table-wrap { height: clamp(320px, 75svh, 820px); max-width: 100%; min-width: 0; overflow: auto; scrollbar-gutter: stable; overscroll-behavior: contain; }
 .source-report .report-row-count { margin: 0 0 var(--space-2); color: var(--text-muted); font-size: var(--font-size-small); }
 .report-detail-value { white-space: pre-wrap; overflow-wrap: anywhere; }
 .excel-export-controls { min-width: 0; max-width: 460px; }

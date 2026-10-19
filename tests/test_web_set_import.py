@@ -32,6 +32,34 @@ def approve(client, draft):
     return result.get_json()['artifact']
 
 
+@pytest.mark.parametrize(('message', 'expected'), [
+    ('Line 2: Malformed quoting.', 'Line 2: Malformed quoting.'),
+    ('SYNTHETIC_UPLOAD_SECRET', 'The uploaded command file is invalid.'),
+])
+def test_upload_errors_return_only_approved_public_messages(client, monkeypatch, message, expected):
+    import fwmigrate.web_api.deployment as deployment_api
+    from fwmigrate.deployment.panos_set_import import SetImportError
+
+    monkeypatch.setattr(deployment_api, 'create_set_review', lambda *args: (_ for _ in ()).throw(SetImportError(message)))
+    response = review(client)
+    assert response.status_code == 400
+    assert response.get_json()['error'] == expected
+    assert 'SYNTHETIC_UPLOAD_SECRET' not in response.get_data(as_text=True)
+
+
+def test_artifact_eligibility_errors_return_only_approved_public_messages(client, monkeypatch):
+    import fwmigrate.web_api.deployment as deployment_api
+    from fwmigrate.conversion.fortigate_to_palo_alto.application import ArtifactEligibilityError
+
+    monkeypatch.setattr(deployment_api, 'approve_set_review',
+                        lambda *args: (_ for _ in ()).throw(ArtifactEligibilityError('UNKNOWN_REASON_CODE')))
+    response = client.post('/api/deployment/set/approve', json={'review': {}, 'command_sha256': 'digest'})
+    assert response.status_code == 400
+    assert response.get_json()['error'] == 'Artifact is not eligible; review approval and try again.'
+    assert response.get_json()['error_code'] == 'artifact_ineligible'
+    assert 'UNKNOWN_REASON_CODE' not in response.get_data(as_text=True)
+
+
 def test_uploaded_renderer_output_requires_approval_and_reuses_candidate_lifecycle(client, monkeypatch):
     planned = _ready_artifact(client)
     commands = '\n'.join(planned['commands'])

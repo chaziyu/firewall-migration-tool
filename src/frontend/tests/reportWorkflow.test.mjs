@@ -112,49 +112,47 @@ test('Excel controls explain vendor evidence and retain progress and disabled st
   } finally { await server.close() }
 })
 
-test('report table follows available viewport height and cleans up layout listeners', () => {
+test('report table keeps a stable scroll viewport and row details', () => {
   const originalWindow = globalThis.window
   const originalObserver = globalThis.ResizeObserver
-  const listeners = new Map()
-  let resizeLayout
-  let cleanup
-  let height
-  let top = 320
-  let disconnected = false
-  const main = {}
-  const table = { closest: () => main, getBoundingClientRect: () => ({ top }) }
-  globalThis.window = { innerHeight: 900, addEventListener: (name, callback) => listeners.set(name, callback), removeEventListener: (name) => listeners.delete(name) }
+  const listeners = []
+  let observerCreated = false
+  let selected
+  const table = { closest: () => ({}), getBoundingClientRect: () => ({ top: 320 }) }
+  globalThis.window = { addEventListener: (name) => listeners.push(name), removeEventListener() {} }
   globalThis.ResizeObserver = class {
-    constructor(callback) { resizeLayout = callback }
-    observe(element) { assert.equal(element, main) }
-    disconnect() { disconnected = true }
+    constructor() { observerCreated = true }
+    observe() {}
+    disconnect() {}
   }
   try {
     const source = readFileSync(new URL('../src/features/report/SourceReport.tsx', import.meta.url), 'utf8')
     const compiled = ts.transpileModule(`${source}\nexport { SourceRowsTable }`, { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText
     const exports = {}
-    const hooks = { useRef: () => ({ current: table }), useState: () => [undefined, (value) => { height = value }], useEffect: (callback) => { cleanup = callback() } }
+    const hooks = { useRef: () => ({ current: table }), useState: () => [undefined, () => {}], useEffect: (callback) => callback() }
     const modules = { react: hooks, 'react/jsx-runtime': jsxRuntime, './reportPresentation': presentation, './ReportDetails': {}, './ExcelExportControls': {}, '../../components/common/tabKeyboard': {} }
     new Function('require', 'exports', compiled)((name) => modules[name], exports)
-    let selected
     const tree = exports.SourceRowsTable({ rows: [{ name: 'port1' }], columns: ['name'], loadMoreRef: { current: null }, onSelect(row) { selected = row } })
-    const identity = nodes(tree).find((node) => node.props.className === 'report-identity-content')
+    const rendered = nodes(tree)
+    const tableWrap = rendered.find((node) => node.props.className === 'report-table-wrap')
+    assert.equal(tableWrap.props.role, 'region')
+    assert.equal(tableWrap.props.tabIndex, 0)
+    assert.equal(tableWrap.props.style, undefined)
+    assert.deepEqual(listeners, [], 'Table height does not listen for page scroll or resize')
+    assert.equal(observerCreated, false, 'Table height does not use ResizeObserver')
+    const identity = rendered.find((node) => node.props.className === 'report-identity-content')
     const details = nodes(identity).find((node) => node.props['aria-label'] === 'Details for port1')
     details.props.onClick()
-    assert.equal(selected.name, 'port1', 'Compact rows retain their details action')
-    assert.equal(height, 564)
-    top = 480
-    resizeLayout()
-    assert.equal(height, 404, 'Expanding the source panel reduces available table height')
-    globalThis.window.innerHeight = 600
-    listeners.get('resize')()
-    assert.equal(height, 120, 'A short viewport retains a usable minimum')
-    top = -40
-    listeners.get('scroll')()
-    assert.equal(height, 584)
-    cleanup()
-    assert.equal(disconnected, true)
-    assert.equal(listeners.size, 0)
+    assert.equal(selected.name, 'port1', 'Rows retain their Details action')
+
+    const css = readFileSync(new URL('../src/App.css', import.meta.url), 'utf8')
+    const tableRule = css.match(/\.source-report \.report-table-wrap\s*\{([^}]*)\}/)?.[1] ?? ''
+    assert.match(tableRule, /height:\s*clamp\(320px,\s*75svh,\s*820px\)/)
+    assert.match(tableRule, /overflow:\s*auto/)
+    assert.match(tableRule, /scrollbar-gutter:\s*stable/)
+    assert.match(css, /\.source-report \.report-table th\s*\{[^}]*position:\s*sticky/)
+    assert.equal(Math.max(320, Math.min(900 * 0.75, 820)), 675, 'Desktop table height follows 75svh')
+    assert.equal(Math.max(320, Math.min(390 * 0.75, 820)), 320, 'Mobile table height respects its minimum')
   } finally {
     globalThis.window = originalWindow
     globalThis.ResizeObserver = originalObserver

@@ -391,6 +391,38 @@ def test_source_excel_rejects_missing_input_and_unknown_vendor():
     assert unknown.status_code == 400
 
 
+@pytest.mark.parametrize('route', ['/api/preview', '/api/extract/excel'])
+def test_source_decode_errors_do_not_expose_exception_text(monkeypatch, route):
+    import fwmigrate.web_api.source as source_api
+    from fwmigrate.web_support.reporting import ConfigurationDecodeError
+
+    monkeypatch.setattr(source_api, 'analyze_request_source',
+                        lambda *args, **kwargs: (_ for _ in ()).throw(ConfigurationDecodeError('SYNTHETIC_DECODE_SECRET')))
+    client = create_app({'TESTING': True}).test_client()
+    response = client.post(route, data={'source_vendor': 'fortigate',
+        'file': (io.BytesIO(b'valid input'), 'source.conf')})
+    assert response.status_code == 400
+    payload = response.get_json()
+    assert payload['error'] == 'Configuration file is not valid UTF-8.'
+    assert payload['stage'] == 'decode'
+    assert 'SYNTHETIC_DECODE_SECRET' not in response.get_data(as_text=True)
+
+
+def test_excel_unavailable_error_does_not_expose_exception_text(monkeypatch):
+    import fwmigrate.web_api.source as source_api
+    from fwmigrate.source_reporting import ExcelExportUnavailableError
+
+    reporter = source_api.source_reporters.get('fortigate')
+    monkeypatch.setattr(reporter, 'export_excel',
+                        lambda *args, **kwargs: (_ for _ in ()).throw(ExcelExportUnavailableError('SYNTHETIC_EXPORT_SECRET')))
+    response = create_app({'TESTING': True}).test_client().post('/api/extract/excel', data={
+        'source_vendor': 'fortigate', 'file': (io.BytesIO(FORTIGATE_SOURCE.encode()), 'source.conf'),
+    })
+    assert response.status_code == 503
+    assert response.get_json()['error'] == 'Excel export is unavailable for this source.'
+    assert 'SYNTHETIC_EXPORT_SECRET' not in response.get_data(as_text=True)
+
+
 def test_source_excel_vendor_mismatch_does_not_use_cached_preview():
     client = create_app({"TESTING": True}).test_client()
     preview = _post(client, "/api/preview").get_json()

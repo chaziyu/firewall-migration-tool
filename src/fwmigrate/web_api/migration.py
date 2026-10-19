@@ -14,6 +14,7 @@ from flask import jsonify, request, send_file
 
 from fwmigrate.conversion.fortigate_to_palo_alto.application import (
     ArtifactEligibilityError,
+    ARTIFACT_ELIGIBILITY_MESSAGES,
     AutomationPolicy,
     DESIGN_APPROVAL_TTL_SECONDS,
     approval_is_current,
@@ -348,7 +349,7 @@ def register_migration_routes(
             response['decision_document']['draft_required'] = True
             return jsonify(response)
         except InterfaceMappingConfirmationError as exc:
-            return jsonify({'success': False, 'error': str(exc), 'errors': exc.errors}), 400
+            return jsonify({'success': False, 'error': 'Interface mapping confirmation failed.', 'errors': exc.errors}), 400
         except (ValueError, KeyError, TypeError) as exc:
             return jsonify({'success': False, 'error': safe_validation_message(exc, 'Invalid migration request')}), 400
 
@@ -690,7 +691,9 @@ def register_migration_routes(
                 deployment_serial(rendered, decision_document, design_approval)
                 deployment_eligibility = {'eligible': True, 'reason': None}
             except ArtifactEligibilityError as exc:
-                deployment_eligibility = {'eligible': False, 'reason': str(exc)}
+                deployment_eligibility = {'eligible': False,
+                    'reason': ARTIFACT_ELIGIBILITY_MESSAGES.get(exc.reason_code,
+                        'Artifact is not eligible; review approval and try again.')}
             rendered = replace(rendered, report={**rendered.report, 'deployment_eligibility': deployment_eligibility,
                 'readiness': {'approval': {'current': True, 'expires_at': design_approval['expires_at']},
                     'export': {'status': 'NO_CHANGES' if plan_status == 'READY_NO_CHANGES' else plan_status,

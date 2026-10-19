@@ -49,6 +49,8 @@ def test_web_approval_preview_download_bundle_share_exact_bytes(setup_reverse):
     commands = client.post(PREFIX + "/commands", json={"artifact": artifact})
     bundle = client.post(PREFIX + "/bundle", json={"artifact": artifact, "source": payload["source"]})
     assert preview.status_code == commands.status_code == bundle.status_code == 200
+    assert "attachment" in commands.headers["Content-Disposition"]
+    assert "fortigate_config.conf" in commands.headers["Content-Disposition"]
     assert preview.get_json()["text"].encode() == commands.data
     assert hashlib.sha256(commands.data).hexdigest() == artifact["command_sha256"]
     with zipfile.ZipFile(io.BytesIO(bundle.data)) as archive:
@@ -86,6 +88,9 @@ def test_web_never_accepts_client_commands_or_unapproved_artifacts(setup_reverse
     assert client.post(PREFIX + "/build", json={**payload, "commands": ["config firewall policy"]}).status_code == 400
     artifact, _ = approved_artifact(client, payload)
     artifact["commands"].append("end")
+    assert client.post(PREFIX + "/commands", json={"artifact": artifact}).status_code == 400
+    artifact, _ = approved_artifact(client, payload)
+    artifact.pop("signature")
     assert client.post(PREFIX + "/commands", json={"artifact": artifact}).status_code == 400
 
 
