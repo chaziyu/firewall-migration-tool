@@ -16,6 +16,7 @@ class PANOSValidationIssue:
     source_scope: PANScope | None = None
     scope_identity: str | None = None
     object_type: str | None = None
+    source_identity: tuple = ()
 
 
 @dataclass(frozen=True, slots=True)

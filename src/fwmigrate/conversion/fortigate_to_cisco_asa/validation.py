@@ -43,27 +43,6 @@ def validate_plan(plan):
 
 def dispositions(plan):
     result = {}
-<<<<<<< Updated upstream
-    def assess(key):
-        if key in result:
-            return result[key]
-        item = by_key[key]
-        value = "BLOCK" if item.blockers or any(assess(dep) == "BLOCK" for dep in item.dependencies) else item.disposition
-        result[key] = value
-        return value
-    for key in by_key:
-        assess(key)
-=======
     for item in ordered_items(plan):
         result[item.key] = "BLOCK" if item.blockers or any(result[dep] == "BLOCK" for dep in item.dependencies) else item.disposition
-    changed = True
-    while changed:
-        changed = False
-        blocked_groups = {item.approval_group for item in plan.items if item.approval_group and result[item.key] == "BLOCK"}
-        for item in plan.items:
-            if result[item.key] != "BLOCK" and (item.approval_group in blocked_groups
-                    or any(result[dep] == "BLOCK" for dep in item.dependencies)):
-                result[item.key] = "BLOCK"
-                changed = True
->>>>>>> Stashed changes
     return result

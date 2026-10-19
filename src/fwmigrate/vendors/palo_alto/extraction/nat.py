@@ -69,7 +69,9 @@ def _dynamic_destination(element: ET.Element):
         else:
             extra, explicit = typed_fields(branch, {"direction"})
             dns = PANDNSRewrite(enabled=branch.tag, direction=value(branch, "direction"), raw_extra=extra, explicit_fields={"enabled", *explicit})
-    distribution = next(iter(node.find("distribution")), None) if node.find("distribution") is not None else None
+    distribution_node = node.find("distribution")
+    distribution = next(iter(distribution_node), None) if distribution_node is not None else None
+    distribution_text = value(node, "distribution")
     extra, explicit = typed_fields(
         node,
         {"translated-address", "translated-port", "distribution", "dns-rewrite"},
@@ -81,11 +83,14 @@ def _dynamic_destination(element: ET.Element):
     )
     explicit.discard("dns-rewrite")
     if distribution is not None:
-        extra["distribution"] = {distribution.tag: structured_xml_capture(distribution)}
+        extra["distribution"] = sanitize_source_attributes(structured_xml_capture(distribution_node))
+    supported = {"round-robin", "source-ip-hash", "ip-modulo", "ip-hash", "least-sessions"}
+    if distribution_node is not None and distribution is None and distribution_text not in supported:
+        extra["distribution"] = structured_xml_capture(distribution_node)
     return PANDynamicDestinationTranslation(
         translated_addresses=values(node, "translated-address"),
         translated_port=value(node, "translated-port"),
-        distribution=distribution.tag if distribution is not None else None,
+        distribution=distribution.tag if distribution is not None and not distribution_text else distribution_text,
         dns_rewrite=dns,
         raw_extra=extra,
         explicit_fields=explicit,

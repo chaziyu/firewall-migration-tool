@@ -4,67 +4,11 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from typing import Any, Callable, Iterable, Iterator
 import xml.etree.ElementTree as ET
-from pydantic import BaseModel
 
-from ..schema_registry import match_path_spec, registered_paths
 from ..source_model import PANScope, pan_scope_identity
 from ..source_report import PaloAltoSourceResult
-
-
-_TYPED_COUNT_FIELDS = {
-    "tag": "tags",
-    "address": "addresses",
-    "address_group": "address_groups",
-    "service": "services",
-    "service_group": "service_groups",
-    "schedule": "schedules",
-    "security_rule": "security_rules",
-    "default_security_rule": "default_security_rules",
-    "nat_rule": "nat_rules",
-    "interface_import": "interface_imports",
-    "virtual_router_import": "interface_imports",
-    "interface_ethernet": "interfaces",
-    "interface_aggregate-ethernet": "interfaces",
-    "interface_loopback": "interfaces",
-    "interface_tunnel": "interfaces",
-    "interface_vlan": "interfaces",
-    "zone": "zones",
-    "security_profile_group": "security_profile_groups",
-    "interface_unit": "interface_units",
-    "virtual_router": "virtual_routers",
-    "logical_router": "logical_routers",
-    "ipsec_tunnel": "ipsec_tunnels",
-    "vulnerability_profile": "vulnerability_profiles",
-    "administrator": "administrators",
-    "administrator_mgt_config": "administrators",
-    "admin_role": "admin_roles",
-    "ike_gateway": "ike_gateways",
-    "ike_crypto_profile": "ike_crypto_profiles",
-    "ipsec_crypto_profile": "ipsec_crypto_profiles",
-    "dhcp_server": "dhcp_servers",
-    "dhcp_interface": "dhcp_servers",
-    "sdwan_interface_profile": "sdwan_interface_profiles",
-    "sdwan_path_quality_profile": "sdwan_path_quality_profiles",
-    "sdwan_traffic_distribution_profile": "sdwan_traffic_distribution_profiles",
-    "sdwan_saas_quality_profile": "sdwan_saas_quality_profiles",
-    "sdwan_error_correction_profile": "sdwan_error_correction_profiles",
-    "sdwan_interface_profile_cli": "sdwan_interface_profiles",
-    "sdwan_path_quality_profile_cli": "sdwan_path_quality_profiles",
-    "sdwan_traffic_distribution_profile_cli": "sdwan_traffic_distribution_profiles",
-    "sdwan_saas_quality_profile_cli": "sdwan_saas_quality_profiles",
-    "sdwan_error_correction_profile_cli": "sdwan_error_correction_profiles",
-    "sdwan_rule": "sdwan_rules",
-    "local_user": "local_users",
-    "local_user_database": "local_users",
-    "local_user_group": "local_user_groups",
-    "local_user_group_compat": "local_user_groups",
-    "group_mapping": "group_mappings",
-    "globalprotect_portal": "globalprotect_portals",
-    "globalprotect_gateway": "globalprotect_gateways",
-    "globalprotect_portal_selected": "globalprotect_portals",
-    "globalprotect_gateway_selected": "globalprotect_gateways",
-}
-
+from ..source_accounting import _TYPED_COUNT_FIELDS
+from ..identity import source_identity, source_identity_text
 
 def _scope_id(scope: PANScope | None) -> str:
     return pan_scope_identity(scope) if scope else "<unscoped>"
@@ -87,51 +31,43 @@ class _PANExcelContext:
     analysis: PaloAltoSourceResult
     source_name: str | None = None
     collection_status: str | None = None
-    validation_by_object: dict[tuple[str, str, str, str | None], tuple[Any, ...]] = field(init=False)
+    validation_by_object: dict[tuple, tuple[Any, ...]] = field(init=False)
+    validation_legacy: dict[tuple, tuple[Any, ...]] = field(init=False)
+    legacy_owner_counts: Counter = field(init=False)
+    legacy_name_counts: Counter = field(init=False)
+    references_by_owner: dict[tuple, tuple[Any, ...]] = field(init=False)
     validation_by_scope: dict[str, tuple[Any, ...]] = field(init=False)
-    typed_identities: dict[tuple[str, str | None, str, int | None], list[Any]] = field(init=False)
     typed_paths: set[str] = field(init=False)
     source_domains: Counter = field(init=False)
     extracted_domains: Counter = field(init=False)
-    domain_statuses: dict[str, list[str]] = field(init=False)
+    domain_statuses: dict[str, tuple[str, ...]] = field(init=False)
 
     def __post_init__(self) -> None:
-        objects: dict[tuple[str, str, str, str | None], list[Any]] = defaultdict(list)
-        scopes: dict[str, list[Any]] = defaultdict(list)
+        objects, legacy, scopes = defaultdict(list), defaultdict(list), defaultdict(list)
         for issue in self.analysis.validation.issues:
-            issue_scope = getattr(issue, "source_scope", None)
-            scope = issue_scope.model_dump_json() if issue_scope else "<unscoped>"
-            object_type = getattr(issue, "object_type", None) or issue.domain
-            objects[(issue.domain, scope, object_type, issue.source_name)].append(issue)
-            # Keep the object's validation domain distinct while allowing the
-            # existing identity and relationship issues to annotate its row.
-            if issue.domain != object_type:
-                objects[(object_type, scope, object_type, issue.source_name)].append(issue)
-            scopes[scope].append(issue)
+            object_type = issue.object_type or issue.domain
+            if issue.source_identity:
+                objects[(object_type, issue.source_identity)].append(issue)
+            elif issue.source_name is not None:
+                legacy[(object_type, _scope_key(issue.source_scope), issue.source_name, issue.source_path)].append(issue)
+            scopes[_scope_key(issue.source_scope)].append(issue)
         self.validation_by_object = {key: tuple(value) for key, value in objects.items()}
+        self.validation_legacy = {key: tuple(value) for key, value in legacy.items()}
         self.validation_by_scope = {key: tuple(value) for key, value in scopes.items()}
-        typed = [
-            item
-            for field in set(_TYPED_COUNT_FIELDS.values())
-            for item in getattr(self.analysis.config, field)
-        ]
-        typed.extend(self.analysis.derived.static_routes)
-        typed_by_identity: dict[tuple[str, str | None, str, int | None], list[Any]] = defaultdict(list)
-        for item in typed:
-            typed_by_identity[(item.source_path, getattr(item, "name", None), _scope_key(getattr(item, "scope", None)), getattr(item, "source_order", None))].append(item)
-        self.typed_identities = dict(typed_by_identity)
-        self.typed_paths = {path for path, _, _, _ in self.typed_identities}
-        source_domains: Counter = Counter()
-        extracted_domains: Counter = Counter()
-        domain_statuses: dict[str, list[str]] = defaultdict(list)
-        for record in self.config.source_inventory:
-            domain = _source_domain(record)
-            source_domains[domain] += 1
-            status = _inventory_status(self, record)
-            domain_statuses[domain].append(status)
-            if status == "EXTRACTED":
-                extracted_domains[domain] += 1
-        self.source_domains, self.extracted_domains, self.domain_statuses = source_domains, extracted_domains, domain_statuses
+        typed = [item for name in set(_TYPED_COUNT_FIELDS.values()) for item in getattr(self.config, name)]
+        typed.extend(self.derived.static_routes)
+        self.legacy_owner_counts = Counter(
+            (_scope_key(item.scope), getattr(item, "name", None), item.source_path) for item in typed)
+        self.legacy_name_counts = Counter((_scope_key(item.scope), getattr(item, "name", None)) for item in typed)
+        references = defaultdict(list)
+        for resolution in self.derived.reference_resolutions:
+            references[(resolution.owner_family, resolution.owner_identity)].append(resolution)
+        self.references_by_owner = {key: tuple(value) for key, value in references.items()}
+        accounting = self.analysis.accounting
+        self.typed_paths = set(accounting.typed_paths)
+        self.source_domains = accounting.source_domains
+        self.extracted_domains = accounting.extracted_domains
+        self.domain_statuses = accounting.domain_statuses
 
     @property
     def config(self): return self.analysis.config
@@ -143,27 +79,43 @@ class _PANExcelContext:
     def validation(self): return self.analysis.validation
 
     def issues_for(self, item: Any, object_type: str) -> tuple[Any, ...]:
-        return self.validation_by_object.get((object_type, _scope_key(getattr(item, "scope", None)), object_type, getattr(item, "name", None)), ())
+        exact = self.validation_by_object.get((object_type, source_identity(item)), ())
+        scope, name, path = _scope_key(getattr(item, "scope", None)), getattr(item, "name", None), item.source_path
+        legacy = self.validation_legacy.get((object_type, scope, name, path), ()) if self.legacy_owner_counts[(scope, name, path)] == 1 else ()
+        fallback = self.validation_legacy.get((object_type, scope, name, None), ()) if self.legacy_name_counts[(scope, name)] == 1 else ()
+        return (*exact, *legacy, *fallback)
 
 
 def _scope_key(scope: PANScope | None) -> str:
     return scope.model_dump_json() if scope else "<unscoped>"
 
 
-def _source_domain(item: Any) -> str:
-    spec = match_path_spec(tuple(item.source_path.split("/")))
-    return spec.name if spec else item.kind.replace("-", "_")
-
-
 def _base(context: _PANExcelContext, item: Any, object_type: str) -> dict[str, Any]:
     issues = context.issues_for(item, object_type)
     scope_type, scope_name = _scope(getattr(item, "scope", None))
-    return {"Name": getattr(item, "name", None), "Scope Type": scope_type, "Scope Name": scope_name,
+    row = {**_owner_columns(item), "Name": getattr(item, "name", None), "Scope Type": scope_type, "Scope Name": scope_name,
             "Analysis Status": "REVIEW_REQUIRED" if issues else "NO_VALIDATION_ISSUES",
             "Review Reasons": _text(issue.message for issue in issues),
             "Source Explicit Fields": _text(sorted(getattr(item, "explicit_fields", ()))),
             "Additional Settings": _text(getattr(item, "raw_extra", {})),
             "__review__": bool(issues), "__error__": any(issue.severity == "error" for issue in issues)}
+    if object_type == "interface":
+        row.update({"Unit / Subinterface": item.name if getattr(item, "parent", None) is not None else None,
+                    "VLAN Tag": getattr(item, "tag", None),
+                    "MTU": getattr(item, "mtu", None), "Management Profile": item.management_profile,
+                    "Link State": getattr(item, "link_state", None), "Speed": getattr(item, "speed", None),
+                    "Duplex": getattr(item, "duplex", None)})
+    return row
+
+
+def _owner_columns(item: Any, *, scope=None) -> dict[str, Any]:
+    scope = scope or getattr(item, "scope", None)
+    return {"Scope Identity": _scope_id(scope), "Source Record": source_identity_text(item),
+            "Device": scope.device_name if scope else None,
+            "Device Serial": scope.device_serial if scope else None,
+            "VSYS": scope.vsys if scope else None, "Device Group": scope.device_group if scope else None,
+            "Template": scope.template_provenance.get("template") if scope else None,
+            "Template Stack": scope.template_stack if scope else None}
 
 
 def _simple_rows(context: _PANExcelContext, items: Iterable[Any], object_type: str, fields: dict[str, str]) -> Iterator[dict[str, Any]]:
@@ -309,8 +261,8 @@ def _schedule_rows(context: _PANExcelContext) -> list[dict[str, Any]]:
 
 def _reference_text(context: _PANExcelContext, item: Any, fields: set[str]) -> str:
     values = []
-    for result in context.derived.reference_resolutions:
-        if result.owner_name == item.name and _scope_id(result.source_scope) == _scope_id(item.scope) and result.owner_field in fields:
+    for result in context.references_by_owner.get(("policy", source_identity(item)), ()):
+        if result.owner_field in fields:
             values.append(f"{result.reference_name} -> {_scope_id(result.resolved_target_scope) if result.resolved_target_scope else result.status}")
     return _text(values)
 
@@ -323,7 +275,7 @@ def _effective_order(context: _PANExcelContext, item: Any) -> str:
 def _security_policy_rows(context: _PANExcelContext) -> Iterator[dict[str, Any]]:
     for item in (*context.config.security_rules, *context.config.default_security_rules):
         profile = item.profile_setting
-        row = _base(context, item, "policy")
+        row = _base(context, item, "default-security-rule" if item in context.config.default_security_rules else "policy")
         row.update({"Source Order": item.source_order, "Rulebase Position": item.rulebase_position, "Effective Order": _effective_order(context, item),
                     "Rule Type": getattr(item, "rule_type", None), "From Zones": _text(getattr(item, "from_zones", None)), "To Zones": _text(getattr(item, "to_zones", None)),
                     "Source Addresses": _text(getattr(item, "source", None)), "Source Negate": getattr(item, "negate_source", None), "Source Users": _text(getattr(item, "source_user", None)),
@@ -364,7 +316,7 @@ def _nat_rows(context: _PANExcelContext) -> Iterator[dict[str, Any]]:
                     "Dynamic Destination Address": _text(getattr(dynamic, "translated_addresses", None)), "Dynamic Destination Port": getattr(dynamic, "translated_port", None),
                     "Dynamic Destination Distribution": getattr(dynamic, "distribution", None), "Derived Source Translation Mode": derived.source_translation_mode if derived else None,
                     "Derived Destination Translation Mode": derived.destination_translation_mode if derived else None,
-                    "Resolved Translation References": _text(f"{resolution.reference_name} -> {resolution.status}" for resolution in context.derived.reference_resolutions if resolution.owner_name == item.name and _scope_id(resolution.source_scope) == _scope_id(item.scope) and resolution.owner_family == "nat" and resolution.owner_field.startswith(("source_translation.", "destination_translation.", "dynamic_destination_translation."))), "Disabled": item.disabled, "Tags": _text(item.tags), "Description": item.description})
+                    "Resolved Translation References": _text(f"{resolution.reference_name} -> {resolution.status}" for resolution in context.references_by_owner.get(("nat", source_identity(item)), ()) if resolution.owner_field.startswith(("source_translation.", "destination_translation.", "dynamic_destination_translation."))), "Disabled": item.disabled, "Tags": _text(item.tags), "Description": item.description})
         yield row
 
 
@@ -465,7 +417,7 @@ def _unresolved_rows(context: _PANExcelContext) -> list[dict[str, Any]]:
         if item.status not in {"UNRESOLVED", "AMBIGUOUS"}: continue
         source_type, source_name = _scope(item.source_scope)
         resolved_type, resolved_name = _scope(item.resolved_target_scope)
-        rows.append({"Source Scope Type": source_type, "Source Scope Name": source_name, "Source Object Type": item.owner_family,
+        rows.append({**_owner_columns(item, scope=item.source_scope), "Source Scope Type": source_type, "Source Scope Name": source_name, "Source Object Type": item.owner_family,
                      "Source Object": item.owner_name, "Field": item.owner_field, "Reference": item.reference_name, "Expected Type": item.expected_family,
                      "Status": item.status, "Resolved Scope": _text(value for value in (resolved_type, resolved_name) if value),
                      "Resolved Object": item.target_source_path, "Reason": item.resolution_reason, "__review__": True, "__error__": item.status == "UNRESOLVED"})
@@ -480,7 +432,7 @@ def _validation_rows(context: _PANExcelContext) -> list[dict[str, Any]]:
     rows = []
     for issue in context.validation.issues:
         scope_type, scope_name = _scope(getattr(issue, "source_scope", None))
-        rows.append({"Severity": issue.severity, "Domain": issue.domain, "Category": issue.domain, "Object": issue.source_name,
+        rows.append({**_owner_columns(issue, scope=issue.source_scope), "Severity": issue.severity, "Domain": issue.domain, "Category": issue.domain, "Object": issue.source_name,
                      "Scope Type": scope_type, "Scope Name": scope_name, "Field": issue.field, "Issue / Review Reason": issue.message,
                      "Source Sheet": _SOURCE_SHEET.get(getattr(issue, "object_type", None) or issue.domain), "__review__": True, "__error__": issue.severity == "error"})
     return rows
@@ -489,33 +441,14 @@ def _validation_rows(context: _PANExcelContext) -> list[dict[str, Any]]:
 def _inventory_rows(context: _PANExcelContext) -> Iterator[dict[str, Any]]:
     for item in context.config.source_inventory:
         scope = item.scope
-        yield {"Scope Type": scope.kind if scope else None, "Scope Name": scope.name if scope else None, "Device": scope.device_name if scope else None,
+        yield {**_owner_columns(item), "Scope Type": scope.kind if scope else None, "Scope Name": scope.name if scope else None, "Device": scope.device_name if scope else None,
                      "Serial": scope.device_serial if scope else None, "Device Group": scope.device_group if scope else None, "Source Path": item.source_path,
                      "Kind": item.kind, "Object": item.name, "Rulebase Position": item.rulebase_position, "Source Order": item.source_order,
                      "Values": _text(item.values), "Extraction Status": _inventory_status(context, item)}
 
 
 def _inventory_status(context: _PANExcelContext, record: Any) -> str:
-    identity = (record.source_path, record.name, _scope_key(record.scope), record.source_order)
-    if record.unsupported or any((issue.source_path, issue.source_name, _scope_key(issue.scope), issue.source_order) == identity for issue in context.config.extraction_issues):
-        return "UNSUPPORTED"
-    typed = context.typed_identities.get(identity)
-    if typed:
-        return "PARTIAL" if any(_has_raw_extra(item) for item in typed) else "EXTRACTED"
-    return "SOURCE_ONLY"
-
-
-def _has_raw_extra(value: Any) -> bool:
-    if isinstance(value, BaseModel):
-        for name in type(value).model_fields:
-            child = getattr(value, name)
-            if name == "raw_extra" and child:
-                return True
-            if name != "raw_extra" and _has_raw_extra(child):
-                return True
-    elif isinstance(value, (list, tuple)):
-        return any(_has_raw_extra(item) for item in value)
-    return False
+    return context.analysis.accounting.inventory_status(record)
 
 
 def _unsupported_rows(context: _PANExcelContext) -> Iterator[dict[str, Any]]:
@@ -527,30 +460,23 @@ def _unsupported_rows(context: _PANExcelContext) -> Iterator[dict[str, Any]]:
             continue
         issue = next((issue for issue in context.config.extraction_issues if (issue.source_path, issue.source_name, _scope_key(issue.scope), issue.source_order) == (item.source_path, item.name, _scope_key(item.scope), item.source_order)), None)
         reason = f"{issue.exception_type}: {issue.message}" if issue else "typed object retains unstructured source evidence" if status == "PARTIAL" else "no standalone typed source object"
-        yield {"Source Path": item.source_path, "Status": status, "Reason": reason}
+        yield {**_owner_columns(item), "Source Path": item.source_path, "Status": status, "Reason": reason}
 
 
 def _typed_counts(context: _PANExcelContext) -> dict[str, int]:
-    config = context.config
-    counts = {domain: sum((spec := match_path_spec(tuple(item.source_path.split("/")))) is not None and spec.name == domain for item in getattr(config, field)) for domain, field in _TYPED_COUNT_FIELDS.items()}
-    counts["static_route"] = len(context.derived.static_routes)
-    return counts
+    return context.analysis.accounting.typed_counts
 
 
 def _coverage_rows(context: _PANExcelContext) -> list[dict[str, Any]]:
-    source = context.source_domains
-    typed = _typed_counts(context)
-    domains = sorted(set(registered_paths()) | set(source) | set(typed))
-    rows = []
-    for domain in domains:
-        statuses = context.domain_statuses.get(domain, [])
-        status = (statuses[0] if statuses and len(set(statuses)) == 1 and statuses[0] != "PARTIAL" else "PARTIAL" if statuses else "EXTRACTED" if typed.get(domain, 0) else "NOT_PRESENT")
-        rows.append({"Source Domain": domain, "Found": "yes" if source[domain] else "no", "Source Records": source[domain], "Typed Objects": typed.get(domain, 0),
-            "Status": status, "Unknown Paths": _text(path for path in context.config.unknown_paths if domain.replace("_", "-") in path), "Notes": None})
-    return rows
+    return [{"Source Domain": item.domain, "Found": "yes" if item.source_records else "no",
+             "Source Records": item.source_records, "Typed Objects": item.typed_objects,
+             "Status": item.status, "Unknown Paths": _text(item.unknown_paths), "Notes": None}
+            for item in context.analysis.accounting.coverage]
 
 
 def _source_appendix_rows(context: _PANExcelContext) -> Iterator[dict[str, Any]]:
+    standalone_paths = {record.source_path for record in context.config.source_inventory
+                        if not record.source_path.endswith("/entry")}
     for record in context.config.source_inventory:
         if not record.raw_xml:
             continue
@@ -564,12 +490,12 @@ def _source_appendix_rows(context: _PANExcelContext) -> Iterator[dict[str, Any]]
         def emit(path: str, kind: str, value: str):
             nonlocal evidence_order
             evidence_order += 1
-            return {"Scope Type": scope.kind if scope else None, "Scope Name": scope.name if scope else None,
+            return {**_owner_columns(record), "Scope Type": scope.kind if scope else None, "Scope Name": scope.name if scope else None,
                 "Source Path": record.source_path, "Kind": record.kind, "Object": record.name,
                 "Source Order": record.source_order, "Evidence Order": evidence_order, "Evidence Path": path,
                 "Evidence Type": kind, "Evidence Value": value}
 
-        def visit(node: ET.Element, path: str):
+        def visit(node: ET.Element, path: str, source_path: str):
             for name, value in node.attrib.items():
                 yield emit(f"{path}/@{name}", "attribute", value)
             text = (node.text or "").strip()
@@ -580,11 +506,11 @@ def _source_appendix_rows(context: _PANExcelContext) -> Iterator[dict[str, Any]]
             for child in node:
                 # Every <entry> has its own inventory record and appendix traversal.
                 # Stop here so nested records are not repeated under their parent.
-                if child.tag == "entry":
+                if child.tag == "entry" or f"{source_path}/{child.tag}" in standalone_paths:
                     continue
-                yield from visit(child, f"{path}/{child.tag}")
+                yield from visit(child, f"{path}/{child.tag}", f"{source_path}/{child.tag}")
 
-        yield from visit(root, root.tag)
+        yield from visit(root, root.tag, record.source_path)
 
 
 ROW_BUILDERS: dict[str, Callable[[_PANExcelContext], Iterable[dict[str, Any]]]] = {

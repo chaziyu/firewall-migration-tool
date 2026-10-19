@@ -18,10 +18,7 @@ def test_pair_discovery_lists_only_registered_workflows_with_public_metadata():
     ]
     assert all("cli_application" not in item for item in pairs)
     assert all(item["export_available"] for item in pairs)
-<<<<<<< Updated upstream
     assert pairs[0]["destination_aware_available"] is False
-=======
-    assert all(item["destination_aware_available"] for item in pairs)
     assert all(item["supported_target_versions"] for item in pairs)
     assert all(item["coverage_documentation"] for item in pairs)
     assert all(item["mapping_workflow"] and item["destination_comparison"] and item["execution_mode"]
@@ -29,7 +26,6 @@ def test_pair_discovery_lists_only_registered_workflows_with_public_metadata():
     assert "Assisted" in pairs[3]["mapping_workflow"]
     assert all("Manual" in item["mapping_workflow"] for index, item in enumerate(pairs) if index != 3)
     assert all("Offline" in item["execution_mode"] for index, item in enumerate(pairs) if index != 3)
->>>>>>> Stashed changes
     assert pairs[0]["deployment_available"] is False
     assert pairs[0]["supported_formats"] == ["json"]
     assert pairs[1]["deployment_available"] is False

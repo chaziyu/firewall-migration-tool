@@ -14,7 +14,7 @@ from ....source_reporting.collection_excel import collection_summary, write_coll
 from ....source_reporting.excel_style import excel_safe_value, report_cell_value, report_column_width, style_report_header, write_report_summary
 
 from .excel_rows import ROW_BUILDERS, _PANExcelContext
-from .excel_schema import SHEET_ORDER, HIDDEN_COLUMNS_BY_DEFAULT, SHEET_HEADERS
+from .excel_schema import SHEET_ORDER, HIDDEN_COLUMNS_BY_DEFAULT, SHEET_HEADERS, OWNER_COLUMNS
 from ..source_report import PaloAltoSourceResult
 
 _TITLE_FILL = PatternFill("solid", fgColor="17324D")
@@ -71,7 +71,8 @@ def _write_table(
     sheet.sheet_view.zoomScale = 90
     sheet.sheet_format.defaultRowHeight = 18
     sheet.row_dimensions[3].height = 30
-    sheet.freeze_panes = "D4" if name in {"Interfaces", "Security Policies", "NAT Rules"} else "C4" if len(headers) > 12 else "A4"
+    detail_columns = sum(header not in OWNER_COLUMNS for header in headers)
+    sheet.freeze_panes = "D4" if name in {"Interfaces", "Security Policies", "NAT Rules"} else "C4" if detail_columns > 12 else "A4"
     for column, header in enumerate(headers, 1):
         dimension = sheet.column_dimensions[get_column_letter(column)]
         dimension.width = report_column_width(header)

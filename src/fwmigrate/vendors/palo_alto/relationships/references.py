@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from functools import partial
+from ..identity import source_identity
+
 from dataclasses import dataclass
 from collections.abc import Iterable
 from ipaddress import ip_address, ip_network
@@ -96,10 +99,11 @@ def build_reference_index(config: PANOSConfig) -> ReferenceIndex:
 
 def _resolve(index: ReferenceIndex, owner, field: str, name: str, families: tuple[str, ...], *, owner_family: str, source_only: bool = False) -> PANReferenceResolution:
     owner_path = getattr(owner, "source_path", None)
+    resolution = partial(PANReferenceResolution, owner_identity=source_identity(owner))
     if name in {"any", "application-default"}:
-        return PANReferenceResolution("SOURCE_ONLY", owner.name, field, name, families[0], owner.scope, resolution_reason="PAN-OS special value", owner_family=owner_family, owner_source_path=owner_path)
+        return resolution("SOURCE_ONLY", owner.name, field, name, families[0], owner.scope, resolution_reason="PAN-OS special value", owner_family=owner_family, owner_source_path=owner_path)
     if source_only:
-        return PANReferenceResolution("SOURCE_ONLY", owner.name, field, name, families[0], owner.scope, resolution_reason="typed source coverage is not authoritative", owner_family=owner_family, owner_source_path=owner_path)
+        return resolution("SOURCE_ONLY", owner.name, field, name, families[0], owner.scope, resolution_reason="typed source coverage is not authoritative", owner_family=owner_family, owner_source_path=owner_path)
 
     # Explicit visible source state takes precedence over predefined PAN-OS
     # tokens.  This keeps custom objects source-faithful and avoids treating a
@@ -107,9 +111,9 @@ def _resolve(index: ReferenceIndex, owner, field: str, name: str, families: tupl
     candidates = tuple(candidate for family in families for candidate in index.candidates(family, name, owner.scope))
     if len(candidates) == 1:
         target = candidates[0]
-        return PANReferenceResolution("RESOLVED", owner.name, field, name, target.family, owner.scope, target.scope, target.source_path, "one visible candidate", owner_family, owner_path)
+        return resolution("RESOLVED", owner.name, field, name, target.family, owner.scope, target.scope, target.source_path, "one visible candidate", owner_family, owner_path)
     if len(candidates) > 1:
-        return PANReferenceResolution("AMBIGUOUS", owner.name, field, name, families[0], owner.scope, resolution_reason="multiple visible candidates; precedence is not explicitly extracted", owner_family=owner_family, owner_source_path=owner_path)
+        return resolution("AMBIGUOUS", owner.name, field, name, families[0], owner.scope, resolution_reason="multiple visible candidates; precedence is not explicitly extracted", owner_family=owner_family, owner_source_path=owner_path)
 
     source_candidates = tuple(candidate for family in families for candidate in index.source_candidates(family, name, owner.scope))
     if len(source_candidates) == 1:
@@ -119,22 +123,22 @@ def _resolve(index: ReferenceIndex, owner, field: str, name: str, families: tupl
             if target.family == "region"
             else "EXTRACTION_INCOMPLETE: visible source object lacks typed extraction"
         )
-        return PANReferenceResolution(
+        return resolution(
             "SOURCE_ONLY", owner.name, field, name, target.family, owner.scope,
             target.scope, target.source_path, reason, owner_family, owner_path,
         )
     if len(source_candidates) > 1:
-        return PANReferenceResolution("AMBIGUOUS", owner.name, field, name, families[0], owner.scope, resolution_reason="multiple visible source-only candidates", owner_family=owner_family, owner_source_path=owner_path)
+        return resolution("AMBIGUOUS", owner.name, field, name, families[0], owner.scope, resolution_reason="multiple visible source-only candidates", owner_family=owner_family, owner_source_path=owner_path)
 
     if families[0] == "address" and _is_address_literal(name):
-        return PANReferenceResolution("SOURCE_ONLY", owner.name, field, name, "address", owner.scope, resolution_reason="PAN-OS address literal", owner_family=owner_family, owner_source_path=owner_path)
+        return resolution("SOURCE_ONLY", owner.name, field, name, "address", owner.scope, resolution_reason="PAN-OS address literal", owner_family=owner_family, owner_source_path=owner_path)
     if families[0] == "address" and name in _PREDEFINED_IP_EDLS:
-        return PANReferenceResolution("SOURCE_ONLY", owner.name, field, name, "address", owner.scope, resolution_reason="PAN-OS predefined IP external dynamic list", owner_family=owner_family, owner_source_path=owner_path)
+        return resolution("SOURCE_ONLY", owner.name, field, name, "address", owner.scope, resolution_reason="PAN-OS predefined IP external dynamic list", owner_family=owner_family, owner_source_path=owner_path)
     if families[0] == "address" and name in _PREDEFINED_REGIONS:
-        return PANReferenceResolution("SOURCE_ONLY", owner.name, field, name, "region", owner.scope, resolution_reason="PAN-OS predefined country region", owner_family=owner_family, owner_source_path=owner_path)
+        return resolution("SOURCE_ONLY", owner.name, field, name, "region", owner.scope, resolution_reason="PAN-OS predefined country region", owner_family=owner_family, owner_source_path=owner_path)
     if families[0] == "service" and name in _PREDEFINED_SERVICES:
-        return PANReferenceResolution("SOURCE_ONLY", owner.name, field, name, "service", owner.scope, resolution_reason="PAN-OS predefined service", owner_family=owner_family, owner_source_path=owner_path)
-    return PANReferenceResolution("UNRESOLVED", owner.name, field, name, families[0], owner.scope, resolution_reason="no visible typed or source-only PAN-OS object", owner_family=owner_family, owner_source_path=owner_path)
+        return resolution("SOURCE_ONLY", owner.name, field, name, "service", owner.scope, resolution_reason="PAN-OS predefined service", owner_family=owner_family, owner_source_path=owner_path)
+    return resolution("UNRESOLVED", owner.name, field, name, families[0], owner.scope, resolution_reason="no visible typed or source-only PAN-OS object", owner_family=owner_family, owner_source_path=owner_path)
 
 
 def _scope_device(scope: PANScope | None) -> str | None:
@@ -149,27 +153,28 @@ def _scope_device(scope: PANScope | None) -> str | None:
 
 def _resolve_interface(index: ReferenceIndex, owner, field: str, name: str, *, owner_family: str) -> PANReferenceResolution:
     owner_path = getattr(owner, "source_path", None)
+    resolution = partial(PANReferenceResolution, owner_identity=source_identity(owner))
     if name == "any":
-        return PANReferenceResolution("SOURCE_ONLY", owner.name, field, name, "interface", owner.scope, resolution_reason="PAN-OS special value", owner_family=owner_family, owner_source_path=owner_path)
+        return resolution("SOURCE_ONLY", owner.name, field, name, "interface", owner.scope, resolution_reason="PAN-OS special value", owner_family=owner_family, owner_source_path=owner_path)
     direct = index.candidates("interface", name, owner.scope)
     if len(direct) == 1:
         target = direct[0]
-        return PANReferenceResolution("RESOLVED", owner.name, field, name, "interface", owner.scope, target.scope, target.source_path, "one visible candidate", owner_family, owner_path)
+        return resolution("RESOLVED", owner.name, field, name, "interface", owner.scope, target.scope, target.source_path, "one visible candidate", owner_family, owner_path)
     if len(direct) > 1:
-        return PANReferenceResolution("AMBIGUOUS", owner.name, field, name, "interface", owner.scope, resolution_reason="multiple visible interface candidates", owner_family=owner_family, owner_source_path=owner_path)
+        return resolution("AMBIGUOUS", owner.name, field, name, "interface", owner.scope, resolution_reason="multiple visible interface candidates", owner_family=owner_family, owner_source_path=owner_path)
     device = _scope_device(owner.scope)
     if device is None:
-        return PANReferenceResolution("SOURCE_ONLY", owner.name, field, name, "interface", owner.scope, resolution_reason="interface ownership requires explicit device context", owner_family=owner_family, owner_source_path=owner_path)
+        return resolution("SOURCE_ONLY", owner.name, field, name, "interface", owner.scope, resolution_reason="interface ownership requires explicit device context", owner_family=owner_family, owner_source_path=owner_path)
     candidates = tuple(
         item for item in index.objects
         if item.family == "interface" and item.name == name and _scope_device(item.scope) == device
     )
     if len(candidates) == 1:
         target = candidates[0]
-        return PANReferenceResolution("RESOLVED", owner.name, field, name, "interface", owner.scope, target.scope, target.source_path, "one interface candidate on the same explicit device", owner_family, owner_path)
+        return resolution("RESOLVED", owner.name, field, name, "interface", owner.scope, target.scope, target.source_path, "one interface candidate on the same explicit device", owner_family, owner_path)
     if len(candidates) > 1:
-        return PANReferenceResolution("AMBIGUOUS", owner.name, field, name, "interface", owner.scope, resolution_reason="multiple same-device interface candidates; effective template precedence is not extracted", owner_family=owner_family, owner_source_path=owner_path)
-    return PANReferenceResolution("UNRESOLVED", owner.name, field, name, "interface", owner.scope, resolution_reason="no interface with this name exists on the explicit source device", owner_family=owner_family, owner_source_path=owner_path)
+        return resolution("AMBIGUOUS", owner.name, field, name, "interface", owner.scope, resolution_reason="multiple same-device interface candidates; effective template precedence is not extracted", owner_family=owner_family, owner_source_path=owner_path)
+    return resolution("UNRESOLVED", owner.name, field, name, "interface", owner.scope, resolution_reason="no interface with this name exists on the explicit source device", owner_family=owner_family, owner_source_path=owner_path)
 
 
 _PROFILE_FAMILIES = {
