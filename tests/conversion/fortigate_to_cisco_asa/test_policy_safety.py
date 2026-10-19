@@ -10,6 +10,49 @@ from fwmigrate.conversion.fortigate_to_cisco_asa.rendering.renderer import ASACL
 from fwmigrate.vendors.fortigate.source_report import FortiGateSourceReporter
 
 
+@pytest.mark.parametrize("setting", [
+    "srcintf", "dstintf", "srcaddr", "dstaddr", "service", "schedule",
+    "action", "status", "logtraffic", "srcaddr-negate", "dstaddr-negate",
+    "service-negate", "utm-status", "nat", "nat64", "nat46", "natinbound", "natoutbound",
+])
+def test_missing_policy_evidence_blocks_approval(asa_source_text, asa_options, setting):
+    lines = [line for line in asa_source_text.splitlines() if not line.strip().startswith(f"set {setting} ")]
+    review = build_review(FortiGateSourceReporter().analyze_source("\n".join(lines)), asa_options, "source")
+    policy = next(item for item in review["plan"].items if item.family == "policy")
+    assert policy.blockers
+    with pytest.raises(ValueError, match="blocked"):
+        approve_design(review, review["draft"], [policy.key])
+
+
+@pytest.mark.parametrize("setting", ["nat64", "nat46", "natinbound", "natoutbound",
+    "srcaddr-negate", "dstaddr-negate", "service-negate", "utm-status"])
+def test_enabled_policy_semantics_are_blocked(asa_source_text, asa_options, setting):
+    text = asa_source_text.replace(f"set {setting} disable", f"set {setting} enable")
+    review = build_review(FortiGateSourceReporter().analyze_source(text), asa_options, "source")
+    assert next(item for item in review["plan"].items if item.family == "policy").blockers
+
+
+@pytest.mark.parametrize("field", ["srcintf", "dstintf", "srcaddr", "dstaddr", "service"])
+def test_empty_policy_match_lists_are_blocked(asa_source, asa_options, field):
+    from fwmigrate.conversion.fortigate_to_cisco_asa.planner import FortiGateToCiscoASAPlanner
+
+    config = asa_source.extracted.config.model_copy(deep=True)
+    setattr(config.policies[0], field, [])
+    plan = FortiGateToCiscoASAPlanner().plan(config, asa_source.derived, asa_options)
+    policy = next(item for item in plan.items if item.family == "policy")
+    assert policy.blockers
+    assert not dict(policy.settings).get("commands")
+
+
+@pytest.mark.parametrize("setting", ["set natip 198.51.100.10", "set poolname6 pool6",
+    "set ippool enable", "set fixedport enable", "set port-preserve enable"])
+def test_typed_translation_controls_are_not_dropped(asa_source_text, asa_options, setting):
+    text = asa_source_text.replace("set logtraffic disable", f"{setting}\nset logtraffic disable")
+    review = build_review(FortiGateSourceReporter().analyze_source(text), asa_options, "source")
+    policy = next(item for item in review["plan"].items if item.family == "policy")
+    assert "POLICY_TRANSLATION_CONTROLS_UNSUPPORTED" in policy.blockers
+
+
 @pytest.fixture
 def ordered_source(asa_source_text):
     prefix, _, policies = asa_source_text.partition("config firewall policy\n")
@@ -50,6 +93,13 @@ def test_blocked_predecessor_blocks_later_permit_and_acl_binding(ordered_source,
     assert permit["render_disposition"] == binding["render_disposition"] == "BLOCK"
     with pytest.raises(ValueError, match="blocked"):
         approve_design(review, review["draft"], [permit["key"]])
+
+
+def test_translation_predecessor_blocks_later_policy(ordered_source, asa_options):
+    text = ordered_source.replace("set nat64 disable", "set nat64 enable", 1)
+    review = build_review(FortiGateSourceReporter().analyze_source(text), asa_options, "source")
+    policies = [row for row in review["report"]["items"] if row["family"] == "policy"]
+    assert all(row["render_disposition"] == "BLOCK" for row in policies)
 
 
 def test_blocked_rule_does_not_block_an_unrelated_ingress(ordered_source, asa_options):

@@ -45,7 +45,7 @@ export type CheckPointReport = {
   items: CheckPointPlanItem[]
   findings: Array<Record<string, unknown>>
   file_sha256?: Record<string, string>
-  destination_snapshot_compared?: false
+  destination_snapshot_compared?: boolean
   deployment_available?: false
   [key: string]: unknown
 }

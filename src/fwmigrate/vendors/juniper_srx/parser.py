@@ -6,7 +6,7 @@ from fwmigrate.extraction.models import ExtractionStatus
 from fwmigrate.vendors.juniper_srx.command_evaluator import JuniperCommandEvaluator
 from fwmigrate.vendors.juniper_srx.hierarchy_parser import (
     looks_hierarchical,
-    normalize_hierarchy_with_provenance,
+    hierarchy_commands,
 )
 from fwmigrate.vendors.juniper_srx.model import JuniperContextConfig, JuniperSRXConfig
 from fwmigrate.vendors.juniper_srx.tokenizer import (
@@ -28,18 +28,18 @@ class JuniperSRXParser:
 
     def extract_source(self) -> JuniperSRXConfig:
         """Parse explicit Junos source state without entering the legacy IR path."""
-        self.config = JuniperSRXConfig()
         source_format = "junos_hierarchical" if looks_hierarchical(self.content) else "junos_display_set"
         if source_format == "junos_hierarchical":
-            source, original_lines = normalize_hierarchy_with_provenance(self.content)
+            commands = [self.tokenizer.command_from_tokens(
+                [command.operation, *(token.value for token in command.path)], command.line, source_order=index)
+                for index, command in enumerate(hierarchy_commands(self.content), 1)]
         else:
-            source, original_lines = self.content, ()
-        commands = self.tokenizer.tokenize(source)
-        if original_lines:
-            for command in commands:
-                normalized_line = command.normalized_line_number or command.line_number
-                if 1 <= normalized_line <= len(original_lines):
-                    command.line_number = original_lines[normalized_line - 1]
+            commands = self.tokenizer.tokenize(self.content)
+        return self.evaluate_commands(commands, source_format=source_format)
+
+    def evaluate_commands(self, commands: list[JunosCommand], *, source_format: str = "junos_display_set") -> JuniperSRXConfig:
+        """Evaluate already-tokenized source without a lossy text round trip."""
+        self.config = JuniperSRXConfig()
         self.source_format = source_format
         self.commands = commands
 

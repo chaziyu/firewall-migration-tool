@@ -8,7 +8,6 @@ plain dictionaries and never replace or mutate explicit VendorConfig state.
 from __future__ import annotations
 
 from copy import deepcopy
-import shlex
 from typing import Any
 
 from ..activation import JunosActivationState
@@ -35,7 +34,7 @@ def _effective_config(source_commands):
     activation = JunosActivationState()
     activation.apply(deepcopy(commands))
     resolved = resolve_group_commands(commands)
-    lines: list[str] = []
+    selected = []
     for command in resolved:
         if command.operation is not JunosOperation.SET or command.access_denied:
             continue
@@ -45,11 +44,13 @@ def _effective_config(source_commands):
         if activation.is_inactive(path):
             continue
         safe = sanitize_tokens(command.tokens)
-        lines.append(shlex.join(safe))
+        selected.append((safe, command.line_number, command.source_order))
 
-    if not lines:
+    if not selected:
         return None
-    return JuniperSRXParser("\n".join(lines)).extract_source()
+    parser = JuniperSRXParser("")
+    return parser.evaluate_commands([parser.tokenizer.command_from_tokens(tokens, line, source_order=order)
+                                     for tokens, line, order in selected])
 
 
 def _attributes(value: Any) -> dict[str, Any]:

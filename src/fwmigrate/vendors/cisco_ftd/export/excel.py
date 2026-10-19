@@ -5,6 +5,7 @@ from collections import Counter
 from pathlib import Path
 import json
 from typing import Any
+from fwmigrate.extraction.sanitize import sanitize_source_attributes
 
 from ....source_reporting.options import ExcelExportProfile
 from ....source_reporting.excel_style import append_report_row, excel_safe_value, finish_report_workbook, write_report_summary
@@ -25,6 +26,23 @@ def _text(value: Any) -> Any:
 def _source_name(record: Any) -> Any:
     attributes = getattr(record, "source_attributes", {}) or {}
     return record.name if attributes.get("source_name_explicit", True) else None
+
+
+def _cli_source_rows(config: Any):
+    for kind, records in (("Interface", config.interfaces), ("Route", config.static_routes),
+                          ("Management Setting", config.management_settings)):
+        for item in records:
+            start = item.source_attributes.get("source_line_number")
+            line_count = len(getattr(item, "raw_lines", ())) or 1
+            values = sanitize_source_attributes(item.model_dump(mode="json"))
+            yield (kind, _source_name(item), config.source_plane,
+                   item.source_attributes.get("source_context"), start,
+                   start + line_count - 1 if start is not None else None, values)
+    if config.management_settings:
+        yield ("Management State", None, config.source_plane, None, None, None,
+               {field: getattr(config, field) for field in (
+                   "cmi_enabled", "management_ipv4", "management_netmask", "management_gateway",
+                   "management_dns_servers", "ssh_access_list", "diagnostic_interface")})
 
 
 def _refs(values: Any) -> Any:
@@ -250,7 +268,9 @@ def export_ftd_excel(
             x.use_internal_address_pool_for_ipv6, x.raw_extra)
             for x in config.ra_vpn_address_assignment_settings],
     }
-    native_collections = ("applications", "network_address_overrides", "access_control_default_actions",
+    native_collections = ("network_addresses", "network_groups", "protocol_port_objects", "port_object_groups",
+        "security_zones", "device_interfaces", "source_interfaces", "routes", "access_control_policies",
+        "applications", "network_address_overrides", "access_control_default_actions",
         "access_control_logging_settings", "security_intelligence_policies", "identity_policies", "access_policy_inheritance_settings",
         "policy_assignments", "variable_sets", "url_categories", "vlan_objects", "time_ranges",
         "intrusion_policies", "intrusion_rule_groups", "intrusion_rule_behaviors", "intrusion_rule_overrides",
@@ -295,7 +315,17 @@ def export_ftd_excel(
         elif name == "Source Evidence":
             append_report_row(sheet, SHEET_HEADERS[name])
             for item in config.unsupported_evidence:
-                append_report_row(sheet, (item.get("source_path"), item.get("reason")))
+                safe = sanitize_source_attributes(item)
+                append_report_row(sheet, tuple(_text(value) for value in (
+                    safe.get("source_path"), safe.get("reason"), safe.get("source_name"), safe.get("source_id"),
+                    safe.get("source_plane", config.source_plane), safe.get("source_context"),
+                    safe.get("domain_id"), safe.get("device_id"), safe.get("line_start"), safe.get("line_end"),
+                    safe.get("raw", safe),
+                )))
+        elif name == "CLI Source Evidence":
+            append_report_row(sheet, SHEET_HEADERS[name])
+            for row in _cli_source_rows(config):
+                append_report_row(sheet, tuple(_text(value) for value in row))
         elif name == "Validation":
             append_report_row(sheet, SHEET_HEADERS[name])
             for item in result.validation.issues:
@@ -305,9 +335,9 @@ def export_ftd_excel(
             append_report_row(sheet, SHEET_HEADERS[name])
             for collection in native_collections:
                 for item in getattr(config, collection):
-                    display_name = item.name if item.source_attributes.get("source_name_explicit", True) else None
-                    append_report_row(sheet, (collection, display_name, item.source_id, item.source_context,
-                        json.dumps(item.source_attributes, default=str), json.dumps(item.raw_extra, default=str)))
+                    append_report_row(sheet, tuple(_text(value) for value in (
+                        collection, _source_name(item), item.source_id, item.source_context,
+                        sanitize_source_attributes(item.source_attributes), sanitize_source_attributes(item.raw_extra))))
         else:
             append_report_row(sheet, SHEET_HEADERS[name])
             for row in rows[name]:
@@ -326,7 +356,8 @@ def export_ftd_excel(
                     ("Warnings", sum(issue.severity == "warning" for issue in result.validation.issues)),
                     ("Unresolved References", len(derived.unresolved_references) if derived is not None else None),
                     ("Validation Issues", len(result.validation.issues))),
-        inventory=((name, len(rows[name]), name) for name in SHEET_ORDER if name in rows),
+        inventory=((name, workbook[name]._report_row_count - 1, name) for name in SHEET_ORDER
+                   if name in rows or name in {"CLI Source Evidence", "Native Sources", "Source Evidence"}),
         coverage=(*collection_summary(collection_status),
                   ("Native Collection Status" if collection_status is not None else "Collection Status",
                    config.collection_metadata.status if collection_provided else "NOT_PROVIDED"),

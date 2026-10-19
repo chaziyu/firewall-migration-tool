@@ -55,6 +55,28 @@ def test_draft_identity_is_stable_and_binds_options(policy_analysis, complete_op
     assert "created_at" not in first["draft"]
 
 
+def test_independent_address_selection_and_reuse_only_report(policy_analysis, complete_options):
+    from fwmigrate.vendors.juniper_srx.source_analysis import extract_juniper_source
+
+    options = _options(complete_options)
+    review = build_review(policy_analysis, options, "source")
+    address = next(row for row in review["report"]["items"] if row["family"] == "address" and row["render_disposition"] == "CREATE")
+    approval = approve_design(review, review["draft"], [address["key"]])
+    artifact = build_artifact(policy_analysis, options, "source", approval)
+    assert artifact["report"]["renderable_item_count"] == 1
+    assert artifact["report"]["not_approved_item_count"] > 0
+    text = artifact["command_text"]
+    target = {"target": extract_juniper_source(text), "target_source_text": text,
+              "target_metadata": {"context": "root", "version": "25.2R1", "mode": "standalone",
+                                  "complete_families": ["addresses", "applications", "interfaces", "zones", "static_routes", "schedules", "policies", "nat"]}}
+    review = build_review(policy_analysis, options, "source", **target)
+    approval = approve_design(review, review["draft"], [address["key"]])
+    artifact = build_artifact(policy_analysis, options, "source", approval, **target)
+    assert artifact["command_count"] == 0
+    assert artifact["report"]["reused_item_count"] == 1
+    assert artifact["report"]["plan_status"] == "READY_WITH_MANUAL_WORK"
+
+
 def test_approval_expands_dependencies_and_artifact_binds_exact_output(policy_analysis, complete_options):
     options = _options(complete_options)
     review = build_review(policy_analysis, options, "source-digest")
@@ -67,6 +89,9 @@ def test_approval_expands_dependencies_and_artifact_binds_exact_output(policy_an
     assert verified["command_sha256"] == approval["command_sha256"]
     assert verified["command_count"] == approval["command_count"]
     assert verified["report"]["selected_items"] == approval["selected_items"]
+    for row in verified["report"]["items"]:
+        if row["key"] not in approval["selected_items"]:
+            assert row["render_disposition"] in {"NOT_APPROVED", "BLOCK"}
 
     changed = dict(artifact)
     changed["command_text"] += "set system host-name unreviewed\n"

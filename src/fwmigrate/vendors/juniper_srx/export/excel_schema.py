@@ -1,9 +1,9 @@
 SHEET_ORDER = (
     "Summary", "Review Required", "Validation", "Source Inventory", "Extraction Coverage",
     "Unsupported Source", "Unresolved References", "Additional Settings",
-    "Interfaces", "Zones", "Routing Instances",
+    "Interfaces", "Interface Details", "Interface Addresses", "Zones", "Routing Instances",
     "Address Books", "Addresses", "Address Sets",
-    "Applications", "Application Sets", "Schedulers",
+    "Applications", "Application Settings", "Application Sets", "Schedulers",
     "Policies", "Policy Details",
     "Administrators", "Login Classes", "IDP Policies", "IDP Rules", "UTM Policies", "UTM Profiles",
     "NAT", "NAT Pools", "NAT Rules",
@@ -18,6 +18,12 @@ SHEET_ORDER = (
 )
 
 SHEET_HEADERS = {
+    "Interface Details": ("Context", "Record Type", "Interface", "Unit", "Description", "Disabled",
+                          "MTU", "Speed", "Link Mode", "Encapsulation", "VLAN ID", "Effective State"),
+    "Interface Addresses": ("Context", "Interface", "Unit", "Family", "Address", "Primary", "Preferred", "Effective State"),
+    "Application Settings": ("Context", "Application", "Location", "Term", "Protocol", "Protocol Number",
+                             "Source Ports", "Destination Ports", "ICMP Type", "ICMP Code", "Application Protocol",
+                             "Inactivity Timeout", "Description", "Effective State", "Additional Settings"),
     "Source Inventory": ("Domain", "Source Path", "Context", "Line", "Operation", "Key",
                          "Values", "Status", "Handler", "Review Required"),
     "Interfaces": ("Context", "Interface", "Unit", "Parent", "Name", "Interface Type", "Source Present",

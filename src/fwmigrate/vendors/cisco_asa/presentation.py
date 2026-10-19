@@ -20,6 +20,8 @@ def _safe_key(key: str, value: Any) -> bool:
 
 def source_value(record: Any, field_name: str) -> Any:
     """Return explicit ASA source state without presenting model defaults as configured."""
+    if isinstance(record, dict):
+        return record.get(field_name)
     value = getattr(record, field_name, None)
     explicit_fields = getattr(record, "explicit_fields", None)
     if explicit_fields is None or field_name in explicit_fields:
@@ -69,3 +71,12 @@ def has_source_evidence(value: Any) -> bool:
     return bool(getattr(value, "explicit_fields", ()) or getattr(value, "raw_lines", ()) or
                 getattr(value, "command_history", ()) or
                 getattr(value, "source_attributes", {}).get("raw_commands"))
+
+
+def management_records(config: Any, attribute: str):
+    """Project explicitly configured management records with their source owner."""
+    for context, owner in ((None, config), *((item.name, item) for item in config.contexts)):
+        record = getattr(owner, attribute)
+        if has_source_evidence(record):
+            yield {"context": context, **{field: source_value(record, field)
+                                         for field in type(record).model_fields}}

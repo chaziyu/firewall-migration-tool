@@ -4,6 +4,7 @@ import pytest
 
 from fwmigrate.collection.contracts import CollectedSource, CollectionPart, CollectionStatus
 from fwmigrate.collection.snapshot import make_snapshot, parse_snapshot
+from pathlib import Path
 
 
 def test_snapshot_sanitizes_source_and_rejects_unsafe_metadata():
@@ -14,6 +15,19 @@ def test_snapshot_sanitizes_source_and_rejects_unsafe_metadata():
     snapshot["metadata"] = {"nested": {"api_key": "do-not-save"}}
     with pytest.raises(ValueError):
         parse_snapshot(json.dumps(snapshot).encode())
+
+
+@pytest.mark.parametrize("source", [
+    "interface inside\n description CLI_MARKER\n password SNAPSHOT_SECRET\n",
+    (Path(__file__).parent / "fixtures/cisco_ftd/fdm_object_pipeline_conformance.json").read_text(),
+    (Path(__file__).parent / "fixtures/cisco_ftd/fdm_nat_pipeline_conformance.json").read_text(),
+])
+def test_ftd_supported_source_formats_round_trip_sanitized_snapshots(source):
+    snapshot = make_snapshot(CollectedSource("cisco_ftd", source, "ftd-source.txt", "offline"))
+    restored = parse_snapshot(json.dumps(snapshot).encode())
+    assert restored.source_text == snapshot["source_text"]
+    assert "SNAPSHOT_SECRET" not in json.dumps(snapshot)
+    assert make_snapshot(restored) == snapshot
 
 
 def test_structured_snapshot_redacts_auth_headers_and_session_cookies():

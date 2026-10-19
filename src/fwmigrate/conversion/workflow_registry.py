@@ -18,6 +18,10 @@ class MigrationWorkflowRegistration:
     cli_application: Callable[..., object] | None = field(default=None, repr=False, compare=False)
     supported_target_versions: tuple[str, ...] = ()
     coverage_documentation: str | None = None
+    mapping_workflow: str | None = None
+    destination_comparison: str | None = None
+    execution_mode: str | None = None
+    activation_steps: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         source = self.source_vendor.strip().casefold()
@@ -43,6 +47,10 @@ class MigrationWorkflowRegistration:
             "deployment_available": self.deployment_available,
             "supported_target_versions": list(self.supported_target_versions),
             "coverage_documentation": self.coverage_documentation,
+            "mapping_workflow": self.mapping_workflow,
+            "destination_comparison": self.destination_comparison,
+            "execution_mode": self.execution_mode,
+            "activation_steps": list(self.activation_steps),
         }
 
 

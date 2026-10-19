@@ -104,6 +104,39 @@ def _policy_table_is_safe(item, plan, evidence):
     return _policy_names_by_pair(evidence).get(pair, ()) == planned_names
 
 
+def _empty_policy_target(item, plan, evidence):
+    # shortcut: populated tables and routing instances need a separate placement proof.
+    required = {"addresses", "applications", "interfaces", "zones", "static_routes", "schedules", "policies", "nat"}
+    if evidence.global_blockers or not required <= evidence.complete_families or any(
+        evidence.blockers_for(family) for family in required
+    ):
+        return False
+    for statement in evidence.statements:
+        if statement.get("context", "root") != "root":
+            continue
+        path = tuple(statement.get("target_path") or ())
+        if path[:1] == ("routing-instances",) or path[:2] == ("security", "nat"):
+            return False
+        if path[:2] == ("security", "policies") and not (
+            path == ("security", "policies", "default-policy", "deny-all")
+            and statement.get("status") == "EFFECTIVE" and statement.get("origin") != "inherited-group"
+        ):
+            return False
+    for inactive in evidence.inactive_hierarchies:
+        path = tuple(inactive.get("path") or ())
+        if any(_is_prefix(path, prefix) or _is_prefix(prefix, path)
+               for prefix in (("security", "policies"), ("security", "nat"), ("routing-instances",))):
+            return False
+    zones = {statement["target_path"][3] for statement in evidence.statements
+             if statement.get("context", "root") == "root" and statement.get("status") == "EFFECTIVE"
+             and tuple(statement.get("target_path") or ())[:3] == ("security", "zones", "security-zone")
+             and len(statement["target_path"]) >= 4}
+    zones.update(candidate.target_name for candidate in plan.items
+                 if candidate.family == "zone" and candidate.key in item.dependencies and not candidate.blockers)
+    values = dict(item.settings)
+    return {values.get("from_zone"), values.get("to_zone")} <= zones
+
+
 def _address_book_collision(item, evidence):
     values = dict(item.settings)
     policy_names = set(values.get("source_addresses", ())) | set(values.get("destination_addresses", ()))
@@ -194,14 +227,14 @@ def compare_target_plan(plan, evidence: SRXTargetEvidence):
             if any(tuple(statement.get("target_path") or ())[:2] == ("security", "nat")
                    for statement in evidence.statements):
                 blockers.append("TARGET_NAT_POLICY_INTERACTION_UNVERIFIED")
-            if not _policy_table_is_safe(item, plan, evidence):
+            if not _policy_table_is_safe(item, plan, evidence) and not _empty_policy_target(item, plan, evidence):
                 blockers.append("TARGET_POLICY_ORDER_UNVERIFIED")
             if _address_book_collision(item, evidence):
                 blockers.append("TARGET_ZONE_ADDRESS_BOOK_RESOLUTION_UNVERIFIED")
             if _routing_instance_conflict(item, plan, evidence):
                 blockers.append("TARGET_POLICY_ROUTING_INSTANCE_UNVERIFIED")
 
-        if item.family == "policy" and not exact:
+        if item.family == "policy" and not exact and not _empty_policy_target(item, plan, evidence):
             blockers.append("TARGET_POLICY_INSERTION_ANCHOR_UNVERIFIED")
         elif not exact and (present or entries or _inactive_at(prefix, entries, evidence)):
             blockers.append("TARGET_CONFIGURATION_CONFLICT")

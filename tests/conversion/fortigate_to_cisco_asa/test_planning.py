@@ -1,8 +1,49 @@
 from dataclasses import replace
 
+import pytest
+
 from fwmigrate.conversion.fortigate_to_cisco_asa.planner import FortiGateToCiscoASAPlanner
 from fwmigrate.conversion.fortigate_to_cisco_asa.rendering.renderer import ASACLIRenderer
 from fwmigrate.conversion.fortigate_to_cisco_asa.planning.naming import item_key
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+def test_nested_groups_use_group_object_and_dependency_order(asa_source_text, asa_options, reverse):
+    from fwmigrate.vendors.fortigate.source_report import FortiGateSourceReporter
+
+    text = asa_source_text
+    for section, leaf, extra in [("addrgrp", "clients", "set exclude disable"),
+                                 ("service group", "https", "set proxy disable")]:
+        rows = [f'edit a_parent\nset member z_child {leaf}\n{extra}\nnext\n',
+                f'edit z_child\nset member {leaf}\n{extra}\nnext\n']
+        text += f"config firewall {section}\n" + "".join(reversed(rows) if reverse else rows) + "end\n"
+    source = FortiGateSourceReporter().analyze_source(text)
+    plan = FortiGateToCiscoASAPlanner().plan(source.extracted.config, source.derived, asa_options)
+    rendered = ASACLIRenderer().render(plan)
+    for family in ("address_group", "service_group"):
+        parent = next(item for item in plan.items if item.family == family and item.source_name == "a_parent")
+        child = next(item for item in plan.items if item.family == family and item.source_name == "z_child")
+        assert not parent.blockers
+        assert f" group-object {child.target_name}" in rendered.commands
+        kind = "network" if family == "address_group" else "service"
+        assert rendered.commands.index(f"object-group {kind} {child.target_name}") < rendered.commands.index(f"object-group {kind} {parent.target_name}")
+
+
+def test_renderer_satisfies_reused_group_and_rejects_bad_dependencies(asa_source, asa_options):
+    from fwmigrate.conversion.fortigate_to_cisco_asa.models import ASAPlanItem
+
+    original = FortiGateToCiscoASAPlanner().plan(asa_source.extracted.config, asa_source.derived, asa_options)
+    child = ASAPlanItem("child", "address_group", "root", "z_child", "z_child",
+                        (("commands", ("must not render",)),), target_disposition="REUSE")
+    parent = ASAPlanItem("parent", "address_group", "root", "a_parent", "a_parent",
+                         (("commands", ("object-group network a_parent", " group-object z_child")),), ("child",))
+    plan = replace(original, items=(parent, child), findings=())
+    rendered = ASACLIRenderer().render(plan, approved_items={"parent", "child"})
+    assert rendered.commands == ("object-group network a_parent", " group-object z_child")
+    with pytest.raises(ValueError, match="unresolved dependency"):
+        ASACLIRenderer().render(replace(plan, items=(parent,)))
+    with pytest.raises(ValueError, match="cycle"):
+        ASACLIRenderer().render(replace(plan, items=(parent, replace(child, dependencies=("parent",)))))
 
 
 def test_ordered_asa_export_contains_objects_policy_and_default_deny(asa_source, asa_options):

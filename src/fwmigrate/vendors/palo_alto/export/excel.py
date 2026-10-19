@@ -11,10 +11,10 @@ from openpyxl.utils import get_column_letter
 
 from ....source_reporting.options import ExcelExportProfile
 from ....source_reporting.collection_excel import collection_summary, write_collection_evidence
-from ....source_reporting.excel_style import excel_safe_value, report_column_width, style_report_header, write_report_summary
+from ....source_reporting.excel_style import excel_safe_value, report_cell_value, report_column_width, style_report_header, write_report_summary
 
 from .excel_rows import ROW_BUILDERS, _PANExcelContext
-from .excel_schema import SHEET_ORDER, HIDDEN_COLUMNS_BY_DEFAULT, SHEET_HEADERS
+from .excel_schema import SHEET_ORDER, HIDDEN_COLUMNS_BY_DEFAULT, SHEET_HEADERS, OWNER_COLUMNS
 from ..source_report import PaloAltoSourceResult
 
 _TITLE_FILL = PatternFill("solid", fgColor="17324D")
@@ -71,7 +71,8 @@ def _write_table(
     sheet.sheet_view.zoomScale = 90
     sheet.sheet_format.defaultRowHeight = 18
     sheet.row_dimensions[3].height = 30
-    sheet.freeze_panes = "D4" if name in {"Interfaces", "Security Policies", "NAT Rules"} else "C4" if len(headers) > 12 else "A4"
+    detail_columns = sum(header not in OWNER_COLUMNS for header in headers)
+    sheet.freeze_panes = "D4" if name in {"Interfaces", "Security Policies", "NAT Rules"} else "C4" if detail_columns > 12 else "A4"
     for column, header in enumerate(headers, 1):
         dimension = sheet.column_dimensions[get_column_letter(column)]
         dimension.width = report_column_width(header)
@@ -104,7 +105,8 @@ def _write_table(
     sheet.append(cells)
     row_count = 0
     for row_count, row in enumerate(rows, 1):
-        sheet.append([_excel_safe(row.get(header)) for header in headers])
+        sheet.append([report_cell_value(sheet, row_count + 3, column, _excel_safe(row.get(header)))
+                      for column, header in enumerate(headers, 1)])
     if row_count:
         sheet.auto_filter.ref = f"A3:{get_column_letter(len(headers))}{row_count + 3}"
     return row_count
