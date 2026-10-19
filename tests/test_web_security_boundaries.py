@@ -5,6 +5,7 @@ import pytest
 from flask import request
 
 from fwmigrate.web import create_app
+from fwmigrate.web_support.public_errors import safe_validation_message
 
 
 def _basic(username: str, password: str) -> dict[str, str]:
@@ -127,6 +128,12 @@ def test_global_failures_never_expose_exception_text(exception_type, status, cap
     assert response.status_code == status
     assert 'SYNTHETIC_SECRET_SENTINEL' not in response.get_data(as_text=True) + caplog.text
     assert all(record.exc_info is None for record in caplog.records)
+
+
+def test_safe_validation_message_uses_only_allowlisted_exception_args():
+    assert safe_validation_message(ValueError('A JSON object is required'), 'Invalid request') == 'A JSON object is required'
+    assert safe_validation_message(ValueError('SYNTHETIC_SECRET'), 'Invalid request') == 'Invalid request'
+    assert safe_validation_message(ValueError('A JSON object is required', 'SYNTHETIC_SECRET'), 'Invalid request') == 'Invalid request'
 
 
 @pytest.mark.parametrize('route', [

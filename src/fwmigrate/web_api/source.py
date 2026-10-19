@@ -89,8 +89,8 @@ def register_source_routes(app) -> None:
                 metrics.add('preview_total', metrics.total_duration_ms)
                 response['diagnostics'] = {'metrics': metrics.as_dict()}
             return jsonify(response)
-        except ConfigurationDecodeError as e:
-            return jsonify({'success': False, 'error': str(e), 'stage': 'decode'}), 400
+        except ConfigurationDecodeError:
+            return jsonify({'success': False, 'error': 'Configuration file is not valid UTF-8.', 'stage': 'decode'}), 400
         except KeyError:
             return jsonify({'success': False, 'error': 'Unsupported source vendor'}), 400
         except ValueError:
@@ -229,10 +229,10 @@ def register_source_routes(app) -> None:
                     metrics.as_dict(),
                 )
             return response
-        except ExcelExportUnavailableError as e:
-            return jsonify({'error': str(e)}), 503
-        except ConfigurationDecodeError as e:
-            return jsonify({'error': str(e), 'stage': 'decode'}), 400
+        except ExcelExportUnavailableError:
+            return jsonify({'error': 'Excel export is unavailable for this source.'}), 503
+        except ConfigurationDecodeError:
+            return jsonify({'error': 'Configuration file is not valid UTF-8.', 'stage': 'decode'}), 400
         except KeyError:
             return jsonify({'error': 'Vendor-native Excel is not available'}), 422
         except ValueError:

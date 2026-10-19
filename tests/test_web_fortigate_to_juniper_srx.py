@@ -115,6 +115,8 @@ def test_srx_review_approval_build_preview_download_and_bundle_use_same_bytes():
 
     download = client.post(f"{PREFIX}/commands", json={"artifact": artifact})
     assert download.status_code == 200
+    assert "attachment" in download.headers["Content-Disposition"]
+    assert "juniper_config.set" in download.headers["Content-Disposition"]
     assert download.data == command_bytes
 
     bundle_response = client.post(f"{PREFIX}/bundle", json={**payload, "artifact": artifact})
@@ -152,6 +154,9 @@ def test_srx_rejects_stale_source_tampering_and_pan_deployment_transport(monkeyp
     tampered = {**artifact, "command_text": artifact["command_text"] + "set system host-name unsafe\n"}
     preview = client.post(f"{PREFIX}/command-preview", json={"artifact": tampered})
     assert preview.status_code == 400
+    assert client.post(f"{PREFIX}/commands", json={"artifact": tampered}).status_code == 400
+    unsigned = {key: value for key, value in artifact.items() if key != "signature"}
+    assert client.post(f"{PREFIX}/commands", json={"artifact": unsigned}).status_code == 400
 
     deployment = client.post("/api/deploy", json={
         "artifact": artifact,

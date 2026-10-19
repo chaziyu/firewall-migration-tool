@@ -92,6 +92,23 @@ def test_stale_target_digest_rejects_target_backed_confirmation():
     assert response.status_code == 400
 
 
+def test_interface_confirmation_error_message_is_fixed_and_keeps_structured_errors(monkeypatch):
+    import fwmigrate.web_api.migration as migration_api
+    from fwmigrate.conversion.fortigate_to_palo_alto.application import InterfaceMappingConfirmationError
+
+    client, payload, rows, _ = _review()
+    errors = [{'decision_key': rows[0]['key'], 'code': 'TARGET_INTERFACE_CONFLICT'}]
+    monkeypatch.setattr(migration_api, 'confirm_interface_mappings',
+                        lambda *args, **kwargs: (_ for _ in ()).throw(
+                            InterfaceMappingConfirmationError('SYNTHETIC_MAPPING_SECRET', errors)))
+    response = client.post('/api/migration/interfaces/confirm', json={**payload,
+        'selections': [{'decision_key': rows[0]['key'], 'value': 'ethernet1/1'}]})
+    assert response.status_code == 400
+    assert response.get_json()['error'] == 'Interface mapping confirmation failed.'
+    assert response.get_json()['errors'] == errors
+    assert 'SYNTHETIC_MAPPING_SECRET' not in response.get_data(as_text=True)
+
+
 def test_complete_replacement_set_allows_explicit_interface_swap():
     client, payload, rows, _ = _review(target=True)
     doc = payload['decision_document']

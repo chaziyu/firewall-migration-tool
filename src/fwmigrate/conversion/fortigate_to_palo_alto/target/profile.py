@@ -7,6 +7,18 @@ from ipaddress import ip_network
 MODEL_PORTS = {'PA-820': tuple(f'ethernet1/{number}' for number in range(1, 13))}
 
 
+def _valid_scoped_key(value, kinds=None):
+    if not isinstance(value, str):
+        return False
+    vdom, separator, identity = value.partition('/')
+    if not vdom or not separator or not identity or '\n' in identity:
+        return False
+    if kinds is None:
+        return True
+    kind, separator, identity = identity.partition('/')
+    return bool(separator and identity and kind in kinds and '\n' not in identity)
+
+
 def parse_conversion_settings(value):
     if value is None:
         return {}
@@ -59,12 +71,12 @@ def parse_conversion_settings(value):
     if result.get('panos_version') not in {None, '', '11.1'}:
         raise ValueError('Supported PAN-OS command version is 11.1')
     excluded = result.get('excluded_interfaces', [])
-    if not isinstance(excluded, list) or any(not isinstance(key, str) or not re.fullmatch(r'[^/]+/.+', key) for key in excluded):
+    if not isinstance(excluded, list) or any(not _valid_scoped_key(key) for key in excluded):
         raise ValueError('Excluded interfaces must preserve VDOM/name identity')
     if 'excluded_interfaces' in result:
         result['excluded_interfaces'] = sorted(set(excluded))
     existing_vpns = result.get('existing_vpns', [])
-    if not isinstance(existing_vpns, list) or any(not isinstance(key, str) or not re.fullmatch(r'[^/]+/.+', key) for key in existing_vpns):
+    if not isinstance(existing_vpns, list) or any(not _valid_scoped_key(key) for key in existing_vpns):
         raise ValueError('Existing VPN prerequisites must preserve VDOM/name identity')
     if 'existing_vpns' in result:
         result['existing_vpns'] = sorted(set(existing_vpns))
@@ -81,7 +93,7 @@ def parse_conversion_settings(value):
     if not isinstance(parameters, dict):
         raise ValueError('VPN parameters must be scoped target-design decisions')
     for key, fields in parameters.items():
-        if (not isinstance(key, str) or not re.fullmatch(r'[^/]+/ipsec_phase[12]/.+', key)
+        if (not _valid_scoped_key(key, {'ipsec_phase1', 'ipsec_phase2'})
                 or not isinstance(fields, dict) or set(fields) - {'lifetime_seconds', 'dh_group', 'pfs', 'ike_version'}):
             raise ValueError('Invalid non-secret VPN parameters')
         lifetime = fields.get('lifetime_seconds')

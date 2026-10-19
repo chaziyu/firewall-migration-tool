@@ -177,22 +177,8 @@ function ValidationReport({ data, reportScope, onReportScope, active }: { data: 
 }
 
 function SourceRowsTable({ rows, columns, selected, hasSource, topology, loadMoreRef, onSelect }: { rows: Finding[]; columns: string[]; selected: Finding | null; hasSource: boolean; topology: boolean; loadMoreRef: RefObject<HTMLDivElement | null>; onSelect: (row: Finding) => void }) {
-  const tableRef = useRef<HTMLDivElement>(null)
-  const [availableHeight, setAvailableHeight] = useState<number>()
-  const hasRows = rows.length > 0
-  useEffect(() => {
-    const table = tableRef.current
-    if (!hasRows || !table) return
-    const updateHeight = () => setAvailableHeight(Math.max(120, window.innerHeight - Math.max(0, table.getBoundingClientRect().top) - 16))
-    const observer = new ResizeObserver(updateHeight)
-    observer.observe(table.closest('main') ?? table)
-    window.addEventListener('resize', updateHeight)
-    window.addEventListener('scroll', updateHeight, { passive: true })
-    updateHeight()
-    return () => { observer.disconnect(); window.removeEventListener('resize', updateHeight); window.removeEventListener('scroll', updateHeight) }
-  }, [hasRows])
   if (!rows.length) return <p className="report-empty">{hasSource ? 'No rows match the current filters.' : 'No reported entries in this subsection.'}</p>
-  return <div ref={tableRef} className="report-table-wrap" style={{ maxHeight: availableHeight }} role="region" aria-label="Source report rows" tabIndex={0}>
+  return <div className="report-table-wrap" role="region" aria-label="Source report rows" tabIndex={0}>
     <table className="report-table"><thead><tr>{columns.map((key, index) => <th key={key} scope="col" className={`report-column-${columnWidth(key)}${index === 0 ? ' report-identity' : ''}`}>{fieldLabel(key)}</th>)}</tr></thead>
       <tbody>{rows.map((row, index) => <tr className={selected === row ? 'selected' : ''} key={`${row.name ?? row.policy_id ?? index}-${index}`}>
         {columns.map((key, index) => {

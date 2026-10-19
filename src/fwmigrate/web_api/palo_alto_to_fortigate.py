@@ -4,7 +4,7 @@ import json
 import zipfile
 import yaml
 
-from flask import jsonify, request, send_file
+from flask import Response, jsonify, request, send_file
 
 from fwmigrate.conversion.palo_alto_to_fortigate.application import (
     approve_design, build_artifact, build_review, export_decisions, import_decisions, verify_export_artifact,
@@ -28,7 +28,8 @@ def register_palo_alto_to_fortigate_routes(app, signing_key):
                 if action == "command-preview":
                     return jsonify({"success": True, "text": command_text, "command_sha256": artifact["command_sha256"]})
                 if action == "commands":
-                    return send_file(io.BytesIO(command_text.encode()), mimetype="text/plain", as_attachment=True, download_name="fortigate_config.conf")
+                    return Response(command_text.encode("utf-8"), mimetype="text/plain",
+                                    headers={"Content-Disposition": 'attachment; filename="fortigate_config.conf"'})
                 entry = analyze_request_source(payload, "palo_alto")
                 _require_complete_collection(entry)
                 if entry.source_digest != artifact["report"]["source_digest"]:

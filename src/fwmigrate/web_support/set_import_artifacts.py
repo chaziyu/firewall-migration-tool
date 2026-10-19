@@ -62,7 +62,7 @@ def _verify_set_envelope(value, key, kind):
     expires = value.get('expires_at')
     if (value.get('envelope_type') != kind or type(expires) not in {int, float}
             or not math.isfinite(expires) or time.time() >= expires):
-        raise ArtifactEligibilityError('Upload review has expired; review and approve the file again')
+        raise ArtifactEligibilityError('UPLOAD_REVIEW_EXPIRED')
     commands = value['commands']
     if not isinstance(commands, list) or len(commands) != value['command_count']:
         raise ValueError('Invalid upload command count')
@@ -86,7 +86,7 @@ def verify_set_artifact(value, payload, key):
     value = _verify_set_envelope(value, key, SET_ARTIFACT)
     context = value['context']
     if (str(payload.get('host', '')).strip().casefold(), int(payload.get('port', 22))) != (context['host'], context['port']):
-        raise ArtifactEligibilityError('Upload approval belongs to a different destination host or port')
+        raise ArtifactEligibilityError('UPLOAD_DESTINATION_MISMATCH')
     report = {'plan_status': 'READY', 'provenance': 'UPLOADED_SET',
               'validation_scope': 'syntax_and_engineer_review', 'command_sha256': value['command_sha256'],
               'line_numbers': value['line_numbers']}

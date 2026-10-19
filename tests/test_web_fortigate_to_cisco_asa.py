@@ -79,6 +79,9 @@ def test_asa_api_requires_current_approval_and_serves_exact_artifact_bytes(monke
     download = client.post(prefix + "/commands", json={"artifact": built.json["artifact"]})
     assert preview.status_code == 200
     assert download.status_code == 200
+    assert download.mimetype == "text/plain"
+    assert "attachment" in download.headers["Content-Disposition"]
+    assert "asa_config.cfg" in download.headers["Content-Disposition"]
     assert download.data.decode("utf-8") == preview.json["text"]
     assert preview.json["command_sha256"] == built.json["artifact"]["command_sha256"]
     bundle = client.post(prefix + "/bundle", json={"source": source, "artifact": built.json["artifact"]})
@@ -86,6 +89,10 @@ def test_asa_api_requires_current_approval_and_serves_exact_artifact_bytes(monke
     with zipfile.ZipFile(io.BytesIO(bundle.data)) as archive:
         assert archive.read("asa_config.cfg") == download.data
         assert json.loads(archive.read("migration_report.json")) == built.json["artifact"]["report"]
+    tampered = {**built.json["artifact"], "command_text": built.json["artifact"]["command_text"] + "hostname unsafe\n"}
+    for route in ("command-preview", "commands", "bundle"):
+        response = client.post(prefix + "/" + route, json={"source": source, "artifact": tampered})
+        assert response.status_code == 400
     import time
     monkeypatch.setattr(time, "time", lambda: built.json["artifact"]["expires_at"] + 1)
     for route in ("command-preview", "commands", "bundle"):

@@ -52,6 +52,42 @@ def test_permitted_networks_must_be_explicit_valid_cidrs(values):
         parse_conversion_settings({'generated_management_profiles': {'root/ping': {'permitted_ips': values}}})
 
 
+@pytest.mark.parametrize(('field', 'message'), [
+    ('excluded_interfaces', 'Excluded interfaces must preserve VDOM/name identity'),
+    ('existing_vpns', 'Existing VPN prerequisites must preserve VDOM/name identity'),
+])
+@pytest.mark.parametrize('key', ['', 'root/', '/port1', 'root/tunnel\nname'])
+def test_scoped_interface_and_vpn_keys_reject_malformed_identities(field, message, key):
+    with pytest.raises(ValueError, match=message):
+        parse_conversion_settings({field: [key]})
+
+
+@pytest.mark.parametrize('field', ['excluded_interfaces', 'existing_vpns'])
+def test_scoped_interface_and_vpn_keys_preserve_nested_names_and_long_values(field):
+    key = f"{'v' * 20000}/{'tunnel/' + 'n' * 20000}"
+    assert parse_conversion_settings({field: [key]})[field] == [key]
+
+
+@pytest.mark.parametrize('phase', ['ipsec_phase1', 'ipsec_phase2'])
+def test_vpn_parameters_accept_nested_names_for_supported_phases(phase):
+    key = f'root/{phase}/tunnel/child'
+    assert parse_conversion_settings({'vpn_parameters': {key: {'dh_group': 'group14'}}})['vpn_parameters'][key]
+
+
+@pytest.mark.parametrize('key', [
+    '/ipsec_phase1/tunnel', 'root/ipsec_phase3/tunnel',
+    'root/ipsec_phase1/', 'root/ipsec_phase2/tunnel\nname',
+])
+def test_vpn_parameters_reject_malformed_or_unsupported_scopes(key):
+    with pytest.raises(ValueError, match='Invalid non-secret VPN parameters'):
+        parse_conversion_settings({'vpn_parameters': {key: {}}})
+
+
+def test_vpn_parameters_accept_long_nested_identity():
+    key = f"{'v' * 20000}/ipsec_phase1/{'tunnel/' + 'n' * 20000}"
+    assert key in parse_conversion_settings({'vpn_parameters': {key: {}}})['vpn_parameters']
+
+
 def test_profile_rejection_blocks_interfaces_and_zones_before_rendering():
     plan = planned()
     profile, = plan.management_profiles
