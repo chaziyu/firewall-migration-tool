@@ -4,7 +4,7 @@ SHEET_ORDER = (
     "RA VPN Policies", "RA Connection Profiles", "RA Group Policies", "RA Address Pools",
     "RA Certificates", "RA Certificate Maps", "RA Secure Client", "RA IPsec Settings",
     "RA Address Assignment", "Source Inventory", "Collection Completeness", "Semantic Completeness",
-    "Native Sources", "Source Evidence", "Validation",
+    "Native Sources", "CLI Source Evidence", "Source Evidence", "Validation",
 )
 
 SHEET_HEADERS = {
@@ -63,7 +63,9 @@ SHEET_HEADERS = {
         "Parent Policy", "Status", "Review Required", "Explicit Fields"),
     "Collection Completeness": ("Collection Part", "Status", "Complete", "Count", "Failure Reason"),
     "Semantic Completeness": ("Source Family", "Derived Status"),
-    "Source Evidence": ("Path", "Reason"),
+    "CLI Source Evidence": ("Record Kind", "Name", "Source Plane", "Source Context", "Line Start", "Line End", "Source Values"),
+    "Source Evidence": ("Path", "Reason", "Name", "Source ID", "Source Plane", "Source Context",
+        "Domain", "Device", "Line Start", "Line End", "Raw Source"),
     "Native Sources": ("Collection", "Name", "ID", "Source Context", "Source Attributes", "Raw Source"),
     "Validation": ("Severity", "Category", "Message", "Source Plane", "Object", "Source ID",
         "Source Context", "Domain", "Device"),

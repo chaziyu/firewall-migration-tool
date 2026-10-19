@@ -16,13 +16,13 @@ def effective_path_state(view: dict[str, Any], context: str, path: Sequence[str]
     inactive = tuple(
         context_local_path(context, item.get("path") or ())
         for item in view.get("inactive_hierarchies", ())
-        if item.get("context", "root").lower() == context.lower()
+        if item.get("context", "root") == context
     )
     if any(parent is not None and len(target) >= len(parent) and target[:len(parent)] == parent for parent in inactive):
         return "INACTIVE"
 
     for item in view.get("effective_statements", ()):
-        if item.get("context", "root").lower() != context.lower() or item.get("status") != "EFFECTIVE":
+        if item.get("context", "root") != context or item.get("status") != "EFFECTIVE":
             continue
         statement = context_local_path(context, item.get("target_path") or ())
         if statement and len(statement) >= len(target) and statement[:len(target)] == target:

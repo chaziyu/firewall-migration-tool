@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from enum import Enum
-import re
 import shlex
 from typing import List, Optional, Sequence
 
@@ -162,38 +161,13 @@ class JuniperSetTokenizer:
 
     def tokenize(self, content: str) -> List[JunosCommand]:
         commands: List[JunosCommand] = []
-        in_block_comment = False
+        from .syntax import mask_comments
+
+        content = mask_comments(content)
 
         for line_idx, raw_line in enumerate(content.splitlines(), 1):
             stripped = raw_line.strip()
             if not stripped:
-                continue
-
-            # Handle block comments /* ... */
-            if in_block_comment:
-                if "*/" in stripped:
-                    in_block_comment = False
-                    # Extract any trailing code after */
-                    stripped = stripped[stripped.index("*/") + 2:].strip()
-                    if not stripped:
-                        continue
-                else:
-                    continue
-
-            if "/*" in stripped:
-                if "*/" in stripped:
-                    # Single line block comment: remove it
-                    stripped = re.sub(r'/\*.*?\*/', '', stripped).strip()
-                    if not stripped:
-                        continue
-                else:
-                    in_block_comment = True
-                    stripped = stripped[:stripped.index("/*")].strip()
-                    if not stripped:
-                        continue
-
-            # Skip single-line line comments #
-            if stripped.startswith("#"):
                 continue
 
             # Lexical tokenization using shlex
@@ -227,48 +201,44 @@ class JuniperSetTokenizer:
             if not tokens:
                 continue
 
-            # Token-aware secret sanitization
-            sanitized_raw = sanitize_junos_command(tokens)
-            access_denied = has_access_denied_token(tokens)
-
-            op_str = tokens[0].lower()
-            if op_str == "set":
-                op = JunosOperation.SET
-            elif op_str == "activate":
-                op = JunosOperation.ACTIVATE
-            elif op_str == "deactivate":
-                op = JunosOperation.DEACTIVATE
-            else:
-                op = JunosOperation.UNKNOWN
-
-            cmd = JunosCommand(
-                operation=op,
-                tokens=tokens,
-                raw_sanitized=sanitized_raw,
-                line_number=line_idx,
-                normalized_line_number=line_idx,
-                source_order=line_idx,
-                access_denied=access_denied,
-                requires_manual_review=access_denied,
-            )
-
-            if op == JunosOperation.UNKNOWN:
-                cmd.parse_error = f"Unrecognized Junos operation: {tokens[0]}"
-                cmd.extraction_status = ExtractionStatus.PARSE_ERROR
-                cmd.requires_manual_review = True
-            elif access_denied:
-                cmd.extraction_status = ExtractionStatus.UNSUPPORTED
-
-            commands.append(cmd)
+            commands.append(self.command_from_tokens(tokens, line_idx))
 
         return commands
+
+    @staticmethod
+    def command_from_tokens(tokens: List[str], line: int, *, source_order: int | None = None) -> JunosCommand:
+        """Build lexical command metadata without serializing and reparsing values."""
+        operation = {"set": JunosOperation.SET, "activate": JunosOperation.ACTIVATE,
+                     "deactivate": JunosOperation.DEACTIVATE}.get(tokens[0].lower(), JunosOperation.UNKNOWN)
+        access_denied = has_access_denied_token(tokens)
+        command = JunosCommand(
+            operation=operation, tokens=tokens, raw_sanitized=sanitize_junos_command(tokens),
+            line_number=line, normalized_line_number=source_order or line, source_order=source_order or line,
+            access_denied=access_denied, requires_manual_review=access_denied,
+        )
+        if operation == JunosOperation.UNKNOWN:
+            command.parse_error = f"Unrecognized Junos operation: {tokens[0]}"
+            command.extraction_status = ExtractionStatus.PARSE_ERROR
+            command.requires_manual_review = True
+        elif access_denied:
+            command.extraction_status = ExtractionStatus.UNSUPPORTED
+        return command
 
     def _normalize_brackets(self, line: str) -> str:
         """Ensure spaces around [ and ] when not inside quoted strings."""
         result: List[str] = []
         in_quote = False
         quote_char = ''
+        escaped = False
         for char in line:
+            if escaped:
+                result.append(char)
+                escaped = False
+                continue
+            if char == '\\' and quote_char != "'":
+                result.append(char)
+                escaped = True
+                continue
             if char in ('"', "'"):
                 if not in_quote:
                     in_quote = True

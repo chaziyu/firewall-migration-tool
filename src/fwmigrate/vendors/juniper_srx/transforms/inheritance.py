@@ -95,7 +95,7 @@ def build_inheritance_view(source_commands=()) -> dict:
             if issue not in issues:
                 issues.append(issue)
     for command in source_commands:
-        if command.operation.value != "set" or "groups" in command.tokens[1:]:
+        if command.operation.value != "set" or is_group_command(command.tokens[1:]):
             continue
         path = tuple(sanitize_tokens(command.tokens[1:]))
         active = not activation.is_inactive(path)

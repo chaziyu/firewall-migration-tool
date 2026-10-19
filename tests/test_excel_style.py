@@ -11,6 +11,57 @@ from fwmigrate.source_reporting.excel_style import (
 )
 
 
+@pytest.mark.parametrize('write_only', [False, True])
+def test_xml_unsafe_text_is_visible_and_formula_protection_is_idempotent(write_only):
+    value = '=é\x00\x01\x0b\x0c\x1f\ufffe\uffff\ud800\t\r\n漢字😀'
+    expected = "'=é\\u0000\\u0001\\u000b\\u000c\\u001f\\ufffe\\uffff\\ud800\t\r\n漢字😀"
+    assert excel_safe_value(value) == expected
+    assert excel_safe_value(expected) == expected
+    workbook = Workbook(write_only=write_only)
+    sheet = workbook.create_sheet('Report') if write_only else workbook.active
+    append_report_row(sheet, ['Evidence'])
+    append_report_row(sheet, [value])
+    output = BytesIO()
+    workbook.save(output)
+    restored = load_workbook(output)
+    assert restored.active['A2'].value == expected
+    assert restored.active['A2'].data_type == 's'
+
+
+@pytest.mark.parametrize('write_only', [False, True])
+@pytest.mark.parametrize('value', ['x' * 32767, 'x' * 32768, 'x' * 32767 + '=1+1',
+                                 '=1+1' + '\x01' * 12000],
+                         ids=['boundary', 'overflow', 'formula-chunk', 'escaped-overflow'])
+def test_overflow_preserves_sanitized_text_and_formula_safe_chunks(write_only, value):
+    workbook = Workbook(write_only=write_only)
+    if not write_only:
+        workbook.remove(workbook.active)
+    summary = workbook.create_sheet('Summary')
+    detail = workbook.create_sheet('Evidence')
+    append_report_row(detail, ['Value', 'Repeated'])
+    append_report_row(detail, [value, value])
+    write_report_summary(summary, title='Report', metadata=[('Long source', value)], profile='FULL',
+                         validation=[], inventory=[])
+    finish_report_workbook(workbook)
+    output = BytesIO()
+    workbook.save(output)
+    restored = load_workbook(output)
+    expected = excel_safe_value(value)
+    if len(expected) <= 32767:
+        assert 'Text Overflow' not in restored.sheetnames
+        assert restored['Evidence']['A2'].value == expected
+        return
+    overflow = restored['Text Overflow']
+    for sheet_name, coordinate in [('Evidence', 'A2'), ('Evidence', 'B2'), ('Summary', 'B4')]:
+        rows = [row for row in list(overflow.values)[1:] if row[:2] == (sheet_name, coordinate)]
+        assert [row[2] for row in rows] == list(range(1, len(rows) + 1))
+        assert all(row[3] == len(rows) for row in rows)
+        assert ''.join(row[4] for row in rows) == expected
+        assert restored[sheet_name][coordinate].value.startswith('See Text Overflow:')
+    assert all(cell.data_type != 'f' for row in overflow for cell in row)
+    assert all(len(str(cell.value or '')) <= 32767 for row in overflow for cell in row)
+
+
 def test_fast_style_preserves_native_cells_and_hidden_evidence_after_save():
     workbook = Workbook()
     sheet = workbook.active

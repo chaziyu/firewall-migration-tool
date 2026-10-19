@@ -22,6 +22,24 @@ const emptyCheckPointOptions = (): CheckPointOptions => ({
 
 function eligible(item: CheckPointPlanItem) { return ['CREATE', 'REUSE'].includes(item.render_disposition) }
 
+function expandSelection(items: CheckPointPlanItem[], keys: string[]) {
+  const byKey = new Map(items.map((item) => [item.key, item]))
+  const chosen = new Set<string>()
+  const visiting = new Set<string>()
+  function visit(key: string) {
+    const item = byKey.get(key)
+    if (!item || !eligible(item)) throw new Error('Selection contains an unknown or blocked dependency')
+    if (visiting.has(key)) throw new Error('Selection contains a dependency cycle')
+    if (chosen.has(key)) return
+    visiting.add(key)
+    item.dependencies.forEach(visit)
+    visiting.delete(key)
+    chosen.add(key)
+  }
+  keys.forEach(visit)
+  return [...chosen].sort()
+}
+
 function fileName(kind: 'management-operations' | 'gaia-config' | 'bindings' | 'bundle') {
   return kind === 'management-operations' ? MANAGEMENT_FILE : kind === 'gaia-config' ? GAIA_FILE : kind === 'bindings' ? BINDINGS_FILE : 'migration_fortigate_to_checkpoint.zip'
 }
@@ -42,13 +60,14 @@ export function CheckPointMigrationWorkflow({ source, sourceKey, stage, onStageC
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [selected, setSelected] = useState<string[]>([])
+  const [approvalPreview, setApprovalPreview] = useState<string[] | null>(null)
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
   const [previewFile, setPreviewFile] = useState(MANAGEMENT_FILE)
   const [sourceVdoms, setSourceVdoms] = useState<string[]>([])
   const requests = useRef(0)
   const pending = useRef(false)
-  const { options, review, artifact, preview } = state
+  const { options, review, approval, artifact, preview } = state
   const initialOptions = useRef(options)
 
   useEffect(() => { void saveWorkspace({ newPairMigration: state }) }, [state])
@@ -68,13 +87,14 @@ export function CheckPointMigrationWorkflow({ source, sourceKey, stage, onStageC
     requests.current++
     setState((current) => ({ ...current, options: next, review: null, approval: null, artifact: null, preview: null }))
     setSelected([])
+    setApprovalPreview(null)
     setError(null)
   }
 
   function changeDestination(destination: DestinationEvidence | null) {
     requests.current++
     setState((current) => ({ ...current, destination, review: null, approval: null, artifact: null, preview: null }))
-    setSelected([]); setError(null)
+    setSelected([]); setApprovalPreview(null); setError(null)
   }
 
   async function run(action: () => Promise<void>) {
@@ -90,10 +110,11 @@ export function CheckPointMigrationWorkflow({ source, sourceKey, stage, onStageC
   async function prepareReview() {
     const request = ++requests.current
     setState((current) => ({ ...current, approval: null, artifact: null, preview: null }))
+    setSelected([])
+    setApprovalPreview(null)
     const result = await api.prepare(source, options, state.destination)
     if (request !== requests.current) return
     setState((current) => ({ ...current, requirements: result.requirements, review: result }))
-    setSelected(result.report.items.filter(eligible).map((item) => item.key))
     setPage(1)
     onStageChange('review')
   }
@@ -112,17 +133,34 @@ export function CheckPointMigrationWorkflow({ source, sourceKey, stage, onStageC
     setState((current) => ({ ...current, preview: result.files }))
   }
 
-  async function approveAndBuild() {
-    if (!review || !selected.length) return
+  async function generate(currentApproval = approval) {
+    if (!currentApproval) return
     const request = ++requests.current
-    const result = await api.approve(source, options, review.draft, selected, state.destination)
-    if (request !== requests.current) return
-    setState((current) => ({ ...current, approval: result.approval, artifact: null, preview: null }))
-    const built = await api.build(source, options, result.approval, state.destination)
+    const built = await api.build(source, options, currentApproval, state.destination)
     if (request !== requests.current) return
     setState((current) => ({ ...current, artifact: built.artifact, preview: null }))
     onStageChange('export')
     await refreshPreview(built.artifact)
+  }
+
+  async function confirmApproval() {
+    if (!review || !approvalPreview?.length) return
+    const request = ++requests.current
+    const expanded = expandSelection(review.report.items, approvalPreview)
+    const result = await api.approve(source, options, review.draft, expanded, state.destination)
+    if (request !== requests.current) return
+    const signedSelection = result.approval.selected_items
+    if (!Array.isArray(signedSelection) || JSON.stringify([...signedSelection].sort()) !== JSON.stringify(expanded)) {
+      throw new Error('Approved selection differs from the reviewed preview; prepare review again')
+    }
+    setState((current) => ({ ...current, approval: result.approval, artifact: null, preview: null }))
+    setApprovalPreview(null)
+    onStageChange('export')
+    await generate(result.approval)
+  }
+
+  function openApprovalPreview() {
+    if (review) setApprovalPreview(expandSelection(review.report.items, selected))
   }
 
   async function download(kind: 'management-operations' | 'gaia-config' | 'bindings' | 'bundle') {
@@ -156,10 +194,12 @@ export function CheckPointMigrationWorkflow({ source, sourceKey, stage, onStageC
   }
 
   function toggleItem(key: string) {
+    setApprovalPreview(null)
     setSelected((current) => current.includes(key) ? current.filter((item) => item !== key) : [...current, key])
   }
 
   const items = review?.report.items ?? EMPTY_ITEMS
+  const itemsByKey = new Map(items.map((item) => [item.key, item]))
   const filteredItems = useMemo(() => items.filter((item) =>
     `${item.family} ${item.source_vdom} ${item.source_name} ${item.target_name} ${item.blockers.join(' ')}`.toLowerCase().includes(search.trim().toLowerCase())), [items, search])
   const pages = Math.max(1, Math.ceil(filteredItems.length / PAGE_SIZE))
@@ -226,9 +266,23 @@ export function CheckPointMigrationWorkflow({ source, sourceKey, stage, onStageC
       </div>
       <div className="report-pagination"><button type="button" disabled={busy || currentPage <= 1} onClick={() => setPage(currentPage - 1)}>Previous</button><span>Page {currentPage} of {pages}</span><button type="button" disabled={busy || currentPage >= pages} onClick={() => setPage(currentPage + 1)}>Next</button></div>
       {review.report.findings.map((finding, index) => <p key={`${String(finding.code)}-${index}`}>{String(finding.message)}</p>)}
-      <button type="button" disabled={busy || selected.length === 0} onClick={() => void run(approveAndBuild)}>Approve selected items and build reviewed files</button>
+      <button type="button" disabled={busy || selected.length === 0} onClick={() => void run(async () => openApprovalPreview())}>Review selected operations</button>
+      {approvalPreview && <section aria-label="Check Point approval preview">
+        <h3>Confirm operations and dependencies</h3>
+        <p>Management target: {options.management_target}. Domain: {options.management_domain}. Package: {options.policy_package}. Layer: {options.access_layer}. Install-on: {options.install_on.join(', ')}. Placement: {options.insertion_relation} {options.insertion_anchor}. Gaia target: {options.gaia_target}.</p>
+        {approvalPreview.map((key) => {
+          const item = itemsByKey.get(key)!
+          return <div key={key}><h4>{item.family}: {item.source_name} ({selected.includes(key) ? 'Selected' : 'Required dependency'})</h4>
+            <p>{item.render_disposition} · {item.target_name}</p>
+            <pre>{JSON.stringify({ settings: item.settings, dependencies: item.dependencies }, null, 2)}</pre>
+          </div>
+        })}
+        <button type="button" disabled={busy} onClick={() => void run(confirmApproval)}>Approve these operations and generate files</button>
+        <button type="button" disabled={busy} onClick={() => setApprovalPreview(null)}>Cancel approval preview</button>
+      </section>}
     </>}
 
+    {stage === 'export' && approval && !artifact && <button type="button" disabled={busy} onClick={() => void run(() => generate())}>Retry with current approval</button>}
     {stage === 'export' && artifact && <>
       <h3>Reviewed offline files</h3>
       <p>Approval expires {new Date(artifact.expires_at * 1000).toLocaleString()}. Live device acceptance, policy publish, installation, and Gaia save remain manual.</p>

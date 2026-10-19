@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import re
 import ipaddress
+from fwmigrate.extraction.sanitize import sanitize_raw_text
+from .section_scanner import scan_cisco_ftd_sections
 from ..model import (
     CiscoFTDConfig, CiscoFTDInterface, CiscoFTDIPv6Address,
     CiscoFTDManagementSetting, CiscoFTDStaticRoute,
@@ -13,7 +15,7 @@ class CiscoFTDParser:
     """Independent FTD management-source parser; never routes through ASA parsing."""
 
     def __init__(self, content: str):
-        self.content = content
+        self.content = sanitize_raw_text(content)
         self.config = CiscoFTDConfig()
 
     def _parse_interface_block(self, lines: list[str], index: int) -> int:
@@ -73,6 +75,7 @@ class CiscoFTDParser:
                         "source_path": "ftd-cli/interfaces",
                         "source_name": record.name,
                         "reason": "Invalid IPv6 interface address",
+                        "line_start": index + 1, "line_end": index + 1, "raw": child,
                     })
             elif len(parts) >= 2 and lower_parts[0] == "vlan" and parts[1].isdigit():
                 record.vlan_id = int(parts[1])
@@ -104,6 +107,7 @@ class CiscoFTDParser:
                     "source_path": "ftd-cli/interfaces",
                     "source_name": record.name,
                     "reason": "Unsupported FTD interface command is source-preserved",
+                    "line_start": index + 1, "line_end": index + 1, "raw": child,
                 })
             index += 1
         if record.nameif and record.nameif.lower() == "diagnostic":
@@ -125,6 +129,7 @@ class CiscoFTDParser:
                 "source_path": "ftd-cli/routes",
                 "source_name": f"route_{line_number}",
                 "reason": "Malformed FTD static route",
+                "line_start": line_number, "line_end": line_number, "raw": line,
             })
             return
         interface = parts[offset + 1]
@@ -199,5 +204,14 @@ class CiscoFTDParser:
                     raw_lines=[line], source_attributes={"source_line_number": index + 1, "raw_command": line},
                 ))
             index += 1
+        for section in scan_cisco_ftd_sections(self.content):
+            if section.path == "other":
+                self.config.unsupported_evidence.append({
+                    "source_path": "ftd-cli/other", "source_plane": "ftd-text-evidence",
+                    "source_name": f"line {section.line_start}",
+                    "line_start": section.line_start, "line_end": section.line_end,
+                    "raw": "\n".join(lines[section.line_start - 1:section.line_end]),
+                    "reason": "Unsupported FTD CLI section is source-preserved",
+                })
         return self.config
 

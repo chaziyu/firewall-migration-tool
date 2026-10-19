@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+import pytest
 
 from fwmigrate.conversion.fortigate_to_palo_alto import (
     FortiGateToPaloAltoPlanner,
@@ -28,6 +29,26 @@ def _options():
             "wan": {"target_interface": "ethernet1/2", "target_zone": "untrust"},
         }},
     )
+
+
+@pytest.mark.parametrize('fields', [{'session_ttl': 60}, {'proxy': 'enable'},
+    {'raw_extra': {'iprange': '192.0.2.0/24'}}, {'raw_extra': {'future': 'enable'}}])
+def test_service_semantics_block_expanded_children_and_group_in_own_vdom(fields):
+    from fwmigrate.vendors.fortigate.model.service import FGService
+    from fwmigrate.vendors.fortigate.transform.services import transform_services
+    from fwmigrate.conversion.fortigate_to_palo_alto.validation import validate_plan
+
+    source = FGConfig(services=[FGService(name='web', tcp_portrange='443 8443', **fields),
+                               FGService(name='web', vdom='branch', tcp_portrange='443')])
+    before = source.model_dump()
+    plan = FortiGateToPaloAltoPlanner().plan(source, SimpleNamespace(services=transform_services(source)),
+        options=PANMigrationOptions(vdoms={'root': {'vsys': 'vsys1'}, 'branch': {'vsys': 'vsys2'}}))
+    root = [item for item in (*plan.services, *plan.service_groups) if item.source_vdom == 'root']
+    assert len(root) == 3
+    assert all(item.status is PANMigrationStatus.UNSUPPORTED and item.warnings for item in root)
+    assert next(item for item in plan.services if item.source_vdom == 'branch').status is PANMigrationStatus.SUPPORTED
+    assert ('service_group', 'vsys1', 'web') not in validate_plan(plan).renderable_item_keys
+    assert source.model_dump() == before
 
 
 def test_services_use_derived_expansion_and_flag_non_tcp_udp():

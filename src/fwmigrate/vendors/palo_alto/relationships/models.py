@@ -29,6 +29,7 @@ class PANReferenceResolution:
     resolution_reason: str = ""
     owner_family: str | None = None
     owner_source_path: str | None = None
+    owner_identity: tuple = ()
 
 
 @dataclass(frozen=True, slots=True)

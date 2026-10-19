@@ -6,7 +6,7 @@ import xml.etree.ElementTree as ET
 
 from fwmigrate.extraction.sanitize import sanitize_raw_text, sanitize_source_attributes, sanitize_source_value
 
-from .extraction.extractor import extract_typed, registered_typed_collections
+from .extraction.extractor import extract_typed, registered_typed_collections, registered_typed_domains
 from .model import PANOSConfig
 from .schema_registry import match_path_spec
 from .source_context import walk_pan_source
@@ -17,6 +17,9 @@ from .xml_loader import load_pan_source
 def _record_value(element: ET.Element) -> dict[str, object]:
     values: dict[str, object] = {}
     for child in element:
+        if child.tag == "member":
+            values.setdefault("member", []).append((child.text or "").strip())
+            continue
         if len(child) == 0 and (child.text or "").strip():
             values[child.tag] = (child.text or "").strip()
         elif len(child):
@@ -42,6 +45,7 @@ def build_panos_config(content: str) -> PANOSConfig:
     extraction_issues: list[PANExtractionIssue] = []
     typed: dict[str, list[object]] = {collection: [] for collection in registered_typed_collections()}
     preserved_branches: list[str] = []
+    typed_domains = registered_typed_domains()
     for element, path, context in walk_pan_source(source.root):
         if context.scope and pan_scope_identity(context.scope) not in {pan_scope_identity(item) for item in scopes}:
             scopes.append(context.scope)
@@ -49,8 +53,10 @@ def build_panos_config(content: str) -> PANOSConfig:
         path_string = "/".join(path)
         if any(path_string.startswith(branch + "/") for branch in preserved_branches):
             continue
-        if element.tag == "entry":
-            records.append(_inventory_record(element, path, context, len(records) + 1))
+        has_record = element.tag == "entry" or (spec is not None and spec.name in typed_domains)
+        if has_record:
+            record_builder = _inventory_record if element.tag == "entry" else _inventory_unsupported_branch
+            records.append(record_builder(element, path, context, len(records) + 1))
             source_order = len(records)
         elif spec is None:
             # Keep maximal unsupported branches that are outside an inventoried
@@ -76,7 +82,7 @@ def build_panos_config(content: str) -> PANOSConfig:
                 scope=context.scope, domain=spec.name if spec else None,
                 exception_type=type(error).__name__, message=sanitize_raw_text(str(error))[:500],
             ))
-            if element.tag == "entry":
+            if has_record:
                 records[-1].unsupported = True
             continue
         if result is not None:

@@ -106,25 +106,42 @@ def _plan_address(source: Any, options: Any):
     status, warnings, issue = _scope(source, options)
     value = None
     address_type = None
-    if getattr(source, "subnet", None):
+    representations = {
+        "ipmask": bool(getattr(source, "subnet", None)),
+        "iprange": bool(getattr(source, "start_ip", None) or getattr(source, "end_ip", None)),
+        "fqdn": bool(getattr(source, "fqdn", None)),
+        "wildcard": bool(getattr(source, "wildcard", None)),
+        "wildcard-fqdn": bool(getattr(source, "wildcard_fqdn", None)),
+    }
+    selected = getattr(source, "type", None)
+    if selected is None:
+        candidates = [kind for kind, present in representations.items() if present]
+        selected = candidates[0] if len(candidates) == 1 else None
+    if selected == "ipmask" and representations["ipmask"]:
         value = _normalize_subnet(source.subnet)
         if value:
             address_type = "ip-netmask"
         else:
             status = PANMigrationStatus.UNSUPPORTED
             warnings = (*warnings, "address subnet is not a valid explicit IPv4 subnet")
-    elif getattr(source, "start_ip", None) and getattr(source, "end_ip", None):
+    elif selected == "iprange" and getattr(source, "start_ip", None) and getattr(source, "end_ip", None):
         address_type, value = "ip-range", f"{source.start_ip}-{source.end_ip}"
-    elif getattr(source, "fqdn", None):
+    elif selected == "fqdn" and representations["fqdn"]:
         address_type, value = "fqdn", source.fqdn
-    elif getattr(source, "wildcard", None):
+    elif selected == "wildcard" and representations["wildcard"]:
         address_type, value = "ip-wildcard", source.wildcard
-    elif getattr(source, "wildcard_fqdn", None):
+    elif selected == "wildcard-fqdn":
         status = PANMigrationStatus.UNSUPPORTED
         warnings = (*warnings, "wildcard FQDN requires manual target semantics")
     else:
         status = PANMigrationStatus.UNSUPPORTED
-        warnings = (*warnings, "address has no supported explicit value")
+        warnings = (*warnings, "address type/value is missing, ambiguous or unsupported")
+    unknown = set(getattr(source, "raw_extra", {})) - {"uuid", "color"}
+    if (unknown or getattr(source, "associated_interface", None) not in {None, "any"}
+            or getattr(source, "allow_routing", None) not in {None, "disable"}):
+        status = PANMigrationStatus.UNSUPPORTED
+        warnings = (*warnings, "address settings require manual target semantics"
+                    + (": " + ", ".join(sorted(unknown)) if unknown else ""))
     if getattr(source, "address_family", None) == "ipv6" or getattr(source, "ip6", None) is not None:
         status = PANMigrationStatus.UNSUPPORTED
         warnings = (*warnings, "IPv6 address semantics require manual design")
@@ -146,6 +163,12 @@ def _plan_address(source: Any, options: Any):
 
 def _plan_group(source: Any, options: Any):
     status, warnings, issue = _scope(source, options)
+    unknown = set(getattr(source, "raw_extra", {})) - {"uuid", "color"}
+    if (getattr(source, "type", None) not in {None, "default"} or unknown
+            or getattr(source, "category", None) is not None
+            or getattr(source, "allow_routing", None) not in {None, "disable"}):
+        status = PANMigrationStatus.UNSUPPORTED
+        warnings = (*warnings, "address-group type/settings require manual target semantics")
     if getattr(source, "address_family", None) == "ipv6":
         status = PANMigrationStatus.UNSUPPORTED
         warnings = (*warnings, "IPv6 address-group semantics require manual design")

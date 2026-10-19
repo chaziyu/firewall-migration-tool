@@ -36,6 +36,20 @@ class PANPlanDependencyIndex:
     dependents_by_item: dict[str, tuple[str, ...]]
 
 
+def policy_order_predecessors(plan: PANMigrationPlan):
+    """Link active rules in source order without ordering merged source scopes."""
+    previous = {}
+    predecessors = {}
+    for rule in plan.security_rules:
+        if rule.disabled:
+            continue
+        scope = (rule.source_vdom, rule.target_vsys)
+        if scope in previous:
+            predecessors[item_key(rule)] = previous[scope]
+        previous[scope] = rule
+    return predecessors
+
+
 def build_plan_dependency_index(plan: PANMigrationPlan, decisions) -> PANPlanDependencyIndex:
     items = tuple(_items(plan))
     keys = {id(item): item_key(item) for item in items}
@@ -47,6 +61,8 @@ def build_plan_dependency_index(plan: PANMigrationPlan, decisions) -> PANPlanDep
         return [entry for family in families for entry in identities.get((None if family == 'management_profile' else vsys, family, name), ())]
 
     dependents = {keys[id(item)]: [] for item in items}
+    for child, parent in policy_order_predecessors(plan).items():
+        dependents[item_key(parent)].append(child)
     direct_decisions = {keys[id(item)]: [] for item in items}
     items_by_decision = {}
     for item in items:
