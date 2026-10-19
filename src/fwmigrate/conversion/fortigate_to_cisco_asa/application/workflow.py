@@ -1,6 +1,8 @@
 """Deterministic ASA review, approval, and exact offline artifact workflow."""
 
 import uuid
+import math
+import time
 from dataclasses import replace
 
 from ..design.deterministic import (ARTIFACT_TYPE, PAIR, approve_draft, build_draft,
@@ -86,7 +88,13 @@ def build_artifact(analysis, options, source_digest, approval, *, target=None,
                       target_source_text=target_source_text, target_metadata=target_metadata)
     approved = validate_approval(review["plan"], review["draft"], approval)
     rendered = ASACLIRenderer().render(review["plan"], approved_items=approved)
+<<<<<<< Updated upstream
     report = {**review["report"], "command_count": rendered.command_count,
+=======
+    report = {**review["report"], **rendered.report, "command_count": rendered.command_count,
+              "coverage": build_coverage(review["plan"], analysis.extracted.source_objects,
+                                         analysis.derived, approved_items=approved),
+>>>>>>> Stashed changes
               "command_sha256": rendered.command_sha256,
               "approved_design_digest": approval["draft_digest"],
               "approved_items": sorted(approved), "destination_verified": False,
@@ -103,6 +111,14 @@ def verify_export_artifact(artifact):
     if (not isinstance(artifact, dict) or artifact.get("envelope_type") != ARTIFACT_TYPE
             or any(artifact.get(key) != value for key, value in PAIR.items())):
         raise ValueError("Invalid ASA export artifact")
+    expires_at = artifact.get("expires_at")
+    approval = artifact.get("design_approval")
+    if (type(expires_at) not in {int, float}
+            or (type(expires_at) is float and not math.isfinite(expires_at))
+            or time.time() >= expires_at or not isinstance(approval, dict)
+            or type(approval.get("expires_at")) not in {int, float}
+            or approval["expires_at"] != expires_at):
+        raise ValueError("ASA export approval is missing or expired")
     text = artifact.get("command_text")
     commands = artifact.get("commands")
     if (not isinstance(text, str) or not isinstance(commands, list)

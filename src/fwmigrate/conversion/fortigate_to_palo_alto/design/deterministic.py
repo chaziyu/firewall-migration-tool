@@ -13,7 +13,7 @@ from ..target.target_validation import validate_against_target
 from ..target.name_validation import zone_name_issue
 from ..target.target_object_reuse import classify_target_object_reuse
 from ..target.target_plan_validation import assess_target_plan, _items, item_key
-from ..plan_dependencies import build_plan_dependency_index, target_identity
+from ..plan_dependencies import build_plan_dependency_index, policy_order_predecessors, target_identity
 from ..target.profile import bind_vip_external_zones
 from ..validation import validate_plan, validate_source_interfaces
 from ..requirements import build_mapping_requirements
@@ -366,6 +366,7 @@ def build_deterministic_draft(config, derived, decisions, *, source_digest, targ
             ref = issue.source
             naming_issues_by_source.setdefault((ref.source_vdom or "root", ref.source_kind, ref.source_name), []).append(issue.message)
     configuration = []
+    predecessors = policy_order_predecessors(plan)
     # Planned placeholders may omit unresolved target names. Keep source dependencies visible.
     source_refs = {}
     for route in config.static_routes:
@@ -396,6 +397,12 @@ def build_deterministic_draft(config, derived, decisions, *, source_digest, targ
         reasons = list(item.warnings) if item.status.value != "SUPPORTED" else []
         naming_issues = naming_issues_by_source.get((item.source_vdom or "root", item.source_kind, item.source_name), ())
         reasons.extend(naming_issues)
+        if item.source_object_type == "security_rule":
+            predecessor = predecessors.get(key)
+            if predecessor is not None and (dispositions[item_key(predecessor)].value == "BLOCK"
+                    or target_identity(predecessor) not in validation.renderable_item_keys):
+                reasons.append(f"Preceding active policy {predecessor.source_vdom} / {predecessor.source_name} "
+                               f"(ID {predecessor.source_policy_id}) is blocked")
         reasons.extend(blockers.get(key, ()))
         if any(rows[parent].status != "READY" for parent in required if parent in rows):
             reasons.append("Resolve the related mapping decisions")

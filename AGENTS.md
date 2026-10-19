@@ -50,11 +50,19 @@ VendorConfig
 → Renderer
 ```
 
-Current migration pair:
+Implemented migration pairs (partial, directional support):
 
 ```text
 FortiGate → Palo Alto PAN-OS
+PAN-OS → FortiGate
+FortiGate → Cisco ASA
+FortiGate → Juniper SRX
+FortiGate → Check Point
 ```
+
+Only FortiGate → PAN-OS supports reviewed live candidate operations. The other
+four pairs export offline artifacts. See `documentation/migration-support-matrix.md`
+and workflow discovery metadata for mapping, comparison and activation limits.
 
 Deployment:
 
@@ -231,10 +239,14 @@ Current source input is XML. Preserve VSYS/shared/device-group/device scope and 
 
 `src/fwmigrate/conversion/` contains directional pair-specific planners.
 
-Current pair:
+Implemented pair packages:
 
 ```text
 fortigate → palo_alto
+palo_alto → fortigate
+fortigate → cisco_asa
+fortigate → juniper_srx
+fortigate → checkpoint
 ```
 
 Do not introduce:

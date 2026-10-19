@@ -17,6 +17,10 @@ export type MigrationPairOption = {
   export_available: boolean
   destination_aware_available: boolean
   deployment_available: boolean
+  mapping_workflow?: string | null
+  destination_comparison?: string | null
+  execution_mode?: string | null
+  activation_steps?: string[]
 }
 export type SourcePreviewData = {
   source_evidence?: import('../../storage/workspaceTypes').SourceEvidence

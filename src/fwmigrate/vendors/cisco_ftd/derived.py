@@ -569,6 +569,49 @@ def build_ftd_derived_views(config: CiscoFTDConfig) -> FTDDerivedViews:
                          "intrusion_rule_behaviors": "unknown", "intrusion_rule_overrides": "unknown", "file_rules": "unknown",
                          "decryption_rules": "unknown", "dns_rules": "unknown"})
 
+    if config.source_plane == "fdm-rest-bundle":
+        families = {
+            "hosts": ("objects/hosts", "objects/network_hosts"),
+            "networks": ("objects/networks",), "ranges": ("objects/ranges", "objects/network_ranges"),
+            "network_objects": tuple(f"objects/{name}" for name in (
+                "hosts", "network_hosts", "networks", "ranges", "network_ranges", "network_objects", "network_groups", "networkgroups")),
+            "security_zones": ("objects/zones", "objects/security_zones"),
+            "interfaces": ("objects/interfaces",), "routing": ("objects/routes", "objects/static_routes"),
+            "nat": ("nat_policies", "nat_policy", "nat_rules"),
+        }
+        observed = config.source_metadata.get("collection_states", {})
+        states = {"SUCCESS": "present", "EMPTY": "known-empty", "PARTIAL": "partial", "FAILED": "failed"}
+        for family, paths in families.items():
+            matching = [part for part in config.collection_metadata.parts
+                        if part.name in paths or f"objects/{part.name}" in paths]
+            statuses = [("partial" if not part.complete and part.status in {"SUCCESS", "EMPTY"} else
+                         "known-empty" if part.status == "SUCCESS" and part.count == 0
+                         else states.get(part.status, "unknown")) for part in matching]
+            shape_states = [observed[path] for path in paths if path in observed]
+            if family == "nat":
+                shape_states.extend(status for path, status in observed.items()
+                                    if path.startswith("nat_policies/") and path.endswith("/rules"))
+            if not statuses:
+                statuses = shape_states or ["unknown"]
+            if any(status in {"partial", "failed"} for status in shape_states) or (
+                    len(set(statuses)) > 1 and any(status in {"partial", "failed"} for status in statuses)):
+                expected[family] = "partial"
+            elif "partial" in statuses:
+                expected[family] = "partial"
+            elif "unknown" in statuses or "unknown" in shape_states:
+                expected[family] = "unknown"
+            elif all(status == "failed" for status in statuses):
+                expected[family] = "failed"
+            elif all(status == "known-empty" for status in statuses):
+                expected[family] = "known-empty"
+            else:
+                expected[family] = "present"
+
+        if expected["nat"] == "present" and any(policy.rules is None for policy in config.nat_policies):
+            expected["nat"] = "partial" if nat_rules else "unknown"
+        elif expected["nat"] == "present" and not nat_rules:
+            expected["nat"] = "known-empty"
+
     return FTDDerivedViews(
         interface_topology=build_ftd_interface_topology([*config.interfaces, *config.source_interfaces]),
         normalized_routes=normalize_ftd_routes([*config.routes, *config.static_routes], config.network_addresses),

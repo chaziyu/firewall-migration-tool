@@ -6,10 +6,11 @@ from ipaddress import IPv4Address, IPv4Interface, IPv4Network, ip_network
 import re
 
 from .models import MigrationIssue, MigrationSourceRef, PANMigrationPlan, PANMigrationStatus
-from .plan_dependencies import target_identity
+from .plan_dependencies import item_key, policy_order_predecessors, target_identity
 from .planning.services import PAN_BUILTIN_SERVICES
 from .target.name_validation import zone_name_issue
 from .planning.vpn import crypto_lifetime
+from ...vendors.palo_alto.validation.validator import _validate_ip_wildcard, _validate_ports
 
 
 ItemKey = tuple[str | None, str | None, str | None]
@@ -202,9 +203,21 @@ def validate_plan(plan: PANMigrationPlan) -> MigrationValidationResult:
         elif item.source_object_type == "address":
             if not getattr(item, "address_type", None) or not getattr(item, "value", None):
                 add("missing_address_value", "address has no supported explicit value", item)
+            elif not _valid_address(item.address_type, item.value):
+                add("invalid_address_value", "address has an invalid target representation or value", item)
         elif item.source_object_type == "service":
             if not getattr(item, "protocol", None) or not getattr(item, "destination_port", None):
                 add("missing_service_value", "service has no supported protocol or destination port", item)
+            elif item.protocol not in {"tcp", "udp"}:
+                add("invalid_service_protocol", "service protocol must be TCP or UDP", item)
+            for field in ("destination_port", "source_port"):
+                value = getattr(item, field, None)
+                try:
+                    valid = isinstance(value, str) and _validate_ports(value, minimum=0)
+                except ValueError:
+                    valid = False
+                if value is not None and not valid:
+                    add("invalid_service_port", f"service {field} is not a valid target port expression", item)
         elif item.source_object_type == "schedule":
             schedule_type = getattr(item, "schedule_type", None)
             if (schedule_type == "recurring" and not getattr(item, "weekly", ())) or (
@@ -320,6 +333,7 @@ def validate_plan(plan: PANMigrationPlan) -> MigrationValidationResult:
 
     # Resolve each dependency in the owner's target VSYS. Repeating this pass
     # propagates failures through arbitrarily nested groups and rules.
+    predecessors = policy_order_predecessors(plan)
     changed = True
     while changed:
         changed = False
@@ -396,6 +410,11 @@ def validate_plan(plan: PANMigrationPlan) -> MigrationValidationResult:
             if _key(rule) not in renderable:
                 continue
             before = _key(rule) in renderable
+            predecessor = predecessors.get(item_key(rule))
+            if predecessor is not None and _key(predecessor) not in renderable:
+                add("policy_predecessor_not_renderable",
+                    f"Preceding active policy {predecessor.source_vdom} / {predecessor.source_name} "
+                    f"(ID {predecessor.source_policy_id}) is not renderable", rule)
             for field, values, accepted in (
                 ("from_zones", rule.from_zones, ("zones",)),
                 ("to_zones", rule.to_zones, ("zones",)),
@@ -463,6 +482,21 @@ def validate_plan(plan: PANMigrationPlan) -> MigrationValidationResult:
 
     result = frozenset(renderable)
     return MigrationValidationResult(tuple(issues), plan, result)
+
+
+def _valid_address(kind, value):
+    if not isinstance(value, str):
+        return False
+    if kind == "ip-netmask":
+        return _valid_ipv4_selector(value)
+    if kind == "ip-range":
+        return _valid_pool(value)
+    if kind == "ip-wildcard":
+        return _validate_ip_wildcard(value)
+    if kind == "fqdn":
+        return len(value) <= 253 and all(re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?", label)
+            for label in value.removesuffix(".").split("."))
+    return False
 
 
 def _valid_ipv4(value):

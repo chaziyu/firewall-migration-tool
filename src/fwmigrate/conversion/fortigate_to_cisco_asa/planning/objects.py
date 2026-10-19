@@ -44,6 +44,7 @@ def plan_objects(source, derived, vdom):
         commands = (f"object network {name}", *(f" {line}" for line in body)) if body and not blockers else ()
         items.append(ASAPlanItem(item_key(vdom, "address", address.name), "address", vdom, address.name,
                                  name, (("commands", tuple(commands)),), blockers=tuple(blockers)))
+    address_names.update({name: target_name("address_group", vdom, name) for name in groups})
     for group in groups.values():
         blockers = []
         members = []
@@ -57,14 +58,13 @@ def plan_objects(source, derived, vdom):
             blockers.append("ADDRESS_GROUP_EXCLUSION_UNSUPPORTED")
         for member in group.members or ():
             if member in address_names:
-                members.append(address_names[member])
-            elif member in groups:
-                members.append(target_name("address_group", vdom, member))
+                syntax = "group-object" if member in groups else "network-object object"
+                members.append(f" {syntax} {address_names[member]}")
             else:
                 blockers.append("ADDRESS_GROUP_MEMBER_UNRESOLVED")
         name = target_name("address_group", vdom, group.name)
         address_names[group.name] = name
-        commands = (f"object-group network {name}", *(f" network-object object {item}" for item in members)) if members and not blockers else ()
+        commands = (f"object-group network {name}", *members) if members and not blockers else ()
         dependencies = tuple(item_key(vdom, "address_group" if member in groups else "address", member)
                              for member in group.members or () if member in address_names or member in groups)
         items.append(ASAPlanItem(item_key(vdom, "address_group", group.name), "address_group", vdom, group.name,
@@ -102,6 +102,7 @@ def plan_objects(source, derived, vdom):
         commands = (f"object service {name_out}", *body) if body and not blockers else ()
         items.append(ASAPlanItem(item_key(vdom, "service", name), "service", vdom, name,
                                  name_out, (("commands", tuple(commands)),), blockers=tuple(blockers)))
+    service_names.update({name: target_name("service_group", vdom, name) for name in service_groups})
     for group in service_groups.values():
         members = tuple(group.members or ())
         blockers = ["SERVICE_GROUP_MEMBER_UNRESOLVED"] if not members or any(m not in service_names and m not in service_groups for m in members) else []
@@ -114,7 +115,7 @@ def plan_objects(source, derived, vdom):
             blockers.append("SERVICE_GROUP_PROXY_STATE_NOT_EXPLICITLY_DISABLED")
         name = target_name("service_group", vdom, group.name)
         service_names[group.name] = name
-        commands = (f"object-group service {name}", *(f" service-object object {service_names[m]}" for m in members)) if not blockers else ()
+        commands = (f"object-group service {name}", *(f" {'group-object' if m in service_groups else 'service-object object'} {service_names[m]}" for m in members)) if not blockers else ()
         deps = tuple(item_key(vdom, "service_group" if m in service_groups else "service", m) for m in members)
         items.append(ASAPlanItem(item_key(vdom, "service_group", group.name), "service_group", vdom, group.name,
                                  name, (("commands", tuple(commands)),), deps, tuple(blockers)))

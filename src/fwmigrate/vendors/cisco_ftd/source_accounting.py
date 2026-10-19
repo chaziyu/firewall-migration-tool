@@ -53,8 +53,10 @@ def account_cli_sections(text, config):
 
 def project_collection_completeness(config, sections):
     collection = config.collection_metadata
-    if config.source_plane == "fmc-rest-bundle" and collection.status in {"PARTIAL", "FAILED"}:
-        sections.append(SourceSectionResult(path="fmc/collection", status=ExtractionStatus.PARTIAL,
+    incomplete_fdm = config.source_plane == "fdm-rest-bundle" and any(
+        not part.complete or part.status not in {"SUCCESS", "EMPTY"} for part in collection.parts)
+    if config.source_plane in {"fmc-rest-bundle", "fdm-rest-bundle"} and (collection.status in {"PARTIAL", "FAILED"} or incomplete_fdm):
+        sections.append(SourceSectionResult(path=f"{config.source_plane[:3]}/collection", status=ExtractionStatus.PARTIAL,
             source_context=config.source_metadata.get("domain_name"), object_count_source=len(collection.parts),
             object_count_parsed=len(collection.parts), object_count_extracted=sum(part.complete for part in collection.parts),
             collection_errors=[f"{part.name}: {part.status}" for part in collection.parts if not part.complete]))

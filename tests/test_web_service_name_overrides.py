@@ -89,11 +89,14 @@ def test_service_rename_keeps_vdom_group_policy_and_nat_references_consistent():
     from fwmigrate.conversion.fortigate_to_palo_alto.planning.nat import plan_nat
     from fwmigrate.vendors.fortigate.model.source import FGConfig
     from fwmigrate.vendors.fortigate.model.policy import FGPolicy
-    services = [SimpleNamespace(vdom=vdom, name='web', protocol='tcp', port='443', source_port=None) for vdom in ('root', 'blue')]
-    groups = [SimpleNamespace(vdom=vdom, name='web-group', members=['web']) for vdom in ('root', 'blue')]
-    source = FGConfig(policies=[FGPolicy(vdom=vdom, policy_id=1, name='allow', srcintf=['any'], dstintf=['wan'],
+    from fwmigrate.vendors.fortigate.model.service import FGService, FGServiceGroup
+    from fwmigrate.vendors.fortigate.transform.services import transform_services
+    source = FGConfig(
+        services=[FGService(vdom=vdom, name='web', tcp_portrange='443') for vdom in ('root', 'blue')],
+        service_groups=[FGServiceGroup(vdom=vdom, name='web-group', members=['web']) for vdom in ('root', 'blue')],
+        policies=[FGPolicy(vdom=vdom, policy_id=1, name='allow', srcintf=['any'], dstintf=['wan'],
         srcaddr=['all'], dstaddr=['all'], service=['web'], schedule='always', action='accept') for vdom in ('root', 'blue')])
-    derived = SimpleNamespace(services=SimpleNamespace(services=services, groups=groups), nat=[SimpleNamespace(
+    derived = SimpleNamespace(services=transform_services(source), nat=[SimpleNamespace(
         vdom='root', policy_id=1, policy_name='allow', issues=[], translation_type='ip_pool',
         pool_names=['POOL'], pool_types=['overload'], translated_addresses=['203.0.113.10'],
         egress_interfaces=['wan'])])

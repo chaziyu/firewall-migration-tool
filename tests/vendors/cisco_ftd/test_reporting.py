@@ -1,4 +1,6 @@
 import json
+from copy import deepcopy
+import pytest
 from io import BytesIO
 from pathlib import Path
 
@@ -9,6 +11,79 @@ from fwmigrate.vendors.cisco_ftd.web_report import build_ftd_preview
 
 
 FIXTURE = Path(__file__).parents[2] / "fixtures" / "cisco_ftd" / "fmc_selected_domains.json"
+
+
+@pytest.mark.parametrize("profile", ["fast", "full"])
+def test_cli_excel_preserves_complete_records_and_unsupported_payload(profile):
+    source = ("configure network ipv4 manual 192.0.2.42 255.255.255.0 192.0.2.1\n"
+              "interface GigabitEthernet0/1\n description UNIQUE_DESCRIPTION\n"
+              " ipv6 address 2001:db8::42/64\n security-level 0\n no shutdown\n"
+              "access-list UNIQUE_UNSUPPORTED extended permit ip any any\n"
+              " password CLI_SECRET\n")
+    result = extract_cisco_ftd_source(source)
+    before = deepcopy(result.config)
+    output = BytesIO()
+    CiscoFTDSourceReporter().export_excel(result, output, profile=profile)
+    workbook = load_workbook(output, read_only=True)
+    rows = list(workbook["CLI Source Evidence"].values)
+    records = [dict(zip(rows[0], row)) for row in rows[1:]]
+    interface = next(row for row in records if row["Record Kind"] == "Interface")
+    values = json.loads(interface["Source Values"])
+    assert values["description"] == "UNIQUE_DESCRIPTION"
+    assert values["ipv6_addresses"][0]["address"] == "2001:db8::42"
+    assert values["shutdown"] is False and values["security_level"] == 0
+    assert values["management_only"] is None
+    assert (interface["Line Start"], interface["Line End"]) == (2, 6)
+    all_values = str([row for sheet in workbook for row in sheet.values])
+    assert "192.0.2.42" in all_values and "UNIQUE_UNSUPPORTED" in all_values
+    assert "CLI_SECRET" not in all_values
+    evidence = list(workbook["Source Evidence"].values)
+    assert "UNIQUE_UNSUPPORTED" in dict(zip(evidence[0], evidence[1]))["Raw Source"]
+    summary = list(workbook["Summary"].values)
+    assert any(len(row) > 1 and row[0] == "CLI Source Evidence" and row[1] == len(records) for row in summary)
+    workbook.close()
+    assert result.config == before
+
+
+@pytest.mark.parametrize("profile", ["fast", "full"])
+@pytest.mark.parametrize(("bundle_format", "collection"), [
+    ("cisco-fmc-rest-export-v1", "hosts"), ("cisco-fdm-rest-export-v1", "hosts"),
+])
+def test_managed_object_raw_fields_survive_excel(profile, bundle_format, collection):
+    payload = {"format": bundle_format, "objects": {collection: [{
+        "id": "host", "name": "Host", "value": "192.0.2.1", "customField": "UNIQUE_CUSTOM",
+        "nested": {"apiToken": "OBJECT_SECRET"},
+    }]}}
+    if "fdm" in bundle_format:
+        payload["unknownResource"] = {"marker": "UNKNOWN_RESOURCE", "password": "UNKNOWN_SECRET"}
+    result = extract_cisco_ftd_source(json.dumps(payload))
+    before = deepcopy(result.config)
+    output = BytesIO()
+    CiscoFTDSourceReporter().export_excel(result, output, profile=profile)
+    workbook = load_workbook(output, read_only=True)
+    native = str(list(workbook["Native Sources"].values))
+    assert "network_addresses" in native and "UNIQUE_CUSTOM" in native
+    all_values = str([row for sheet in workbook for row in sheet.values])
+    assert "OBJECT_SECRET" not in all_values and "UNKNOWN_SECRET" not in all_values
+    if "fdm" in bundle_format:
+        assert "UNKNOWN_RESOURCE" in str(list(workbook["Source Evidence"].values))
+    workbook.close()
+    assert result.config == before
+
+
+@pytest.mark.parametrize("profile", ["fast", "full"])
+def test_source_evidence_uses_shared_overflow_and_literal_text_guards(profile):
+    marker = "=UNIQUE_START" + "x" * 33000 + "UNIQUE_END\x01 password OVERFLOW_SECRET"
+    result = extract_cisco_ftd_source(json.dumps({"format": "cisco-fdm-rest-export-v1", "unknown": marker}))
+    output = BytesIO()
+    CiscoFTDSourceReporter().export_excel(result, output, profile=profile)
+    workbook = load_workbook(output, read_only=True)
+    chunks = [row[4] for row in list(workbook["Text Overflow"].values)[1:] if row[0] == "Source Evidence"]
+    reconstructed = "".join(chunks)
+    assert "UNIQUE_START" in reconstructed and "UNIQUE_END" in reconstructed
+    assert "OVERFLOW_SECRET" not in reconstructed and "\\u0001" in reconstructed
+    assert all(cell.data_type != "f" for sheet in workbook for row in sheet for cell in row)
+    workbook.close()
 
 
 def test_native_collections_are_visible_in_preview_and_excel():

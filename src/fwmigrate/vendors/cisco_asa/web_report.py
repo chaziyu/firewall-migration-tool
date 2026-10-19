@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 from .presentation_schema import SOURCE_SECTIONS
-from .presentation import has_source_evidence, safe_value, source_value
+from .presentation import has_source_evidence, management_records, safe_value, source_value
 
 if TYPE_CHECKING:
     from .source_report import ASASourceResult
@@ -42,8 +42,8 @@ def build_asa_preview(result: ASASourceResult) -> dict[str, Any]:
         singleton = bool(getattr(type(records), "model_fields", None))
         if singleton:
             records = (records,)
-        if section in {"DNS Settings", "System Settings", "HTTP Server"} and not has_source_evidence(records[0] if singleton else records):
-            records = ()
+        if section in {"DNS Settings", "System Settings", "HTTP Server"}:
+            records = management_records(config, spec[0])
         if len(spec) == 3:
             records = (child for parent in records for child in (getattr(parent, spec[1], ()) or ()))
             fields = spec[2]
