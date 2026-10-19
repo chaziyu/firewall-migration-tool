@@ -59,20 +59,20 @@ def build_policy_order(
             if rule.scope is not None and rule.scope.kind != "vsys"
         }
     )
-    managed_vsys_scopes = {
+    vsys_scopes = {
         pan_scope_identity(scope): scope
         for scope in config.scopes
-        if scope.kind == "vsys" and scope.device_group
+        if scope.kind == "vsys"
     }
-    # Also retain any managed VSYS identity present on an extracted local rule.
-    managed_vsys_scopes.update({
+    # Include unassigned/standalone VSYS owners so their source-only order is visible.
+    vsys_scopes.update({
         pan_scope_identity(rule.scope): rule.scope
         for _, rule in rules
-        if rule.scope is not None and rule.scope.kind == "vsys" and rule.scope.device_group
+        if rule.scope is not None and rule.scope.kind == "vsys"
     })
-    # Managed VSYS rule order is derived only when its explicit Panorama
-    # assignment resolves to exactly one extracted device group.
-    targets.update(managed_vsys_scopes)
+    # Effective managed VSYS order requires one explicit Panorama assignment;
+    # otherwise the relationship view retains an incomplete source-only order.
+    targets.update(vsys_scopes)
     result: list[PANPolicyOrderEntry] = []
     for target_id, target in targets.items():
         selected: list[tuple[str, object]] = []

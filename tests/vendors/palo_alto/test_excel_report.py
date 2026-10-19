@@ -140,7 +140,8 @@ def test_partial_extraction_status_and_source_appendix_evidence():
     workbook = load_workbook(io.BytesIO(output.getvalue()), read_only=True, data_only=True)
     inventory = list(workbook["PAN-OS Source Inventory"].iter_rows(min_row=4, values_only=True))
     dhcp = next(row for row in inventory if row[7] == "ethernet1/1")
-    assert dhcp[-1] == "PARTIAL"
+    inventory_headers = next(workbook["PAN-OS Source Inventory"].iter_rows(min_row=3, max_row=3, values_only=True))
+    assert dhcp[inventory_headers.index("Extraction Status")] == "PARTIAL"
     dhcp_sheet = workbook["DHCP Servers"]
     headers = next(dhcp_sheet.iter_rows(min_row=3, max_row=3, values_only=True))
     dhcp_rows = [dict(zip(headers, row)) for row in dhcp_sheet.iter_rows(min_row=4, values_only=True)]

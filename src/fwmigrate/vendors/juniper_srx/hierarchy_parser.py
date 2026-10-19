@@ -1,139 +1,107 @@
-"""Normalize hierarchical Junos configuration into display-set commands."""
+"""Normalize hierarchical Junos syntax while preserving quotes and provenance."""
 
-from __future__ import annotations
-
-import shlex
 from dataclasses import dataclass
+import shlex
+
+from .syntax import JunosToken, lex_junos
 
 
-@dataclass
-class _Token:
-    value: str
+@dataclass(frozen=True, slots=True)
+class HierarchyCommand:
+    operation: str
+    path: tuple[JunosToken, ...]
     line: int
 
 
-def _lex(content: str) -> list[_Token]:
-    tokens: list[_Token] = []
-    buf: list[str] = []
-    quote: str | None = None
-    line = 1
-    token_line = 1
-    i = 0
-
-    def flush() -> None:
-        nonlocal buf
-        if buf:
-            tokens.append(_Token("".join(buf), token_line))
-            buf = []
-
-    while i < len(content):
-        char = content[i]
-        if char == "\n":
-            line += 1
-        if quote:
-            if char == "\\" and i + 1 < len(content):
-                buf.append(content[i + 1])
-                i += 2
-                continue
-            if char == quote:
-                quote = None
-            else:
-                buf.append(char)
-            i += 1
-            continue
-        if content.startswith("/*", i):
-            end = content.find("*/", i + 2)
-            if end < 0:
-                break
-            line += content[i:end + 2].count("\n")
-            i = end + 2
-            continue
-        if char == "#":
-            end = content.find("\n", i)
-            i = len(content) if end < 0 else end
-            continue
-        if char in "\"'":
-            if not buf:
-                token_line = line
-            quote = char
-        elif char in "{};[]":
-            flush()
-            tokens.append(_Token(char, line))
-        elif char.isspace():
-            flush()
-        else:
-            if not buf:
-                token_line = line
-            buf.append(char)
-        i += 1
-    flush()
-    return tokens
-
-
-def normalize_hierarchy_with_provenance(content: str) -> tuple[str, tuple[int, ...]]:
-    """Return normalized commands plus their original hierarchical source lines."""
-    tokens = _lex(content)
-    output: list[tuple[str, int]] = []
+def hierarchy_commands(content: str) -> tuple[HierarchyCommand, ...]:
+    tokens = [token for token in lex_junos(content) if token.kind != "comment"]
+    output = []
     index = 0
 
-    def render(path: list[str]) -> str:
-        return " ".join(shlex.quote(part) for part in path)
+    def clean(statement):
+        inactive = bool(statement and not statement[0].quoted and statement[0].value == "inactive:")
+        return (statement[1:] if inactive else statement), inactive
 
-    def clean(tokens: list[str]) -> tuple[list[str], bool]:
-        inactive = any(token.lower() == "inactive:" or token.lower().startswith("inactive:") for token in tokens)
-        return ([token[len("inactive:"):] if token.lower().startswith("inactive:") else token
-                 for token in tokens if token.lower() != "inactive:"], inactive)
-
-    def append_output(command: str, line: int, *, deduplicate: bool = False) -> None:
-        if deduplicate and any(existing == command for existing, _ in output):
-            return
-        output.append((command, line))
-
-    def parse_block(prefix: list[str], stop: str | None = None) -> None:
+    def parse_block(prefix=(), opening_line=None):
         nonlocal index
-        statement: list[_Token] = []
+        statement = []
+        list_open = None
         while index < len(tokens):
             token = tokens[index]
             index += 1
-            if token.value == stop:
-                return
-            if token.value == "{":
-                child_prefix, inactive = clean([t.value for t in statement])
-                path = prefix + child_prefix
-                if inactive and path:
-                    directive = "deactivate " + render(path)
-                    source_line = statement[0].line if statement else token.line
-                    append_output(directive, source_line, deduplicate=True)
-                parse_block(path, "}")
-                statement = []
-            elif token.value == ";":
-                emit(prefix + [t.value for t in statement], token.line)
-                statement = []
-            else:
-                statement.append(token)
-        if statement:
-            emit(prefix + [t.value for t in statement], statement[0].line)
+            if token.kind == "symbol":
+                if token.value == "[":
+                    if list_open is not None:
+                        raise ValueError(f"Nested Junos list at line {token.line}.")
+                    list_open = token.line
+                    continue
+                if token.value == "]":
+                    if list_open is None:
+                        raise ValueError(f"Unexpected Junos list delimiter at line {token.line}.")
+                    list_open = None
+                    continue
+                if list_open is not None:
+                    raise ValueError(f"Unclosed Junos list at line {list_open}.")
+                if token.value == "}":
+                    if opening_line is None or statement:
+                        raise ValueError(f"Unexpected Junos block end or missing semicolon at line {token.line}.")
+                    return
+                if token.value == "{":
+                    if not statement:
+                        raise ValueError(f"Missing Junos hierarchy at line {token.line}.")
+                    children, inactive = clean(statement)
+                    path = (*prefix, *children)
+                    if inactive:
+                        output.append(HierarchyCommand("deactivate", path, statement[0].line))
+                    parse_block(path, token.line)
+                    statement = []
+                    continue
+                if token.value == ";":
+                    if statement:
+                        children, inactive = clean(statement)
+                        path = (*prefix, *children)
+                        if inactive:
+                            output.append(HierarchyCommand("deactivate", path, statement[0].line))
+                        output.append(HierarchyCommand("set", path, token.line))
+                    statement = []
+                    continue
+            statement.append(token)
+        if list_open is not None or opening_line is not None or statement:
+            line = list_open or opening_line or statement[0].line
+            raise ValueError(f"Incomplete Junos hierarchy at line {line}.")
 
-    def emit(path: list[str], line: int) -> None:
-        if not path:
-            return
-        path, inactive = clean(path)
-        if not path:
-            return
-        path = [p for p in path if p not in ("[", "]")]
-        if inactive:
-            directive = "deactivate " + render(path)
-            append_output(directive, line, deduplicate=True)
-        append_output("set " + render(path), line)
+    parse_block()
+    return tuple(output)
 
-    parse_block([])
-    return "\n".join(command for command, _ in output), tuple(line for _, line in output)
+
+def normalize_hierarchy_with_provenance(content: str) -> tuple[str, tuple[int, ...]]:
+    commands = hierarchy_commands(content)
+    return (
+        "\n".join(command.operation + " " + " ".join(shlex.quote(token.value) for token in command.path)
+                  for command in commands),
+        tuple(command.line for command in commands),
+    )
 
 
 def looks_hierarchical(content: str) -> bool:
-    """Detect brace/semicolon Junos syntax without parsing feature semantics."""
-    return any(char in content for char in "{};") and not any(
-        line.lstrip().startswith(("set ", "activate ", "deactivate "))
-        for line in content.splitlines()
-        if line.strip() and not line.lstrip().startswith("#")
-    )
+    """Detect the source format before doing any normalization or redaction."""
+    # Inspect only leading trivia before a command prefix. Scanning all lines
+    # with display-set quote rules would misread multiline hierarchy strings.
+    offset = 0
+    while offset < len(content):
+        if content[offset].isspace():
+            offset += 1
+        elif content[offset] == "#":
+            end = content.find("\n", offset)
+            offset = len(content) if end < 0 else end + 1
+        elif content.startswith("/*", offset):
+            end = content.find("*/", offset + 2)
+            if end < 0:
+                raise ValueError(f"Unterminated Junos comment at line {content[:offset].count(chr(10)) + 1}.")
+            offset = end + 2
+        else:
+            break
+    first = content[offset:].split(None, 1)
+    if first and first[0] in {"set", "activate", "deactivate"}:
+        return False
+    return any(token.kind == "symbol" and token.value in "{};" for token in lex_junos(content))

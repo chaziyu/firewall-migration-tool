@@ -60,6 +60,10 @@ def registered_typed_collections() -> tuple[str, ...]:
     return tuple(sorted({collection for collection, _ in _EXTRACTORS.values()}))
 
 
+def registered_typed_domains() -> frozenset[str]:
+    return frozenset(_EXTRACTORS)
+
+
 def extract_typed(
     element: ET.Element,
     path: tuple[str, ...],

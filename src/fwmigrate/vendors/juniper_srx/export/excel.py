@@ -90,7 +90,8 @@ def _native_source_rows(
     policy_relationships: Any = (),
 ) -> dict[str, tuple[dict[str, Any], ...]]:
     rows: dict[str, list[dict[str, Any]]] = {
-        "Addresses": [], "Address Sets": [], "Application Sets": [], "Schedulers": [],
+        "Addresses": [], "Address Sets": [], "Application Sets": [], "Application Settings": [], "Schedulers": [],
+        "Interface Details": [], "Interface Addresses": [],
         "Policy Details": [], "NAT Pools": [], "NAT Rules": [],
         "Administrators": [], "Login Classes": [], "IDP Policies": [], "IDP Rules": [],
         "UTM Policies": [], "UTM Profiles": [],
@@ -116,6 +117,52 @@ def _native_source_rows(
     for context in config.iter_contexts():
         scope = _context_scope(context)
         state = lambda path: effective_path_state(inheritance_view, scope, path)
+
+        for interface in context.interfaces.values():
+            path = ("interfaces", interface.name)
+            rows["Interface Details"].append({
+                "context": scope, "record_type": "interface", "interface": interface.name,
+                "description": interface.description, "disabled": interface.disabled, "mtu": interface.mtu,
+                "speed": interface.speed, "link_mode": interface.link_mode, "encapsulation": interface.encapsulation,
+                "effective_state": state(path),
+            })
+            for unit in interface.units.values():
+                unit_path = (*path, "unit", unit.unit)
+                rows["Interface Details"].append({
+                    "context": scope, "record_type": "unit", "interface": interface.name, "unit": unit.unit,
+                    "description": unit.description, "disabled": unit.disabled, "mtu": unit.mtu,
+                    "encapsulation": unit.encapsulation, "vlan_id": unit.vlan_id,
+                    "effective_state": state(unit_path),
+                })
+                for address in unit.addresses:
+                    rows["Interface Addresses"].append({
+                        "context": scope, "interface": interface.name, "unit": unit.unit,
+                        "family": address.family, "address": address.address,
+                        "primary": address.primary, "preferred": address.preferred,
+                        "effective_state": state((*unit_path, "family", address.family, "address", address.address)),
+                    })
+
+        for application in context.applications.values():
+            path = ("applications", "application", application.name)
+            top = application.top_level
+            has_top_level = application.description is not None or bool(top.source_attributes) or any(
+                getattr(top, field) is not None for field in (
+                    "protocol", "protocol_number", "icmp_type", "icmp_code", "application_protocol", "inactivity_timeout")
+            ) or bool(top.source_ports or top.destination_ports)
+            for term in (*((top,) if has_top_level else ()), *application.terms):
+                term_name = getattr(term, "name", None)
+                rows["Application Settings"].append({
+                    "context": scope, "application": application.name,
+                    "location": "term" if term_name is not None else "top-level", "term": term_name,
+                    "protocol": term.protocol, "protocol_number": term.protocol_number,
+                    "source_ports": list(term.source_ports) or None,
+                    "destination_ports": list(term.destination_ports) or None,
+                    "icmp_type": term.icmp_type, "icmp_code": term.icmp_code,
+                    "application_protocol": term.application_protocol, "inactivity_timeout": term.inactivity_timeout,
+                    "description": application.description if term_name is None else None,
+                    "effective_state": state((*path, "term", term_name) if term_name is not None else path),
+                    "additional_settings": sanitize_source_attributes(term.source_attributes) or None,
+                })
 
         for book in context.address_books.values():
             for item in book.addresses.values():
