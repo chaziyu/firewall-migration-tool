@@ -2,6 +2,53 @@ from fwmigrate.vendors.cisco_asa.relationships.references import ASAReferenceKin
 
 from fwmigrate.vendors.cisco_asa.source_report import extract_cisco_asa_source
 from fwmigrate.vendors.cisco_asa.parser import CiscoASAParser
+import pytest
+from io import BytesIO
+from openpyxl import load_workbook
+from fwmigrate.vendors.cisco_asa.export.excel import export_asa_excel
+from fwmigrate.vendors.cisco_asa.web_report import build_asa_preview
+
+
+@pytest.mark.parametrize("profile", ["fast", "full"])
+@pytest.mark.parametrize("root", ["", "hostname ASA_SYSTEM\ndomain-name system.example\n"])
+def test_management_settings_keep_context_ownership_in_reports(profile, root):
+    result = extract_cisco_asa_source(root +
+        "changeto context blue\nhostname ASA_BLUE\ndomain-name blue.example\n"
+        "dns-group BLUE_DNS\ndns domain-lookup inside\nhttp server enable\n"
+        "changeto context green\nhostname ASA_GREEN\ndomain-name green.example\n"
+        "dns-group GREEN_DNS\nno http server enable\n"
+        "changeto context blue\nhttp server idle-timeout 10\nno http server idle-timeout\n")
+    config = result.config
+    before = config.model_dump(mode="json")
+    assert config.hostname == ("ASA_SYSTEM" if root else None)
+    blue, green = config.contexts
+    assert blue.system_settings.hostname == "ASA_BLUE"
+    assert green.system_settings.hostname == "ASA_GREEN"
+    assert blue.dns_settings.domain_name == "blue.example"
+    assert green.dns_settings.domain_name == "green.example"
+    assert blue.dns_settings.lookup_interfaces == ["inside"]
+    assert blue.http_server.enabled is True
+    assert green.http_server.enabled is False
+    assert blue.http_server.idle_timeout is None
+    preview = build_asa_preview(result)["source"]["other_source"]
+    assert [(r["context"], r["hostname"]) for r in preview["system_settings"]] == (
+        ([(None, "ASA_SYSTEM")] if root else []) + [("blue", "ASA_BLUE"), ("green", "ASA_GREEN")])
+    assert [(r["context"], r["enabled"]) for r in preview["http_server"]] == [("blue", True), ("green", False)]
+    output = BytesIO()
+    export_asa_excel(result, output, profile=profile)
+    workbook = load_workbook(BytesIO(output.getvalue()), read_only=True)
+    for sheet, field, expected in [
+        ("System Settings", "Hostname", ["ASA_BLUE", "ASA_GREEN"]),
+        ("DNS Settings", "Domain Name", ["blue.example", "green.example"]),
+        ("HTTP Server", "Enabled", [True, False]),
+    ]:
+        rows = list(workbook[sheet].values)
+        records = [dict(zip(rows[0], row)) for row in rows[1:]]
+        scoped = [row for row in records if row["Context"] is not None]
+        assert [row["Context"] for row in scoped] == ["blue", "green"]
+        assert [row[field] for row in scoped] == expected
+    workbook.close()
+    assert config.model_dump(mode="json") == before
 
 
 def parse(text):

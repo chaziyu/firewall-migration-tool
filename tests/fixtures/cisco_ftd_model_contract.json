@@ -34,7 +34,7 @@
         "raw_lines",
         "source_attributes"
       ],
-      "sha256": "c44b3869f6f66c309321de95741e8c834df7d35a28ae89d1990ce4fb63890acd"
+      "sha256": "39265d4af19c9242044c5b9017f15d01b341d7601e167bd94ef70959b404e68a"
     },
     "CiscoFTDIPv6Address": {
       "fields": [

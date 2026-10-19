@@ -2,6 +2,7 @@ from io import BytesIO
 from copy import deepcopy
 from pathlib import Path
 import json
+import pytest
 
 from fwmigrate.vendors.cisco_ftd.source_report import (
     CiscoFTDSourceReporter,
@@ -18,6 +19,82 @@ ROOT = Path(__file__).parents[2]
 
 def _fixture(name: str) -> str:
     return (ROOT / "fixtures" / "cisco_ftd" / name).read_text(encoding="utf-8")
+
+
+def test_fdm_retains_partial_collection_metadata_and_unhandled_content():
+    payload = json.loads(_fixture("fdm_object_pipeline_conformance.json"))
+    payload["collection"] = {"status": "PARTIAL", "parts": [
+        {"name": "hosts", "status": "FAILED", "complete": False, "failure_reason": "denied"},
+        {"name": "routes", "status": "EMPTY", "complete": True, "count": 0},
+    ]}
+    payload["objects"]["custom_resources"] = {"nested": {"marker": "UNKNOWN_OBJECT", "apiToken": "SECRET_TOKEN"}}
+    payload["custom_top"] = {"marker": "UNKNOWN_TOP", "password": "SECRET_PASSWORD"}
+    payload["domain"]["custom"] = "UNKNOWN_DOMAIN"
+    payload["collection"]["custom"] = "UNKNOWN_COLLECTION"
+    payload["collection"]["parts"][0]["custom"] = "UNKNOWN_PART"
+    result = extract_cisco_ftd_source(json.dumps(payload))
+    assert result.config.collection_metadata.provided is True
+    assert result.config.collection_metadata.status == "PARTIAL"
+    assert result.source_sections[0].status.value == "PARTIAL"
+    assert result.source_sections[-1].path == "fdm/collection"
+    completeness = result.derived.source_plane_completeness
+    assert completeness["hosts"] == "failed"
+    assert completeness["routing"] == "known-empty"
+    assert completeness["interfaces"] == "unknown"
+    evidence = json.dumps(result.config.model_dump(mode="json"))
+    assert "UNKNOWN_OBJECT" in evidence and "UNKNOWN_TOP" in evidence
+    assert {"UNKNOWN_DOMAIN", "UNKNOWN_COLLECTION", "UNKNOWN_PART"} <= {
+        item["raw"]["custom"] for item in result.unsupported_items
+        if isinstance(item.get("raw"), dict) and "custom" in item["raw"]}
+    assert "SECRET_TOKEN" not in evidence and "SECRET_PASSWORD" not in evidence
+    before = deepcopy(result.config)
+    validate_ftd_config(result.config, build_ftd_derived_views(result.config))
+    assert result.config == before
+
+
+@pytest.mark.parametrize(("value", "state", "evidence_count"), [
+    ([], "known-empty", 0), (None, "unknown", 1),
+    ({"unexpected": "MALFORMED_COLLECTION"}, "unknown", 1),
+    (["MALFORMED_ITEM"], "partial", 1),
+    ({"items": [], "extra": "ENVELOPE_MARKER"}, "partial", 1),
+])
+def test_fdm_distinguishes_empty_and_malformed_collections(value, state, evidence_count):
+    result = extract_cisco_ftd_source(json.dumps({"format": "cisco-fdm-rest-export-v1", "objects": {"hosts": value}}))
+    assert not result.config.collection_metadata.provided
+    assert result.config.collection_metadata.status == "UNKNOWN"
+    assert result.source_sections[0].status.value == "UNKNOWN"
+    assert result.derived.source_plane_completeness["hosts"] == state
+    assert len([item for item in result.unsupported_items if item["source_path"].startswith("fdm/objects/hosts")]) == evidence_count
+
+
+def test_fdm_preserves_both_alias_collections_and_unknown_nested_fields():
+    result = extract_cisco_ftd_source(json.dumps({"format": "cisco-fdm-rest-export-v1", "objects": {
+        "services": [], "service_objects": [{"id": "s1", "custom": {"marker": "NESTED_MARKER"}}],
+    }}))
+    assert result.config.protocol_port_objects[0].raw_extra["custom"]["marker"] == "NESTED_MARKER"
+
+
+@pytest.mark.parametrize("part", [
+    {"name": "hosts", "status": "SUCCESS", "complete": False, "count": 0},
+    {"name": "hosts", "status": "FAILED", "complete": False},
+])
+def test_fdm_incomplete_parts_override_a_successful_envelope(part):
+    result = extract_cisco_ftd_source(json.dumps({"format": "cisco-fdm-rest-export-v1",
+        "collection": {"status": "SUCCESS", "parts": [part]}, "objects": {"hosts": []},
+        "nat_policies": [{"name": "NAT", "rules": []}]}))
+    assert result.config.collection_metadata.status == "SUCCESS"
+    assert result.source_sections[0].status.value == "PARTIAL"
+    assert result.source_sections[-1].path == "fdm/collection"
+    assert result.derived.source_plane_completeness["hosts"] == ("failed" if part["status"] == "FAILED" else "partial")
+
+
+@pytest.mark.parametrize(("rules", "state"), [([], "known-empty"), (["INVALID_NAT_ITEM"], "partial"), (None, "unknown")])
+def test_fdm_nat_completeness_accounts_for_child_collection_shapes(rules, state):
+    result = extract_cisco_ftd_source(json.dumps({"format": "cisco-fdm-rest-export-v1",
+        "nat_policies": [{"name": "NAT", "rules": rules}]}))
+    assert result.derived.source_plane_completeness["nat"] == state
+    if state != "known-empty":
+        assert any("shape" in item["reason"] for item in result.unsupported_items)
 
 
 def test_ftd_cli_absence_and_explicit_interface_state_survive_reporting():

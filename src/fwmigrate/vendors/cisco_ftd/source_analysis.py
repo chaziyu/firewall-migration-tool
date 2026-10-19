@@ -62,8 +62,13 @@ def extract_cisco_ftd_source(text: str) -> FTDSourceResult:
                                          object_count_extracted=source_count(config))]
     elif is_fdm_bundle(text):
         config = CiscoFDMBundleParser(text).parse_source()
+        collection_status = config.collection_metadata.status
+        incomplete_parts = any(not part.complete or part.status not in {"SUCCESS", "EMPTY"}
+                               for part in config.collection_metadata.parts)
         sections = [SourceSectionResult(path="fdm/source", source_context=config.source_metadata.get("domain_name"),
-                                         status=ExtractionStatus.EXTRACTED,
+                                         status=(ExtractionStatus.PARTIAL if incomplete_parts or collection_status in {"PARTIAL", "FAILED"}
+                                                 else ExtractionStatus.UNKNOWN if collection_status == "UNKNOWN" else
+                                                 ExtractionStatus.PARTIAL if config.unsupported_evidence else ExtractionStatus.EXTRACTED),
                                          object_count_source=source_count(config), object_count_parsed=source_count(config),
                                          object_count_extracted=source_count(config))]
     else:

@@ -1,12 +1,25 @@
 """FortiGate service planning for Palo Alto."""
 
 from typing import Any
+from dataclasses import replace
 
 from fwmigrate.conversion.fortigate_to_palo_alto.models import PANMigrationStatus, PlannedService, PlannedServiceGroup
 from .vips import vip_port_translation, vip_service_name
 
 
 PAN_BUILTIN_SERVICES = frozenset({"any", "service-https"})
+
+
+def _source_service_warnings(originals):
+    if len(originals) != 1:
+        return ("service source is missing or ambiguous",)
+    original = originals[0]
+    settings = set(original.raw_extra) - {"uuid", "color"}
+    if original.proxy not in {None, "disable"}:
+        settings.add("proxy")
+    if getattr(original, "session_ttl", None) is not None:
+        settings.add("session-ttl")
+    return tuple(f"service setting {name!r} requires manual target semantics" for name in sorted(settings))
 
 
 def service_target(name, explicit_names, names=None):
@@ -19,9 +32,19 @@ def plan_services(derived: Any, options: Any = None, source: Any = None):
     if result is None:
         return (), ()
     services = []
+    source_services = {}
+    for original in getattr(source, "services", ()):
+        source_services.setdefault((original.vdom or "root", original.name), []).append(original)
+    source_groups = {}
+    for original in getattr(source, "service_groups", ()):
+        source_groups.setdefault((original.vdom or "root", original.name), []).append(original)
     for item in result.services:
         supported = item.protocol in {"tcp", "udp"} and item.port is not None
         warnings = () if supported else (f"unsupported service protocol or port: {item.protocol}",)
+        source_name = item.source_name or item.name
+        extra = _source_service_warnings(source_services.get((item.vdom or "root", source_name), ()))
+        warnings += extra
+        supported = supported and not extra
         services.append(PlannedService(
             source_vdom=item.vdom, source_kind="service", source_object_type="service",
             source_name=item.name,
@@ -62,6 +85,15 @@ def plan_services(derived: Any, options: Any = None, source: Any = None):
         target_vsys=getattr(getattr(options, "vdoms", {}).get(item.vdom), "vsys", None) if options else getattr(item, "vsys", None), target_name=item.name,
         members=tuple(service_target(name, {n for v, n in explicit_names if v == item.vdom}, getattr(options, "service_names", {}).get(item.vdom, {})) for name in item.members or ()),
     ) for item in result.groups)
+    checked_groups = []
+    for group, normalized in zip(groups, result.groups):
+        if normalized.generated:
+            extra = _source_service_warnings(source_services.get((group.source_vdom or "root", group.source_name), ()))
+        else:
+            extra = _source_service_warnings(source_groups.get((group.source_vdom or "root", group.source_name), ()))
+        checked_groups.append(replace(group, status=PANMigrationStatus.UNSUPPORTED,
+                                      warnings=tuple(dict.fromkeys((*group.warnings, *extra)))) if extra else group)
+    groups = tuple(checked_groups)
     for vdom, name in sorted(references):
         if name == "DNS" and (vdom, name) not in explicit_names:
             groups += (PlannedServiceGroup(source_vdom=vdom, source_kind="predefined_service",

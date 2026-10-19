@@ -336,7 +336,7 @@ def test_dependency_index_preserves_backward_edges_cycles_order_and_vdom_isolati
     grandchild = item('interface', 'vlan20', 'ethernet1/1.20', parent='ethernet1/1.10')
     zone = item('zone', 'trust', 'trust', interfaces=('ethernet1/1.20',))
     rule = item('security_rule', 'allow', 'allow', sources=(), destinations=(), services=(),
-                from_zones=('trust',), to_zones=(), schedule=None)
+                from_zones=('trust',), to_zones=(), schedule=None, disabled=False)
     plan = PANMigrationPlan(interfaces=(child, branch, parent, grandchild), zones=(zone,), security_rules=(rule,))
     decision = SimpleNamespace(key='root-port', source_vdom='root', source_kind='interface',
                                source_name='port1', target_field='target_interface', value='ethernet1/1')

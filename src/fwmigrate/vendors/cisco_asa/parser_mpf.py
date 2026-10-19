@@ -919,7 +919,7 @@ def _parse_management_command(self: Any, line: str, line_number: int) -> None:
 
     if effective_lower.startswith("http server"):
         self._legacy_management(line)
-        http = self._ensure_http_server()
+        http = self._ensure_http_server(line_number)
         http.raw_lines.append(safe)
         http.source_order = http.source_order or line_number
         if len(effective_parts) >= 3 and effective_parts[:3] == ["http", "server", "enable"]:

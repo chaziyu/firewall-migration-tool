@@ -23,6 +23,15 @@ _BUILTIN_PLANNERS = (
 _BUILTIN_WORKFLOWS = (
     MigrationWorkflowRegistration(
         pair_id="fortigate_to_palo_alto",
+<<<<<<< Updated upstream
+=======
+        mapping_workflow="Assisted mapping with evidence-based suggestions and engineer confirmation.",
+        destination_comparison="Native XML comparison, reuse and approved additive configuration; unsupported dependencies remain blocked.",
+        execution_mode="Reviewed candidate push with separate validation and explicit commit.",
+        activation_steps=("Review target evidence and mappings", "Approve the current design", "Push and validate the candidate", "Explicitly commit"),
+        supported_target_versions=("11.1",),
+        coverage_documentation="documentation/migration-support-matrix.md",
+>>>>>>> Stashed changes
         source_vendor="fortigate",
         target_vendor="palo_alto",
         display_name="FortiGate to Palo Alto PAN-OS",
@@ -34,6 +43,15 @@ _BUILTIN_WORKFLOWS = (
     ),
     MigrationWorkflowRegistration(
         pair_id="palo_alto_to_fortigate",
+<<<<<<< Updated upstream
+=======
+        mapping_workflow="Manual target mappings and explicit profile choices.",
+        destination_comparison="Exact reuse and explicitly empty target tables; populated traffic placement stays blocked.",
+        execution_mode="Offline CLI export; live execution unavailable.",
+        activation_steps=("Review and approve the export", "Apply and validate on the device manually", "Activate and save manually"),
+        supported_target_versions=("7.4.6",),
+        coverage_documentation="documentation/migration-support-matrix.md",
+>>>>>>> Stashed changes
         source_vendor="palo_alto",
         target_vendor="fortigate",
         display_name="Palo Alto PAN-OS to FortiGate",
@@ -45,6 +63,15 @@ _BUILTIN_WORKFLOWS = (
     ),
     MigrationWorkflowRegistration(
         pair_id="fortigate_to_juniper_srx",
+<<<<<<< Updated upstream
+=======
+        mapping_workflow="Manual interface, zone and target choices.",
+        destination_comparison="Exact reuse and verified absence; new policies require complete empty policy evidence without NAT or routing-instance ambiguity. Populated placement stays blocked.",
+        execution_mode="Offline Junos set export; live execution unavailable.",
+        activation_steps=("Review and approve the export", "Load and run commit check manually", "Commit explicitly on the device"),
+        supported_target_versions=("25.2R1",),
+        coverage_documentation="documentation/migration-support-matrix.md",
+>>>>>>> Stashed changes
         source_vendor="fortigate",
         target_vendor="juniper_srx",
         display_name="FortiGate to Juniper SRX",
@@ -57,6 +84,15 @@ _BUILTIN_WORKFLOWS = (
     ),
     MigrationWorkflowRegistration(
         pair_id="fortigate_to_cisco_asa",
+<<<<<<< Updated upstream
+=======
+        mapping_workflow="Manual interface, nameif and target choices.",
+        destination_comparison="Exact address and physical-interface reuse; existing NAT blocks traffic export. Completeness alone does not prove compatibility.",
+        execution_mode="Offline ASA CLI export; live execution unavailable.",
+        activation_steps=("Review and approve the export", "Apply and validate on the device manually", "Save configuration manually"),
+        supported_target_versions=("9.20",),
+        coverage_documentation="documentation/migration-support-matrix.md",
+>>>>>>> Stashed changes
         source_vendor="fortigate",
         target_vendor="cisco_asa",
         display_name="FortiGate to Cisco ASA",
@@ -69,6 +105,15 @@ _BUILTIN_WORKFLOWS = (
     ),
     MigrationWorkflowRegistration(
         pair_id="fortigate_to_checkpoint",
+<<<<<<< Updated upstream
+=======
+        mapping_workflow="Manual Management domain, package, layer, gateway and insertion choices.",
+        destination_comparison="Exact object reuse by UID and cleanup-only Drop rulebase insertion; NAT and other rules block creation. Management evidence does not verify Gaia routes.",
+        execution_mode="Offline Management request specification and Gaia Clish export; live execution unavailable.",
+        activation_steps=("Review operations and included dependencies", "Approve and generate offline files", "Execute requests and validate manually", "Publish, install policy and save Gaia configuration manually"),
+        supported_target_versions=("Management API 1.8.1",),
+        coverage_documentation="documentation/migration-support-matrix.md",
+>>>>>>> Stashed changes
         source_vendor="fortigate",
         target_vendor="checkpoint",
         display_name="FortiGate to Check Point",

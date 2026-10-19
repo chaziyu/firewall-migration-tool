@@ -19,6 +19,56 @@ def _empty_derived():
     return SimpleNamespace()
 
 
+@pytest.mark.parametrize("failure", ["unsupported", "missing_reference", "disabled", "none"])
+def test_policy_order_blocks_successors_but_preserves_scope_and_objects(failure):
+    from dataclasses import replace
+    from fwmigrate.conversion.fortigate_to_palo_alto.models import (
+        PANMigrationPlan, PANMigrationStatus, PlannedAddress, PlannedSecurityRule,
+    )
+    from fwmigrate.conversion.fortigate_to_palo_alto.plan_dependencies import (
+        build_plan_dependency_index, expand_plan_dependents, item_key,
+    )
+    from fwmigrate.conversion.fortigate_to_palo_alto.rendering.renderer import PANSetRenderer
+    from fwmigrate.conversion.fortigate_to_palo_alto.validation import validate_plan
+
+    first = PlannedSecurityRule(source_vdom="root", source_kind="policy",
+        source_object_type="security_rule", source_name="same", source_policy_id=20,
+        target_vsys="vsys1", target_name="deny-first", status=PANMigrationStatus.SUPPORTED,
+        from_zones=("any",), to_zones=("any",), sources=("any",), destinations=("any",),
+        services=("any",), applications=("any",), action="deny")
+    if failure in {"unsupported", "disabled"}:
+        first = replace(first, status=PANMigrationStatus.PARTIAL, disabled=failure == "disabled")
+    elif failure == "missing_reference":
+        first = replace(first, sources=("missing",))
+    later = replace(first, source_policy_id=1, target_name="allow-later",
+        status=PANMigrationStatus.SUPPORTED, disabled=False, sources=("any",), action="allow")
+    third = replace(later, source_policy_id=2, target_name="allow-third")
+    disabled_middle = replace(later, source_policy_id=30, target_name="disabled-middle", disabled=True,
+                              status=PANMigrationStatus.PARTIAL)
+    other_vdom = replace(later, source_vdom="other", target_name="other-vdom")
+    other_vsys = replace(later, target_vsys="vsys2", target_name="other-vsys")
+    address = PlannedAddress(source_vdom="root", source_kind="address", source_object_type="address",
+        source_name="independent", target_name="independent", target_vsys="vsys1",
+        status=PANMigrationStatus.SUPPORTED, address_type="ip-netmask", value="192.0.2.1/32")
+    plan = PANMigrationPlan(addresses=(address,),
+        security_rules=(first, other_vdom, disabled_middle, later, other_vsys, third))
+    validation = validate_plan(plan)
+    rendered = PANSetRenderer().render(plan)
+    blocked = failure in {"unsupported", "missing_reference"}
+    for name in ("allow-later", "allow-third"):
+        assert any(f"rules {name} " in command for command in rendered.commands) != blocked
+    assert any("address independent " in command for command in rendered.commands)
+    assert any("rules other-vdom " in command for command in rendered.commands)
+    assert any("rules other-vsys " in command for command in rendered.commands)
+    if blocked:
+        assert any(issue.code == "policy_predecessor_not_renderable" and "ID 20" in issue.message
+                   for issue in validation.issues)
+    index = build_plan_dependency_index(plan, SimpleNamespace(decisions=()))
+    descendants = expand_plan_dependents(index, [item_key(first)])
+    assert (item_key(later) in descendants) == (failure != "disabled")
+    assert item_key(other_vdom) not in descendants and item_key(other_vsys) not in descendants
+
+
 def test_validation_exclusions_and_dependents_block_artifact_and_deployment():
     from fwmigrate.vendors.fortigate.model.address import FGAddressGroup
     from fwmigrate.deployment import PANSSHDeployer, PANDeploymentOptions

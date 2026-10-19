@@ -1,4 +1,5 @@
 from io import BytesIO
+import pytest
 
 
 from openpyxl import load_workbook
@@ -23,6 +24,21 @@ from fwmigrate.vendors.cisco_asa import CiscoASASourceReporter, ASASourceResult
 
 
 from fwmigrate.vendors.cisco_asa import extract_cisco_asa_source
+
+
+@pytest.mark.parametrize("profile", ["fast", "full"])
+def test_http_negation_reaches_preview_and_excel(profile):
+    result = extract_cisco_asa_source("http server enable\nno http server enable\n")
+    preview = build_asa_preview(result)
+    assert preview["source"]["management"]["http_server"]["enabled"] is False
+    output = BytesIO()
+    export_asa_excel(result, output, profile=profile)
+    workbook = load_workbook(BytesIO(output.getvalue()), read_only=True)
+    rows = list(workbook["HTTP Server"].values)
+    record = dict(zip(rows[0], rows[1]))
+    assert record["Enabled"] is False
+    assert "no http server enable" in record["Raw Lines"]
+    workbook.close()
 
 
 

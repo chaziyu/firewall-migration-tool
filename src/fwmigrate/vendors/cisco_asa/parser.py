@@ -42,25 +42,37 @@ class CiscoASAParser(InterfaceEvaluator, ManagementEvaluator, RoutingEvaluator, 
         self._nat_section_counts: Dict[str, int] = {}
         self._line_contexts: Dict[int, Optional[str]] = {}
 
-    def _ensure_dns_settings(self) -> CiscoDNSSettings:
-        if self.config.dns_settings is None:
-            self.config.dns_settings = CiscoDNSSettings(name="system-dns")
-        return self.config.dns_settings
+    def _management_owner(self, line_number: int) -> Any:
+        context = self._line_contexts.get(line_number)
+        if context is None:
+            return self.config
+        owner = next((item for item in self.config.contexts if item.name == context), None)
+        if owner is None:
+            owner = self._context_definition(context, sanitize_raw_text(self.raw_lines[line_number - 1]))
+        return owner
 
-    def _ensure_system_settings(self) -> CiscoSystemSettings:
-        if self.config.system_settings is None:
-            self.config.system_settings = CiscoSystemSettings(name="system")
-        return self.config.system_settings
+    def _ensure_dns_settings(self, line_number: int) -> CiscoDNSSettings:
+        owner = self._management_owner(line_number)
+        if owner.dns_settings is None:
+            owner.dns_settings = self._with_source_context(CiscoDNSSettings(name="system-dns"), line_number)
+        return owner.dns_settings
+
+    def _ensure_system_settings(self, line_number: int) -> CiscoSystemSettings:
+        owner = self._management_owner(line_number)
+        if owner.system_settings is None:
+            owner.system_settings = self._with_source_context(CiscoSystemSettings(name="system"), line_number)
+        return owner.system_settings
 
     def _ensure_failover_config(self) -> CiscoFailoverConfig:
         if self.config.failover_config is None:
             self.config.failover_config = CiscoFailoverConfig(name="failover")
         return self.config.failover_config
 
-    def _ensure_http_server(self) -> CiscoHTTPServerConfig:
-        if self.config.http_server is None:
-            self.config.http_server = CiscoHTTPServerConfig()
-        return self.config.http_server
+    def _ensure_http_server(self, line_number: int) -> CiscoHTTPServerConfig:
+        owner = self._management_owner(line_number)
+        if owner.http_server is None:
+            owner.http_server = CiscoHTTPServerConfig()
+        return owner.http_server
 
     def _ensure_multi_context_system(self) -> CiscoMultiContextSystem:
         if self.config.multi_context_system is None:
@@ -448,7 +460,7 @@ class CiscoASAParser(InterfaceEvaluator, ManagementEvaluator, RoutingEvaluator, 
                 i += 1
                 continue
             if line.lower().startswith("hostname "):
-                self._parse_hostname_line(line)
+                self._parse_hostname_line(line, line_number)
                 i += 1
                 continue
 
@@ -541,7 +553,7 @@ class CiscoASAParser(InterfaceEvaluator, ManagementEvaluator, RoutingEvaluator, 
                 i += 1
                 continue
             if re.match(r"^dns-group\s+\S+$", line, re.I):
-                self._parse_dns_group_selection(line)
+                self._parse_dns_group_selection(line, line_number)
                 i += 1
                 continue
             if re.match(r"^crypto\s+ca\s+trustpoint\s+\S+", line, re.I):
@@ -611,8 +623,9 @@ class CiscoASAParser(InterfaceEvaluator, ManagementEvaluator, RoutingEvaluator, 
                 elif lower.startswith("dns "):
                     parts = line.split()
                     if len(parts) >= 3 and parts[1].lower() == "domain-lookup":
-                        dns_settings = self._ensure_dns_settings()
+                        dns_settings = self._ensure_dns_settings(line_number)
                         dns_settings.lookup_interfaces.append(parts[2])
+                        _mark_explicit(dns_settings, "lookup_interfaces")
                         dns_settings.raw_lines.append(line)
                         dns_settings.source_attributes.setdefault("raw_commands", []).append(line)
                         i += 1

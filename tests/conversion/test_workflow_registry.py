@@ -55,6 +55,15 @@ def test_public_metadata_excludes_internal_cli_callable():
     assert public["supported_formats"] == ["set"]
     assert "cli_application" not in public
     assert handler not in public.values()
+<<<<<<< Updated upstream
+=======
+    assert public["supported_target_versions"] == []
+    assert public["coverage_documentation"] is None
+    assert public["mapping_workflow"] is None
+    assert public["destination_comparison"] is None
+    assert public["execution_mode"] is None
+    assert public["activation_steps"] == []
+>>>>>>> Stashed changes
 
 
 def test_registration_requires_pair_id_to_match_direction():

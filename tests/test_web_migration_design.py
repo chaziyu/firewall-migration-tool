@@ -728,12 +728,129 @@ end
     assert approve(client, payload, data, groups=[profile['group_key']]).status_code == 409
 
 
+@pytest.mark.parametrize('source,expected,blocked', [
+    ('config firewall address\nedit selected\nset type fqdn\nset fqdn example.org\n'
+     'set subnet 192.0.2.0 255.255.255.0\nnext\nend\n', 'address selected fqdn example.org', False),
+    ('config firewall address\nedit selected\nset type fqdn\nset fqdn example.org\n'
+     'set future-match enable\nnext\nend\n', 'address selected ', True),
+    ('config firewall service custom\nedit selected\nset tcp-portrange 443\n'
+     'set iprange 192.0.2.0/24\nset session-ttl 60\nnext\nend\n', 'service selected ', True),
+    ('config firewall service custom\nedit selected\nset tcp-portrange 70000\nnext\nend\n', 'service selected ', True),
+    ('config firewall address\nedit selected\nset type iprange\nset start-ip 192.0.2.50\n'
+     'set end-ip 192.0.2.1\nnext\nend\n', 'address selected ', True),
+], ids=['explicit-fqdn', 'unknown-address-setting', 'service-semantics', 'invalid-port', 'reversed-range'])
+def test_object_semantics_and_values_gate_signed_exports(source, expected, blocked):
+    address, service = ('all', 'selected') if 'service custom' in source else ('selected', 'ALL')
+    policies = (f'config firewall policy\nedit 1\nset name consuming\nset srcintf any\nset dstintf any\n'
+        f'set srcaddr {address}\nset dstaddr all\nset service {service}\nset schedule always\nset action deny\nnext\n'
+        'edit 2\nset name successor\nset srcintf any\nset dstintf any\nset srcaddr all\nset dstaddr all\n'
+        'set service ALL\nset schedule always\nset action accept\nnext\nend\n')
+    client, payload = setup(None, source=SOURCE + source + policies)
+    data, payload = prepare(client, {**payload, 'workflow_mode': 'OFFLINE_EXPORT'})
+    item = next(row for row in data['draft']['configuration'] if row['source_name'] == 'selected')
+    assert (item['status'] != 'READY') == blocked
+    assert all((row['status'] != 'READY') == blocked for row in data['draft']['configuration']
+               if row['family'] == 'security_rule')
+    if blocked:
+        assert approve(client, payload, data, [item['group_key'], *item['dependencies']]).status_code == 409
+    approved = approve(client, payload, data)
+    assert approved.status_code == 200, approved.get_json()
+    response = client.post('/api/migrate', json={**payload, 'decision_document': approved.get_json()['decision_document']})
+    assert response.status_code == 200, response.get_json()
+    result = response.get_json()
+    assert any(expected in command for command in result['commands']) != blocked
+    assert any('rules successor ' in command for command in result['commands']) != blocked
+    request = {'source': payload['source'], 'artifact': result['artifact']}
+    preview = client.post('/api/migration/command-preview', json=request)
+    download = client.post('/api/migration/download', json=request)
+    assert preview.status_code == download.status_code == 200
+    assert preview.get_json()['commands'] == result['commands']
+    assert download.data == '\n'.join(result['commands']).encode()
+
+
+def test_signed_bundle_preserves_oversized_source_evidence():
+    import zipfile
+    from openpyxl import load_workbook
+
+    evidence = 'retained-' + 'x' * 40000 + '-tail\x01'
+    source = SOURCE.replace('set subnet 192.0.2.0 255.255.255.0',
+                            'set subnet 192.0.2.0 255.255.255.0\nset comment "' + evidence + '"')
+    client, payload = setup(None, source=source)
+    data, payload = prepare(client, {**payload, 'workflow_mode': 'OFFLINE_EXPORT'})
+    approved = approve(client, payload, data)
+    assert approved.status_code == 200, approved.get_json()
+    result = client.post('/api/migrate', json={**payload,
+        'decision_document': approved.get_json()['decision_document']}).get_json()
+    response = client.post('/api/migration/bundle', json={'source': payload['source'], 'artifact': result['artifact']})
+    assert response.status_code == 200, response.get_json()
+    with zipfile.ZipFile(io.BytesIO(response.data)) as archive:
+        workbook = load_workbook(io.BytesIO(archive.read('source_inventory.xlsx')))
+    rows = list(workbook['Text Overflow'].values)[1:]
+    addresses = ''.join(row[4] for row in rows if row[0] == 'Addresses')
+    assert evidence.replace('\x01', '\\u0001') in addresses
+    inventory = ''.join(row[4] for row in rows if row[0] == 'FortiGate Source Inventory')
+    assert evidence.replace('\x01', '\\u0001') in inventory
+
+
 def approve(client, payload, data, groups=None):
     draft = data['draft']
     keys = groups if groups is not None else [row['decision_key'] for row in draft['decisions'] if row['status'] == 'READY'] + [
         row['group_key'] for row in draft['configuration'] if row['status'] == 'READY']
     return client.post('/api/migration/design/approve', json={**payload, 'draft': draft,
         'draft_digest': draft['digest'], 'selected_groups': keys})
+
+
+@pytest.mark.parametrize('predecessor', ['unsupported', 'invalid', 'supported', 'disabled'])
+def test_policy_predecessors_gate_signed_approval_and_all_exports(predecessor):
+    import zipfile
+
+    policies = 'config firewall policy\n'
+    for policy_id, name, action in [(20, 'deny-first', 'deny'), (1, 'allow-later', 'accept'),
+                                    (2, 'allow-third', 'accept')]:
+        extra = ''
+        address = 'all'
+        if policy_id == 20:
+            extra = ('set logtraffic utm\n' if predecessor in {'unsupported', 'disabled'} else '')
+            if predecessor == 'disabled':
+                extra += 'set status disable\n'
+            if predecessor == 'invalid':
+                address = 'missing'
+        policies += (f'edit {policy_id}\nset name {name}\nset srcintf any\nset dstintf any\n'
+                     f'set srcaddr {address}\nset dstaddr all\nset service ALL\n'
+                     f'set schedule always\nset action {action}\n{extra}next\n')
+    client, payload = setup(None, source=SOURCE + policies + 'end\n')
+    data, payload = prepare(client, {**payload, 'workflow_mode': 'OFFLINE_EXPORT'})
+    rules = {row['source_name']: row for row in data['draft']['configuration'] if row['family'] == 'security_rule'}
+    first, later = rules['deny-first'], rules['allow-later']
+    blocked = predecessor in {'unsupported', 'invalid'}
+    assert (later['status'] != 'READY') == blocked
+    if predecessor != 'disabled':
+        assert first['group_key'] in later['dependencies']
+    if blocked:
+        assert any('deny-first' in reason for reason in later['blocking_reasons'])
+    keys = [row['decision_key'] for row in data['draft']['decisions'] if row['status'] == 'READY'] + [
+        row['group_key'] for row in data['draft']['configuration'] if row['status'] == 'READY']
+    if predecessor != 'disabled':
+        without_first = [key for key in keys if key != first['group_key']]
+        assert approve(client, payload, data, list(dict.fromkeys(without_first + [later['group_key']]))).status_code == 409
+    approved = approve(client, payload, data)
+    assert approved.status_code == 200, approved.get_json()
+    response = client.post('/api/migrate', json={**payload, 'decision_document': approved.get_json()['decision_document']})
+    assert response.status_code == 200, response.get_json()
+    result = response.get_json()
+    for name in ('allow-later', 'allow-third'):
+        assert any(f'rules {name} ' in command for command in result['commands']) != blocked
+    assert any('address net ' in command for command in result['commands'])
+    request = {'source': payload['source'], 'artifact': result['artifact']}
+    preview = client.post('/api/migration/command-preview', json=request)
+    download = client.post('/api/migration/download', json=request)
+    bundle = client.post('/api/migration/bundle', json=request)
+    assert preview.status_code == download.status_code == bundle.status_code == 200
+    assert preview.get_json()['commands'] == result['commands']
+    assert download.data == '\n'.join(result['commands']).encode()
+    with zipfile.ZipFile(io.BytesIO(bundle.data)) as archive:
+        filename = next(name for name in archive.namelist() if name.endswith('.set'))
+        assert archive.read(filename) == download.data
 
 
 def test_prepare_repeatable_no_authoritative_confirmation():

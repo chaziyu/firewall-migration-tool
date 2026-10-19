@@ -87,3 +87,13 @@ def test_multi_context_collection_keeps_each_context_and_reports_partial_results
         ("context/admin/running-config", True), ("context/blue/running-config", False),
     ]
     assert commands[-2:] == ["changeto system", "disconnect"]
+
+    from fwmigrate.collection.snapshot import make_snapshot, parse_snapshot
+    from fwmigrate.vendors.cisco_asa.source_report import extract_cisco_asa_source
+
+    restored = parse_snapshot(json.dumps(make_snapshot(source)).encode())
+    result = extract_cisco_asa_source(restored.source_text)
+    assert result.config.hostname == "system"
+    contexts = {item.name: item for item in result.config.contexts}
+    assert contexts["admin"].system_settings.hostname == "admin"
+    assert contexts["blue"].system_settings is None
