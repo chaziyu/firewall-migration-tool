@@ -9,6 +9,7 @@ from .planning.topology import plan_topology
 from .planning.schedules import plan_schedules
 from .planning.acl import plan_policies
 from .planning.nat import plan_nat
+from dataclasses import replace
 
 
 class FortiGateToCiscoASAPlanner:
@@ -43,8 +44,15 @@ class FortiGateToCiscoASAPlanner:
         schedule_items = plan_schedules(source, options)
         nat_items = plan_nat(source, derived, options, address_names, target_evidence)
         target = target_evidence
-        policy_items = plan_policies(source, derived, options, address_names, service_names, target_evidence=target)
+        policy_items = plan_policies(source, derived, options, address_names, service_names,
+                                     target_evidence=target, source_inventory=source_inventory)
         items.extend((*object_items, *schedule_items, *nat_items, *policy_items))
+        fixed_nat = next((item for item in nat_items if item.family == "nat" and item.approval_group), None)
+        if fixed_nat:
+            policy_key = item_key(options.source_vdom, "policy", fixed_nat.source_name)
+            related = {policy_key, *(item.key for item in policy_items
+                        if item.family == "acl_binding")}
+            items = [replace(item, approval_group=fixed_nat.approval_group) if item.key in related else item for item in items]
         for policy in source.policies:
             if (policy.vdom or "root") == options.source_vdom and policy.policy_id is None:
                 findings.append(ASAFinding("SOURCE_POLICY_ORDER_UNAVAILABLE", "A policy has no explicit ordering identity; affected traffic remains manual.", options.source_vdom, "policy", policy.name or "unknown"))

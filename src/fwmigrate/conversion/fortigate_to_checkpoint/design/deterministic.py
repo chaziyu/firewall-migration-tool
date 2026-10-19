@@ -22,11 +22,12 @@ def digest(value):
     return hashlib.sha256(raw).hexdigest()
 
 
-def build_draft(plan, options, source_digest):
+def build_draft(plan, options, source_digest, target_digest=None):
     content = {
         **PAIR,
         "pair": PAIR,
         "source_digest": source_digest,
+        "target_digest": target_digest,
         "options": options.to_dict(),
         "plan": {"source_vdom": plan.source_vdom,
                  "items": [asdict(item) for item in plan.items],
@@ -49,7 +50,7 @@ def _selected(plan, selected_items):
     while pending:
         key = pending.pop()
         item = by_key.get(key)
-        if item is None or state.get(key) != "CREATE":
+        if item is None or state.get(key) not in {"CREATE", "REUSE"}:
             raise ValueError("Check Point approval contains an unknown or blocked item")
         if key in chosen:
             continue
@@ -77,6 +78,7 @@ def approve_draft(plan, draft, selected_items):
         "envelope_type": APPROVAL_TYPE,
         **PAIR,
         "source_digest": draft["source_digest"],
+        "target_digest": draft.get("target_digest"),
         "draft_digest": draft["digest"],
         "selected_items": selected,
         "file_sha256": rendered.file_hashes,
@@ -93,6 +95,7 @@ def validate_approval(plan, draft, approval):
             or approval.get("envelope_type") != APPROVAL_TYPE
             or any(approval.get(key) != value for key, value in PAIR.items())
             or approval.get("source_digest") != draft.get("source_digest")
+            or approval.get("target_digest") != draft.get("target_digest")
             or approval.get("draft_digest") != draft.get("digest")
             or type(approval.get("expires_at")) not in {int, float}
             or time.time() >= approval["expires_at"]):

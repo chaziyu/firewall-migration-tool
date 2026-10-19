@@ -1,3 +1,5 @@
+import type { MigrationCoverageReport } from '../components/MigrationCoverage'
+import type { DestinationEvidence } from '../components/DestinationSnapshot'
 import type { SourceEvidence } from '../../../storage/workspaceTypes'
 
 export type CheckPointOptions = {
@@ -38,6 +40,7 @@ export type CheckPointPlanItem = {
 }
 
 export type CheckPointReport = {
+  coverage?: MigrationCoverageReport
   plan_status: string
   items: CheckPointPlanItem[]
   findings: Array<Record<string, unknown>>
@@ -72,6 +75,7 @@ export type CheckPointFilePreview = {
 export type CheckPointWorkspace = {
   pairId: 'fortigate_to_checkpoint'
   sourceKey: string
+  destination?: DestinationEvidence | null
   options: CheckPointOptions
   requirements: CheckPointRequirement[]
   review: CheckPointReview | null

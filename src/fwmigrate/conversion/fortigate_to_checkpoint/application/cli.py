@@ -17,8 +17,6 @@ from ..rendering.management import CPManagementRenderer
 def run_cli(*, input_path, output_path, format, mapping_path, target_config_path):
     if format != "json":
         raise click.ClickException("Use --format json for FortiGate to Check Point")
-    if target_config_path:
-        raise click.ClickException("Check Point target comparison is unavailable; omit --target-config")
     mappings = {}
     if mapping_path:
         try:
@@ -27,11 +25,24 @@ def run_cli(*, input_path, output_path, format, mapping_path, target_config_path
             raise click.ClickException("Check Point target mapping YAML is invalid") from exc
         if not isinstance(mappings, dict):
             raise click.ClickException("Check Point target mapping YAML must contain an object")
+    metadata = mappings.pop("target_evidence", None)
+    target = target_text = None
+    if target_config_path:
+        try:
+            target_text = sanitize_source("checkpoint", Path(target_config_path).read_text(encoding="utf-8"))
+            target = source_reporters.get("checkpoint").analyze_source(target_text)
+        except (ValueError, TypeError, KeyError) as exc:
+            raise click.ClickException("Invalid Check Point destination snapshot") from exc
+        if not isinstance(metadata, dict):
+            raise click.ClickException("--target-config requires target_evidence in the mapping document")
+    elif metadata is not None:
+        raise click.ClickException("target_evidence requires --target-config")
     source_text = sanitize_source("fortigate", Path(input_path).read_text(encoding="utf-8"))
     source_digest = hashlib.sha256(source_text.encode("utf-8") + b"\0fortigate").hexdigest()
     analysis = source_reporters.get("fortigate").analyze_source(source_text)
     try:
-        review = build_review(analysis, mappings, source_digest)
+        review = build_review(analysis, mappings, source_digest, target=target,
+                              target_source_text=target_text, target_metadata=metadata)
     except (KeyError, TypeError, ValueError) as exc:
         raise click.ClickException("Invalid FortiGate to Check Point source or mappings") from exc
     rendered = CPManagementRenderer().render(review["plan"])
@@ -41,7 +52,9 @@ def run_cli(*, input_path, output_path, format, mapping_path, target_config_path
         json.dumps(export_decisions(source_digest, review["options"].to_dict()),
                    ensure_ascii=False, sort_keys=True, indent=2) + "\n",
         encoding="utf-8")
-    report = {**rendered.report, "source_digest": source_digest,
+    report = {**review["report"], **rendered.report, "coverage": review["report"]["coverage"],
+              "destination_snapshot_compared": target is not None, "target_digest": review["draft"].get("target_digest"),
+              "source_digest": source_digest,
               "approval_required_for_web_download": True,
               "cli_output_is_unapproved_review_material": True}
     (folder / "migration_report.json").write_text(

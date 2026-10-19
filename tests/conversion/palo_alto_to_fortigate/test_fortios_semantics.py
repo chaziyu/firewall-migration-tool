@@ -28,6 +28,19 @@ def test_isolated_interface_snat_keeps_original_matches_and_explicit_egress(anal
     assert 'config firewall central-snat-map' in rendered.text
 
 
+@pytest.mark.parametrize("second_prefix,executable", [("10.1.0.0/24", True), ("10.0.0.128/25", False)])
+def test_multiple_snat_rules_require_proven_disjoint_source_prefixes(analyze, options, second_prefix, executable):
+    second = NAT[NAT.index('<entry'):NAT.index('</rules>')].replace('name="outbound"', 'name="second"').replace('<member>net</member>', '<member>second-net</member>')
+    nat = NAT.replace('</rules>', second + '</rules>')
+    source = SOURCE.replace('</address>', f'<entry name="second-net"><ip-netmask>{second_prefix}</ip-netmask></entry></address>', 1)
+    plan, rendered, _ = run_migration_pipeline(analyze(source.replace('</rulebase>', nat + '</rulebase>')), options)
+    assert ('config firewall central-snat-map' in rendered.text) is executable
+    if executable:
+        items = [row for row in plan.items if row.family == 'nat']
+        assert [item.source_name for item in items] == ['outbound', 'second']
+        assert [item.target_name for item in items] == ['1', '2']
+
+
 @pytest.mark.parametrize("change", [
     lambda n: n.replace('<ip>192.0.2.1</ip>', ''),
     lambda n: n.replace('<ip>192.0.2.1</ip>', '<ip>192.0.2.2</ip>'),

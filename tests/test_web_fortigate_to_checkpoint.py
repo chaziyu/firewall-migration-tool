@@ -22,6 +22,38 @@ OPTIONS = {
 }
 
 
+def test_checkpoint_destination_review_reuses_uids_and_rejects_stale_metadata():
+    from fwmigrate.conversion.fortigate_to_checkpoint.application.workflow import build_review
+    from fwmigrate.conversion.fortigate_to_checkpoint.options import CPMigrationOptions
+    from fwmigrate.vendors.fortigate.source_report import FortiGateSourceReporter
+    from tests.conversion.fortigate_to_checkpoint.test_target_comparison import (
+        destination, target_snapshot, with_cleanup,
+    )
+
+    options = CPMigrationOptions(**OPTIONS)
+    plan = build_review(FortiGateSourceReporter().analyze_source(SOURCE), options, "source")["plan"]
+    snapshot = with_cleanup(target_snapshot(plan, options), options)
+    evidence = destination(snapshot, options)
+    payload = {"source": {"vendor": "fortigate", "source_text": SOURCE}, "options": OPTIONS,
+               "target_source": {"vendor": "checkpoint", "source_text": json.dumps(snapshot)},
+               "target_metadata": evidence["target_metadata"]}
+    client = create_app({"TESTING": True, "WORKSPACE_SIGNING_KEY": b"x" * 32}).test_client()
+    prefix = "/api/migration/fortigate_to_checkpoint"
+    prepared = client.post(prefix + "/design/prepare", json=payload)
+    assert prepared.status_code == 200, prepared.json
+    assert prepared.json["report"]["destination_snapshot_compared"]
+    assert any(row["render_disposition"] == "REUSE" for row in prepared.json["report"]["items"])
+    selected = [row["key"] for row in prepared.json["report"]["items"] if row["family"] == "policy"]
+    approved = client.post(prefix + "/design/approve", json={**payload, "draft": prepared.json["draft"], "selected_items": selected})
+    assert approved.status_code == 200, approved.json
+    built = client.post(prefix + "/build", json={**payload, "approval": approved.json["approval"]})
+    assert built.status_code == 200, built.json
+    assert built.json["artifact"]["report"]["management_operation_count"] == 2
+    changed = {**payload, "target_metadata": {**payload["target_metadata"], "complete_families": ["objects"]}}
+    stale = client.post(prefix + "/build", json={**changed, "approval": approved.json["approval"]})
+    assert stale.status_code == 400
+
+
 def test_checkpoint_web_approval_previews_and_downloads_exact_split_bytes(monkeypatch):
     transport_calls = []
     monkeypatch.setattr(web_module, "PANSSHDeployer", lambda *_args, **_kwargs: transport_calls.append("constructed"))

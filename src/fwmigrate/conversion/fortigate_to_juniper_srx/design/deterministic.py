@@ -30,6 +30,9 @@ def options_mapping(options):
         "target_mode": parsed.target_mode,
         "routing_table": parsed.routing_table,
         "timezone": parsed.timezone,
+        "nat_return_routing_confirmed": parsed.nat_return_routing_confirmed,
+        "target_platform": parsed.target_platform,
+        "vlan_interfaces_available": parsed.vlan_interfaces_available,
         "interfaces": {
             vdom: {name: asdict(mapping if isinstance(mapping, SRXInterfaceMapping) else SRXInterfaceMapping(**mapping))
                    for name, mapping in mappings.items()}

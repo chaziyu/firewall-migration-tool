@@ -19,7 +19,7 @@ _ITEM_FAMILY = {
     "address": "addresses", "address_group": "addresses",
     "service": "applications", "service_group": "applications",
     "interface": "interfaces", "zone": "zones", "static_route": "static_routes",
-    "schedule": "schedules", "policy": "policies", "source_nat": "nat",
+    "schedule": "schedules", "policy": "policies", "source_nat": "nat", "source_nat_pool": "nat",
 }
 _INCOMPLETE_STATUSES = {"PARTIAL", "SOURCE_ONLY", "UNSUPPORTED", "UNKNOWN", "IGNORED", "PARSE_ERROR"}
 

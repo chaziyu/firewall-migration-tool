@@ -18,7 +18,7 @@ def test_pair_discovery_lists_only_registered_workflows_with_public_metadata():
     ]
     assert all("cli_application" not in item for item in pairs)
     assert all(item["export_available"] for item in pairs)
-    assert pairs[0]["destination_aware_available"] is False
+    assert all(item["destination_aware_available"] for item in pairs)
     assert all(item["supported_target_versions"] for item in pairs)
     assert all(item["coverage_documentation"] for item in pairs)
     assert all(item["mapping_workflow"] and item["destination_comparison"] and item["execution_mode"]

@@ -13,6 +13,8 @@ def build_target_evidence(target, target_digest, metadata):
     families = metadata.get("complete_families")
     if not isinstance(families, list) or any(not isinstance(value, str) for value in families):
         raise ValueError("ASA complete_families must be a list of family names")
+    if len(set(families)) != len(families) or not set(families) <= _REQUIRED:
+        raise ValueError("ASA complete_families must contain unique supported families")
     config = getattr(getattr(target, "extracted", target), "config", target)
     if getattr(config, "multi_context_system", None) is not None or getattr(config, "contexts", ()):
         raise ValueError("Multi-context ASA target evidence is not supported")
