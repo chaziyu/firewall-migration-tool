@@ -3,6 +3,11 @@ from dataclasses import asdict, dataclass, field
 import re
 
 
+POLICY_CHOICES = {"schedule": ("always",), "disabled": ("yes", "no"), "log_start": ("yes", "no"), "log_end": ("yes", "no"),
+                  "negate_source": ("yes", "no"), "negate_destination": ("yes", "no"), "rule_type": ("universal",),
+                  "source_user": ("any",), "category": ("any",)}
+
+
 def safe_text(value, *, limit=255, allow_empty=False):
     if not isinstance(value, str) or (not allow_empty and not value.strip()) or len(value) > limit or any(ord(c) < 32 or ord(c) == 127 for c in value):
         raise ValueError("Expected a nonempty value without control characters")
@@ -36,10 +41,12 @@ class FGMigrationOptions:
             object.__setattr__(self, name, dict(value))
         for key, values in self.policy_settings.items():
             safe_text(key, limit=2048)
-            if not isinstance(values, dict) or set(values) - {"schedule", "disabled", "log_start", "log_end", "negate_source", "negate_destination", "rule_type", "source_user", "category"}:
+            if not isinstance(values, dict) or set(values) - set(POLICY_CHOICES):
                 raise ValueError("Invalid per-policy target choices")
-            for value in values.values():
+            for field_name, value in values.items():
                 safe_text(value)
+                if value not in POLICY_CHOICES[field_name]:
+                    raise ValueError("Unsupported per-policy target choice")
         for name in ("interfaces", "zones"):
             for key, value in getattr(self, name).items():
                 safe_text(key)

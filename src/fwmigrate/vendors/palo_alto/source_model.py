@@ -72,6 +72,11 @@ class PANOSDerivedViews:
     policy_order: tuple[Any, ...] = ()
     nat: tuple[Any, ...] = ()
     relationship_issues: tuple[Any, ...] = ()
+    effective_values: tuple[Any, ...] = ()
+    effective_value_index: dict = field(init=False, repr=False, compare=False)
+
+    def __post_init__(self):
+        object.__setattr__(self, "effective_value_index", {(row.identity, row.field): row.value for row in self.effective_values})
 
 
 def pan_scope_identity(scope: PANScope) -> str:

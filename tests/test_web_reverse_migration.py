@@ -59,6 +59,56 @@ def test_web_approval_preview_download_bundle_share_exact_bytes(setup_reverse):
         assert json.loads(archive.read("migration_decisions.json"))["source_vendor"] == "palo_alto"
 
 
+def test_proposal_first_api_approval_bundle_and_cli_use_one_resolved_design(setup_reverse, tmp_path):
+    import yaml
+
+    client, payload = setup_reverse
+    payload["options"] = {"profile": {"ports": ["port1", "port2"]}}
+    review_response = client.post(PREFIX + "/design/prepare", json=payload)
+    assert review_response.status_code == 200
+    review = review_response.get_json()
+    assert review["resolved_options"]["vdom"] == "root"
+    assert review["resolved_options"]["zones"] == {"trust": "trust", "untrust": "untrust"}
+    assert review["effective_values"][0]["field"] == "schedule"
+    assert review["draft"]["context"]["requested_options"]["interfaces"] == {}
+    assert all(row["review_state"] == "PENDING" for row in review["proposals"])
+    artifact, _ = approved_artifact(client, payload)
+    assert "config firewall policy" in artifact["commands"]
+    assert artifact["report"]["target_proposals"] == review["proposals"]
+    command_bytes = client.post(PREFIX + "/commands", json={"artifact": artifact}).data
+    preview = client.post(PREFIX + "/command-preview", json={"artifact": artifact}).get_json()
+    assert preview["text"].encode() == command_bytes
+    response = client.post(PREFIX + "/bundle", json={"artifact": artifact, "source": payload["source"]})
+    assert response.status_code == 200
+    with zipfile.ZipFile(io.BytesIO(response.data)) as archive:
+        assert archive.read("fortigate_config.conf") == command_bytes
+        mapping_text = archive.read("target_mapping.yaml").decode()
+        assert yaml.safe_load(mapping_text) == review["resolved_options"]
+        report = json.loads(archive.read("migration_report.json"))
+        assert report["effective_values"] == review["effective_values"]
+    source, mapping, output = tmp_path / "panos.xml", tmp_path / "mapping.yaml", tmp_path / "output"
+    source.write_text(SOURCE, encoding="utf-8")
+    mapping.write_text(mapping_text, encoding="utf-8")
+    result = CliRunner().invoke(cli, ["migrate", "-i", str(source), "-o", str(output), "--source-vendor", "palo_alto", "--target-vendor", "fortigate", "--format", "cli", "--zone-map", str(mapping)])
+    assert result.exit_code == 0, result.output
+    assert (output / "fortigate_config.conf").read_bytes() == command_bytes
+    exported = client.post(PREFIX + "/decisions/export", json=payload).get_json()["document"]
+    assert exported["options"] == review["resolved_options"]
+    restored = client.post(PREFIX + "/decisions/import", json={"source": payload["source"], "document": {**exported, "approval": artifact["design_approval"]}}).get_json()
+    assert restored["options"] == review["resolved_options"]
+    assert "approval" not in restored
+
+
+def test_client_proposal_labels_cannot_change_server_resolution(setup_reverse):
+    client, payload = setup_reverse
+    payload["options"] = {"profile": {"ports": ["port1", "port2"]}}
+    payload["resolved_options"] = {"vdom": "forged"}
+    payload["effective_values"] = [{"field": "disabled", "value": "no", "origin": "AUTO"}]
+    review = client.post(PREFIX + "/design/prepare", json=payload).get_json()
+    assert review["resolved_options"]["vdom"] == "root"
+    assert all(row["field"] != "disabled" for row in review["effective_values"])
+
+
 @pytest.mark.parametrize("change", ["unsigned", "options", "source", "expired", "cross_pair", "items"])
 def test_web_build_rejects_forged_stale_or_wrong_pair_approval(setup_reverse, change):
     client, payload = setup_reverse

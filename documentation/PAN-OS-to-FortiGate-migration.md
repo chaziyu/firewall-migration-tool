@@ -7,12 +7,17 @@ deployment or a complete replacement firewall configuration.
 
 1. Upload PAN-OS XML through Configuration report or Plan migration.
 2. Open Plan migration. PAN-OS sources select FortiGate as their target.
-3. Select one standalone device/VSYS scope.
-4. Enter the target VDOM, operating/NGFW/NAT modes, single/multi-VDOM scope,
-   actual physical port inventory, interfaces, zones, and routing placement.
-5. Supply explicit target choices for omitted policy fields. These choices
-   describe the proposed target, not inferred PAN-OS source defaults.
-6. Prepare the review. Resolve editable placement choices; inspect blocked/manual work.
+3. Review the automatically prepared conversion. A sole standalone device/VSYS
+   is selected; multiple scopes require a selection. Managed inheritance stays manual.
+4. Open Mappings and remaining choices. Review the proposed target profile,
+   VDOM, zones, and routing placement. Declare actual physical ports once when
+   destination evidence cannot establish available ports. Interface and VLAN
+   allocations are proposals; confirm hardware ownership and cabling.
+5. Resolve remaining policy choices individually or preview and apply a bulk
+   choice. Existing individual choices are preserved. Unsupported policies stay
+   visible without ineffective omitted-field questions.
+6. Review the updated conversion and blocked/manual work. Destination evidence
+   may populate explicit settings but does not authorize overwrite or live execution.
 7. Select configuration, review exact settings and expanded prerequisites, then
    explicitly approve and generate commands.
 8. Download `fortigate_config.conf` or `migration_palo_alto_to_fortigate.zip`.
@@ -31,7 +36,16 @@ Source changes, expiration, and server signing-key changes can require reapprova
   Ambiguous visible objects remain blocked; the converter does not invent
   shared/local precedence. Managed Panorama/template inheritance remains manual.
 - Target command baseline: FortiOS 7.4.6, NAT operating mode, profile-based NGFW.
-  Target modes are explicit choices. The converter never changes them.
+   Offline profile values are visible target-design proposals included in final
+   approval. Explicit destination settings are used when available; unsupported
+   modes/versions stay blocked. The converter never changes device modes.
+- For standalone local PAN-OS 11.1 rules only, documented effective rule type,
+  session logging, source-user and absent-schedule behavior is derived separately
+  from explicit XML. Each derived value carries version and official reference.
+  Disabled state, address negation and category omissions still require target
+  choices. Unknown versions and managed inheritance are not defaulted.
+  References: [rule settings](https://docs.paloaltonetworks.com/ngfw/help/11-1/policies/policies-security/building-blocks-in-a-security-policy-rule)
+  and [source-user behavior](https://docs.paloaltonetworks.com/pan-os/11-1/pan-os-admin/policy/security-policy/create-a-security-policy-rule).
 - IPv4 subnet, range, and FQDN objects; static address groups; TCP/UDP services
   with supported source/destination port intervals; static service groups.
 - One-time schedules with one interval, and uniform recurring intervals.
@@ -85,6 +99,8 @@ sanitized source records. Missing typed objects do not prove absence.
 
 - Firmware, operating mode, NGFW mode, NAT mode, and VDOM command scope must match
   explicit destination evidence. Missing values are not defaults.
+- Only explicitly unaddressed, unreferenced physical ports with verified ownership
+  can populate port proposals. Configuration evidence is not a complete chassis inventory.
 - `REUSE` requires matching planned settings and no unexplained target behavior.
 - `CREATE` requires an explicitly empty destination table. Missing or populated
   tables cannot establish safe placement or object absence.
@@ -146,6 +162,11 @@ Drafts and approvals bind source digest/scope, target digest, exact options,
 configuration, operations, and dependencies. Only current signed approvals can
 build web artifacts. Forged, cross-pair, changed, expired, or incomplete approvals
 are rejected. The PAN-OS deployment endpoints reject reverse-pair artifacts.
+Proposal generation also binds requested overrides, resolved mappings and effective
+source-value provenance. Preparation, approval and build recompute the same design.
+Older drafts need preparation again. Mapping imports restore proposals only.
+The bundle exports resolved CLI-compatible mappings, plus effective-value and
+target-proposal provenance in the migration report.
 
 Preview, command download, and bundle share one immutable command list. Count
 means CLI lines, including FortiOS block delimiters. SHA-256 covers UTF-8 commands

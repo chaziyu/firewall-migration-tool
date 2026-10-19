@@ -11,8 +11,8 @@ export const build = (source: SourceEvidence, options: FortiGateOptions, targetS
   postJson<{ artifact: FortiGateArtifact }>(`${prefix}/build`, { source, options, ...(targetSource ? { target_source: targetSource } : {}), approval })
 export const download = (source: SourceEvidence, artifact: FortiGateArtifact, kind: 'commands' | 'bundle') =>
   postBlob(`${prefix}/${kind}`, { source, artifact })
-export const exportDecisions = (source: SourceEvidence, options: FortiGateOptions) =>
-  postJson<{ document: Record<string, unknown> }>(`${prefix}/decisions/export`, { source, options })
+export const exportDecisions = (source: SourceEvidence, options: FortiGateOptions, targetSource?: SourceEvidence | null) =>
+  postJson<{ document: Record<string, unknown> }>(`${prefix}/decisions/export`, { source, options, ...(targetSource ? { target_source: targetSource } : {}) })
 export const importDecisions = (source: SourceEvidence, document: unknown) =>
   postJson<{ options: FortiGateOptions }>(`${prefix}/decisions/import`, { source, document })
 

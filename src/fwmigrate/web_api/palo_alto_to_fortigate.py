@@ -52,13 +52,14 @@ def register_palo_alto_to_fortigate_routes(app, signing_key):
                 raise ValueError("Target mapping options must be an object")
             if action == "decisions/import":
                 return jsonify({"success": True, "options": import_decisions(payload.get("document"), entry.source_digest)})
-            if action == "decisions/export":
-                return jsonify({"success": True, "document": export_decisions(entry.source_digest, options)})
             target = None
             if payload.get("target_source") is not None:
                 target = analyze_request_source(payload, "fortigate", target=True)
                 _require_complete_collection(target)
             kwargs = {"target": target.analysis if target else None, "target_digest": target.source_digest if target else None}
+            if action == "decisions/export":
+                review = build_review(entry.analysis, options, entry.source_digest, **kwargs)
+                return jsonify({"success": True, "document": export_decisions(entry.source_digest, review["resolved_options"])})
             if action == "build":
                 approval = verify_envelope(payload.get("approval"), signing_key)
                 artifact = build_artifact(entry.analysis, options, entry.source_digest, approval, **kwargs)
