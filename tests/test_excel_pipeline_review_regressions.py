@@ -1,6 +1,7 @@
 """Source-to-workbook regressions for the Palo Alto / Junos export review."""
 
 from copy import deepcopy
+from ast import literal_eval
 from io import BytesIO
 import json
 from zipfile import ZipFile
@@ -251,6 +252,94 @@ def test_upstream_overflow_fix_preserves_actual_vendor_workbook_values(reporter,
     overflow = [row for row in list(workbook["Text Overflow"].values)[1:] if row[0] == "Addresses"]
     assert "".join(row[4] for row in overflow) == value
     assert all(cell.data_type != "f" for row in workbook["Text Overflow"] for cell in row)
+
+
+@pytest.mark.parametrize("profile", ["fast", "full"])
+def test_pan_nested_settings_ipv6_flags_and_service_group_fields_survive_download(client, profile):
+    source = '''<config><shared>
+      <service><entry name="svc"><future-root>ROOT_SERVICE</future-root><protocol>
+        <tcp><port>443</port><future-control>TCP_EXTRA</future-control>
+          <override><yes><timeout>60</timeout><future-override>OVERRIDE_EXTRA</future-override>
+            <api-key>SECRET_SENTINEL</api-key></yes></override></tcp>
+        <udp><port>53</port><future-control>UDP_EXTRA</future-control></udp>
+      </protocol></entry></service>
+      <service-group><entry name="group"><members><member>svc</member></members>
+        <description>=GROUP_DESCRIPTION</description><disable-override>yes</disable-override>
+      </entry></service-group>
+      <rulebase><nat><rules><entry name="nat"><future-root>ROOT_NAT</future-root>
+        <source-translation><dynamic-ip><translated-address><member>192.0.2.1</member></translated-address>
+          <future-source>SOURCE_EXTRA</future-source><fallback><interface-address>
+            <interface>ethernet1/2</interface><api-key>SECRET_SENTINEL</api-key>
+          </interface-address></fallback></dynamic-ip></source-translation>
+        <destination-translation><translated-address>192.0.2.2</translated-address>
+          <future-destination>DESTINATION_EXTRA</future-destination>
+          <dns-rewrite><direction>reverse</direction><future-dns>DNS_EXTRA</future-dns></dns-rewrite>
+        </destination-translation>
+      </entry></rules></nat></rulebase>
+    </shared><devices><entry name="fw"><network><interface>
+      <ethernet><entry name="ethernet1/1"><layer3><ipv6><address>
+        <entry name="2001:db8::1/64"><enable>yes</enable></entry>
+        <entry name="2001:db8::2/64"><enable>no</enable></entry>
+        <entry name="2001:db8::3/64"/>
+      </address></ipv6><units><entry name="ethernet1/1.10"><tag>10</tag><ipv6><address>
+        <entry name="2001:db8:10::1/64"><enable>no</enable></entry>
+      </address></ipv6></entry></units></layer3></entry></ethernet>
+      <tunnel><units><entry name="tunnel.1"><ipv6><address>
+        <entry name="2001:db8:20::1/64"><enable>yes</enable></entry>
+      </address></ipv6></entry></units></tunnel>
+    </interface></network></entry></devices></config>'''
+    _, direct = export(PAN, source, profile)
+    response = client.post("/api/extract/excel", data={"source_vendor": "palo_alto", "excel_profile": profile,
+        "file": (BytesIO(source.encode()), "nested.xml")})
+    assert response.status_code == 200
+    downloaded = load_workbook(BytesIO(response.data))
+    for workbook in (direct, downloaded):
+        nat = rows(workbook, "NAT Rules")[0]["Additional Settings"]
+        for value in ("ROOT_NAT", "SOURCE_EXTRA", "fallback", "ethernet1/2", "DESTINATION_EXTRA", "DNS_EXTRA"):
+            assert value in nat
+        services = {row["Protocol"]: row for row in rows(workbook, "Services", 3)}
+        assert all("ROOT_SERVICE" in row["Additional Settings"] for row in services.values())
+        assert "TCP_EXTRA" in services["tcp"]["Additional Settings"]
+        assert "OVERRIDE_EXTRA" in services["tcp"]["Additional Settings"]
+        assert "UDP_EXTRA" not in services["tcp"]["Additional Settings"]
+        assert "UDP_EXTRA" in services["udp"]["Additional Settings"]
+        group = rows(workbook, "Service Groups", 3)[0]
+        assert group["Description"] == "'=GROUP_DESCRIPTION"
+        assert group["Disable Override"] == "yes"
+        interfaces = {row["Name"]: row for row in rows(workbook, "Interfaces")}
+        physical = interfaces["ethernet1/1"]["Additional Settings"]
+        assert literal_eval(physical.split("ipv6_addresses: ", 1)[1]) == (
+            {"address": "2001:db8::1/64", "enable": "yes"},
+            {"address": "2001:db8::2/64", "enable": "no"},
+            {"address": "2001:db8::3/64"},
+        )
+        assert "'enable': 'no'" in interfaces["ethernet1/1.10"]["Additional Settings"]
+        assert "'enable': 'yes'" in interfaces["tunnel.1"]["Additional Settings"]
+        assert "SECRET_SENTINEL" not in str([value for sheet in workbook for value in sheet.values])
+        assert all(cell.data_type != "f" for sheet in workbook for row in sheet for cell in row)
+
+
+@pytest.mark.parametrize("profile", ["fast", "full"])
+@pytest.mark.parametrize("section,settings,expected", [
+    ("router static6", "set dst 2001:db8:100::/64\nset gateway 2001:db8::1", "Yes"),
+    ("firewall addrgrp6", 'set member "IPv6-object"', "Yes"),
+    ("firewall ippool6", "set startip 2001:db8::10\nset endip 2001:db8::20", "Yes"),
+    ("firewall vipgrp6", 'set member "IPv6-vip"', "Yes"),
+    ("system interface", "config ipv6\nset ip6-address 2001:db8::1/64\nend", "Yes"),
+    ("router static", "set dst 192.0.2.0 255.255.255.0", "No"),
+])
+def test_fortigate_excel_ipv6_presence_includes_source_sections(profile, section, settings, expected):
+    from fwmigrate.vendors.fortigate.source_report import FortiGateSourceReporter
+
+    reporter = FortiGateSourceReporter()
+    analysis = reporter.analyze_source(f"config {section}\nedit 1\n{settings}\nnext\nend")
+    before = deepcopy(analysis.extracted.config.model_dump())
+    output = BytesIO()
+    reporter.export_excel(analysis, output, profile=profile)
+    workbook = load_workbook(output)
+    summary = {row[0]: row[1] for row in workbook["Summary"].values}
+    assert summary["IPv6 Explicit Configuration Present"] == expected
+    assert analysis.extracted.config.model_dump() == before
 
 
 @pytest.mark.parametrize("members", ["<member>ethernet1/1</member>", ""])
