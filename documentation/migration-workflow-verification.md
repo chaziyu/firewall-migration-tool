@@ -72,3 +72,43 @@ hashes; inspect and reconcile with the operator before preparing afresh. Commit
 uncertainty requires operator verification of jobs/running state. No automatic replay,
 discard, rollback or commit was added. Customer topology remains sensitive even after
 backend secret redaction; projects are explicit files, not automatic persistent storage.
+
+## 2026-10-18: Five-pair coverage expansion
+
+This increment adds scoped source accounting, optional browser destination review
+for ASA/SRX/Check Point, Check Point UID reuse, native FortiGate central SNAT
+evidence, restricted fixed-pool NAT, and disjoint reverse-direction source NAT.
+ASAv and vSRX were selected as VLAN baselines. The first advanced increment is
+Check Point IPv6 host/network objects. See the [support matrix](migration-support-matrix.md)
+for exact prerequisites and manual boundaries.
+
+### Executed checks
+
+- Full Python suite: **2,415 passed, 1 skipped, 8 subtests passed**, 234.84 s.
+- After the last destination comparison guard changes: **106 focused SRX and Check Point tests passed**, including target proxy ARP rejection.
+- Frontend: **148 tests passed**. ESLint and TypeScript/Vite production build passed.
+- Python compileall, Ruff and `git diff --check` passed.
+- Real browser: headless Microsoft Edge, built frontend and real Flask API on loopback.
+  `python tests/browser/migration_pair_destinations.py --url http://127.0.0.1:5058 --chromium "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe"`
+
+The browser walkthrough passed all three new destination flows at **390 x 844**:
+native source upload, explicit destination upload/completeness, platform choices,
+review/source coverage, explicit approval, preview, file download and bundle.
+Each downloaded command/request file matched the preview bytes, approved SHA-256
+and its bundle member. No JavaScript page errors were observed. A long Check Point
+blocker name exposed horizontal overflow; wrapping was fixed and the flows rerun.
+The temporary test server used a larger request limit for repeated walkthroughs.
+No real firewall was accessed or changed.
+
+### Roadmap status
+
+- Phases 1-4: metadata, source accounting, destination review and native NAT evidence implemented.
+- Phase 5: restricted fixed-pool NAT and ASAv VLAN subinterfaces implemented. Interface PAT and VIP/DNAT remain gated.
+- Phase 6: restricted fixed-pool NAT and tagged-only vSRX trunks implemented. Addressed untagged parents and broader allocation remain gated.
+- Phase 7: IPv4 range objects and destination UID handling implemented. Check Point schedules and NAT requests remain gated.
+- Phase 8: multiple source NAT rules with provably disjoint direct IPv4 prefixes implemented. General NAT/security associations, no-NAT exceptions and port translations remain gated.
+- Phase 9: explicit IPv6 host/network objects implemented for Check Point. IPv6 policies, other advanced families and other pairs remain manual.
+- Phase 10: software checks above executed. Live device acceptance and packet-flow/hardware validation remain unverified.
+
+This is a verified bounded expansion, not completion of every feature in the wider
+roadmap. Existing pending work remains visible and cannot emit unsupported commands.

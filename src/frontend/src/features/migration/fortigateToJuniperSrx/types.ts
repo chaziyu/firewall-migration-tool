@@ -1,3 +1,6 @@
+import type { MigrationCoverageReport } from '../components/MigrationCoverage'
+import type { DestinationEvidence } from '../components/DestinationSnapshot'
+
 export type SrxInterfaceMapping = { target_interface?: string; unit?: number }
 export type SrxOptions = {
   source_vdom: string
@@ -6,6 +9,9 @@ export type SrxOptions = {
   target_mode: string
   routing_table: string
   timezone: string
+  nat_return_routing_confirmed?: boolean
+  target_platform?: string
+  vlan_interfaces_available?: boolean
   interfaces: Record<string, Record<string, SrxInterfaceMapping>>
   zones: Record<string, Record<string, string>>
 }
@@ -37,6 +43,7 @@ export type SrxReview = {
   draft: Record<string, unknown>
   requirements: SrxRequirement[]
   report: {
+  coverage?: MigrationCoverageReport
     plan_status: string
     items: SrxPlanItem[]
     findings: Array<Record<string, unknown>>
@@ -58,6 +65,7 @@ export type SrxArtifact = {
 export type JuniperSrxWorkspace = {
   pairId: 'fortigate_to_juniper_srx'
   sourceKey: string
+  destination?: DestinationEvidence | null
   options: SrxOptions
   requirements: SrxRequirement[]
   review: SrxReview | null

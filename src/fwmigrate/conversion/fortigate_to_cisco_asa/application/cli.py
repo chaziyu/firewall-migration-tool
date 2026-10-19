@@ -56,7 +56,7 @@ def run_cli(*, input_path, output_path, format, mapping_path, target_config_path
     source_reporters.get("fortigate").export_excel(analysis, workbook, source_name=Path(input_path).name)
     (folder / "source_inventory.xlsx").write_bytes(workbook.getvalue())
     report = {**rendered.report, **{key: value for key, value in review["report"].items()
-                                    if key in {"destination_snapshot_compared", "snapshot_evidence_complete"}}}
+                                    if key in {"destination_snapshot_compared", "snapshot_evidence_complete", "coverage"}}}
     (folder / "migration_report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
     click.echo(f"Generated {rendered.command_count} ASA configuration lines in {output_path}")
     click.echo(f"Plan status: {report['plan_status']}; ASA device execution is disabled")

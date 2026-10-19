@@ -34,6 +34,9 @@ def test_cli_writes_set_export_and_full_review_report(tmp_path, complete_options
     assert report["command_sha256"]
     assert report["deployment_available"] is False
     assert report["destination_verified"] is False
+    assert report["coverage"]["source_record_count"] > 0
+    assert report["coverage"]["export_is_complete_migration"] is False
+    assert report["coverage"]["status_counts"].get("RENDERED", 0) > 0
     assert (output_path / "migration_decisions.json").is_file()
     assert (output_path / "target_mapping.yaml").is_file()
 

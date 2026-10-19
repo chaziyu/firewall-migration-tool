@@ -6,6 +6,27 @@ from .context import unsupported_fields
 from .source_scope import identity, in_scope
 
 
+def _disjoint_source_rules(ctx, rules):
+    """Prove independence only for explicit, direct IPv4 source prefixes."""
+    prefixes = []
+    for rule in rules:
+        if rule.destination_translation is not None or not rule.source:
+            return False
+        current = []
+        for name in rule.source:
+            addresses = [obj for obj in ctx.source.addresses if in_scope(obj, ctx.scope) and obj.name == name]
+            if len(addresses) != 1 or not addresses[0].ip_netmask or addresses[0].raw_extra:
+                return False
+            try:
+                current.append(IPv4Network(addresses[0].ip_netmask, strict=False))
+            except (ValueError, TypeError):
+                return False
+        if any(left.overlaps(right) for left in current for previous in prefixes for right in previous):
+            return False
+        prefixes.append(current)
+    return True
+
+
 def plan_dnat(ctx, obj, rule_count):
     """One address-only VIP and one ingress rule on an explicitly empty traffic baseline."""
     reasons = unsupported_fields(obj, {"from_zones", "to_zones", "source", "destination", "service", "disabled", "destination_translation"})
@@ -81,6 +102,7 @@ def plan_dnat(ctx, obj, rule_count):
 
 def plan_nat(ctx):
     rules = [r for r in ctx.source.nat_rules if in_scope(r, ctx.scope)]
+    independent = len(rules) == 1 or _disjoint_source_rules(ctx, rules)
     result = []
     for number, obj in enumerate(rules, 1):
         if obj.destination_translation is not None:
@@ -88,8 +110,8 @@ def plan_nat(ctx):
             continue
         reasons = unsupported_fields(obj, {"from_zones", "to_zones", "source", "destination", "service", "disabled", "source_translation"})
         settings, dependencies = {}, []
-        # shortcut: a single isolated SNAT avoids unverified first-match and combined DNAT interactions; extend with packet-flow fixtures.
-        if len(rules) != 1:
+        # shortcut: multiple SNAT rules require disjoint literal source prefixes; groups and exceptions need packet partitioning.
+        if not independent:
             reasons.append("Multiple NAT rules need verified first-match overlap and no-NAT handling.")
         if ctx.options.profile.get("nat_mode") != "central":
             reasons.append("Restricted SNAT requires an explicitly confirmed central NAT target.")

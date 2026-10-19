@@ -265,7 +265,7 @@ def iter_grouped_section_edits(
     for source in tree.iter_edits(section_path):
         # Policy edit 0 allocates. Keep route edit 0 separate until its
         # allocation semantics are verified.
-        allocation = id(source.edit) if section_path in {"firewall policy", "router static", "router static6"} and source.edit.name == "0" else None
+        allocation = id(source.edit) if section_path in {"firewall policy", "firewall central-snat-map", "router static", "router static6"} and source.edit.name == "0" else None
         key = (source.cli_scope, source.vdom, source.edit.name, allocation)
         grouped.setdefault(key, (source, []))[1].append(source.edit)
     yield from grouped.values()

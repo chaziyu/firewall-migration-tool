@@ -14,6 +14,9 @@ from ..planner import FortiGateToCheckPointPlanner
 from ..rendering.management import (BINDINGS_FILE, GAIA_FILE, MANAGEMENT_FILE,
                                     CPManagementRenderer)
 from ..review.workflow import build_review_report
+from ..review.coverage import build_coverage
+from ..target.evidence import build_target_evidence
+from ..target.comparison import classify_target_reuse
 
 
 _FILES = (MANAGEMENT_FILE, GAIA_FILE, BINDINGS_FILE)
@@ -30,7 +33,7 @@ def _options(value):
         raise ValueError("Invalid Check Point target mapping options") from exc
 
 
-def _plan(analysis, options, source_digest):
+def _plan(analysis, options, source_digest, *, target=None, target_source_text=None, target_metadata=None):
     parsed = _options(options)
     plan = FortiGateToCheckPointPlanner().plan(
         analysis.extracted.config, analysis.derived, parsed,
@@ -42,21 +45,27 @@ def _plan(analysis, options, source_digest):
             "SOURCE_VALIDATION_ERRORS",
             "FortiGate source validation errors must be resolved before approval.",
             parsed.source_vdom, "source", "FortiGate")))
-    draft = build_draft(plan, parsed, source_digest)
+    evidence = None
+    if target is not None:
+        evidence = build_target_evidence(target, target_source_text, target_metadata, parsed)
+        plan = classify_target_reuse(plan, evidence)
+    elif target_source_text is not None or target_metadata is not None:
+        raise ValueError("Check Point target source and metadata require parsed evidence")
+    draft = build_draft(plan, parsed, source_digest, evidence["digest"] if evidence else None)
     return plan, parsed, draft
 
 
 def run_migration_pipeline(analysis, options=None, *, source_digest="cli-source", target=None, target_source_text=None,
                            target_metadata=None):
-    if target is not None or target_source_text is not None or target_metadata is not None:
-        raise ValueError("Check Point destination comparison is unavailable; no target snapshot was compared")
-    plan, parsed, _ = _plan(analysis, options or {}, source_digest)
+    plan, parsed, _ = _plan(analysis, options or {}, source_digest, target=target,
+                            target_source_text=target_source_text, target_metadata=target_metadata)
     rendered = CPManagementRenderer().render(plan)
     return plan, rendered, parsed
 
 
-def build_review(analysis, options, source_digest):
-    plan, parsed, draft = _plan(analysis, options, source_digest)
+def build_review(analysis, options, source_digest, *, target=None, target_source_text=None, target_metadata=None):
+    plan, parsed, draft = _plan(analysis, options, source_digest, target=target,
+                                target_source_text=target_source_text, target_metadata=target_metadata)
     rendered = CPManagementRenderer().render(plan)
     return {
         "draft": draft,
@@ -67,7 +76,9 @@ def build_review(analysis, options, source_digest):
             "source_name": item.source_name, "target_field": item.target_field,
             "label": item.label, "value": item.value, "choices": list(item.choices),
         } for item in plan.decisions],
-        "report": {**build_review_report(plan), **rendered.report},
+        "report": {**build_review_report(plan), **rendered.report,
+                   "coverage": build_coverage(plan, analysis.extracted.source_objects, analysis.derived),
+                   "destination_snapshot_compared": target is not None, "target_digest": draft.get("target_digest")},
         "rendered": rendered,
     }
 
@@ -79,14 +90,19 @@ def approve_design(review, signed_draft, selected_items):
     return approve_draft(review["plan"], signed_draft, selected_items)
 
 
-def build_artifact(analysis, options, source_digest, approval):
-    review = build_review(analysis, options, source_digest)
+def build_artifact(analysis, options, source_digest, approval, *, target=None, target_source_text=None, target_metadata=None):
+    review = build_review(analysis, options, source_digest, target=target,
+                         target_source_text=target_source_text, target_metadata=target_metadata)
     approved = validate_approval(review["plan"], review["draft"], approval)
     rendered = CPManagementRenderer().render(review["plan"], approved_items=approved)
     if rendered.file_hashes != approval.get("file_sha256"):
         raise ValueError("Approved Check Point file bytes changed")
     report = {
         **rendered.report,
+        "destination_snapshot_compared": target is not None,
+        "target_digest": review["draft"].get("target_digest"),
+        "coverage": build_coverage(review["plan"], analysis.extracted.source_objects,
+                                   analysis.derived, approved_items=approved),
         "source_digest": source_digest,
         "approved_design_digest": approval["draft_digest"],
         "approved_items": sorted(approved),
@@ -112,6 +128,7 @@ def build_artifact(analysis, options, source_digest, approval):
         "report": report,
         "design_approval": approval,
         "source_digest": source_digest,
+        "target_digest": review["draft"].get("target_digest"),
         "options": review["options"].to_dict(),
         "expires_at": approval["expires_at"],
         "deployment_available": False,
@@ -127,6 +144,7 @@ def verify_export_artifact(artifact):
     approval = artifact.get("design_approval")
     if (type(expires_at) not in {int, float} or time.time() >= expires_at
             or not isinstance(approval, dict) or approval.get("expires_at") != expires_at
+            or approval.get("target_digest") != artifact.get("target_digest")
             or approval.get("source_digest") != artifact.get("source_digest")):
         raise ValueError("Check Point export approval is missing or expired")
     files = artifact.get("files")
@@ -148,6 +166,7 @@ def verify_export_artifact(artifact):
             or not isinstance(report, dict)
             or report.get("file_sha256") != actual_hashes
             or report.get("source_digest") != artifact.get("source_digest")
+            or report.get("target_digest") != artifact.get("target_digest")
             or report.get("approved_design_digest") != approval.get("draft_digest")):
         raise ValueError("Check Point artifact report or file bindings do not match")
     try:
