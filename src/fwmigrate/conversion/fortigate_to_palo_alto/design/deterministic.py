@@ -427,15 +427,20 @@ def build_deterministic_draft(config, derived, decisions, *, source_digest, targ
             configuration[-1]['target_comparison'] = comparison
     findings.extend(shared_action_groups(configuration))
     coverage = build_migration_coverage(config,
-        build_recommendations(config, derived, provisional, destination, target_device), planned_vpn_sources=represented_vpn_sources(plan),
+        build_recommendations(config, derived, provisional, destination, target_device), plan=plan, options=planner_options,
+        planned_vpn_sources=represented_vpn_sources(plan),
         planned_vip_groups=represented_vip_groups(config, plan, {row['item_key'] for row in configuration if row['status'] == 'READY'}))
     for number, gap in enumerate(coverage["unplanned"]):
+        pending = gap['readiness'] == 'PENDING'
+        mapping_key = make_decision_key(gap['source_vdom'], 'interface', gap['source_name'], 'target_interface')
         configuration.append({"group_key": f"coverage:{number}",
             "source_vdom": gap["source_vdom"], "source_kind": gap["source_kind"],
             "source_name": gap["source_name"], "family": gap["family"],
             "target_name": None, "target_scope": None, "operation": None,
-            "status": "UNSUPPORTED", "dependencies": [],
-            "blocking_reasons": [gap["reason"], "Manual implementation required; approving supported groups leaves a partial migration."]})
+            "status": "NEEDS_INPUT" if pending else "UNSUPPORTED",
+            "dependencies": [mapping_key] if pending and mapping_key in rows else [],
+            "blocking_reasons": [gap["reason"], "Review target placement; approving supported groups leaves a partial migration." if pending
+                                 else "Manual implementation required; approving supported groups leaves a partial migration."]})
     findings.extend({"code": row.code, "message": row.message} for row in validation.issues)
     findings.extend({'code': 'SCOPE_SUGGESTION', 'message': row['reason'], 'identity': row['identity']} for row in interface_scope_suggestions(config))
     if destination is None:

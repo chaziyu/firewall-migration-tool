@@ -55,6 +55,8 @@ def _packet_disjoint_test(source, derived=None):
     objects = {}
     for family in ('addresses', 'address_groups', 'vips', 'vip_groups'):
         for item in getattr(source, family, ()):
+            if getattr(item, 'address_family', 'ipv4') != 'ipv4':
+                continue
             objects.setdefault((item.vdom or 'root', item.name), []).append((family, item))
 
     cache = {}
@@ -119,7 +121,7 @@ def _packet_disjoint_test(source, derived=None):
             first_vip = pair[0][0][1] if len(pair[0]) == 1 and pair[0][0][0] == 'vips' else None
             if first_vip is None or vip_translation(first_vip, derived)[2]:
                 return False
-            ports = [vip_port_translation(item) for item in (first_vip, second_vip)]
+            ports = [vip_port_translation(item, derived) for item in (first_vip, second_vip)]
             if all(ports) and ports[0][:2] != ports[1][:2]:
                 return True
             return False
@@ -146,7 +148,7 @@ def plan_nat(source: Any, derived: Any, options: Any, *, explicit_all=None):
         service_names.setdefault(service.vdom, set()).add(service.name)
     policies = {(item.vdom or "root", item.policy_id): item for item in getattr(source, "policies", ())}
     zone_names = {(item.vdom or "root", item.name) for item in getattr(source, "zones", ())}
-    precedence = snat_precedence_warnings(source, options)
+    precedence = snat_precedence_warnings(source, options, derived)
     result = []
     for item in getattr(derived, "nat", ()):
         vdom = item.vdom or "root"
@@ -228,7 +230,7 @@ def plan_nat(source: Any, derived: Any, options: Any, *, explicit_all=None):
         consumers = vip_consumers.get((vdom, vip.name), ())
         referencing = [policy for policy, _ in consumers]
         ext, mapped, warnings = vip_translation(vip, derived)
-        port_translation = vip_port_translation(vip)
+        port_translation = vip_port_translation(vip, derived)
         warnings.extend(warning for _, issues in consumers for warning in issues)
         if not referencing:
             warnings.append("VIP has no referencing firewall policy for NAT source zone")
@@ -243,7 +245,7 @@ def plan_nat(source: Any, derived: Any, options: Any, *, explicit_all=None):
             if port_translation:
                 if policy.service != ['ALL'] or 'ALL' in service_names.get(vdom, ()):
                     warnings.append('VIP port translation currently requires an explicit built-in ALL policy service; other post-translation service matches require review')
-                matches = (vip_service_name(vip),)
+                matches = (vip_service_name(vip, derived),)
             if policy.status not in {None, "enable"}:
                 warnings.append("VIP referencing policy is not explicitly supported as active")
             if not policy.srcaddr or not matches:
@@ -305,7 +307,7 @@ def plan_nat(source: Any, derived: Any, options: Any, *, explicit_all=None):
             result.extend(replace(original, target_name=original.target_name if len(variants) == 1 else f'{original.target_name}-match-{number}',
                 from_zones=zones, source_addresses=addresses, service=service)
                 for number, (zones, addresses, service) in enumerate(variants, 1))
-    result = _combine_single_policy_nat(source, result)
+    result = _combine_policy_nat(source, result)
     # FortiGate can apply SNAT and VIP translation together; PAN-OS stops at one NAT rule.
     independent = _packet_disjoint_test(source, derived)
     mixed = set()
@@ -333,40 +335,61 @@ def plan_nat(source: Any, derived: Any, options: Any, *, explicit_all=None):
     return tuple(result)
 
 
-def _combine_single_policy_nat(source, rules):
-    # shortcut: only an isolated one-policy pool-SNAT/static-VIP flow; expand after packet partitioning is verified.
-    if len(rules) != 2 or len(source.policies) != 1:
-        return rules
+def _combine_policy_nat(source, rules):
+    # shortcut: a complete policy set of isolated static-VIP/pool-SNAT partitions only; general selectors need joint traffic equivalence.
     snats = [rule for rule in rules if rule.source_kind == 'source_nat']
     dnats = [rule for rule in rules if rule.source_kind == 'vip']
-    if len(snats) != 1 or len(dnats) != 1:
+    if (not snats or len(snats) != len(dnats) or len(rules) != 2 * len(snats)
+            or len(source.policies) != len(snats) or len(snats) > 256):
         return rules
-    snat, dnat = snats[0], dnats[0]
-    policy = source.policies[0]
+    combined = []
+    used = set()
+    for policy in source.policies:
+        matches = [rule for rule in snats if (rule.source_vdom or 'root', rule.source_policy_id)
+                   == (policy.vdom or 'root', policy.policy_id)]
+        destinations = [rule for rule in dnats if (rule.source_vdom or 'root') == (policy.vdom or 'root')
+                        and policy.dstaddr == [rule.source_name]]
+        if len(matches) != 1 or len(destinations) != 1 or id(destinations[0]) in used:
+            return rules
+        snat, dnat = matches[0], destinations[0]
+        translated = _combine_policy_partition(source, policy, snat, dnat, dnats)
+        if translated is None:
+            return rules
+        used.add(id(dnat))
+        combined.append(translated)
+    # Original destination and translated server sets must not overlap another partition.
+    if len({(rule.target_vsys, rule.destination_addresses) for rule in combined}) != len(combined):
+        return rules
+    if len({(rule.target_vsys, rule.destination_translated_address) for rule in combined}) != len(combined):
+        return rules
+    return combined
+
+
+def _combine_policy_partition(source, policy, snat, dnat, dnats):
     if (snat.status is not PANMigrationStatus.SUPPORTED or dnat.status is not PANMigrationStatus.SUPPORTED
             or snat.source_vdom != dnat.source_vdom or snat.target_vsys != dnat.target_vsys
             or policy.dstaddr != [dnat.source_name] or policy.policy_id != snat.source_policy_id
             or snat.source_interface_address or not snat.translated_addresses
             or snat.service != 'any' or dnat.service != 'any' or dnat.destination_translated_port
             or snat.from_zones != dnat.from_zones or snat.source_addresses != dnat.source_addresses):
-        return rules
+        return None
     # Exclude mapped-server sources so VIP reverse-SNAT cannot supersede this pool translation.
     if len(policy.srcaddr or ()) != 1:
-        return rules
+        return None
     addresses = [item for item in source.addresses if item.name == policy.srcaddr[0]
-        and (item.vdom or 'root') == (policy.vdom or 'root')]
+        and (item.vdom or 'root') == (policy.vdom or 'root') and item.address_family == 'ipv4']
     if (len(addresses) != 1 or addresses[0].type not in {None, 'ipmask'} or addresses[0].raw_extra
             or addresses[0].address_family != 'ipv4' or not addresses[0].subnet):
-        return rules
+        return None
     try:
         clients = IPv4Network('/'.join(addresses[0].subnet.split()), strict=True)
-        if IPv4Address(dnat.destination_translated_address) in clients:
-            return rules
+        if any(IPv4Address(rule.destination_translated_address) in clients for rule in dnats):
+            return None
     except ValueError:
-        return rules
-    return [replace(dnat, source_policy_id=policy.policy_id, target_name=f'{dnat.target_name}-snat-{policy.policy_id}',
+        return None
+    return replace(dnat, source_policy_id=policy.policy_id, target_name=f'{dnat.target_name}-snat-{policy.policy_id}',
         source_translation_type=snat.source_translation_type, translated_addresses=snat.translated_addresses,
-        translation_interface=snat.to_interface)]
+        translation_interface=snat.to_interface)
 
 
 def _nat_policy_warnings(policy, service_groups):

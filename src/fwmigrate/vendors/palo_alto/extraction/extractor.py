@@ -17,6 +17,9 @@ from .service import extract_service
 from .zone import extract_zone
 from ..model import PANSecurityProfileGroup, PANTag
 from .common import source_fields, value, values
+from .common import raw_extra, structured_xml_capture
+from ..model.management_profile import MANAGEMENT_PROTOCOLS, PANInterfaceManagementProfile
+from ..sanitization import sanitize_panos_attributes
 from .extended import EXTRACTORS as EXTENDED_EXTRACTORS
 
 
@@ -31,7 +34,30 @@ def extract_tag(element, path, context, source_order, spec):
                   color=value(element, "color"), comments=value(element, "comments"), raw_extra=extra, explicit_fields=explicit)
 
 
+def extract_management_profile(element, path, context, source_order, spec):
+    extra, explicit = source_fields(element, spec)
+    protocols = {name: value(element, name) for name in MANAGEMENT_PROTOCOLS if element.find(name) is not None}
+    explicit.difference_update(MANAGEMENT_PROTOCOLS)
+    for name in (*MANAGEMENT_PROTOCOLS, 'permitted-ip'):
+        nodes = element.findall(name)
+        if len(nodes) > 1 or (name != 'permitted-ip' and any(list(node) or node.attrib for node in nodes)):
+            extra[name] = [structured_xml_capture(node) for node in nodes]
+    permitted = element.find('permitted-ip')
+    permitted_ips = None
+    if permitted is not None:
+        permitted_ips = [entry.get('name') or '' for entry in permitted.findall('entry')]
+        unknown = raw_extra(permitted, {'entry'})
+        if unknown or any(list(entry) or set(entry.attrib) != {'name'} for entry in permitted):
+            extra['permitted-ip'] = structured_xml_capture(permitted)
+    if protocols:
+        explicit.add('protocols')
+    return PANInterfaceManagementProfile(name=element.get('name'), source_path='/'.join(path),
+        scope=context.scope, source_order=source_order, protocols=protocols, permitted_ips=permitted_ips,
+        raw_extra=sanitize_panos_attributes(extra), explicit_fields=explicit)
+
+
 _EXTRACTORS = {
+    "management_profile": ("management_profiles", extract_management_profile),
     "tag": ("tags", extract_tag),
     "address": ("addresses", extract_address),
     "address_group": ("address_groups", extract_address),

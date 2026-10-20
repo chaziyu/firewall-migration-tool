@@ -400,6 +400,58 @@ def test_offline_unapproved_port_proposals_allow_only_independently_approved_obj
     assert plan['commands'] == ['set vsys vsys1 address net ip-netmask 192.0.2.0/24']
 
 
+@pytest.mark.parametrize('issue', ['unmapped', 'management', 'malformed_ip', 'excluded'])
+def test_partial_approval_preserves_unplanned_source_interfaces_in_report_and_bundle(issue):
+    import hashlib
+    import json
+    import zipfile
+
+    source = '''config system interface
+edit port1
+set type physical
+set ip 192.0.2.1 255.255.255.0
+%s
+next
+end
+config firewall address
+edit net
+set subnet 192.0.2.0 255.255.255.0
+next
+end
+''' % ('set allowaccess ping' if issue == 'management' else '')
+    if issue == 'malformed_ip':
+        source = source.replace('192.0.2.1 255.255.255.0', 'malformed-primary')
+    client, payload = setup(None, source=source)
+    settings = {'excluded_interfaces': ['root/port1']} if issue == 'excluded' else {}
+    data, payload = prepare(client, {**payload, 'workflow_mode': 'OFFLINE_EXPORT', 'conversion_settings': settings})
+    address = next(row for row in data['draft']['configuration'] if row['family'] == 'address')
+    selected = [address['group_key'], *address['dependencies']]
+    response = approve(client, payload, data, selected)
+    assert response.status_code == 200, response.get_json()
+    response = client.post('/api/migrate', json={**payload, 'decision_document': response.get_json()['decision_document']})
+    assert response.status_code == 200, response.get_json()
+    artifact = response.get_json()['artifact']
+    report = artifact['report']
+    items = [row for row in report['items'] if row['source_kind'] == 'interface' and row['source_name'] == 'port1'
+             and row['source_object_type'] == 'interface']
+    gaps = [row for row in report['coverage']['unplanned'] if row['source_kind'] == 'interface'
+            and row['source_vdom'] == 'root' and row['source_name'] == 'port1']
+    assert len(items) + len(gaps) == 1
+    if issue != 'excluded':
+        assert gaps[0]['readiness'] == 'PENDING'
+        assert 'placement' in gaps[0]['reason']
+        assert not report['coverage']['complete']
+    assert not report['readiness']['migration']['complete']
+    assert artifact['commands'] == ['set vsys vsys1 address net ip-netmask 192.0.2.0/24']
+    expected = '\n'.join(artifact['commands']).encode()
+    assert artifact['command_sha256'] == hashlib.sha256(expected).hexdigest()
+    bundle = client.post('/api/migration/bundle', json={'source': payload['source'], 'artifact': artifact})
+    assert bundle.status_code == 200
+    with zipfile.ZipFile(io.BytesIO(bundle.data)) as archive:
+        assert archive.read('palo_alto_config.set') == expected
+        assert json.loads(archive.read('migration_report.json'))['coverage'] == report['coverage']
+
+
 def test_offline_does_not_parse_or_discover_supplied_destination(monkeypatch):
     import fwmigrate.web_api.migration as api
     client, payload = setup(None)

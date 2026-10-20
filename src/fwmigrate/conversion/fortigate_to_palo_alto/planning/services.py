@@ -102,11 +102,11 @@ def plan_services(derived: Any, options: Any = None, source: Any = None):
                 target_name=name, status=PANMigrationStatus.SUPPORTED,
                 members=tuple(getattr(options, "service_names", {}).get(vdom, {}).get(n, n) for n in ("FG-DNS-TCP", "FG-DNS-UDP"))),)
     for vip in getattr(source, 'vips', ()):
-        ports = vip_port_translation(vip)
+        ports = vip_port_translation(vip, derived)
         if ports is None:
             continue
         vdom = vip.vdom or 'root'
-        name = vip_service_name(vip)
+        name = vip_service_name(vip, derived)
         collision = (vdom, name) in explicit_names or any(item.source_vdom == vdom and item.source_name == name for item in services)
         services.append(PlannedService(source_vdom=vdom, source_kind='vip_service', source_object_type='service',
             source_name=name, target_name=getattr(options, 'service_names', {}).get(vdom, {}).get(name, name),

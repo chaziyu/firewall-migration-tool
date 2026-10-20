@@ -3,19 +3,22 @@
 from ipaddress import IPv4Address
 
 from fwmigrate.vendors.fortigate.relationships.references import ReferenceIndex, ReferenceKind
+from fwmigrate.vendors.fortigate.transform.effective_values import effective_value
 
 
-def vip_port_translation(vip):
-    if vip.portforward != 'enable' or vip.protocol not in {'tcp', 'udp'}:
+def vip_port_translation(vip, derived=None):
+    protocol = vip.protocol if vip.protocol is not None else effective_value(derived, vip.vdom, 'vip', vip.name, 'protocol')
+    if vip.portforward != 'enable' or protocol not in {'tcp', 'udp'}:
         return None
     ports = (vip.extport, vip.mappedport)
     if not all(isinstance(port, str) and port.isdecimal() and 1 <= int(port) <= 65535 for port in ports):
         return None
-    return vip.protocol, str(int(vip.extport)), str(int(vip.mappedport))
+    return protocol, str(int(vip.extport)), str(int(vip.mappedport))
 
 
-def vip_service_name(vip):
-    return f'FG-VIP-{vip.name}-{vip.protocol}-{vip.extport}'
+def vip_service_name(vip, derived=None):
+    ports = vip_port_translation(vip, derived)
+    return f'FG-VIP-{vip.name}-{ports[0] if ports else vip.protocol}-{vip.extport}'
 
 
 def vip_policy_consumers(source, derived):
@@ -88,7 +91,6 @@ def vip_translation(vip, derived=None):
         warnings.append("VIP requires one explicit external and mapped IPv4 host address")
     if vip.extaddr or vip.mapped_addr:
         warnings.append("VIP address-object translation requires manual resolution")
-    from fwmigrate.vendors.fortigate.transform.effective_values import effective_value
     vip_type = vip.type if vip.type is not None else effective_value(derived, vip.vdom, 'vip', vip.name, 'type')
     if vip.realservers or vip.ldb_method or vip.service or vip_type != "static-nat":
         warnings.append("VIP type or load-balancing/service semantics are unsupported")
@@ -104,6 +106,6 @@ def vip_translation(vip, derived=None):
         warnings.append(f"unclassified VIP setting {key!r} requires manual review")
     if (vip.portforward not in {None, "disable", "no", "0"} or any(
         getattr(vip, field, None) for field in ("protocol", "extport", "mappedport")
-    )) and vip_port_translation(vip) is None:
+    )) and vip_port_translation(vip, derived) is None:
         warnings.append("VIP port-forwarding semantics are unsupported")
     return ext, mapped, warnings

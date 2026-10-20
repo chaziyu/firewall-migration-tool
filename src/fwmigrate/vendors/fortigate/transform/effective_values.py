@@ -27,6 +27,28 @@ def derive_effective_values(config, source_metadata=None):
         for item in config.policies if item.action is None]
     result.extend(FGEffectiveValue(item.vdom or 'root', 'vip', item.name, 'type', 'static-nat',
         version, vip_reference) for item in config.vips if item.type is None)
+    for item in config.addresses:
+        if item.address_family != 'ipv4':
+            continue
+        if item.type is None:
+            result.append(FGEffectiveValue(item.vdom or 'root', 'address', item.name, 'type', 'ipmask',
+                version, vip_reference + '#page=355'))
+        if item.type in {None, 'ipmask'} and item.subnet is None:
+            result.append(FGEffectiveValue(item.vdom or 'root', 'address', item.name, 'subnet', '0.0.0.0 0.0.0.0',
+                version, vip_reference + '#page=354'))
+    for kind, items, defaults in (
+        ('ip_pool', config.ip_pools, (('type', 'overload', 403),)),
+        ('vip', config.vips, (('protocol', 'tcp', 572),)),
+        ('policy', config.policies, (('nat', 'disable', 435), ('status', 'enable', 441))),
+        ('dhcp_server', config.dhcp_servers, (('status', 'enable', 1238), ('server_type', 'regular', 1238),
+            ('ip_mode', 'range', 1237), ('dns_service', 'specify', 1236), ('lease_time', 604800, 1237))),
+    ):
+        for item in items:
+            name = item.policy_id if kind == 'policy' else item.id if kind == 'dhcp_server' else item.name
+            for field, value, page in defaults:
+                if getattr(item, field) is None:
+                    result.append(FGEffectiveValue(item.vdom or 'root', kind, str(name), field, value,
+                        version, vip_reference + f'#page={page}'))
     # FortiOS 7.2.13 CLI reference, phase2-interface table, printed page 1939.
     for item in config.ipsec_phase2:
         for field, value in (('pfs', 'enable'), ('keylifeseconds', 43200)):

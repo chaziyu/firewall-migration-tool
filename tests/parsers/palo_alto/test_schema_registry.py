@@ -17,6 +17,7 @@ from fwmigrate.vendors.palo_alto.source_context import PANWalkContext
 
 
 EXPECTED_PATHS = {
+    "management_profile",
     "address",
     "address_group",
     "default_security_rule",

@@ -130,6 +130,7 @@ def validate_panos_config(config: PANOSConfig, derived: PANOSDerivedViews) -> PA
         "service": config.services, "service-group": config.service_groups,
         "schedule": config.schedules, "zone": config.zones,
         "interface": config.interfaces, "interface-unit": config.interface_units,
+        "interface-management-profile": config.management_profiles,
         "nat": config.nat_rules, "default-security-rule": config.default_security_rules,
         "virtual-router": config.virtual_routers, "logical-router": config.logical_routers,
         "vulnerability-profile": config.vulnerability_profiles, "security-profile-group": config.security_profile_groups,

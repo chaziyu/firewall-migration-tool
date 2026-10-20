@@ -1,7 +1,7 @@
 """Executable FortiGate to PAN-OS DHCP planning.
 
-Only explicit source state with a deterministic PAN-OS representation is
-rendered. Missing FortiGate fields are never replaced with vendor defaults.
+Source state and separately version-verified effective values are rendered
+only when their PAN-OS representation is deterministic.
 """
 
 from __future__ import annotations
@@ -10,6 +10,7 @@ from ipaddress import IPv4Address, IPv4Network
 from typing import Any
 
 from fwmigrate.conversion.fortigate_to_palo_alto.models import PANMigrationStatus, PlannedDHCPServer
+from fwmigrate.vendors.fortigate.transform.effective_values import effective_value
 
 
 def _source_value(item: Any, field: str):
@@ -51,7 +52,13 @@ def _pool_value(pool) -> str | None:
     return f"{start}-{end}"
 
 
-def plan_dhcp(source: Any, options: Any) -> tuple[PlannedDHCPServer, ...]:
+def _server_value(server, field, derived):
+    if getattr(server, field, None) is None:
+        return effective_value(derived, server.vdom, 'dhcp_server', server.id, field)
+    return _source_value(server, field)
+
+
+def plan_dhcp(source: Any, options: Any, derived=None) -> tuple[PlannedDHCPServer, ...]:
     """Plan the deterministic interface-scoped IPv4 DHCP subset."""
     result = []
     mappings_by_vdom = getattr(options, "interfaces", {}) or {}
@@ -76,7 +83,7 @@ def plan_dhcp(source: Any, options: Any) -> tuple[PlannedDHCPServer, ...]:
         if not target_vsys:
             blockers.append(f"missing Palo Alto vsys mapping for VDOM {vdom!r}")
 
-        source_status = str(_source_value(server, "status") or "").casefold()
+        source_status = str(_server_value(server, "status", derived) or "").casefold()
         if source_status in {"enable", "enabled"}:
             mode = "enabled"
         elif source_status in {"disable", "disabled"}:
@@ -85,13 +92,13 @@ def plan_dhcp(source: Any, options: Any) -> tuple[PlannedDHCPServer, ...]:
             mode = None
             blockers.append("DHCP server status is not explicitly configured with a supported value")
 
-        server_type = str(_source_value(server, "server_type") or "").casefold()
+        server_type = str(_server_value(server, "server_type", derived) or "").casefold()
         if not server_type:
             blockers.append("DHCP server-type is not explicit; FortiGate defaults are not assumed")
         elif server_type != "regular":
             blockers.append(f"DHCP server-type {server_type!r} requires manual target design")
 
-        ip_mode = str(_source_value(server, "ip_mode") or "").casefold()
+        ip_mode = str(_server_value(server, "ip_mode", derived) or "").casefold()
         if not ip_mode:
             blockers.append("DHCP ip-mode is not explicit; FortiGate defaults are not assumed")
         elif ip_mode != "range":
@@ -99,7 +106,7 @@ def plan_dhcp(source: Any, options: Any) -> tuple[PlannedDHCPServer, ...]:
 
         lease_type = None
         lease_timeout = None
-        lease = _source_value(server, "lease_time")
+        lease = _server_value(server, "lease_time", derived)
         if lease is not None:
             try:
                 lease_value = int(lease)
@@ -132,7 +139,7 @@ def plan_dhcp(source: Any, options: Any) -> tuple[PlannedDHCPServer, ...]:
 
         dns_primary = None
         dns_secondary = None
-        dns_service = str(_source_value(server, "dns_service") or "").casefold()
+        dns_service = str(_server_value(server, "dns_service", derived) or "").casefold()
         dns_values = [
             _source_value(server, "dns_server1"),
             _source_value(server, "dns_server2"),
