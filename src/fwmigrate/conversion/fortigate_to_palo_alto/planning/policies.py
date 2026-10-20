@@ -45,6 +45,35 @@ def ipv6_match_warnings(policy):
               for field in ("srcaddr", "dstaddr", "srcaddr6", "dstaddr6")))
 
 
+def snat_precedence_warnings(source, options):
+    """Keep earlier non-SNAT policy matches out of later PAN-OS SNAT rules."""
+    earlier = {}
+    result = {}
+    zone_names = {(item.vdom or 'root', item.name) for item in getattr(source, 'zones', ())}
+    for policy in getattr(source, 'policies', ()):
+        if getattr(policy, 'status', None) in {'disable', 'disabled', 'no', '0'} or getattr(policy, 'action', None) == 'deny':
+            continue
+        vdom = policy.vdom or 'root'
+        warnings = []
+        zones = tuple(_zones(names or (), vdom, options, warnings, zone_names)
+                      for names in (getattr(policy, 'srcintf', None), getattr(policy, 'dstintf', None)))
+        if warnings:
+            zones = ((), ())
+        if getattr(policy, 'nat', None) != 'enable':
+            earlier.setdefault(vdom, []).append((policy, zones))
+            continue
+        # shortcut: separation is proven only by complete mapped zones; add address/service partitioning after packet matching is verified.
+        for predecessor, previous in earlier.get(vdom, ()):
+            if any(left and right and 'any' not in (*left, *right) and set(left).isdisjoint(right)
+                   for left, right in zip(zones, previous)):
+                continue
+            result[(vdom, policy.policy_id)] = (
+                f'Preceding active policy {vdom} / {predecessor.name or predecessor.policy_id} '
+                'has disabled or unknown source NAT; overlapping PAN-OS SNAT requires manual design',)
+            break
+    return result
+
+
 def plan_policies(source: Any, options: Any, derived: Any = None, *, explicit_all=None):
     result = []
     if explicit_all is None:
@@ -60,11 +89,13 @@ def plan_policies(source: Any, options: Any, derived: Any = None, *, explicit_al
         *getattr(getattr(derived, "services", None), "groups", ()),
     )}
     zone_names = {(item.vdom or "root", item.name) for item in getattr(source, "zones", ())}
+    precedence = snat_precedence_warnings(source, options)
     for policy in getattr(source, "policies", ()):
         warnings = list(ipv6_match_warnings(policy))
         destinations, group_warnings = vip_group_addresses(source, policy.vdom, policy.dstaddr or ())
         warnings.extend(group_warnings)
         ipv6_configured = bool(warnings)
+        warnings.extend(precedence.get((policy.vdom or 'root', policy.policy_id), ()))
         if policy.srcintf is None or policy.dstintf is None:
             warnings.append("policy interface match is not explicit in the source")
         if policy.srcaddr is None and policy.srcaddr6 is None:

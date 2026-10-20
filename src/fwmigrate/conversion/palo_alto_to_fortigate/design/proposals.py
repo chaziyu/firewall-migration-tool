@@ -1,4 +1,5 @@
 """Deterministic FortiGate target intent; proposals never grant approval."""
+from collections import Counter
 from copy import deepcopy
 import re
 
@@ -61,22 +62,41 @@ def build_target_proposals(source, derived, options, evidence=None):
                 ports.append(r.object_name)
         if ports:
             profile["ports"] = propose("profile:ports", sorted(set(ports)), "Explicit unaddressed, unreferenced physical ports; inventory may be incomplete.", "TARGET")
-    ports = profile.get("ports", [])
     names = {name for zone in source.zones if in_scope(zone, scope) for name in zone.members or ()}
     names.update(name for item in source.interface_imports if in_scope(item, scope) for name in item.interfaces or ())
     interfaces = [item for item in (*source.interfaces, *source.interface_units)
                   if item.scope and item.scope.device_name == scope.device_name]
     names.update(item.parent for item in interfaces if item.name in names and getattr(item, "parent", None))
+    selected = sorted((item for item in interfaces if item.name in names), key=lambda item: item.name)
+    assumed_layout = evidence is None and "ports" not in profile
+    layout = {}
+    if assumed_layout:
+        counts = Counter(item.name for item in selected)
+        for item in selected:
+            match = re.fullmatch(r"ethernet1/([1-9]\d*)", item.name or "")
+            if (not match or counts[item.name] != 1 or item.interface_family != "ethernet"
+                    or getattr(item, "parent", None) or item.mode != "layer3"):
+                continue
+            target = values["interfaces"].get(item.name, "port" + match[1])
+            if re.fullmatch(r"port[1-9]\d*", target):
+                layout[item.name] = target
+        if layout:
+            profile["ports"] = propose("profile:ports", sorted(set(layout.values()), key=lambda name: int(name[4:])),
+                "Assumed same-layout offline ports; hardware, availability and cabling are unverified. Review before approval.", "ASSUMED_LAYOUT")
+    ports = profile.get("ports", [])
     used = set(values["interfaces"].values()) | set(values["zones"].values())
     pool = sorted(set(ports) - used, key=lambda name: tuple((0, int(part)) if part.isdigit() else (1, part) for part in re.split(r"(\d+)", name)))
-    selected = sorted((item for item in interfaces if item.name in names), key=lambda item: item.name)
     for item in selected:
         if item.name in values["interfaces"] or item.interface_family != "ethernet" or getattr(item, "parent", None) or item.mode != "layer3":
             continue
-        if pool:
-            port = pool.pop(0)
-            values["interfaces"][item.name] = propose("interfaces:" + item.name, port, "Proposed port allocation from declared inventory; confirm cabling.")
-            used.add(port)
+        port = layout.get(item.name) if assumed_layout else pool[0] if pool else None
+        if port not in pool:
+            continue
+        pool.remove(port)
+        values["interfaces"][item.name] = propose("interfaces:" + item.name, port,
+            "Assumed same-layout offline mapping; review target hardware and cabling before approval." if assumed_layout
+            else "Proposed port allocation from declared inventory; confirm cabling.", "ASSUMED_LAYOUT" if assumed_layout else "DERIVED")
+        used.add(port)
     units = [item for item in selected if item.interface_family == "ethernet" and getattr(item, "parent", None)
              and item.parent in values["interfaces"] and str(item.tag or "").isdigit() and 1 <= int(item.tag) <= 4094]
     for item in units:

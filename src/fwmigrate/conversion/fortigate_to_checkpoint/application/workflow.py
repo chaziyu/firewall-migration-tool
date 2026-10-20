@@ -10,8 +10,9 @@ from ..design.deterministic import (ARTIFACT_TYPE, PAIR, approve_draft, build_dr
                                     validate_approval)
 from ..models import CPFinding
 from ..options import CPMigrationOptions
+from ..design.proposals import propose_new_target
 from ..planner import FortiGateToCheckPointPlanner
-from ..rendering.management import (BINDINGS_FILE, GAIA_FILE, MANAGEMENT_FILE,
+from ..rendering.management import (BINDINGS_FILE, COMMANDS_FILE, GAIA_FILE, MANAGEMENT_FILE,
                                     CPManagementRenderer)
 from ..review.workflow import build_review_report
 from ..review.coverage import build_coverage
@@ -34,7 +35,9 @@ def _options(value):
 
 
 def _plan(analysis, options, source_digest, *, target=None, target_source_text=None, target_metadata=None):
-    parsed = _options(options)
+    parsed = propose_new_target(analysis.extracted.config, _options(options))
+    if parsed.target_mode == "new" and any(value is not None for value in (target, target_source_text, target_metadata)):
+        raise ValueError("New-target creation cannot use existing-target comparison evidence")
     plan = FortiGateToCheckPointPlanner().plan(
         analysis.extracted.config, analysis.derived, parsed,
         source_inventory=analysis.extracted.source_objects,
@@ -109,11 +112,7 @@ def build_artifact(analysis, options, source_digest, approval, *, target=None, t
         "design_approval": approval,
         "expires_at": approval["expires_at"],
     }
-    contents = {
-        MANAGEMENT_FILE: rendered.management_text,
-        GAIA_FILE: rendered.gaia_text,
-        BINDINGS_FILE: rendered.bindings_text,
-    }
+    contents = {name: raw.decode("utf-8") for name, raw in rendered.files.items()}
     files = {name: {
         "content": content,
         "byte_count": len(content.encode("utf-8")),
@@ -148,10 +147,11 @@ def verify_export_artifact(artifact):
             or approval.get("source_digest") != artifact.get("source_digest")):
         raise ValueError("Check Point export approval is missing or expired")
     files = artifact.get("files")
-    if not isinstance(files, dict) or set(files) != set(_FILES):
+    expected_files = (*_FILES, COMMANDS_FILE) if artifact.get("options", {}).get("target_mode") == "new" else _FILES
+    if not isinstance(files, dict) or set(files) != set(expected_files):
         raise ValueError("Check Point artifact file list is invalid")
     actual_hashes = {}
-    for name in _FILES:
+    for name in expected_files:
         row = files[name]
         if not isinstance(row, dict) or not isinstance(row.get("content"), str):
             raise ValueError("Check Point artifact contains an invalid file")

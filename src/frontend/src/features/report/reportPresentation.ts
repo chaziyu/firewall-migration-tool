@@ -1,6 +1,10 @@
 export type ReportRow = Record<string, unknown>
 
 const SENSITIVE_KEY = /raw_extra|password(?!_configured$)|secret(?!_configured$)|credential|token|private.?key(?!_configured$)|psk(?!_configured$)/i
+const AUTHENTICATION_METADATA = new Set(['password_label', 'save_user_credentials', 'domain_credentials', 'user_credential_or_client_cert_required'])
+function sensitiveKey(key: string, value?: unknown) {
+  return SENSITIVE_KEY.test(key) && !(AUTHENTICATION_METADATA.has(key.replaceAll('-', '_')) && (value == null || typeof value === 'string'))
+}
 export function asRecord(value: unknown): ReportRow {
   return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as ReportRow : {}
 }
@@ -8,10 +12,10 @@ export function asRows(value: unknown): ReportRow[] {
   return Array.isArray(value) ? value.filter((row): row is ReportRow => row !== null && typeof row === 'object' && !Array.isArray(row)) : []
 }
 export function safeValue(value: unknown, key = ''): unknown {
-  if (SENSITIVE_KEY.test(key)) return undefined
+  if (sensitiveKey(key, value)) return undefined
   if (Array.isArray(value)) return value.map((item) => safeValue(item)).filter((item) => item !== undefined)
   if (value !== null && typeof value === 'object') return Object.fromEntries(Object.entries(value)
-    .filter(([name]) => !SENSITIVE_KEY.test(name)).map(([name, item]) => [name, safeValue(item, name)]))
+    .filter(([name, item]) => !sensitiveKey(name, item)).map(([name, item]) => [name, safeValue(item, name)]))
   return value
 }
 
@@ -27,13 +31,14 @@ export function reportSearchText(row: ReportRow): string {
 
 const SECTION_KEYS: Record<string, string[]> = {
   Interfaces: ['interfaces', 'interface_topology'],
-  Objects: ['addresses', 'addresses_ipv6', 'address_groups', 'services', 'service_groups', 'network_objects', 'network_groups', 'protocol_port_objects', 'applications', 'zones', 'vulnerability_profiles', 'local_users', 'local_user_groups', 'group_mappings'],
+  Objects: ['addresses', 'addresses_ipv6', 'address_groups', 'wildcard_fqdns', 'services', 'service_groups', 'network_objects', 'network_groups', 'protocol_port_objects', 'applications', 'zones', 'tags', 'security_profile_groups', 'vulnerability_profiles', 'local_users', 'local_user_groups', 'group_mappings', 'administrators', 'admin_roles'],
   Schedules: ['schedules', 'schedule_groups', 'time_ranges'],
-  Policies: ['policies', 'security_policies', 'security_rules', 'access_control_policies', 'access_rules', 'nac_policies', 'sdwan_rules'],
-  NAT: ['nat', 'nat_rules', 'translations', 'central_snat', 'vips', 'ip_pools'],
+  Policies: ['policies', 'security_policies', 'security_rules', 'default_security_rules', 'access_control_policies', 'access_rules', 'nac_policies', 'sdwan_rules'],
+  NAT: ['nat', 'nat_rules', 'translations', 'central_snat', 'vips', 'vip_groups', 'ip_pools'],
   Routes: ['routes', 'static_routes', 'routing_instances'],
-  VPN: ['vpn_tunnels', 'vpn_phase2', 'policy_vpn_phase1', 'policy_vpn_phase2', 'ssl_vpn_realms', 'ssl_vpn_bookmarks', 'ike_gateways', 'ipsec_tunnels', 'globalprotect_portals', 'globalprotect_gateways'],
+  VPN: ['vpn_tunnels', 'vpn_phase2', 'policy_vpn_phase1', 'policy_vpn_phase2', 'ssl_vpn_realms', 'ssl_vpn_bookmarks', 'ssl_vpn_portals', 'ike_gateways', 'ike_crypto_profiles', 'ipsec_crypto_profiles', 'ipsec_tunnels', 'globalprotect_portals', 'globalprotect_gateways'],
   References: ['unresolved_references', 'references', 'relationships'],
+  Extraction: ['extraction_coverage', 'source_inventory'],
 }
 
 export function reportSections(sections: ReportRow) {
@@ -135,17 +140,42 @@ const FORTIGATE_COLUMNS: Record<string, string[]> = {
   interface_topology: ['display_name', 'name', 'vdom', 'kind', 'ip', 'parent', 'physical_interfaces'],
   addresses: ['name', 'vdom', 'type', 'value', 'associated_interface', 'review'],
   address_groups: ['name', 'vdom', 'members', 'exclude_members', 'review'],
+  wildcard_fqdns: ['name', 'vdom', 'wildcard_fqdn', 'comment'],
+  local_users: ['name', 'vdom', 'type', 'status', 'two_factor', 'ldap_server', 'radius_server'],
+  administrators: ['name', 'vdom', 'accprofile', 'vdoms', 'trusthosts', 'remote_auth', 'two_factor'],
   services: ['name', 'vdom', 'protocol', 'port', 'source_port', 'review'],
   service_groups: ['name', 'vdom', 'members', 'review'],
   routes: ['route_id', 'vdom', 'destination', 'gateway', 'device', 'distance', 'status'],
   nat: ['policy_id', 'policy_name', 'vdom', 'translation_type', 'egress_interfaces', 'pool_names', 'translated_addresses', 'review'],
+  vips: ['name', 'vdom', 'address_family', 'extip', 'extintf', 'mappedip', 'portforward', 'extport', 'mappedport'],
+  vip_groups: ['name', 'vdom', 'address_family', 'interface', 'members'],
+  ip_pools: ['name', 'vdom', 'address_family', 'type', 'startip', 'endip', 'associated_interface', 'arp_reply'],
+  dhcp_servers: ['id', 'vdom', 'interface', 'status', 'default_gateway', 'netmask', 'lease_time'],
   vpn_tunnels: ['name', 'vdom', 'interface', 'remote_gateway', 'ike_version', 'proposal', 'review'],
   vpn_phase2: ['name', 'vdom', 'phase1', 'source_range', 'destination_range', 'proposal', 'pfs', 'review'],
   ssl_vpn_bookmarks: ['name', 'vdom', 'owner_name', 'apptype', 'host', 'url'],
+  ssl_vpn_portals: ['name', 'vdom', 'tunnel_mode', 'web_mode', 'ip_pools', 'split_tunneling'],
   schedules: ['name', 'vdom', 'type', 'days', 'start', 'end'],
 }
 const CHECKPOINT_COLUMNS: Record<string, string[]> = {
   addresses: ['name', 'scope', 'type', 'address_family', 'ipv4_value', 'ipv4_mask_length', 'ipv4_range_end', 'ipv6_value', 'ipv6_mask_length', 'value', 'review'],
+}
+const PANOS_COLUMNS: Record<string, string[]> = {
+  policies: ['rule_order', 'name', 'scope', 'from_zones', 'source_addresses', 'to_zones', 'destination_addresses', 'application', 'services', 'action', 'disabled'],
+  default_security_rules: ['name', 'scope', 'action', 'disabled', 'log_start', 'log_end', 'profile_setting'],
+  nat: ['rule_order', 'name', 'scope', 'from_zones', 'source_addresses', 'to_zones', 'destination_addresses', 'service', 'source_translation', 'destination_translation', 'dynamic_destination_translation', 'disabled'],
+  interface_topology: ['name', 'scope', 'kind', 'ip', 'tag', 'zone', 'virtual_routers', 'review'],
+  addresses: ['name', 'scope', 'type', 'value', 'tags', 'description', 'review'],
+  address_groups: ['name', 'scope', 'members', 'dynamic_filter', 'tags', 'review'],
+  services: ['name', 'scope', 'protocol', 'port', 'source_port', 'review'],
+  service_groups: ['name', 'scope', 'members', 'review'],
+  schedules: ['name', 'scope', 'recurring', 'non_recurring'],
+  vpn_tunnels: ['name', 'scope', 'interface', 'ike_gateways', 'ipsec_crypto_profile', 'tunnel_monitor', 'review'],
+  ipsec_tunnels: ['name', 'scope', 'tunnel_interface', 'ike_gateways', 'ipsec_crypto_profile', 'tunnel_monitor', 'review'],
+  vpn_phase2: ['name', 'tunnel', 'scope', 'address_family', 'local', 'remote', 'protocol', 'local_port', 'remote_port'],
+  ike_gateways: ['name', 'scope', 'local_interface', 'peer_address', 'ike_version', 'authentication_method', 'pre_shared_key_configured'],
+  extraction_coverage: ['domain', 'status', 'source_records', 'typed_objects', 'unknown_paths'],
+  source_inventory: ['name', 'scope', 'kind', 'source_path', 'source_order', 'extraction_status', 'values'],
 }
 export function fieldLabel(key: string) {
   const labels: Record<string, string> = { policy_id: 'Policy ID', rule_id: 'Rule ID', route_id: 'Route ID',
@@ -153,8 +183,15 @@ export function fieldLabel(key: string) {
     parent_policy_name: 'Parent Policy', vdom: 'VDOM', ip: 'IP / prefix', nat: 'NAT',
     ike_version: 'IKE version', vpn_tunnels: 'VPN tunnels', vpn_phase2: 'VPN phase 2',
     ssl_vpn_bookmarks: 'SSL VPN bookmarks', status: 'Reported status', review: 'Review',
+    vips: 'Virtual IPs', vip_groups: 'VIP groups', ip_pools: 'IP pools', wildcard_fqdns: 'Wildcard FQDNs',
+    dhcp_servers: 'DHCP servers', ssl_vpn_portals: 'SSL VPN portals',
+    extip: 'External IP', extintf: 'External interface', mappedip: 'Mapped IPs',
+    extport: 'External port', mappedport: 'Mapped port', startip: 'Start IP', endip: 'End IP',
+    arp_reply: 'ARP reply', accprofile: 'Admin profile', trusthosts: 'Trusted hosts', vdoms: 'Allowed VDOMs',
     ipv4_value: 'IPv4 definition', ipv6_value: 'IPv6 definition', address_family: 'Address family',
-    ipv4_mask_length: 'IPv4 mask length', ipv4_range_end: 'IPv4 range end', ipv6_mask_length: 'IPv6 mask length' }
+    ipv4_mask_length: 'IPv4 mask length', ipv4_range_end: 'IPv4 range end', ipv6_mask_length: 'IPv6 mask length',
+    rule_order: 'Rule position', source_order: 'Source inventory order', rule_uuid: 'Rule UUID',
+    extraction_coverage: 'Extraction coverage', source_inventory: 'Source inventory' }
   return labels[key] ?? key.replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())
 }
 export function columnWidth(key: string) {
@@ -163,18 +200,19 @@ export function columnWidth(key: string) {
   return 'content'
 }
 export function rowColumns(rows: ReportRow[], subsection = '', vendor = '') {
-  const keys = [...new Set(rows.flatMap(Object.keys))].filter((key) => key !== 'Source section' && !(subsection === 'interface_topology' && key === 'display_name') && !SENSITIVE_KEY.test(key))
+  const keys = [...new Set(rows.flatMap(Object.keys))].filter((key) => key !== 'Source section' && !(subsection === 'interface_topology' && key === 'display_name') && !(vendor === 'palo_alto' && key === 'policy_id') && rows.some((row) => Object.hasOwn(row, key) && !sensitiveKey(key, row[key])))
   if (!keys.length && rows.length) return ['Source section']
-  const identity = subsection === 'interface_topology'
+  const identity = vendor === 'palo_alto' && PANOS_COLUMNS[subsection] || (subsection === 'interface_topology'
     ? ['name', 'display_name', 'vdom', 'domain_id', 'device_name', 'device_id', 'scope', 'kind', 'ip', 'prefix', 'parent', 'members', 'aggregate', 'physical_interfaces', 'path', 'topology_path', 'issues']
     : vendor === 'fortigate' && FORTIGATE_COLUMNS[subsection]
       || vendor === 'cisco_ftd' && CISCO_FTD_COLUMNS[subsection]
       || vendor === 'checkpoint' && CHECKPOINT_COLUMNS[subsection]
-      || ['name', 'policy_id', 'rule_id', 'route_id', 'display_name', 'policy_name', 'domain_id', 'device_name', 'device_id', 'vdom', 'scope']
+      || ['name', 'policy_id', 'rule_id', 'route_id', 'display_name', 'policy_name', 'domain_id', 'device_name', 'device_id', 'vdom', 'scope'])
   return [...identity.filter((key) => keys.includes(key)), ...keys.filter((key) => !identity.includes(key))]
 }
 export function defaultColumns(rows: ReportRow[], subsection = '', vendor = '') {
   const columns = rowColumns(rows, subsection, vendor)
+  if (vendor === 'palo_alto' && PANOS_COLUMNS[subsection]) return columns.filter((key) => PANOS_COLUMNS[subsection].includes(key))
   if (subsection === 'interface_topology') return columns.filter((key) => !['type', 'parent', 'members', 'aggregate', 'path', 'topology_path'].includes(key))
   const preferred = vendor === 'fortigate' ? FORTIGATE_COLUMNS[subsection]
     : vendor === 'cisco_ftd' ? CISCO_FTD_COLUMNS[subsection]
@@ -212,7 +250,7 @@ const FORTIGATE_DETAILS: Record<string, Array<[string, string[]]>> = {
 }
 export function detailGroups(row: ReportRow, subsection = '', vendor = '') {
   const definitions: Array<[string, string[]]> = [
-    ['Identity', ['name', 'policy_id', 'rule_id', 'source_id', 'route_id', 'policy_name', 'display_name', 'object_name', 'source_name', 'vdom', 'scope', 'Source section']],
+    ['Identity', ['name', 'policy_id', 'rule_id', 'rule_uuid', 'rule_order', 'source_order', 'source_id', 'route_id', 'policy_name', 'display_name', 'object_name', 'source_name', 'vdom', 'scope', 'Source section']],
     ...(vendor === 'cisco_ftd' ? [['Source scope', ['source_context', 'domain_id', 'device_id', 'device_name',
         'virtual_router_id', 'virtual_router_name', 'parent_policy_id', 'parent_policy_name']]] as Array<[string, string[]]> : []),
     ...(vendor === 'fortigate' && FORTIGATE_DETAILS[subsection] || [['Reported fields', defaultColumns([row], subsection, vendor)]] as Array<[string, string[]]>),
@@ -221,7 +259,7 @@ export function detailGroups(row: ReportRow, subsection = '', vendor = '') {
   const used = new Set<string>()
   const empty: Array<[string, unknown]> = []
   const groups = definitions.map(([title, keys]) => ({ title, fields: keys.flatMap((key): Array<[string, unknown]> => {
-    if (used.has(key) || !Object.hasOwn(row, key) || SENSITIVE_KEY.test(key)) return []
+    if (used.has(key) || !Object.hasOwn(row, key) || sensitiveKey(key, row[key]) || (vendor === 'palo_alto' && key === 'policy_id')) return []
     used.add(key)
     const value = safeValue(row[key], key)
     if (value == null || value === '' || (typeof value === 'object' && Object.keys(value).length === 0)) { empty.push([key, value]); return [] }

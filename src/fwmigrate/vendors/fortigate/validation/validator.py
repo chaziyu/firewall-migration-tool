@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from ipaddress import IPv4Interface
+
 from ..derived import (
     DerivedViews,
     build_derived_views,
@@ -52,6 +54,18 @@ def validate_config(
     issues: list[ValidationIssue] = validate_cli_constraints(config)
 
     for interface in config.interfaces:
+        if interface.ip is not None:
+            parts = interface.ip.split()
+            try:
+                if len(parts) not in {1, 2}:
+                    raise ValueError("Unexpected address fields")
+                IPv4Interface("/".join(parts))
+            except ValueError:
+                issues.append(ValidationIssue(
+                    severity=ValidationSeverity.ERROR, domain="interface",
+                    vdom=interface.vdom, object_name=interface.name, field="ip",
+                    message="Explicit interface IPv4 address/mask is invalid; source value is preserved. Correct the source configuration before relying on this address.",
+                ))
         if interface.vdom is None:
             issues.append(ValidationIssue(
                 severity=ValidationSeverity.WARNING, domain="interface",

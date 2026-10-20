@@ -25,7 +25,9 @@ def test_pair_discovery_lists_only_registered_workflows_with_public_metadata():
                and item["activation_steps"] for item in pairs)
     assert "Assisted" in pairs[3]["mapping_workflow"]
     assert "Automatic target proposals" in pairs[4]["mapping_workflow"]
-    assert all("Manual" in item["mapping_workflow"] for index, item in enumerate(pairs) if index not in {3, 4})
+    assert "New target" in pairs[0]["mapping_workflow"]
+    assert "without a target upload" in pairs[0]["mapping_workflow"]
+    assert all("Manual" in pairs[index]["mapping_workflow"] for index in (1, 2))
     assert all("Offline" in item["execution_mode"] for index, item in enumerate(pairs) if index != 3)
     assert pairs[0]["deployment_available"] is False
     assert pairs[0]["supported_formats"] == ["json"]

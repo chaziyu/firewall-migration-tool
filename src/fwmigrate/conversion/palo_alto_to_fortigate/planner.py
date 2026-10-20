@@ -1,7 +1,7 @@
 """Directional PAN-OS to FortiOS planner."""
 from dataclasses import replace
 
-from .models import FGMigrationPlan, FGPlannedItem
+from .models import FGMigrationPlan, FGPlannedItem, digest
 from .options import FGMigrationOptions
 from .planning.context import PlanningContext
 from .planning.source_scope import select_source_scope
@@ -11,6 +11,37 @@ from .planning.policies import plan_policies
 from .planning.nat import plan_nat
 from .recommendations.support_guidance import manual_inventory
 from .target.profile import profile_findings
+from fwmigrate.vendors.palo_alto.source_model import pan_scope_identity
+
+
+def _scope_topology_blockers(items, issues, scope):
+    global_issues = []
+    independent = {"address", "address_group", "service", "service_group", "schedule", "manual"}
+    for issue in issues:
+        if (issue.category not in {"interface-topology", "interface-import"} or issue.source_scope is None
+                or issue.source_scope.kind not in {"device", "vsys"}):
+            global_issues.append(issue)
+            continue
+        issue_scope = pan_scope_identity(issue.source_scope)
+        reason = "Source topology: " + issue.message
+        device = issue.source_scope.device_serial or issue.source_scope.device_name
+        if not device:
+            global_issues.append(issue)
+            continue
+        same_device = device == (scope.device_serial or scope.device_name)
+        relevant = same_device and (issue.source_scope.kind == "device" or issue_scope == pan_scope_identity(scope))
+        affected = {item.key for item in items if relevant and item.family == "interface"
+                    and item.source_name == issue.source_name and item.source_scope == issue_scope}
+        if relevant:
+            # Unmapped topology cannot prove a traffic slice safe; independent objects remain reviewable.
+            items = [replace(item, reasons=tuple(dict.fromkeys((*item.reasons, reason))))
+                     if item.key in affected or (not affected and item.family not in independent) else item for item in items]
+        if not affected:
+            key = "source-topology:" + digest((issue_scope, issue.source_name, issue.message))
+            if not any(item.key == key for item in items):
+                items.append(FGPlannedItem(key, "manual", issue_scope, issue.source_name or "Source topology", "",
+                    "source_topology", "", "", reasons=(reason,), disposition="BLOCK"))
+    return items, global_issues
 
 
 class PaloAltoToFortiGatePlanner:
@@ -44,6 +75,7 @@ class PaloAltoToFortiGatePlanner:
                 "Default security and intrazone behavior", "", "default_behavior", options.vdom, "",
                 reasons=("Default security and intrazone equivalence remains manual; generated zones explicitly deny intrazone traffic.",), disposition="BLOCK"))
         items.extend(manual_inventory(source, items))
-        if source.extraction_issues or source.unknown_paths or derived.relationship_issues:
+        items, global_issues = _scope_topology_blockers(items, derived.relationship_issues, scope)
+        if source.extraction_issues or source.unknown_paths or global_issues:
             findings += ("Source extraction or topology is incomplete; correct the source before executable conversion.",)
         return FGMigrationPlan(tuple(items), findings)

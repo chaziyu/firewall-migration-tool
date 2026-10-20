@@ -7,7 +7,7 @@ from fwmigrate.vendors.fortigate.source_report import FortiGateSourceReporter
 from fwmigrate.conversion.fortigate_to_palo_alto.planner import FortiGateToPaloAltoPlanner
 from fwmigrate.conversion.fortigate_to_palo_alto.options import PANMigrationOptions
 from fwmigrate.conversion.fortigate_to_palo_alto.models import PANMigrationStatus
-from fwmigrate.conversion.fortigate_to_palo_alto.planning.policies import inspection_design_groups
+from fwmigrate.conversion.fortigate_to_palo_alto.planning.policies import inspection_design_groups, snat_precedence_warnings
 from fwmigrate.conversion.fortigate_to_palo_alto.rendering.cli_paths import security_rule
 
 
@@ -57,6 +57,35 @@ def inputs():
     options = PANMigrationOptions(vdoms={'root': {'vsys': 'vsys1', 'virtual_router': 'VR'}}, interfaces={'root': {
         'inside': {'target_zone': 'trust', 'target_interface': 'ethernet1/2'}, 'outside': {'target_zone': 'untrust', 'target_interface': 'ethernet1/1'}}})
     return analysis, options
+
+
+@pytest.mark.parametrize('updates,first,blocked', [
+    ({}, True, True),
+    ({'nat': None}, True, True),
+    ({'status': 'disable'}, True, False),
+    ({'action': 'deny'}, True, False),
+    ({'vdom': 'branch'}, True, False),
+    ({'srcintf': ['other']}, True, False),
+    ({'srcintf': ['same-zone']}, True, True),
+    ({'srcintf': ['any']}, True, True),
+    ({'srcintf': ['other', 'missing']}, True, True),
+    ({}, False, False),
+])
+def test_no_nat_precedence_preserves_source_order_scope_and_unknown_matches(updates, first, blocked):
+    from fwmigrate.vendors.fortigate.model.policy import FGPolicy
+    from fwmigrate.vendors.fortigate.model.source import FGConfig
+
+    prior = FGPolicy(policy_id=20, name='exception', srcintf=['inside'], dstintf=['outside'],
+        action='accept', nat='disable').model_copy(update=updates)
+    later = FGPolicy(policy_id=1, name='snat', srcintf=['inside'], dstintf=['outside'], action='accept', nat='enable')
+    source = FGConfig(policies=[prior, later] if first else [later, prior])
+    _, options = inputs()
+    options = replace(options, interfaces={'root': {**options.interfaces['root'],
+        'other': {'target_zone': 'other-zone'}, 'same-zone': {'target_zone': 'trust'}}})
+    original = source.model_dump()
+    findings = snat_precedence_warnings(source, options)
+    assert bool(findings.get(('root', 1))) == blocked
+    assert source.model_dump() == original
 
 
 def test_shared_profile_mapping_requires_review_and_does_not_bypass_decryption():

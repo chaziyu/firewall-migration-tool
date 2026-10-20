@@ -14,7 +14,7 @@ from fwmigrate.source_reporting import source_reporters
 from .conftest import SOURCE
 
 
-def test_source_only_review_generates_profile_zones_but_does_not_invent_ports(analysis):
+def test_source_only_review_proposes_same_layout_without_claiming_hardware_or_approval(analysis):
     before = analysis.config.model_dump()
     review = build_review(analysis, {}, "source")
     resolved = review["resolved_options"]
@@ -22,11 +22,69 @@ def test_source_only_review_generates_profile_zones_but_does_not_invent_ports(an
     assert resolved["vdom"] == "root"
     assert resolved["profile"]["fortios_version"] == "7.4.6"
     assert resolved["zones"] == {"trust": "trust", "untrust": "untrust"}
-    assert resolved["interfaces"] == {}
-    assert "ports" not in resolved["profile"]
+    assert resolved["interfaces"] == {"ethernet1/1": "port1", "ethernet1/2": "port2"}
+    assert resolved["profile"]["ports"] == ["port1", "port2"]
+    assumed = [row for row in review["proposals"] if row["evidence_source"] == "ASSUMED_LAYOUT"]
+    assert {row["key"] for row in assumed} == {"profile:ports", "interfaces:ethernet1/1", "interfaces:ethernet1/2"}
+    assert all("unverified" in row["reason"] or "review target hardware" in row["reason"] for row in assumed)
+    assert review["draft"]["context"]["requested_options"]["interfaces"] == {}
+    assert "ports" not in review["draft"]["context"]["requested_options"]["profile"]
+    assert review["draft"]["readiness"]["deployment"]["eligible"] is False
     assert any(row["family"] == "address" and not row["blocking_reasons"] for row in review["draft"]["configuration"])
     assert all(row["review_state"] == "PENDING" for row in review["proposals"])
     assert analysis.config.model_dump() == before
+
+
+def test_same_layout_preserves_sparse_port_numbers(analyze):
+    review = build_review(analyze(SOURCE.replace("ethernet1/2", "ethernet1/10")), {}, "source")
+    assert review["resolved_options"]["interfaces"] == {"ethernet1/1": "port1", "ethernet1/10": "port10"}
+    assert review["resolved_options"]["profile"]["ports"] == ["port1", "port10"]
+
+
+def test_same_layout_preserves_vlan_parent_and_explicit_tag(analyze):
+    units = '<units><entry name="ethernet1/1.201"><tag>201</tag><ip><entry name="10.201.0.1/24"/></ip></entry></units>'
+    text = SOURCE.replace('10.0.0.1/24"/></ip>', '10.0.0.1/24"/></ip>' + units, 1)
+    text = text.replace('<member>ethernet1/1</member>', '<member>ethernet1/1.201</member>')
+    review = build_review(analyze(text), {}, "source")
+    assert review["resolved_options"]["interfaces"]["ethernet1/1.201"] == "port1.201"
+    items = {row["source_name"]: row for row in review["draft"]["configuration"] if row["family"] == "interface"}
+    assert items["ethernet1/1"]["key"] in items["ethernet1/1.201"]["dependencies"]
+    assert review["resolved_options"]["profile"]["ports"] == ["port1", "port2"]
+
+
+def test_same_layout_preserves_engineer_overrides_without_reassigning_contested_ports(analysis):
+    review = build_review(analysis, {"interfaces": {"ethernet1/1": "port2"}}, "source")
+    assert review["resolved_options"]["interfaces"] == {"ethernet1/1": "port2"}
+    assert review["resolved_options"]["profile"]["ports"] == ["port2"]
+    assert all(row["blocking_reasons"] for row in review["draft"]["configuration"] if row["family"] == "policy")
+    override = build_review(analysis, {"interfaces": {"ethernet1/1": "port5"}}, "source")
+    assert override["resolved_options"]["interfaces"] == {"ethernet1/1": "port5", "ethernet1/2": "port2"}
+
+
+def test_explicit_empty_port_list_disables_assumed_layout(analysis):
+    review = build_review(analysis, {"profile": {"ports": []}}, "source")
+    assert review["resolved_options"]["interfaces"] == {}
+    assert review["resolved_options"]["profile"]["ports"] == []
+    assert not any(row["evidence_source"] == "ASSUMED_LAYOUT" for row in review["proposals"])
+
+
+@pytest.mark.parametrize("name", ["ethernet2/2", "ethernet1/0", "ethernet1/02", "ae1", "loopback.1"])
+def test_same_layout_does_not_guess_nonmatching_names(analyze, name):
+    review = build_review(analyze(SOURCE.replace("ethernet1/2", name)), {}, "source")
+    assert name not in review["resolved_options"]["interfaces"]
+    assert review["resolved_options"]["profile"]["ports"] == ["port1"]
+
+
+def test_same_layout_assumptions_are_bound_to_signed_approval(analysis):
+    review = build_review(analysis, {}, "source")
+    policy = next(row for row in review["draft"]["configuration"] if row["family"] == "policy")
+    approval = approve_design(review, review["draft"], [policy["key"]])
+    artifact = build_artifact(analysis, {}, "source", approval)
+    assert 'config firewall policy' in artifact["commands"]
+    assert artifact["report"]["destination_verified"] is False
+    assert any(row["evidence_source"] == "ASSUMED_LAYOUT" for row in artifact["report"]["target_proposals"])
+    with pytest.raises(ValueError, match="context"):
+        build_artifact(analysis, {"profile": {"ports": ["port1", "port2"]}}, "source", approval)
 
 
 def test_declared_ports_unlock_supported_policy_and_signed_artifact(analysis):

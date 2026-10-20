@@ -8,7 +8,7 @@ const destinationPayload = (destination?: DestinationEvidence | null) => destina
 const prefix = '/api/migration/fortigate_to_checkpoint'
 
 export const requirements = (source: SourceEvidence, options: CheckPointOptions, destination?: DestinationEvidence | null) =>
-  postJson<{ requirements: CheckPointReview['requirements']; report: CheckPointReview['report'] }>(`${prefix}/requirements`, { source, options, ...destinationPayload(destination) })
+  postJson<{ options?: CheckPointOptions; source_vdoms?: string[]; requirements: CheckPointReview['requirements']; report: CheckPointReview['report'] }>(`${prefix}/requirements`, { source, options, ...destinationPayload(destination) })
 
 export const prepare = (source: SourceEvidence, options: CheckPointOptions, destination?: DestinationEvidence | null) =>
   postJson<CheckPointReview>(`${prefix}/design/prepare`, { source, options, ...destinationPayload(destination) })
@@ -23,7 +23,7 @@ export const preview = (source: SourceEvidence, artifact: CheckPointArtifact) =>
   postJson<{ files: Record<string, { text: string; sha256: string; byte_count: number }>; report: CheckPointReview['report'] }>(`${prefix}/artifact-preview`, { source, artifact })
 
 export const download = (source: SourceEvidence, artifact: CheckPointArtifact,
-                        kind: 'management-operations' | 'gaia-config' | 'bindings' | 'bundle') =>
+                        kind: 'management-operations' | 'management-commands' | 'gaia-config' | 'bindings' | 'bundle') =>
   postBlob(`${prefix}/${kind}`, { source, artifact })
 
 export const exportDecisions = (source: SourceEvidence, options: CheckPointOptions) =>

@@ -93,9 +93,9 @@ _BUILTIN_WORKFLOWS = (
     ),
     MigrationWorkflowRegistration(
         pair_id="fortigate_to_checkpoint",
-        mapping_workflow="Manual Management domain, package, layer, gateway and insertion choices.",
-        destination_comparison="Exact object reuse by UID and cleanup-only Drop rulebase insertion; NAT and other rules block creation. Management evidence does not verify Gaia routes.",
-        execution_mode="Offline Management request specification and Gaia Clish export; live execution unavailable.",
+        mapping_workflow="New target: propose a new policy package without a target upload. Existing target: review domain, gateway and rule placement.",
+        destination_comparison="Optional for existing targets: exact object reuse by UID and cleanup-only Drop rulebase insertion. Management evidence does not verify Gaia routes.",
+        execution_mode="Offline Management commands, API request specification and Gaia Clish export; live execution unavailable.",
         activation_steps=("Review operations and included dependencies", "Approve and generate offline files", "Execute requests and validate manually", "Publish, install policy and save Gaia configuration manually"),
         supported_target_versions=("Management API 1.8.1",),
         coverage_documentation="documentation/migration-support-matrix.md",

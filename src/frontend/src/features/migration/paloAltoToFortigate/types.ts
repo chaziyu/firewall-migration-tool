@@ -26,7 +26,7 @@ export type FortiGateArtifact = {
 export type FortiGateReview = {
   draft: FortiGateDraft; requirements: { source_scopes: string[]; decisions: Requirement[]; findings: string[]; has_schedules?: boolean; has_dnat?: boolean; has_pool_snat?: boolean; manual?: Array<{ source_name: string; reasons: string[] }> }
   resolved_options: FortiGateOptions; proposals: TargetProposal[]; effective_values: EffectiveValue[]
-  issues: Array<{ id: string; category: string; source_scope: string; source_name: string; explanation: string }>
+  issues: Array<{ id: string; category: string; source_scope: string; source_name: string; item_key?: string; explanation: string }>
 }
 export type FortiGateWorkspace = {
   sourceKey: string; options: FortiGateOptions; targetSource: SourceEvidence | null
