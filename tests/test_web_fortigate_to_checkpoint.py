@@ -22,6 +22,37 @@ OPTIONS = {
 }
 
 
+def test_new_checkpoint_target_without_upload_exports_approved_commands():
+    client = create_app({"TESTING": True, "WORKSPACE_SIGNING_KEY": b"x" * 32}).test_client()
+    prefix = "/api/migration/fortigate_to_checkpoint"
+    payload = {"source": {"vendor": "fortigate", "source_text": SOURCE}, "options": {"target_mode": "new"}}
+    requirements = client.post(prefix + "/requirements", json=payload)
+    assert requirements.status_code == 200
+    assert requirements.json["source_vdoms"] == ["root"]
+    assert requirements.json["options"]["source_vdom"] == "root"
+    assert requirements.json["options"]["management_domain"] == ""
+    assert requirements.json["requirements"] == []
+    prepared = client.post(prefix + "/design/prepare", json=payload)
+    assert prepared.status_code == 200, prepared.json
+    assert prepared.json["options"]["policy_package"]
+    selected = [row["key"] for row in prepared.json["report"]["items"] if row["family"] == "policy"]
+    approved = client.post(prefix + "/design/approve", json={**payload, "draft": prepared.json["draft"], "selected_items": selected})
+    assert approved.status_code == 200, approved.json
+    built = client.post(prefix + "/build", json={**payload, "approval": approved.json["approval"]})
+    assert built.status_code == 200, built.json
+    artifact = built.json["artifact"]
+    export = {"source": payload["source"], "artifact": artifact}
+    preview = client.post(prefix + "/artifact-preview", json=export)
+    commands = client.post(prefix + "/management-commands", json=export)
+    assert commands.status_code == 200
+    assert commands.data == preview.json["files"]["checkpoint_management.sh"]["text"].encode()
+    bundle = client.post(prefix + "/bundle", json=export)
+    with zipfile.ZipFile(BytesIO(bundle.data)) as archive:
+        assert archive.read("checkpoint_management.sh") == commands.data
+    artifact["files"]["checkpoint_management.sh"]["content"] += "mgmt_cli publish\n"
+    assert client.post(prefix + "/management-commands", json=export).status_code == 400
+
+
 def test_checkpoint_destination_review_reuses_uids_and_rejects_stale_metadata():
     from fwmigrate.conversion.fortigate_to_checkpoint.application.workflow import build_review
     from fwmigrate.conversion.fortigate_to_checkpoint.options import CPMigrationOptions

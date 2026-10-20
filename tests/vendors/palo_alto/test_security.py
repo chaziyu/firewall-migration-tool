@@ -103,3 +103,32 @@ def test_xml_secret_scanner_handles_long_nested_and_repeated_delimiters():
     assert 'long-secret' not in safe
     assert '[REDACTED]' in safe
     assert sanitize_raw_text(safe) == safe
+
+
+def test_safe_metadata_exceptions_are_scoped_scalar_and_do_not_exempt_credentials():
+    source = """<config><shared><address><entry name="unknown">
+      <password-label>OUT_OF_SCOPE_SENTINEL</password-label><public-key>UNKNOWN_KEY_SENTINEL</public-key>
+      <auto-retrieve-passcode>UNKNOWN_PASSCODE_SENTINEL</auto-retrieve-passcode></entry></address>
+      <certificate><entry name="bad"><public-key><private-key>NESTED_SENTINEL</private-key></public-key></entry></certificate>
+      </shared><devices><entry name="fw"><vsys><entry name="vsys1"><global-protect>
+      <global-protect-gateway><entry name="gateway"><client-auth><entry name="client">
+      <auto-retrieve-passcode>INVALID_OPTION_SENTINEL</auto-retrieve-passcode>
+      <password-label token="ATTRIBUTE_SENTINEL">Password prompt</password-label>
+      <pre-shared-key><key>PSK_SENTINEL</key></pre-shared-key>
+      </entry></client-auth></entry></global-protect-gateway></global-protect>
+      </entry></vsys></entry></devices></config>"""
+    sanitizer = PANOSCollectedSourceSanitizer()
+    safe = sanitizer.sanitize(source)
+    assert "SENTINEL" not in safe
+    assert "Password prompt" in safe
+    assert sanitizer.sanitize(safe) == safe
+    from fwmigrate.vendors.palo_alto.sanitization import sanitize_panos_attributes
+
+    attrs = {"password-label": {"password": "NESTED_SENTINEL"}, "auto_retrieve_passcode": "no",
+             "save-user-credentials": "1", "private-key": "KEY_SENTINEL", "token": "TOKEN_SENTINEL",
+             "pre_shared_key_configured": True}
+    result = sanitize_panos_attributes(attrs)
+    assert "SENTINEL" not in str(result)
+    assert result["auto_retrieve_passcode"] == "no" and result["save-user-credentials"] == "1"
+    assert result["pre_shared_key_configured"] is True
+    assert sanitize_panos_attributes(result) == result

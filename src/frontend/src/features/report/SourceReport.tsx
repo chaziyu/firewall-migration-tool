@@ -229,7 +229,6 @@ export function SourceReport({ data, excelProfile, onExcelProfileChange, exporti
   if (summary.unsupported_count != null || summary.source_only_count != null) overviewMetrics.push({ label: 'Unsupported / source-only', value: unsupported })
   const active = sections.find(({ label: sectionLabel }) => sectionLabel === activeSection)
   const activeRows: Finding[] = active?.rows ?? EMPTY_ROWS
-  const scopes = [...new Set(activeRows.map((row) => String(row.scope ?? row.vdom ?? '')).filter(Boolean))].sort()
   const sourceSections = active?.subsections.map((item) => item.key) ?? []
   const subsection = useMemo(() => activeSubsection(
     sections.find((item) => item.label === activeSection)?.subsections ?? [], subsectionChoices[activeSection] ?? '',
@@ -244,6 +243,8 @@ export function SourceReport({ data, excelProfile, onExcelProfileChange, exporti
     )
   }, [sections, activeSection])
   const subsectionRows = unifiedInterfaces ? unifiedRows : subsection?.rows ?? EMPTY_ROWS
+  const scopeRows = activeSection === 'Extraction' ? subsectionRows : activeRows
+  const scopes = [...new Set(scopeRows.map((row) => String(row.scope ?? row.vdom ?? '')).filter(Boolean))].sort()
   const view = views[activeObjectSection] ?? { search: '' }
   const search = view.search
   const effectiveScope = scopes.includes(scope) ? scope : ''
@@ -265,7 +266,7 @@ export function SourceReport({ data, excelProfile, onExcelProfileChange, exporti
   }, [subsectionRows, effectiveScope, activeObjectSection, search, unifiedInterfaces])
   const { visibleRows, loadMoreRef, loadMore } = useScrollRows(filteredRows, activeSection !== 'Overview' && activeSection !== 'Validation')
   const subsectionCount = search || effectiveScope ? `${filteredRows.length} of ${subsectionRows.length}` : subsectionRows.length
-  const reportTabs = ['Overview', 'Interfaces', 'Objects', 'Schedules', 'Policies', 'NAT', 'Routes', 'VPN', 'References', ...(sections.some((item) => item.label === 'Additional sections') ? ['Additional sections'] : []), 'Validation']
+  const reportTabs = ['Overview', 'Interfaces', 'Objects', 'Schedules', 'Policies', 'NAT', 'Routes', 'VPN', 'References', ...(sections.some((item) => item.label === 'Extraction') ? ['Extraction'] : []), ...(sections.some((item) => item.label === 'Additional sections') ? ['Additional sections'] : []), 'Validation']
   const objectTabs = unifiedInterfaces ? ['interface_topology'] : sourceSections.filter((key) => showEmpty || key === activeObjectSection || active?.subsections.find((item) => item.key === key)?.rows.length)
   const currentSelected = selectedRow && visibleRows.includes(selectedRow) ? selectedRow : null
   const selectedIndex = currentSelected ? visibleRows.indexOf(currentSelected) : -1
@@ -289,6 +290,7 @@ export function SourceReport({ data, excelProfile, onExcelProfileChange, exporti
       </div>
       {data.collection != null && <div className="report-count-note"><p>Collection: {String(asRecord(data.collection).status ?? 'Unknown')} · Method: {String(asRecord(data.collection).method ?? 'Not reported')}</p>{Array.isArray(asRecord(data.collection).warnings) && <ul>{(asRecord(data.collection).warnings as unknown[]).map((warning, index) => <li key={index}>{String(safeValue(warning))}</li>)}</ul>}</div>}
       <p className="preview-status" role="status" aria-live="polite">{exportStatus}</p>
+      {data.vendor === 'palo_alto' && sectionsData.extraction_coverage != null && <p className="report-count-note">Extraction coverage: {Number(summary.source_only_count ?? 0).toLocaleString()} source-only records · {Number(summary.partial_count ?? 0).toLocaleString()} partial records. Review Extraction for coverage and all {asRows(sectionsData.source_inventory).length.toLocaleString()} source inventory records. FULL Excel includes the sanitized source appendix.</p>}
       <label className="report-section-select">Report section<select value={activeSection} onChange={(event) => changeSection(event.target.value)}>{reportTabs.map((name) => <option key={name}>{name}</option>)}</select></label>
       <nav className="report-tabs" role="tablist" aria-label="Report sections" onKeyDown={tabKeyboard}>
       {reportTabs.map((sectionLabel) => (

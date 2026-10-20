@@ -66,6 +66,9 @@ class PANIPsecTunnel(PANNamedSourceModel):
     ike_gateways: list[str] | None = None
     ipsec_crypto_profile: str | None = None
     tunnel_monitor: str | None = None
+    tunnel_monitor_destination_ip: str | None = None
+    tunnel_monitor_profile: str | None = None
+    tunnel_monitor_proxy_id: str | None = None
     globalprotect_satellite: str | None = None
     manual_key_configured: bool | None = None
     proxy_ids: list[PANIPsecProxyID] | None = None

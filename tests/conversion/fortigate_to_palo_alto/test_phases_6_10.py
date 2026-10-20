@@ -69,11 +69,12 @@ def test_services_use_derived_expansion_and_flag_non_tcp_udp():
 def test_schedules_and_schedule_groups_preserve_source_semantics():
     source = FGConfig(
         recurring_schedules=[FGRecurringSchedule(name="work", days=["monday"], start="09:00", end="17:00")],
-        one_time_schedules=[FGOneTimeSchedule(name="once", start="2026/01/01 09:00", end="2026/01/01 17:00")],
+        one_time_schedules=[FGOneTimeSchedule(name="once", start="09:00 2026/01/01", end="17:00 2026/01/01")],
     )
     plan = FortiGateToPaloAltoPlanner().plan(source, SimpleNamespace(), options=_options())
 
     assert [item.schedule_type for item in plan.schedules] == ["recurring", "one-time"]
+    assert plan.schedules[1].non_recurring == (("2026/01/01@09:00", "2026/01/01@17:00"),)
 
 
 def test_topology_requires_every_zone_member_mapping():

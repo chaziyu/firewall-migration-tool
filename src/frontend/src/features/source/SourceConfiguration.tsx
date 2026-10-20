@@ -274,7 +274,7 @@ export function SourceConfiguration({ view, onViewChange, liveDeviceAccess }: {
         <p>{selectedMigrationPair.execution_mode || 'Execution capabilities are not specified.'}</p>
         {!!selectedMigrationPair.activation_steps?.length && <ul>{selectedMigrationPair.activation_steps.map((step) => <li key={step}>{step}</li>)}</ul>}
       </section>}
-      {preview?.source_evidence && previewId && vendor === 'palo_alto' && selectedMigrationPair?.pair_id === 'palo_alto_to_fortigate' && migrationVisited && <div hidden={view !== 'migration'}><FortiGateMigrationWorkflow key={`${selectedMigrationPair.pair_id}:${previewId}`} source={preview.source_evidence} sourceKey={previewId} onStageChange={setMigrationView} /></div>}
+      {preview?.source_evidence && previewId && vendor === 'palo_alto' && selectedMigrationPair?.pair_id === 'palo_alto_to_fortigate' && migrationVisited && <div hidden={view !== 'migration'}><FortiGateMigrationWorkflow key={`${selectedMigrationPair.pair_id}:${previewId}`} source={preview.source_evidence} sourceKey={previewId} onStageChange={setMigrationView} onReviewSource={() => onViewChange('report')} /></div>}
       {preview?.source_evidence && previewId && vendor === 'fortigate' && migrationVisited && selectedMigrationPair ? <>
         {view === 'migration' && <div className="report-source-context"><strong>{selectedMigrationPair.display_name}</strong><span>{preview.source_evidence.source_name || file?.name || 'Loaded source configuration'}</span>{selectedMigrationPair.pair_id === 'fortigate_to_palo_alto' && <span>{targetDevice ? `Destination: ${targetDevice}` : 'Destination checks optional for offline export'}</span>}</div>}
         {view === 'migration' && <nav className="migration-view-nav" aria-label="Migration workspace">

@@ -5,8 +5,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Iterable, Iterator
 import xml.etree.ElementTree as ET
 
-from ....extraction.sanitize import sanitize_source_attributes
-
+from ..sanitization import sanitize_panos_attributes
 from ..source_model import PANScope, pan_scope_identity
 from ..source_report import PaloAltoSourceResult
 from ..source_accounting import _TYPED_COUNT_FIELDS
@@ -29,7 +28,7 @@ def _text(value: Any) -> Any:
 
 
 def _additional_settings(*settings: dict[str, Any]) -> str:
-    return "; ".join(_text(sanitize_source_attributes(value)) for value in settings if value)
+    return "; ".join(_text(sanitize_panos_attributes(value)) for value in settings if value)
 
 
 @dataclass(slots=True)
@@ -579,7 +578,7 @@ ROW_BUILDERS: dict[str, Callable[[_PANExcelContext], Iterable[dict[str, Any]]]] 
     "IKE Gateways": lambda c: _object_rows(c, c.config.ike_gateways, "ike-gateway", {"Local Interface": "local_interface", "Local IP": "local_ip", "Peer Address Type": "peer_address_type", "Peer Address": "peer_address", "IKE Version": "ike_version", "IKEv1 Exchange Mode": "ikev1_exchange_mode", "IKEv1 Crypto Profile": "ikev1_crypto_profile", "IKEv2 Crypto Profile": "ikev2_crypto_profile", "Authentication Method": "authentication_method", "Pre-Shared Key Configured": "pre_shared_key_configured", "Local ID": "local_id", "Peer ID": "peer_id", "IKEv1 DPD Enabled": "ikev1_dpd_enabled", "IKEv1 DPD Interval": "ikev1_dpd_interval", "IKEv1 DPD Retry": "ikev1_dpd_retry", "IKEv2 DPD Enabled": "ikev2_dpd_enabled", "IKEv2 DPD Interval": "ikev2_dpd_interval", "NAT Traversal": "nat_traversal", "NAT Traversal Keepalive": "nat_traversal_keepalive", "Passive Mode": "passive_mode", "Fragmentation": "fragmentation"}),
     "IKE Crypto Profiles": lambda c: _object_rows(c, c.config.ike_crypto_profiles, "ike-crypto-profile", {"Encryption Algorithms": "encryption_algorithms", "Authentication Algorithms": "authentication_algorithms", "DH / AKE Groups": "dh_groups", "Lifetime Value": "lifetime_value", "Lifetime Unit": "lifetime_unit", "Authentication Multiple": "authentication_multiple"}),
     "IPsec Crypto Profiles": lambda c: _object_rows(c, c.config.ipsec_crypto_profiles, "ipsec-crypto-profile", {"Protocol": "protocol", "ESP Encryption": "esp_encryption", "ESP Authentication": "esp_authentication", "AH Authentication": "ah_authentication", "DH Group": "dh_group", "Lifetime Value": "lifetime_value", "Lifetime Unit": "lifetime_unit"}),
-    "IPsec Tunnels": lambda c: _object_rows(c, c.config.ipsec_tunnels, "ipsec-tunnel", {"Tunnel Interface": "tunnel_interface", "Key Type": "key_type", "IKE Gateways": "ike_gateways", "IPsec Crypto Profile": "ipsec_crypto_profile", "Tunnel Monitor": "tunnel_monitor", "GlobalProtect Satellite": "globalprotect_satellite", "Manual Key Configured": "manual_key_configured"}),
+    "IPsec Tunnels": lambda c: _object_rows(c, c.config.ipsec_tunnels, "ipsec-tunnel", {"Tunnel Interface": "tunnel_interface", "Key Type": "key_type", "IKE Gateways": "ike_gateways", "IPsec Crypto Profile": "ipsec_crypto_profile", "Tunnel Monitor": "tunnel_monitor", "Tunnel Monitor Destination IP": "tunnel_monitor_destination_ip", "Tunnel Monitor Profile": "tunnel_monitor_profile", "Tunnel Monitor Proxy ID": "tunnel_monitor_proxy_id", "GlobalProtect Satellite": "globalprotect_satellite", "Manual Key Configured": "manual_key_configured"}),
     "IPsec Proxy IDs": lambda c: _child_rows(c, c.config.ipsec_tunnels, "proxy_ids", "ipsec-proxy-id", {"Name": "name", "Address Family": "address_family", "Local": "local", "Remote": "remote", "Protocol": "protocol", "Protocol Number": "protocol_number", "Local Port": "local_port", "Remote Port": "remote_port"}, "Tunnel"),
     "GlobalProtect Portals": lambda c: _object_rows(c, c.config.globalprotect_portals, "globalprotect-portal", {"SSL/TLS Service Profile": "ssl_tls_service_profile", "Certificate Profile": "certificate_profile", "Clientless VPN Enabled": "clientless_vpn_enabled"}),
     "GlobalProtect Gateways": lambda c: _object_rows(c, c.config.globalprotect_gateways, "globalprotect-gateway", {"Tunnel Mode": "tunnel_mode", "Local Interface": "local_interface", "Local Address": "local_address", "IP Address Family": "ip_address_family", "SSL/TLS Service Profile": "ssl_tls_service_profile", "Certificate Profile": "certificate_profile"}),

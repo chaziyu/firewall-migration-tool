@@ -85,6 +85,15 @@
 .migration-approval-preview { padding: 16px; border: 2px solid var(--color-primary); border-radius: 10px; }
 .migration-approval-preview li { overflow-wrap: anywhere; }
 .migration-approval-item { overflow-wrap: anywhere; }
+.checkpoint-workflow { display: grid; gap: var(--space-4); overflow-wrap: anywhere; }
+.checkpoint-workflow h2, .checkpoint-workflow h3, .checkpoint-workflow .field { margin: 0; }
+.checkpoint-workflow > button { justify-self: start; }
+.checkpoint-plan-list, .checkpoint-findings { display: grid; gap: var(--space-3); }
+.checkpoint-plan-item { min-width: 0; padding: var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface); }
+.checkpoint-item-heading { display: flex; align-items: baseline; gap: var(--space-2); }
+.checkpoint-item-heading input { flex-shrink: 0; }
+.checkpoint-plan-item > p, .checkpoint-plan-item > details { margin-top: var(--space-2); }
+.checkpoint-workflow .migration-approval-preview { display: grid; gap: var(--space-3); min-width: 0; }
 .migration-changes .action-row, .migration-changes-pager { flex-wrap: wrap; }
 .migration-changes-pager label { display: flex; align-items: center; gap: 6px; }
 .migration-changes-pager input { width: 72px; }

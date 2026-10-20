@@ -27,5 +27,6 @@ def build_mapping_requirements(source, options):
     )
     return tuple(CPMigrationDecision(f"checkpoint:{key}", options.source_vdom, "target", "Check Point",
                                      key, label, value, tuple(choices))
-                 for key, label, value, choices in requirements if not value)
+                 for key, label, value, choices in requirements if not value
+                 and (options.target_mode == "existing" or key in {"source_vdom", "management_api_version", "policy_package"}))
 

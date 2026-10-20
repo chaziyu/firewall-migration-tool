@@ -5,7 +5,7 @@ from dataclasses import replace
 from ipaddress import IPv4Address, IPv4Network
 
 from fwmigrate.conversion.fortigate_to_palo_alto.models import PANMigrationStatus, PlannedNATRule
-from .policies import ipv6_match_warnings
+from .policies import ipv6_match_warnings, snat_precedence_warnings
 from .services import service_target
 from .addresses import address_references, explicit_all_vdoms
 from .vips import vip_policy_consumers, vip_translation, vip_port_translation, vip_service_name
@@ -146,6 +146,7 @@ def plan_nat(source: Any, derived: Any, options: Any, *, explicit_all=None):
         service_names.setdefault(service.vdom, set()).add(service.name)
     policies = {(item.vdom or "root", item.policy_id): item for item in getattr(source, "policies", ())}
     zone_names = {(item.vdom or "root", item.name) for item in getattr(source, "zones", ())}
+    precedence = snat_precedence_warnings(source, options)
     result = []
     for item in getattr(derived, "nat", ()):
         vdom = item.vdom or "root"
@@ -156,6 +157,7 @@ def plan_nat(source: Any, derived: Any, options: Any, *, explicit_all=None):
             if len(item.egress_interfaces) == 1 else None
         )
         warnings = list(item.issues)
+        warnings.extend(precedence.get((vdom, item.policy_id), ()))
         translated = item.translated_addresses[0] if len(item.translated_addresses) == 1 else None
         if len(item.translated_addresses) != 1:
             warnings.append("NAT translation is not deterministic")

@@ -24,8 +24,11 @@ class CPMigrationOptions:
     insertion_anchor: str | None = None
     insertion_relation: str | None = None
     target_cleanup_action: str | None = None
+    target_mode: str = "existing"
 
     def __post_init__(self) -> None:
+        if self.target_mode not in {"new", "existing"}:
+            raise ValueError("target_mode must be new or existing")
         for field in (
             "source_vdom", "management_target", "management_domain",
             "management_api_version", "gaia_target", "policy_package",
@@ -61,5 +64,6 @@ class CPMigrationOptions:
             "insertion_anchor": self.insertion_anchor,
             "insertion_relation": self.insertion_relation,
             "target_cleanup_action": self.target_cleanup_action,
+            "target_mode": self.target_mode,
         }
 

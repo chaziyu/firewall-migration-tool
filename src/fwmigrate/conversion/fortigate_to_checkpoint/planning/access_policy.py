@@ -5,6 +5,7 @@ from collections import Counter
 from ..models import CPMigrationItem
 from .naming import item_key, target_name
 from .objects import address_leaves, service_leaves
+from .package import package_keys
 
 
 def _explicit(policy, field):
@@ -41,6 +42,8 @@ def plan_access_rules(source, derived, vdom, options, address_names, service_nam
         if duplicated:
             blockers.append("POLICY_ID_DUPLICATE")
         dependencies = [previous_policy_key] if previous_policy_key else []
+        if options.target_mode == "new":
+            dependencies.extend(package_keys(vdom))
         body = None
         try:
             required = ("srcintf", "dstintf", "srcaddr", "dstaddr",
@@ -89,9 +92,9 @@ def plan_access_rules(source, derived, vdom, options, address_names, service_nam
                     raise ValueError(f"POLICY_{field.upper()}_UNKNOWN")
             if central_snat:
                 raise ValueError("UNREPRESENTED_CENTRAL_SNAT_BLOCKS_POLICY_EXPORT")
-            if not options.policy_package or not options.access_layer or not options.install_on:
+            if options.target_mode == "existing" and (not options.policy_package or not options.access_layer or not options.install_on):
                 raise ValueError("CHECKPOINT_POLICY_SCOPE_AND_INSTALL_ON_REQUIRED")
-            if options.insertion_relation != "above" or not options.insertion_anchor or options.target_cleanup_action != "Drop":
+            if options.target_mode == "existing" and (options.insertion_relation != "above" or not options.insertion_anchor or options.target_cleanup_action != "Drop"):
                 raise ValueError("CHECKPOINT_DROP_CLEANUP_ANCHOR_REQUIRED")
 
             sources, destinations, services = [], [], []
@@ -110,6 +113,12 @@ def plan_access_rules(source, derived, vdom, options, address_names, service_nam
             policy_name = target_name("rule", vdom, source_name)
             position = ({options.insertion_relation: options.insertion_anchor} if previous_policy_key is None
                         else {"below": {"$response_binding": f"{previous_policy_key}.uid"}})
+            layer = options.access_layer
+            if options.target_mode == "new":
+                package_key, cleanup_key = package_keys(vdom)
+                layer = {"$response_binding": f"{package_key}.layer_uid"}
+                if previous_policy_key is None:
+                    position = {"above": {"$response_binding": f"{cleanup_key}.uid"}}
             def references(rows):
                 values, seen = [], set()
                 for name, dependency in rows:
@@ -121,7 +130,7 @@ def plan_access_rules(source, derived, vdom, options, address_names, service_nam
                 return values
 
             body = {
-                "layer": options.access_layer,
+                "layer": layer,
                 "position": position,
                 "name": policy_name,
                 "action": "Accept" if policy.action.casefold() == "accept" else "Drop",
@@ -132,7 +141,7 @@ def plan_access_rules(source, derived, vdom, options, address_names, service_nam
                 "destination-negate": _enabled(policy.dstaddr_negate),
                 "service-negate": _enabled(policy.service_negate),
                 "enabled": _enabled(policy.status),
-                "install-on": list(options.install_on),
+                "install-on": list(options.install_on) or ["Policy Targets"],
                 "time": ["Any"],
                 "track": {"type": "Log" if policy.logtraffic.casefold() == "all" else "None"},
             }

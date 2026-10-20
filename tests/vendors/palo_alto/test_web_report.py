@@ -129,3 +129,20 @@ def test_preview_reports_source_inventory_truncation_explicitly():
     assert preview["records_returned"] == 200
     assert preview["records_truncated"] is True
     assert len(preview["records"]) == 200
+    assert len(preview["sections"]["source_inventory"]) == 205
+    assert preview["sections"]["source_inventory"][-1]["name"] == "a-204"
+
+
+def test_vulnerability_preview_preserves_count_fields_and_adds_serializable_details():
+    import json
+
+    source = """<config><shared><profiles><vulnerability><entry name="ips"><rules>
+      <entry name="rule1"><severity><member>critical</member></severity></entry>
+      </rules></entry></vulnerability></profiles></shared></config>"""
+    reporter = PaloAltoSourceReporter()
+    preview = reporter.build_preview(reporter.analyze_source(source))
+    row = preview["sections"]["vulnerability_profiles"][0]
+    assert row["rules"] == 1 and row["exceptions"] == 0
+    assert row["rule_details"][0]["name"] == "rule1"
+    assert row["exception_details"] == []
+    json.dumps(preview)

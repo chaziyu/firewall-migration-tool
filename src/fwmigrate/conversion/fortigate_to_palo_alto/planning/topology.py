@@ -22,6 +22,8 @@ def plan_topology(source: Any, derived: Any, options: Any, required_zone_keys=No
                         else mappings.get(zone.name))
         target_interfaces = []
         warnings = []
+        if len(set(zone.members or ())) > 1 and zone.intrazone != 'allow':
+            warnings.append('FortiGate intra-zone deny or unknown behavior requires manual target security design')
         if zone_mapping is None or not zone_mapping.target_zone:
             warnings.append(f"missing target zone mapping for {zone.name!r}")
         for member in zone.members or ():
@@ -80,4 +82,7 @@ def plan_topology(source: Any, derived: Any, options: Any, required_zone_keys=No
                 warnings=tuple(dict.fromkeys((*previous.warnings, *item.warnings))),
                 status=PANMigrationStatus.SUPPORTED if previous.status is item.status is PANMigrationStatus.SUPPORTED else PANMigrationStatus.MANUAL_REVIEW,
                 source_contributors=tuple(dict.fromkeys((*previous.source_contributors, *contributors))))
-    return tuple(consolidated.values())
+    return tuple(replace(item, status=PANMigrationStatus.MANUAL_REVIEW,
+        warnings=(*item.warnings, 'Merging distinct source zones or interfaces requires manual intra-zone security design'))
+        if len(item.source_contributors) > 1 and len(set(item.interfaces)) > 1 else item
+        for item in consolidated.values())

@@ -23,6 +23,10 @@ def register_frontend_routes(app) -> None:
     def frontend_asset(filename):
         return send_from_directory(os.path.join(app.config["FRONTEND_DIST_DIR"], "assets"), filename)
 
+    @app.route("/fonts/<path:filename>")
+    def frontend_font(filename):
+        return send_from_directory(os.path.join(app.config["FRONTEND_DIST_DIR"], "fonts"), filename)
+
     @app.route("/favicon.svg")
     def frontend_favicon():
         return send_from_directory(app.config["FRONTEND_DIST_DIR"], "favicon.svg")

@@ -2,6 +2,7 @@
 
 import json
 import unittest
+from copy import deepcopy
 
 from fwmigrate.vendors.fortigate.derived import build_derived_views
 from fwmigrate.vendors.fortigate.model.address import FGAddress, FGAddressGroup
@@ -11,6 +12,7 @@ from fwmigrate.vendors.fortigate.model.route_static import FGStaticRoute
 from fwmigrate.vendors.fortigate.model.service import FGService
 from fwmigrate.vendors.fortigate.model.source import FGConfig
 from fwmigrate.vendors.fortigate.model.vpn import FGIPsecPhase1, FGIPsecPhase2
+from fwmigrate.vendors.fortigate.source_report import FortiGateSourceReporter
 from fwmigrate.vendors.fortigate.validation.validator import validate_config
 from fwmigrate.vendors.fortigate.web_report import build_web_report
 
@@ -180,6 +182,138 @@ class WebReportTest(unittest.TestCase):
         serialized = json.dumps(self.report)
         self.assertNotIn("raw_extra", serialized)
         self.assertNotIn(self.secret, serialized)
+
+    def test_missing_source_sections_preserve_values_scope_and_redaction(self):
+        source = '''config vdom
+ edit branch
+  config firewall vip
+   edit public
+    set extip 198.51.100.10
+    set extintf wan1
+    set mappedip 10.0.0.10
+    set portforward enable
+    set extport 443
+    set mappedport 8443
+    set password synthetic-secret
+   next
+  end
+  config firewall vip6
+   edit public
+    set extip 2001:db8::10
+    set mappedip 2001:db8:1::10
+   next
+  end
+  config firewall vipgrp
+   edit public-group
+    set member public
+   next
+  end
+  config firewall ippool
+   edit snat
+    set startip 198.51.100.20
+    set endip 198.51.100.21
+    set arp-reply disable
+   next
+  end
+  config firewall ippool6
+   edit snat
+    set startip 2001:db8::20
+    set endip 2001:db8::21
+   next
+  end
+  config firewall wildcard-fqdn custom
+   edit wildcard
+    set wildcard-fqdn *.example.test
+   next
+  end
+  config user local
+   edit alice
+    set type password
+    set status disable
+    set passwd synthetic-secret
+   next
+  end
+  config system dhcp server
+   edit 1
+    set interface lan
+    set default-gateway 10.0.0.1
+    set netmask 255.255.255.0
+    set lease-time 0
+   next
+  end
+  config vpn ssl web portal
+   edit remote
+    set tunnel-mode disable
+    set ip-pools SSLVPN_TUNNEL_ADDR1
+   next
+  end
+ next
+end
+config system admin
+ edit operator
+  set vdom branch
+  set accprofile read-only
+  set trusthost1 192.0.2.0 255.255.255.0
+  set password synthetic-secret
+ next
+end
+'''
+        reporter = FortiGateSourceReporter()
+        analysis = reporter.analyze_source(source)
+        before = deepcopy(analysis)
+        report = reporter.build_preview(analysis)
+        sections = report["sections"]
+        self.assertEqual(["ipv4", "ipv6"], [row["address_family"] for row in sections["vips"]])
+        self.assertEqual("8443", sections["vips"][0]["mappedport"])
+        self.assertEqual(["10.0.0.10"], sections["vips"][0]["mappedip"])
+        self.assertEqual(["public"], sections["vip_groups"][0]["members"])
+        self.assertEqual(["ipv4", "ipv6"], [row["address_family"] for row in sections["ip_pools"]])
+        self.assertIsNone(sections["ip_pools"][0]["type"])
+        self.assertEqual("disable", sections["ip_pools"][0]["arp_reply"])
+        self.assertEqual("*.example.test", sections["wildcard_fqdns"][0]["wildcard_fqdn"])
+        self.assertEqual("disable", sections["local_users"][0]["status"])
+        self.assertEqual(0, sections["dhcp_servers"][0]["lease_time"])
+        self.assertEqual("disable", sections["ssl_vpn_portals"][0]["tunnel_mode"])
+        self.assertEqual(["SSLVPN_TUNNEL_ADDR1"], sections["ssl_vpn_portals"][0]["ip_pools"])
+        self.assertEqual(["branch"], sections["administrators"][0]["vdoms"])
+        self.assertEqual(["192.0.2.0 255.255.255.0"], sections["administrators"][0]["trusthosts"])
+        self.assertEqual("branch", sections["vips"][0]["vdom"])
+        self.assertIn("branch", report["summary"]["scopes"])
+        self.assertEqual(2, report["summary"]["objects"]["vips"])
+        self.assertEqual(1, report["summary"]["objects"]["local_users"])
+        serialized = json.dumps(report)
+        self.assertNotIn("synthetic-secret", serialized)
+        self.assertNotIn("raw_extra", serialized)
+        self.assertEqual(before, analysis)
+
+    def test_missing_sections_keep_empty_inventory_without_inventing_values(self):
+        report = FortiGateSourceReporter().build_preview(FortiGateSourceReporter().analyze_source('''config vpn ssl web portal
+ edit absent
+ next
+ edit empty
+  set ip-pools
+ next
+end'''))
+        self.assertIsNone(report["sections"]["ssl_vpn_portals"][0]["ip_pools"])
+        self.assertEqual([], report["sections"]["ssl_vpn_portals"][1]["ip_pools"])
+        self.assertEqual([], report["sections"]["vips"])
+        self.assertEqual([], report["sections"]["local_users"])
+
+    def test_invalid_interface_address_is_reported_directly_without_repair(self):
+        for value in ("ource static any any destination static", "192.0.2.1 255.0.255.0", "2001:db8::1/64", ""):
+            with self.subTest(value=value):
+                config = FGConfig(interfaces=[FGInterface(name="wan1", ip=value)])
+                before = config.model_dump()
+                result = validate_config(config)
+                findings = [issue for issue in result.issues if issue.domain == "interface" and issue.field == "ip"]
+                self.assertEqual(1, len(findings))
+                self.assertEqual("error", findings[0].severity.value)
+                self.assertEqual("wan1", findings[0].object_name)
+                self.assertEqual(before, config.model_dump())
+        for value in (None, "192.0.2.1 255.255.255.0", "192.0.2.1/24", "0.0.0.0 0.0.0.0"):
+            with self.subTest(value=value):
+                config = FGConfig(interfaces=[FGInterface(name="wan1", ip=value)])
+                self.assertFalse([issue for issue in validate_config(config).issues if issue.domain == "interface" and issue.field == "ip"])
 
 
 if __name__ == "__main__":

@@ -6,12 +6,14 @@ import json
 from pathlib import Path
 
 from ..plan_dependencies import dispositions, ordered_items, validate_plan
+from .commands import render_management_commands
 
 
 MANAGEMENT_FILE = "checkpoint_management_operations.json"
 GAIA_FILE = "gaia_config.clish"
 BINDINGS_FILE = "checkpoint_bindings.json"
 REPORT_FILE = "migration_report.json"
+COMMANDS_FILE = "checkpoint_management.sh"
 
 
 def _json_bytes(value):
@@ -36,14 +38,18 @@ class RenderedCheckPoint:
     file_hashes: dict[str, str]
     operation_count: int
     gaia_command_count: int
+    commands_text: str | None = None
 
     @property
     def files(self):
-        return {
+        files = {
             MANAGEMENT_FILE: self.management_text.encode("utf-8"),
             GAIA_FILE: self.gaia_text.encode("utf-8"),
             BINDINGS_FILE: self.bindings_text.encode("utf-8"),
         }
+        if self.commands_text is not None:
+            files[COMMANDS_FILE] = self.commands_text.encode("utf-8")
+        return files
 
 
 class CPManagementRenderer:
@@ -92,6 +98,7 @@ class CPManagementRenderer:
                 "policy_context": operation.get("policy_context"),
             })
         options = plan.options
+        commands_text = render_management_commands(operations) if options.get("target_mode") == "new" else None
         management = {
             "format": "check_point_management_api_request_spec_v1",
             "api_version": options["management_api_version"],
@@ -133,6 +140,12 @@ class CPManagementRenderer:
                 "Review both files together. Management policy objects and Gaia configuration do not activate or assign each other.",
             ],
         }
+        if commands_text is not None:
+            manifest["manual_checks"][0] = "Use an existing API session in the intended Management Domain. New package/object names must be unused. Select gateways and review topology before publishing and installing policy."
+            manifest["files"][COMMANDS_FILE] = {
+                "sha256": hashlib.sha256(commands_text.encode("utf-8")).hexdigest(),
+                "byte_count": len(commands_text.encode("utf-8")),
+            }
         bindings_bytes = _json_bytes(manifest)
         bindings_hash = hashlib.sha256(bindings_bytes).hexdigest()
         records = [_item_record(item, state[item.key]) for item in plan.items]
@@ -167,9 +180,12 @@ class CPManagementRenderer:
             "deployment_available": False,
             "verification": "Check Point Management API requests and Gaia commands are separate reviewed files. Destination conflicts, gateway topology, anti-spoofing, activation, and device acceptance require manual review.",
         }
+        if commands_text is not None:
+            report["file_sha256"][COMMANDS_FILE] = manifest["files"][COMMANDS_FILE]["sha256"]
+            report["target_mode"] = "new"
         return RenderedCheckPoint(management_bytes.decode("utf-8"), gaia_text,
                                   bindings_bytes.decode("utf-8"), report,
-                                  report["file_sha256"], len(operations), len(gaia_lines))
+                                  report["file_sha256"], len(operations), len(gaia_lines), commands_text)
 
     def write_files(self, rendered: RenderedCheckPoint, output):
         folder = Path(output)

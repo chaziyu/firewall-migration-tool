@@ -5,6 +5,7 @@ import heapq
 
 
 _MANAGEMENT_PATHS = {
+    "/web_api/add-package",
     "/web_api/add-host",
     "/web_api/add-network",
     "/web_api/add-address-range",

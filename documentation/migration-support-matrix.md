@@ -10,13 +10,13 @@ Updated 2026-10-19. These are partial, directional migration workflows. A succes
 | PAN-OS to FortiGate | FortiOS 7.4.6 | Native FortiGate configuration | Offline CLI export |
 | FortiGate to Cisco ASA | ASA 9.20, routed context | Native ASA configuration and explicit completeness metadata | Offline CLI export |
 | FortiGate to Juniper SRX | Junos 25.2R1, standalone | Native Junos configuration and explicit completeness metadata | Offline set export |
-| FortiGate to Check Point | Management API 1.8.1; separate Gaia output | Native Management JSON and explicit completeness metadata | Offline API request specification and Clish export |
+| FortiGate to Check Point | Management API 1.8.1; separate Gaia output | New package needs no snapshot. Existing-target comparison uses native Management JSON and completeness metadata | Offline API requests, new-package mgmt_cli commands and Clish export |
 
 The browser accepts optional destination snapshots for every listed pair. Snapshots are sanitized by the native backend reporter. Completeness is an explicit operator declaration, checked against available collection evidence. A missing table does not prove absence. Snapshot comparison does not establish live device acceptance, licensing, hardware fit, or current candidate state.
 
 Destination text, selected scope, version, mode, completeness declarations, mappings, operations and dependencies are bound to the design. Changes require a new review and approval. Proposal imports do not restore approval. Unsupported directions fail closed.
 
-FortiGate to PAN-OS and PAN-OS to FortiGate have assisted mapping and guided review. The reverse pair prepares deterministic target proposals, derives a bounded documented PAN-OS 11.1 source-behavior subset, and groups remaining policy choices. ASA, SRX and Check Point require manual target mappings and choices. Discovery retains its existing availability flags and adds descriptive mapping, comparison, execution and activation limits. These descriptions do not authorize execution or enable unsupported capabilities.
+FortiGate to PAN-OS and PAN-OS to FortiGate have assisted mapping and guided review. The reverse pair prepares deterministic target proposals, derives a bounded documented PAN-OS 11.1 source-behavior subset, and groups remaining policy choices. Check Point proposes a new package without destination evidence; existing-policy insertion still requires target choices. ASA and SRX require manual target mappings and choices. Discovery retains its existing availability flags and adds descriptive mapping, comparison, execution and activation limits. These descriptions do not authorize execution or enable unsupported capabilities.
 
 ## Source accounting
 
@@ -72,8 +72,9 @@ See [Check Point usage and limits](fortigate_to_checkpoint-migration.md).
 - Explicit IPv4 ranges now produce `add-address-range`, alongside hosts, networks and TCP/UDP services. Invalid or IPv6 ranges remain blocked.
 - The first advanced increment supports explicit IPv6 `ipprefix` host and network objects through API 1.8.1 `ipv6-address`, `subnet6` and `mask-length6` fields. IPv4/IPv6 names retain distinct scoped identities. Exact IPv6 objects can be reused by UID; dual-stack collisions and unsupported source controls block reuse. IPv6 policies, groups and NAT remain manual.
 - Exact native Management hosts, networks, ranges and services may be reused by UID. Address reuse requires explicit automatic NAT disablement. Unknown settings and collisions block reuse and creation.
-- New rule insertion requires an explicitly selected package, layer, gateways and a cleanup-only active Drop rulebase with explicit unrestricted matching and verified install-on scope. Native UIDs replace approved references; later created rules use response UID bindings.
-- Existing target NAT, other access rules, ambiguous domain ownership and incomplete collection prevent policy creation.
+- New-target mode creates a separate package and Drop anchor without a destination snapshot. Domain and gateways are selected during manual application. Its additional Bash command file uses an existing API session and requires `mgmt_cli` and `jq`.
+- Existing-target rule insertion requires an explicitly selected package, layer, gateways and a cleanup-only active Drop rulebase with explicit unrestricted matching and verified install-on scope. Native UIDs replace approved references; later created rules use response UID bindings.
+- In existing-target comparison, target NAT, other access rules, ambiguous domain ownership and incomplete collection prevent policy creation.
 - Management evidence cannot prove Gaia route safety. Gaia and Management remain separate planes.
 - NAT, non-always schedules, interface-bound policies and inline layers remain manual. No publish, policy installation or API execution is added.
 - Before approval, the browser shows selected operations plus required predecessor rules and object dependencies, request settings, placement and UID bindings. Confirmation is explicit. Failed file generation can retry the current approval without granting a new one. Target edits clear the preview, approval and executable files.

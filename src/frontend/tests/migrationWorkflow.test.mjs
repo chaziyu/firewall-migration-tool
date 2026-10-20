@@ -2092,8 +2092,8 @@ test('Check Point VDOM choices survive review preparation and workspace restorat
       },
       './migrationApi': {
         requirements: async (_source, options) => {
-          assert.equal(options.source_vdom, '')
-          return { requirements: [{ key: 'checkpoint:source_vdom', choices: ['root', 'branch'] }], report }
+          assert.ok(['', 'root', 'branch'].includes(options.source_vdom))
+          return { source_vdoms: ['root', 'branch'], requirements: [{ key: 'checkpoint:source_vdom', choices: ['root', 'branch'] }], report }
         },
         prepare: async () => ({ draft: { digest: 'current' }, requirements: [], report }),
       },
@@ -2105,11 +2105,13 @@ test('Check Point VDOM choices survive review preparation and workspace restorat
     assert.ok(selector(tree))
     selector(tree).props.onChange({ target: { value: 'root' } })
     tree = await render()
-    elements(tree).find((node) => node.type === 'button' && node.props.children === 'Prepare review').props.onClick()
+    elements(tree).find((node) => node.type === 'Button' && node.props.children === 'Prepare review').props.onClick()
     await render()
     tree = await render()
     assert.equal(stage, 'review')
     assert.deepEqual(saved.requirements, [])
+    elements(tree).find((node) => node.type === 'Button' && node.props.children === 'Edit target setup').props.onClick()
+    tree = await render()
     assert.equal(selector(tree).props.value, 'root')
     selector(tree).props.onChange({ target: { value: 'branch' } })
     await render()
