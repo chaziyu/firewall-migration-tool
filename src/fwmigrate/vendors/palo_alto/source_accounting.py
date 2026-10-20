@@ -28,6 +28,7 @@ _TYPED_COUNT_FIELDS = {
     "zone": "zones",
     "security_profile_group": "security_profile_groups",
     "interface_unit": "interface_units",
+    "management_profile": "management_profiles",
     "virtual_router": "virtual_routers",
     "logical_router": "logical_routers",
     "ipsec_tunnel": "ipsec_tunnels",

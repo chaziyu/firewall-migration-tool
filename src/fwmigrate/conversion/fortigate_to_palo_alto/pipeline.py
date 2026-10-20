@@ -225,7 +225,9 @@ def run_migration_pipeline(
                                **({"include_configuration": True} if approved_item_keys is not None else {}))
     from .planning.naming import allocate_plan_names
     named_plan = allocate_plan_names(plan, target, target_device, final_options.service_names)
-    plan = named_plan if approved_item_keys is not None else replace(plan, static_routes=named_plan.static_routes)
+    plan = named_plan if approved_item_keys is not None else replace(plan, static_routes=named_plan.static_routes,
+        addresses=tuple(named if item.source_kind == 'address6' else item for item, named in zip(plan.addresses, named_plan.addresses)),
+        address_groups=tuple(named if item.source_kind == 'address_group6' else item for item, named in zip(plan.address_groups, named_plan.address_groups)))
     from .target.profile import bind_vip_external_zones
     plan = bind_vip_external_zones(plan, final_options.conversion_settings, target, target_device)
 
@@ -271,7 +273,8 @@ def run_migration_pipeline(
     )
 
     from .coverage import represented_vip_groups
-    coverage = build_migration_coverage(source, recommendations, planned_vpn_sources=represented_vpn_sources(plan),
+    coverage = build_migration_coverage(source, recommendations, plan=plan, options=final_options,
+        planned_vpn_sources=represented_vpn_sources(plan),
         planned_vip_groups=represented_vip_groups(source, plan, {row['item_key'] for row in rendered.report['items'] if row['satisfied']}))
     unresolved = tuple(
         item

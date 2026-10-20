@@ -44,6 +44,7 @@ class PlannedPANItem:
 class PlannedAddress(PlannedPANItem):
     address_type: str | None = None
     value: str | None = None
+    source_interface: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -176,6 +177,7 @@ class PlannedIKECryptoProfile(PlannedPANItem):
     authentication: str | None = None
     dh_group: str | None = None
     lifetime_seconds: int | None = None
+    dh_groups: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

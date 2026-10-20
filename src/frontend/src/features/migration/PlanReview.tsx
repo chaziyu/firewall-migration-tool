@@ -3,7 +3,7 @@ import type { PlanArtifact } from './migrationApi'
 import { exportCategoryLabels, groupPlanBlockers, mappingIdentityLabel } from './reviewPresentation'
 import { asRecord, compactValue, safeValue } from '../report/reportPresentation'
 
-function PlanRows({ rows, kind, onReviewDecision }: { rows: Array<Record<string, unknown>>; kind: 'items' | 'blockers' | 'recommendations' | 'affected items'; onReviewDecision: (key: string) => void }) {
+function PlanRows({ rows, kind, onReviewDecision }: { rows: Array<Record<string, unknown>>; kind: 'items' | 'blockers' | 'recommendations' | 'affected items' | 'remaining source work'; onReviewDecision: (key: string) => void }) {
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState('')
   const [page, setPage] = useState(1)
@@ -36,8 +36,9 @@ function PlanRows({ rows, kind, onReviewDecision }: { rows: Array<Record<string,
           <p>{String(row.why ?? row.message ?? row.reason ?? '')}</p>
           <p>{String(row.next_action ?? row.becomes_supported_when ?? '')}</p>
           {row.source_vdom != null && <p>{String(row.source_vdom)} · {String(row.source_kind ?? '')} · {String(row.source_name ?? row.source_policy_id ?? '')}</p>}
+          {kind === 'remaining source work' && <p>Review status: {String(row.readiness ?? 'unknown').toLowerCase().replaceAll('_', ' ')}</p>}
           {Array.isArray(row.affected) && <details><summary>Affected items ({row.affected.length})</summary><PlanRows rows={row.affected as Array<Record<string, unknown>>} kind="affected items" onReviewDecision={onReviewDecision} /></details>}
-          {!keys.length && <p>Manual action: {String(row.next_action ?? 'Review the source evidence and support guidance. Mapping approval alone cannot resolve this finding.')}</p>}
+          {!keys.length && kind !== 'remaining source work' && <p>Manual action: {String(row.next_action ?? 'Review the source evidence and support guidance. Mapping approval alone cannot resolve this finding.')}</p>}
         </>}
         {keys.map((key) => <button type="button" className="finding-inline-link" key={key} onClick={() => onReviewDecision(key)}>Resolve {mappingIdentityLabel(key)}</button>)}
       </article>
@@ -52,5 +53,9 @@ export function PlanReview({ artifact, onReviewDecision }: { artifact: PlanArtif
     <details><summary>Blockers and support guidance ({blockers.length} groups)</summary><PlanRows rows={blockers} kind="blockers" onReviewDecision={onReviewDecision} /></details>
     <details><summary>Recommendations ({artifact.recommendations.length})</summary><PlanRows rows={artifact.recommendations} kind="recommendations" onReviewDecision={onReviewDecision} /></details>
     <details><summary>Plan items ({artifact.report.items?.length ?? 0})</summary><PlanRows rows={artifact.report.items ?? []} kind="items" onReviewDecision={onReviewDecision} /></details>
+    {!!artifact.report.coverage?.unplanned.length && <details><summary>Remaining source work ({artifact.report.coverage.unplanned_count})</summary>
+      <p>These source records need placement review or separate implementation. They are counted separately from planned configuration.</p>
+      <PlanRows rows={artifact.report.coverage.unplanned} kind="remaining source work" onReviewDecision={onReviewDecision} />
+    </details>}
   </div>
 }

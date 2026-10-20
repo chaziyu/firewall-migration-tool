@@ -41,6 +41,23 @@ def test_crypto_profiles_render_exact_non_secret_pan_os_11_1_paths():
     assert config == before
 
 
+def test_ike_multiple_dh_groups_preserve_order_without_changing_proposal_pairs():
+    config = source()
+    config.ipsec_phase1[0].dhgrp = [20, 19, 14]
+    before = deepcopy(config)
+    result = plan(config)
+    first = result.ike_crypto_profiles[0]
+    assert first.status is PANMigrationStatus.SUPPORTED
+    assert first.dh_groups == ('group20', 'group19', 'group14')
+    commands = PANSetRenderer().render(result).commands
+    assert 'set network ike crypto-profiles ike-crypto-profiles root-peer-ike dh-group [ group20 group19 group14 ]' in commands
+    assert config == before
+    malformed = replace(first, dh_groups=('group20', 'future'))
+    assert not PANSetRenderer().render(PANMigrationPlan(ike_crypto_profiles=(malformed,))).commands
+    config.ipsec_phase1[0].proposal = ['aes128-sha256', 'aes256-sha512']
+    assert plan(config).ike_crypto_profiles[0].status is PANMigrationStatus.MANUAL_REVIEW
+
+
 def test_reviewed_missing_values_sha512_and_day_lifetime_do_not_modify_source():
     config = source()
     config.ipsec_phase2[0].pfs = None

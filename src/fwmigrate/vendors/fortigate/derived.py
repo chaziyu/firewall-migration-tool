@@ -52,6 +52,7 @@ def build_derived_views(
     references = build_reference_index(
         config
     )
+    effective_values = derive_effective_values(config, source_metadata)
 
     return DerivedViews(
         references=references,
@@ -72,12 +73,13 @@ def build_derived_views(
             transform_nat(
                 config,
                 references=references,
+                effective_values=effective_values,
             )
         ),
         vpn=normalize_vpn_phase2(
             config,
             references=references,
         ),
-        effective_values=derive_effective_values(config, source_metadata),
+        effective_values=effective_values,
         central_nat=transform_central_nat(config),
     )

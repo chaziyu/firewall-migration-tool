@@ -46,13 +46,16 @@ def _identity(item, index):
     return vdom, str(index)
 
 
-def build_migration_coverage(source, recommendations=(), *, planned_vpn_sources=(), planned_vip_groups=()):
+def build_migration_coverage(source, recommendations=(), *, planned_vpn_sources=(), planned_vip_groups=(),
+                             plan=None, options=None):
     """Return migration work that is preserved but not executable yet.
 
     This is deliberately FortiGate -> PAN-OS specific. It does not create a
     vendor-neutral model and it does not infer target configuration.
     """
     unplanned = []
+    if plan is not None:
+        unplanned.extend(_unplanned_interfaces(source, plan, options))
 
     for recommendation in recommendations:
         if recommendation.family == 'VPN' and (recommendation.source_vdom or 'root', recommendation.source_kind, recommendation.source_name) in planned_vpn_sources:
@@ -100,6 +103,40 @@ def build_migration_coverage(source, recommendations=(), *, planned_vpn_sources=
         },
         "unplanned": unplanned,
     }
+
+
+def _unplanned_interfaces(source, plan, options):
+    interfaces = {(item.vdom or 'root', item.name): item for item in source.interfaces}
+    planned = {(item.source_vdom or 'root', item.source_name): item for item in plan.interfaces}
+    represented = set(planned)
+    mappings = getattr(options, 'interfaces', {})
+    excluded = set(getattr(options, 'conversion_settings', {}).get('excluded_interfaces', ()))
+    for identity, source_interface in interfaces.items():
+        parent = planned.get(identity)
+        if ((source_interface.type or '').casefold() != 'aggregate' or parent is None
+                or parent.interface_family != 'aggregate-ethernet'):
+            continue
+        for member in source_interface.members:
+            mapping = mappings.get(identity[0], {}).get(member)
+            target = getattr(mapping, 'target_interface', None)
+            if target and target in parent.aggregate_members:
+                represented.add((identity[0], member))
+    for vdom, name in interfaces:
+        if (vdom, name) in represented:
+            continue
+        mapping = mappings.get(vdom, {}).get(name)
+        readiness = 'UNSUPPORTED'
+        if f'{vdom}/{name}' in excluded:
+            reason = 'Source interface is explicitly excluded from conversion; no interface commands are emitted.'
+        elif not getattr(mapping, 'target_interface', None):
+            readiness = 'PENDING'
+            reason = ('Source interface has no approved target placement in this plan. '
+                      'Review its interface and zone mappings and source support; no commands are emitted for this record.')
+        else:
+            reason = 'Source interface is not represented by the current interface plan; review its source support and parent relationships.'
+        yield {'status': 'SOURCE_ONLY', 'source_vdom': vdom, 'source_kind': 'interface',
+               'source_name': name, 'family': 'interface', 'target_object_type': None,
+               'readiness': readiness, 'reason': reason}
 
 
 __all__ = ["build_migration_coverage"]

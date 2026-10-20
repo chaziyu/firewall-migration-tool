@@ -153,6 +153,12 @@ def validate_plan(plan: PANMigrationPlan) -> MigrationValidationResult:
         elif item.source_object_type in {'ike_gateway', 'ipsec_tunnel'}:
             add('vpn_manual_completion_required', 'Gateway credentials and tunnel semantics require secure target completion; no executable VPN commands are available', item)
         elif item.source_object_type in {"ike_crypto_profile", "ipsec_crypto_profile"}:
+            groups = getattr(item, 'dh_groups', ())
+            if groups and (not isinstance(groups, tuple) or any(not isinstance(group, str) for group in groups)
+                    or len(groups) > 6 or len(set(groups)) != len(groups)
+                    or groups[0] != item.dh_group
+                    or any(group not in {'group14', 'group15', 'group16', 'group19', 'group20', 'group21'} for group in groups)):
+                add('invalid_crypto_profile', 'IKE DH groups must be an ordered list of supported unique groups', item)
             if not re.fullmatch(r"[A-Za-z0-9_.-]{1,31}", item.target_name or ""):
                 add("invalid_target_object_name", "crypto profile name must contain 1 to 31 letters, numbers, periods, hyphens or underscores", item)
             if (item.encryption not in {"aes-128-cbc", "aes-256-cbc"} or item.authentication not in {'sha256', 'sha384', 'sha512'}
@@ -344,6 +350,23 @@ def validate_plan(plan: PANMigrationPlan) -> MigrationValidationResult:
     changed = True
     while changed:
         changed = False
+        for address in plan.addresses:
+            if _key(address) not in renderable or not address.source_interface:
+                continue
+            interface = find(('interfaces',), address.source_interface, address.target_vsys)
+            if interface is None or _key(interface) not in renderable:
+                add('dependency_not_renderable', 'Interface-subnet address requires its renderable source interface', address)
+                renderable.remove(_key(address))
+                changed = True
+            else:
+                try:
+                    matches = any(str(IPv4Interface(value).network) == address.value for value in interface.ipv4_addresses)
+                except ValueError:
+                    matches = False
+                if not matches:
+                    add('invalid_interface_subnet', 'Interface-subnet address differs from its planned interface prefix', address)
+                    renderable.remove(_key(address))
+                    changed = True
         for group, members, member_families in (
             *((group, group.members, ("addresses", "address_groups")) for group in plan.address_groups),
             *((group, group.members, ("services", "service_groups")) for group in plan.service_groups),

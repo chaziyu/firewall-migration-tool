@@ -68,7 +68,9 @@ def build_plan_dependency_index(plan: PANMigrationPlan, decisions) -> PANPlanDep
     for item in items:
         kind = item.source_object_type
         refs = []
-        if kind == "address_group":
+        if kind == 'address' and getattr(item, 'source_interface', None):
+            refs = [(('interface',), item.source_interface)]
+        elif kind == "address_group":
             refs = [(('address', 'address_group'), name) for name in item.members]
         elif kind == "service_group":
             refs = [(('service', 'service_group'), name) for name in item.members]

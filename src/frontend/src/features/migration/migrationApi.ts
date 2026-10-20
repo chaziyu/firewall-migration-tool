@@ -27,7 +27,8 @@ export type PlanArtifact = {
   blocking_reasons: Array<Record<string, unknown>>
   recommendations: Array<Record<string, unknown>>
   support_guidance?: Array<Record<string, unknown>>
-  report: { items?: Array<Record<string, unknown>>; export_counts?: Record<string, number>; command_sha256?: string; workflow_mode?: string; destination_verified?: boolean; deployment_eligibility?: { eligible: boolean; reason: string | null } }
+  report: { items?: Array<Record<string, unknown>>; export_counts?: Record<string, number>; command_sha256?: string; workflow_mode?: string; destination_verified?: boolean; deployment_eligibility?: { eligible: boolean; reason: string | null }
+    coverage?: { complete: boolean; unplanned_count: number; counts: Record<string, number>; unplanned: Array<Record<string, unknown>> } }
   decision_document: DecisionDocument
 }
 
