@@ -49,7 +49,7 @@ class FortiGateToPaloAltoPlanner:
         zones = plan_topology(source, derived, options, requirements["required_zone_keys"],
                               include_configuration=include_configuration)
         routes = plan_routes(source, options, derived)
-        dhcp_servers = plan_dhcp(source, options)
+        dhcp_servers = plan_dhcp(source, options, derived)
         explicit_all = explicit_all_vdoms(source)
         policies = plan_policies(source, options, derived, explicit_all=explicit_all)
         nat_rules = plan_nat(source, derived, options, explicit_all=explicit_all)

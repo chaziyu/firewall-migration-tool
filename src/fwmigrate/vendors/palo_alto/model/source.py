@@ -9,6 +9,7 @@ from .dhcp import PANDHCPServer
 from .globalprotect import PANGlobalProtectGateway, PANGlobalProtectPortal
 from .identity import PANGroupMapping, PANLocalUser, PANLocalUserGroup
 from .interface import PANInterface, PANInterfaceImport, PANInterfaceUnit
+from .management_profile import PANInterfaceManagementProfile
 from .nat import PANNATRule
 from .policy import PANDefaultSecurityRule, PANSecurityRule
 from .routing import PANLogicalRouter, PANVirtualRouter
@@ -47,6 +48,7 @@ class PANOSConfig(BaseModel):
     interfaces: list[PANInterface] = Field(default_factory=list)
     interface_imports: list[PANInterfaceImport] = Field(default_factory=list)
     interface_units: list[PANInterfaceUnit] = Field(default_factory=list)
+    management_profiles: list[PANInterfaceManagementProfile] = Field(default_factory=list)
     nat_rules: list[PANNATRule] = Field(default_factory=list)
     vulnerability_profiles: list[PANVulnerabilityProfile] = Field(default_factory=list)
     security_profile_groups: list[PANSecurityProfileGroup] = Field(default_factory=list)

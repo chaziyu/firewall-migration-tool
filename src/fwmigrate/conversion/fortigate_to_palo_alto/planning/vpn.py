@@ -85,6 +85,7 @@ def plan_vpn_crypto(source, options, derived=None):
             if crypto_lifetime(lifetime) is None:
                 warnings.append('Crypto profile requires an explicit or reviewed lifetime representable in PAN-OS seconds or hours')
             dh_group = None
+            dh_groups = ()
             pfs = item.pfs if family == 'ipsec_crypto_profile' else None
             if family == 'ipsec_crypto_profile' and pfs is None:
                 pfs = effective_value(derived, vdom, kind, item.name, 'pfs')
@@ -94,6 +95,10 @@ def plan_vpn_crypto(source, options, derived=None):
                 dh_group = 'no-pfs'
             elif len(item.dhgrp or ()) == 1 and item.dhgrp[0] in DH_GROUPS:
                 dh_group = f'group{item.dhgrp[0]}'
+            elif (family == 'ike_crypto_profile' and item.dhgrp and len(item.dhgrp) <= len(DH_GROUPS)
+                    and len(set(item.dhgrp)) == len(item.dhgrp) and set(item.dhgrp) <= DH_GROUPS):
+                dh_groups = tuple(f'group{group}' for group in item.dhgrp)
+                dh_group = dh_groups[0]
             elif not item.dhgrp:
                 dh_group = reviewed.get('dh_group')
             if dh_group is None:
@@ -118,6 +123,7 @@ def plan_vpn_crypto(source, options, derived=None):
                 warnings=tuple(warnings), encryption=proposal[0] if proposal else None,
                 authentication=proposal[1] if proposal else None, dh_group=dh_group, lifetime_seconds=lifetime,
                 **({'phase1_name': item.phase1name} if family == 'ipsec_crypto_profile' else {}),
+                **({'dh_groups': dh_groups} if family == 'ike_crypto_profile' else {}),
             ))
     return tuple(ike), tuple(ipsec)
 

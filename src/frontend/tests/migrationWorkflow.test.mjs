@@ -1220,6 +1220,40 @@ test('plan blockers retain VDOM, object identity and mapping links while groupin
   assert.deepEqual(groups[2].decision_keys, ['mapping'])
 })
 
+test('final review preserves scoped coverage gaps with search and pagination', async () => {
+  const harness = component('../src/features/migration/PlanReview.tsx', 'PlanReview', {
+    '../report/reportPresentation': { asRecord: (value) => value, safeValue: (value) => value, compactValue: String },
+    './reviewPresentation': presentation,
+  })
+  const gaps = Array.from({ length: 51 }, (_, index) => ({ status: 'SOURCE_ONLY', source_vdom: 'root',
+    source_kind: 'interface', source_name: `port${index}`, readiness: 'PENDING', reason: 'Review target placement.' }))
+  gaps.push({ ...gaps[0], source_vdom: 'blue', source_name: 'wan1' }, { ...gaps[0], source_name: 'wan1' })
+  const artifact = { blocking_reasons: [], recommendations: [], report: {
+    coverage: { complete: false, unplanned_count: gaps.length, unplanned: gaps } } }
+  const props = { artifact, onReviewDecision: () => {} }
+  const renderRows = async () => {
+    const tree = await harness.render(props)
+    const rows = elements(tree).find((node) => node.type?.name === 'PlanRows' && node.props.kind === 'remaining source work')
+    assert.ok(rows, 'Download review must expose source records omitted from plan items')
+    assert.deepEqual(rows.props.rows, gaps)
+    return rows.type(rows.props)
+  }
+  let tree = await renderRows()
+  assert.equal(elements(tree).filter((node) => node.type === 'article').length, 50)
+  elements(tree).find((node) => node.type === 'button' && Array.isArray(node.props.children)
+    && node.props.children.join('') === 'Next remaining source work').props.onClick()
+  tree = await renderRows()
+  assert.equal(elements(tree).filter((node) => node.type === 'article').length, 3)
+  assert.ok(JSON.stringify(tree).includes('blue'))
+  assert.ok(JSON.stringify(tree).includes('wan1'))
+  assert.ok(!JSON.stringify(tree).includes('Mapping approval alone cannot resolve'))
+  elements(tree).find((node) => node.type === 'input').props.onChange({ target: { value: 'blue' } })
+  tree = await renderRows()
+  assert.equal(elements(tree).filter((node) => node.type === 'article').length, 1)
+  assert.ok(JSON.stringify(tree).includes('Review target placement.'))
+  assert.deepEqual(artifact.report.coverage.unplanned, gaps)
+})
+
 test('unsigned legacy decisions never build and expose the design review action', async () => {
   let builds = 0
   let reviews = 0

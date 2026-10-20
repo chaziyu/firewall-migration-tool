@@ -45,13 +45,16 @@ def ipv6_match_warnings(policy):
               for field in ("srcaddr", "dstaddr", "srcaddr6", "dstaddr6")))
 
 
-def snat_precedence_warnings(source, options):
+def snat_precedence_warnings(source, options, derived=None):
     """Keep earlier non-SNAT policy matches out of later PAN-OS SNAT rules."""
     earlier = {}
     result = {}
     zone_names = {(item.vdom or 'root', item.name) for item in getattr(source, 'zones', ())}
     for policy in getattr(source, 'policies', ()):
-        if getattr(policy, 'status', None) in {'disable', 'disabled', 'no', '0'} or getattr(policy, 'action', None) == 'deny':
+        action = getattr(policy, 'action', None)
+        if action is None:
+            action = effective_value(derived, policy.vdom, 'policy', policy.policy_id, 'action')
+        if getattr(policy, 'status', None) in {'disable', 'disabled', 'no', '0'} or action == 'deny':
             continue
         vdom = policy.vdom or 'root'
         warnings = []
@@ -89,7 +92,7 @@ def plan_policies(source: Any, options: Any, derived: Any = None, *, explicit_al
         *getattr(getattr(derived, "services", None), "groups", ()),
     )}
     zone_names = {(item.vdom or "root", item.name) for item in getattr(source, "zones", ())}
-    precedence = snat_precedence_warnings(source, options)
+    precedence = snat_precedence_warnings(source, options, derived)
     for policy in getattr(source, "policies", ()):
         warnings = list(ipv6_match_warnings(policy))
         destinations, group_warnings = vip_group_addresses(source, policy.vdom, policy.dstaddr or ())

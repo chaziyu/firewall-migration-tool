@@ -93,6 +93,7 @@ def transform_nat(
     config: FGConfig,
     *,
     references: ReferenceIndex | None = None,
+    effective_values=(),
 ) -> list[NormalizedSourceNAT]:
     references = (
         references
@@ -138,7 +139,7 @@ def transform_nat(
 
         if ordinary_nat:
             if _enabled(policy.ippool) or policy.poolname:
-                nat = _pool_nat(policy, references)
+                nat = _pool_nat(policy, references, effective_values=effective_values)
             else:
                 nat = _interface_nat(policy, references, sdwan_zone_interfaces)
             if _explicitly_disabled(policy.status):
@@ -164,6 +165,7 @@ def _pool_nat(
     *,
     translation_type: str = "ip_pool",
     nat64: bool = False,
+    effective_values=(),
 ) -> NormalizedSourceNAT:
     addresses: list[str] = []
     issues: list[str] = []
@@ -200,10 +202,15 @@ def _pool_nat(
             continue
 
         pool = resolution.target
-        pool_types.append(pool.type)
-        if "type" not in (pool.explicit_fields or set()) or not pool.type:
+        pool_type = pool.type
+        verified_type = next((entry.value for entry in effective_values
+            if (entry.vdom, entry.kind, entry.name, entry.field) == (pool.vdom or 'root', 'ip_pool', pool.name, 'type')), None)
+        if pool_type is None:
+            pool_type = verified_type
+        pool_types.append(pool_type)
+        if not pool_type or ('type' not in (pool.explicit_fields or set()) and verified_type is None):
             issues.append(f"IP pool {pool_name!r} has no explicitly configured pool type.")
-        elif pool.type.lower() != "overload":
+        elif pool_type.lower() != "overload":
             issues.append(f"IP pool {pool_name!r} uses unsupported pool type {pool.type!r}; only overload PAT is supported.")
 
         unsupported_settings = {

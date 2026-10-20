@@ -52,7 +52,7 @@ def allocate_plan_names(plan, target=None, target_device=None, service_names=Non
     allocated = {}
     claimed = defaultdict(set)
     references = defaultdict(set)
-    for attribute, index, item in sorted(records, key=lambda row: (str(namespace(row[0], row[2])), row[2].target_name or row[2].source_name or '', row[2].source_kind or '', row[2].source_vdom or '', row[2].source_policy_id or 0, row[1])):
+    for attribute, index, item in sorted(records, key=lambda row: (str(namespace(row[0], row[2])), row[2].target_name or row[2].source_name or '', row[2].source_kind in {'address6', 'address_group6'}, row[2].source_kind or '', row[2].source_vdom or '', row[2].source_policy_id or 0, row[1])):
         old = item.target_name or item.source_name
         if not old:
             allocated[(attribute, index)] = item
@@ -73,7 +73,10 @@ def allocate_plan_names(plan, target=None, target_device=None, service_names=Non
                     break
                 number += 1
         claimed[scope].add(name)
-        references[(item.source_vdom or 'root', item.target_vsys, FAMILIES[attribute], old)].add(name)
+        reference_family = FAMILIES[attribute]
+        if reference_family == 'address' and item.source_kind in {'address6', 'address_group6'}:
+            reference_family = 'address6'
+        references[(item.source_vdom or 'root', item.target_vsys, reference_family, old)].add(name)
         allocated[(attribute, index)] = replace(item, target_name=name)
     updated = {attribute: [] for attribute in FAMILIES}
     for attribute, index, _ in records:
@@ -87,7 +90,8 @@ def allocate_plan_names(plan, target=None, target_device=None, service_names=Non
             return next(iter(choices), name)
         changes = {}
         if attribute in {'address_groups', 'service_groups'}:
-            changes['members'] = tuple(ref(FAMILIES[attribute], name) for name in item.members)
+            family = 'address6' if item.source_kind == 'address_group6' else FAMILIES[attribute]
+            changes['members'] = tuple(ref(family, name) for name in item.members)
         elif attribute == 'security_rules':
             changes.update(sources=tuple(ref('address', name) for name in item.sources), destinations=tuple(ref('address', name) for name in item.destinations),
                 services=tuple(ref('service', name) for name in item.services), schedule=ref('schedule', item.schedule) if item.schedule else None)

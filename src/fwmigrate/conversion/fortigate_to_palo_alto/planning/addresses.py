@@ -1,6 +1,7 @@
 """Deterministic FortiGate address mappings for Palo Alto."""
 
 from typing import Any
+from ipaddress import IPv4Interface
 
 from fwmigrate.conversion.fortigate_to_palo_alto.models import (
     MigrationIssue,
@@ -11,12 +12,14 @@ from fwmigrate.conversion.fortigate_to_palo_alto.models import (
 )
 from fwmigrate.conversion.fortigate_to_palo_alto.planning.routing import _normalize_subnet
 from .vips import vip_translation
+from fwmigrate.vendors.fortigate.transform.effective_values import effective_value
 
 
 def explicit_all_vdoms(source):
     return {item.vdom or "root"
             for family in ("addresses", "address_groups", "vips", "vip_groups")
-            for item in getattr(source, family, ()) if item.name == "all"}
+            for item in getattr(source, family, ()) if item.name == "all"
+            and getattr(item, 'address_family', 'ipv4') == 'ipv4'}
 
 
 def address_references(source, vdom, names, *, explicit_all=None):
@@ -27,7 +30,8 @@ def address_references(source, vdom, names, *, explicit_all=None):
     has_explicit_all = ((vdom or "root") in explicit_all if explicit_all is not None else
                         any(item.name == "all" and (item.vdom or "root") == (vdom or "root")
                             for family in ("addresses", "address_groups", "vips", "vip_groups")
-                            for item in getattr(source, family, ())))
+                            for item in getattr(source, family, ())
+                            if getattr(item, 'address_family', 'ipv4') == 'ipv4'))
     return tuple("0.0.0.0/0" if name == "all" and not has_explicit_all else name for name in names)
 
 
@@ -59,7 +63,7 @@ def plan_addresses(source: Any, options: Any, derived=None) -> tuple[tuple[Plann
     groups = []
     issues = []
     for address in getattr(source, "addresses", ()):
-        item, issue = _plan_address(address, options)
+        item, issue = _plan_address(address, options, derived, source)
         addresses.append(item)
         if issue:
             issues.append(issue)
@@ -102,10 +106,45 @@ def _target_vsys(source: Any, options: Any) -> str | None:
     return getattr(mapping, "vsys", None)
 
 
-def _plan_address(source: Any, options: Any):
+def _association_verified(address, config):
+    """Retain interface-selection restrictions for every explicit policy consumer."""
+    binding = address.associated_interface
+    vdom = address.vdom or 'root'
+    if config is None or sum((item.vdom or 'root') == vdom and item.name == binding for item in config.interfaces) != 1:
+        return False
+    groups = {}
+    for item in config.address_groups:
+        if item.address_family == 'ipv4' and (item.vdom or 'root') == vdom:
+            groups.setdefault(item.name, []).append(item)
+    def contains(names, seen=()):
+        if address.name in names:
+            return True
+        for name in names:
+            if name in seen or len(seen) >= 64:
+                return None
+            matches = groups.get(name, ())
+            if len(matches) > 1:
+                return None
+            if matches:
+                found = contains(matches[0].members or (), (*seen, name))
+                if found is not False:
+                    return found
+        return False
+    for policy in config.policies:
+        if (policy.vdom or 'root') != vdom:
+            continue
+        for names, interfaces in ((policy.srcaddr or (), policy.srcintf), (policy.dstaddr or (), policy.dstintf)):
+            found = contains(names)
+            if found is None or found and set(interfaces or ()) != {binding}:
+                return False
+    return True
+
+
+def _plan_address(source: Any, options: Any, derived=None, config=None):
     status, warnings, issue = _scope(source, options)
     value = None
     address_type = None
+    source_interface = None
     representations = {
         "ipmask": bool(getattr(source, "subnet", None)),
         "iprange": bool(getattr(source, "start_ip", None) or getattr(source, "end_ip", None)),
@@ -114,11 +153,18 @@ def _plan_address(source: Any, options: Any):
         "wildcard-fqdn": bool(getattr(source, "wildcard_fqdn", None)),
     }
     selected = getattr(source, "type", None)
+    subnet = source.subnet
+    if getattr(source, 'address_family', 'ipv4') == 'ipv4':
+        if selected is None:
+            selected = effective_value(derived, source.vdom, 'address', source.name, 'type')
+        if subnet is None:
+            subnet = effective_value(derived, source.vdom, 'address', source.name, 'subnet')
+        representations['ipmask'] = bool(subnet)
     if selected is None:
         candidates = [kind for kind, present in representations.items() if present]
         selected = candidates[0] if len(candidates) == 1 else None
     if selected == "ipmask" and representations["ipmask"]:
-        value = _normalize_subnet(source.subnet)
+        value = _normalize_subnet(subnet)
         if value:
             address_type = "ip-netmask"
         else:
@@ -133,22 +179,46 @@ def _plan_address(source: Any, options: Any):
     elif selected == "wildcard-fqdn":
         status = PANMigrationStatus.UNSUPPORTED
         warnings = (*warnings, "wildcard FQDN requires manual target semantics")
+    elif selected == 'interface-subnet':
+        name = source.raw_extra.get('interface')
+        interfaces = [item for item in getattr(config, 'interfaces', ())
+                      if item.name == name and (item.vdom or 'root') == (source.vdom or 'root')]
+        mapping = options.interfaces.get(source.vdom or 'root', {}).get(name)
+        if (len(interfaces) == 1 and interfaces[0].mode in {None, 'static'}
+                and mapping and mapping.target_interface):
+            try:
+                parts = (interfaces[0].ip or '').split()
+                if not (len(parts) == 2 or len(parts) == 1 and '/' in parts[0]):
+                    raise ValueError('Interface prefix is not explicit')
+                value = str(IPv4Interface('/'.join(parts)).network)
+                address_type, source_interface = 'ip-netmask', mapping.target_interface
+            except ValueError:
+                pass
+        if value is None:
+            status = PANMigrationStatus.UNSUPPORTED
+            warnings = (*warnings, 'Interface-subnet address requires a unique static IPv4 interface and approved target mapping')
     else:
         status = PANMigrationStatus.UNSUPPORTED
         warnings = (*warnings, "address type/value is missing, ambiguous or unsupported")
     unknown = set(getattr(source, "raw_extra", {})) - {"uuid", "color"}
-    if (unknown or getattr(source, "associated_interface", None) not in {None, "any"}
-            or getattr(source, "allow_routing", None) not in {None, "disable"}):
+    if selected == 'interface-subnet':
+        unknown.discard('interface')
+    association = getattr(source, 'associated_interface', None)
+    association_safe = association in {None, 'any'} or _association_verified(source, config)
+    if (unknown or not association_safe
+            or getattr(source, "allow_routing", None) not in {None, "disable", "enable"}):
         status = PANMigrationStatus.UNSUPPORTED
         warnings = (*warnings, "address settings require manual target semantics"
                     + (": " + ", ".join(sorted(unknown)) if unknown else ""))
+    elif association not in {None, 'any'} or source.allow_routing == 'enable':
+        warnings = (*warnings, 'Source interface-selection/routing eligibility is retained; policy interfaces and routes are planned separately')
     if getattr(source, "address_family", None) == "ipv6" or getattr(source, "ip6", None) is not None:
         status = PANMigrationStatus.UNSUPPORTED
         warnings = (*warnings, "IPv6 address semantics require manual design")
     return (
         PlannedAddress(
             source_vdom=getattr(source, "vdom", None),
-            source_kind="address",
+            source_kind="address6" if getattr(source, 'address_family', 'ipv4') == 'ipv6' else "address",
             source_object_type="address",
             source_name=getattr(source, "name", None),
             target_vsys=_target_vsys(source, options), target_name=getattr(source, "name", None),
@@ -156,6 +226,7 @@ def _plan_address(source: Any, options: Any):
             warnings=warnings,
             address_type=address_type,
             value=value,
+            source_interface=source_interface,
         ),
         issue,
     )
@@ -188,7 +259,7 @@ def _plan_group(source: Any, options: Any):
     return (
         PlannedAddressGroup(
             source_vdom=getattr(source, "vdom", None),
-            source_kind="address_group",
+            source_kind="address_group6" if getattr(source, 'address_family', 'ipv4') == 'ipv6' else "address_group",
             source_object_type="address_group",
             source_name=getattr(source, "name", None),
             target_vsys=_target_vsys(source, options), target_name=getattr(source, "name", None),

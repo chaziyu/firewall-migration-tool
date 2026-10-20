@@ -110,3 +110,40 @@ def test_combined_translation_requires_approved_egress_and_blocks_consuming_poli
     assert dispositions[item_key(plan.security_rules[0])].value == 'BLOCK'
     commands = PANSetRenderer().render(plan, dispositions=dispositions, render_blockers=blockers).commands
     assert not any(' rulebase nat ' in command or ' rulebase security ' in command for command in commands)
+
+
+def test_multiple_isolated_policy_partitions_each_get_one_combined_nat_rule():
+    second = '''config firewall vip
+edit second
+set type static-nat
+set extintf outside
+set extip 192.0.2.20
+set mappedip 10.0.0.20
+next
+end
+config firewall policy
+edit 2
+set name second-in
+set srcintf outside
+set dstintf inside
+set srcaddr clients
+set dstaddr second
+set service ALL
+set action accept
+set schedule always
+set nat enable
+set ippool enable
+set poolname pool
+next
+end
+'''
+    plan = plan_source(SOURCE + second)
+    assert len(plan.nat_rules) == 2
+    assert all(rule.status is PANMigrationStatus.SUPPORTED for rule in plan.nat_rules)
+    assert [rule.source_policy_id for rule in plan.nat_rules] == [1, 2]
+    assert all(rule.translated_addresses == ('10.0.0.100',) for rule in plan.nat_rules)
+    # Sharing the public address or mapped server no longer proves separate partitions.
+    for changed in (second.replace('192.0.2.20', '192.0.2.10'), second.replace('10.0.0.20', '10.0.0.10')):
+        blocked = plan_source(SOURCE + changed)
+        assert not any(rule.source_translation_type and rule.destination_translated_address
+                       and rule.status is PANMigrationStatus.SUPPORTED for rule in blocked.nat_rules)

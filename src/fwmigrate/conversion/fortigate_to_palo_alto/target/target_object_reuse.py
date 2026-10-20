@@ -6,6 +6,8 @@ from fwmigrate.conversion.fortigate_to_palo_alto.target.target_suggestions impor
 from fwmigrate.vendors.palo_alto.source_model import pan_scope_identity
 from ..rendering import cli_paths
 from dataclasses import replace
+from ipaddress import ip_network
+from fwmigrate.vendors.palo_alto.model.management_profile import MANAGEMENT_PROTOCOLS
 
 
 def _fields(item):
@@ -538,18 +540,45 @@ def _zone_collisions(planned, target, device, *, allow_additive=False):
     return result
 
 
+def _management_profile_classifications(planned, target, device):
+    result = []
+    records = [item for item in getattr(target.config, 'management_profiles', ())
+               if _device(item) == device and getattr(item.scope, 'kind', None) == 'device']
+    for source in planned:
+        matches = [item for item in records if item.name == source.target_name]
+        status = 'AMBIGUOUS'
+        evidence = ['Destination management profile inventory or explicit settings are incomplete']
+        if len(matches) == 1:
+            existing = matches[0]
+            expected = {name: 'yes' if name in source.protocols else 'no' for name in MANAGEMENT_PROTOCOLS}
+            differs = any(name in existing.protocols and existing.protocols[name] != value
+                          for name, value in expected.items())
+            try:
+                networks = {str(ip_network(value, strict=True)) for value in existing.permitted_ips or ()}
+                expected_networks = {str(ip_network(value, strict=True)) for value in source.permitted_ips}
+                differs |= existing.permitted_ips is not None and networks != expected_networks
+            except (TypeError, ValueError):
+                differs = True
+            complete = (set(existing.protocols) == set(expected) and existing.permitted_ips is not None
+                        and {'protocols', 'permitted_ips'} <= existing.explicit_fields
+                        and not existing.raw_extra and not existing.scope.template_provenance)
+            if differs:
+                status, evidence = 'NAME_CONFLICT', ['Destination management protocols or permitted networks differ']
+            elif complete:
+                status, evidence = 'EXACT_MATCH', ['Same explicit management protocols and permitted networks']
+        result.append({'status': status, 'family': 'management_profile', 'source_name': source.source_name,
+            'source_vdom': source.source_vdom or 'root', 'source_kind': source.source_kind,
+            'target_vsys': None, 'target_name': source.target_name, 'evidence': evidence})
+    return result
+
+
 def classify_target_object_reuse(plan: PANMigrationPlan, target, device: str | None, *, allow_additive=False):
     """Classify items from the actual plan; never rerun planner functions here."""
     if target is None or not device:
         return ()
     result = []
     result.extend(_interface_collisions(plan.interfaces, target, device, allow_additive=allow_additive))
-    for item in plan.management_profiles:
-        # The extracted baseline may omit profile contents; never infer an empty device namespace.
-        result.append({'status': 'AMBIGUOUS', 'family': 'management_profile', 'source_name': item.source_name,
-            'source_vdom': item.source_vdom or 'root', 'source_kind': item.source_kind,
-            'target_vsys': None, 'target_name': item.target_name,
-            'evidence': ['Generated management profile creation is available for offline export; destination profile inventory is not verified']})
+    result.extend(_management_profile_classifications(plan.management_profiles, target, device))
     result.extend(_zone_collisions(plan.zones, target, device, allow_additive=allow_additive))
     for attribute in ("ike_crypto_profiles", "ipsec_crypto_profiles"):
         for item in getattr(plan, attribute):
