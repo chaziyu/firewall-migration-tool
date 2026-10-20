@@ -14,7 +14,7 @@ set vsys vsys1 schedule work-hours schedule-type recurring weekly tuesday [ 08:0
 set vsys vsys1 schedule work-hours schedule-type recurring weekly wednesday [ 08:00-17:00 ]
 set vsys vsys1 schedule work-hours schedule-type recurring weekly thursday [ 08:00-17:00 ]
 set vsys vsys1 schedule work-hours schedule-type recurring weekly friday [ 08:00-17:00 ]
-set vsys vsys1 schedule holiday schedule-type non-recurring [ "2026/12/25 00:00-2026/12/26 00:00" ]
+set vsys vsys1 schedule holiday schedule-type non-recurring [ 2026/12/25@00:00-2026/12/26@00:00 ]
 set vsys vsys1 zone trust network layer3 [ ethernet1/1 ]
 set vsys vsys1 zone untrust network layer3 [ ethernet1/2 ]
 set vsys vsys1 rulebase security rules allow-web from [ trust ]

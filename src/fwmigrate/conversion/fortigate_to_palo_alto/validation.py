@@ -8,9 +8,10 @@ import re
 from .models import MigrationIssue, MigrationSourceRef, PANMigrationPlan, PANMigrationStatus
 from .plan_dependencies import item_key, policy_order_predecessors, target_identity
 from .planning.services import PAN_BUILTIN_SERVICES
+from .planning.schedules import WEEKDAYS, valid_time_range
 from .target.name_validation import zone_name_issue
 from .planning.vpn import crypto_lifetime
-from ...vendors.palo_alto.validation.validator import _validate_ip_wildcard, _validate_ports
+from ...vendors.palo_alto.validation.validator import _validate_ip_wildcard, _validate_non_recurring_range, _validate_ports
 
 
 ItemKey = tuple[str | None, str | None, str | None]
@@ -219,11 +220,17 @@ def validate_plan(plan: PANMigrationPlan) -> MigrationValidationResult:
                 if value is not None and not valid:
                     add("invalid_service_port", f"service {field} is not a valid target port expression", item)
         elif item.source_object_type == "schedule":
-            schedule_type = getattr(item, "schedule_type", None)
-            if (schedule_type == "recurring" and not getattr(item, "weekly", ())) or (
-                schedule_type == "one-time" and not getattr(item, "non_recurring", ())
-            ) or schedule_type not in {"recurring", "one-time"}:
-                add("missing_schedule_value", "schedule has no supported explicit entries", item)
+            if item.schedule_type == 'recurring':
+                valid = (item.weekly and not item.daily and not item.non_recurring
+                         and all(day in WEEKDAYS and valid_time_range(start, end) for day, start, end in item.weekly))
+            elif item.schedule_type == 'one-time':
+                valid = (item.non_recurring and not item.weekly and not item.daily
+                         and all(_validate_non_recurring_range(f'{start}-{end}') and start < end
+                                 for start, end in item.non_recurring))
+            else:
+                valid = False
+            if not valid:
+                add("missing_schedule_value", "schedule has no valid supported target entries", item)
         elif item.source_object_type == "dhcp_server":
             if not item.target_vsys:
                 add("missing_target_vsys", "missing target VSYS mapping", item)

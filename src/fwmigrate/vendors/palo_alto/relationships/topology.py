@@ -162,7 +162,8 @@ def build_interface_topology(config: PANOSConfig) -> tuple[PANInterfaceTopologyE
         issues = list(path_issues)
         if any(zone.scope and zone.scope.vsys not in imports for zone in zone_matches):
             issues.append("zone member is not imported into this VSYS")
-        if imports and router_matches and not any(
+        # An absent router import is unknown, not an explicit exclusion.
+        if imports and router_matches and any(item.virtual_routers is not None for item in router_imports) and not any(
             router.name in imported_routers for router in router_matches
         ):
             issues.append("virtual-router member is not imported into this VSYS")

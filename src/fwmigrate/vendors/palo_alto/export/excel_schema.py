@@ -1052,6 +1052,7 @@ SHEET_HEADERS: dict[str, tuple[str, ...]] = {
 
 
 SHEET_HEADERS["Interfaces"] += ("VLAN Tag", "MTU", "Management Profile", "Link State", "Speed", "Duplex")
+SHEET_HEADERS["IPsec Tunnels"] += ("Tunnel Monitor Destination IP", "Tunnel Monitor Profile", "Tunnel Monitor Proxy ID")
 
 # Every source-bearing sheet retains the same existing PAN ownership metadata.
 OWNER_COLUMNS = ("Scope Identity", "Source Record", "Device", "Device Serial", "VSYS",

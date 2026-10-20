@@ -3,6 +3,7 @@ import type { DestinationEvidence } from '../components/DestinationSnapshot'
 import type { SourceEvidence } from '../../../storage/workspaceTypes'
 
 export type CheckPointOptions = {
+  target_mode?: 'new' | 'existing'
   source_vdom: string
   management_target: string
   management_domain: string
@@ -51,6 +52,7 @@ export type CheckPointReport = {
 }
 
 export type CheckPointReview = {
+  options?: CheckPointOptions
   draft: Record<string, unknown>
   requirements: CheckPointRequirement[]
   report: CheckPointReport

@@ -6,6 +6,7 @@ from typing import Any
 from fwmigrate.extraction.sanitize import sanitize_source_attributes
 
 from ..schema_registry import PANPathSpec
+from ..sanitization import sanitize_panos_attributes
 
 
 def value(element: ET.Element | None, tag: str) -> str | None:
@@ -28,7 +29,7 @@ def raw_extra(element: ET.Element, known: set[str]) -> dict[str, Any]:
     attributes = capture_unknown_attributes(element)
     if attributes:
         result["@attributes"] = attributes
-    return sanitize_source_attributes(result)
+    return sanitize_panos_attributes(result)
 
 
 def typed_fields(
@@ -106,7 +107,7 @@ def structured_xml_capture(element: ET.Element) -> object:
 
 def capture_unknown_children(element: ET.Element, handled: set[str]) -> dict[str, Any]:
     result = {child.tag: structured_xml_capture(child) for child in element if child.tag not in handled}
-    return sanitize_source_attributes(result)
+    return sanitize_panos_attributes(result)
 
 
 def capture_unknown_attributes(element: ET.Element, handled: set[str] = {"name"}) -> dict[str, Any]:

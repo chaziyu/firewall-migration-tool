@@ -22,7 +22,7 @@ def plan_gaia_routes(source, vdom, options):
         if duplicated:
             blockers.append("GAIA_ROUTE_ID_DUPLICATE")
         commands = ()
-        if not options.gaia_target:
+        if options.target_mode == "existing" and not options.gaia_target:
             blockers.append("GAIA_TARGET_REQUIRED")
         unsupported_fields = {"dstaddr", "device", "dynamic_gateway", "distance", "priority",
                              "vrf", "sdwan_zone", "src", "preferred_source"}

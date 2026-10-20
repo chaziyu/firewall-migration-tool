@@ -73,10 +73,23 @@ device compatibility.
 - Addresses: VSYS `address` ip-netmask, ip-range and fqdn; static address groups.
 - Services: VSYS `service ... protocol tcp|udp` port/source-port; service groups.
 - Schedules: recurring weekly/daily and non-recurring ranges.
+- FortiGate schedule conversion accepts explicit weekdays with increasing same-day
+  times and converts one-time `HH:MM YYYY/MM/DD` values to PAN-OS
+  `YYYY/MM/DD@HH:MM`. `none`, overnight/equal-time ranges, unsupported settings,
+  and unverified UTC controls remain manual work. This does not verify matching
+  source and destination time zones.
 - Security: VSYS rulebase match lists, application, schedule, action, negate,
   disabled, description and explicit logging leaves. Preserve source rule order.
 - NAT: IPv4 rulebase match lists, service, to-interface, dynamic IP/port source
   translation and destination translation leaves. Preserve source NAT order.
+- Multi-interface FortiGate zones require explicit `intrazone allow`; deny or
+  unknown intra-zone behavior remains manual. Merging distinct source zones or
+  interfaces also remains manual because PAN-OS intra-zone defaults can widen
+  access. Affected zones and dependent rules are excluded from executable output.
+- A preceding active no-NAT or unknown-NAT policy blocks later policy SNAT and
+  its owning security rule unless complete mapped zones prove separation.
+  Address/service-only separation and explicit no-NAT exception generation remain
+  manual; source reporting does not invent NAT entries for these policies.
 - Routes: device legacy virtual-router IPv4 static routes, destination,
   interface, ip-address/discard next hop and admin-dist. FortiGate priority is
   not translated into a PAN-OS metric.

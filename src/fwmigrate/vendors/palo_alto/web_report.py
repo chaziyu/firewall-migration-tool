@@ -68,8 +68,28 @@ def build_panos_preview(analysis: PaloAltoSourceResult) -> dict[str, Any]:
                 *(reviews.get((scope_id, path, name), []) or
                   (review_fallbacks.get((scope_id, name), []) if path is None else []))]
 
+    def source_row(item: Any) -> dict[str, Any]:
+        fields = item.model_dump(mode="json", exclude={"scope", "raw_extra", "explicit_fields"})
+        # Child metadata uses the same report key as parent metadata; keep the API alias.
+        for name in ("client_authentication", "client_configs"):
+            for child in fields.get(name) or ():
+                child["additional_settings"] = child["raw_extra"]
+        return {**fields,
+                "additional_settings": item.raw_extra, "explicit_fields": sorted(item.explicit_fields),
+                "review": review(item), **scope_fields(item)}
+
+    def rule_rows(items):
+        positions = defaultdict(int)
+        for item in items:
+            key = (_scope_id(item.scope), item.rulebase_position)
+            positions[key] += 1
+            # Keep the old API alias; the UI uses source_order and rule_uuid instead.
+            yield {**source_row(item), "policy_id": item.source_order, "rule_order": positions[key],
+                   "rule_uuid": item.raw_extra.get("@attributes", {}).get("uuid")}
+
     addresses = [
         {
+            **source_row(item),
             "name": item.name,
             "value": item.ip_netmask or item.ip_range or item.ip_wildcard or item.fqdn,
             "type": next((field for field in ("ip_netmask", "ip_range", "ip_wildcard", "fqdn") if getattr(item, field)), None),
@@ -80,19 +100,19 @@ def build_panos_preview(analysis: PaloAltoSourceResult) -> dict[str, Any]:
         }
         for item in config.addresses
     ]
-    address_groups = [{"name": item.name, "members": item.static_members, "address_family": None, "exclude_members": [], "review": review(item), **scope_fields(item)} for item in config.address_groups]
+    address_groups = [{**source_row(item), "members": item.static_members, "address_family": None, "exclude_members": []} for item in config.address_groups]
     services = []
     for item in config.services:
         protocol = item.tcp or item.udp
-        services.append({"name": item.name, "protocol": "tcp" if item.tcp else "udp" if item.udp else None,
+        services.append({**source_row(item), "protocol": "tcp" if item.tcp else "udp" if item.udp else None,
                          "port": protocol.port if protocol else None, "source_port": protocol.source_port if protocol else None,
                          "generated": False, "review": review(item), **scope_fields(item)})
-    service_groups = [{"name": item.name, "members": item.members, "generated": False, "review": review(item), **scope_fields(item)} for item in config.service_groups]
-    policies = [{"policy_id": item.source_order, "name": item.name, "source_interfaces": item.from_zones,
-                 "destination_interfaces": item.to_zones, "services": item.service, "action": item.action,
-                 "review": review(item), **scope_fields(item)} for item in config.security_rules]
+    service_groups = [{**source_row(item), "generated": False} for item in config.service_groups]
+    policies = [{**row, "source_interfaces": row["from_zones"], "destination_interfaces": row["to_zones"],
+                 "source_addresses": row["source"], "destination_addresses": row["destination"],
+                 "services": row["service"]} for row in rule_rows(config.security_rules)]
     nat_rows = []
-    for item in config.nat_rules:
+    for item, row in zip(config.nat_rules, rule_rows(config.nat_rules)):
         source_translation = item.source_translation
         translated_addresses = []
         if source_translation is not None:
@@ -111,8 +131,10 @@ def build_panos_preview(analysis: PaloAltoSourceResult) -> dict[str, Any]:
             or item.nat_type
         )
         nat_rows.append({
-            "policy_id": item.source_order,
+            **row,
             "policy_name": item.name,
+            "source_addresses": item.source,
+            "destination_addresses": item.destination,
             "translation_type": translation_type,
             "nat_type": item.nat_type,
             "translated_addresses": translated_addresses,
@@ -130,8 +152,10 @@ def build_panos_preview(analysis: PaloAltoSourceResult) -> dict[str, Any]:
     interface_rows = []
     for item in analysis.derived.interface_topology:
         source = interface_by_key.get((item.scope, item.interface))
-        interface_rows.append({"name": item.interface, "display_name": item.interface, "kind": item.kind,
+        interface_rows.append({**(source_row(source) if source else {}),
+                               "name": item.interface, "display_name": item.interface, "kind": item.kind,
                                "ip": getattr(source, "ipv4_addresses", None), "zone": item.zones, "parent": item.parent,
+                               "virtual_routers": item.virtual_routers, "imported_vsys": item.imported_vsys,
                                "aggregate": item.aggregate, "physical_interfaces": item.physical_interfaces,
                                "status": "EXTRACTED", "review": item.issues,
                                **(scope_fields(source) if source else {"scope": item.scope}), "_scope": item.scope,
@@ -179,6 +203,7 @@ def build_panos_preview(analysis: PaloAltoSourceResult) -> dict[str, Any]:
     for item in config.ipsec_tunnels:
         topology = topology_by_key.get((_scope_id(item.scope), item.tunnel_interface))
         vpn_tunnels.append({
+            **source_row(item),
             "name": item.name,
             "interface": item.tunnel_interface,
             "ike_gateways": item.ike_gateways,
@@ -190,14 +215,14 @@ def build_panos_preview(analysis: PaloAltoSourceResult) -> dict[str, Any]:
     routes = []
     for router in config.virtual_routers:
         for item in router.static_routes or ():
-            routes.append({"route_id": item.name, "destination": item.destination, "gateway": item.nexthop_ip_address or item.nexthop,
+            routes.append({**source_row(item), "route_id": item.name, "destination": item.destination, "gateway": item.nexthop_ip_address or item.nexthop,
                            "device": item.interface, "distance": item.admin_distance, "status": "EXTRACTED",
                            "review": review(item), **scope_fields(router), "router_type": "virtual-router",
                            "router": router.name, "vrf": None})
     for router in config.logical_routers:
         for vrf in router.vrfs or ():
             for item in vrf.static_routes or ():
-                routes.append({"route_id": item.name, "destination": item.destination, "gateway": item.nexthop_ip_address or item.nexthop,
+                routes.append({**source_row(item), "route_id": item.name, "destination": item.destination, "gateway": item.nexthop_ip_address or item.nexthop,
                                "device": item.interface, "distance": item.admin_distance, "status": "EXTRACTED",
                                "review": review(item), **scope_fields(router), "router_type": "logical-router",
                                "router": router.name, "vrf": vrf.name})
@@ -221,6 +246,13 @@ def build_panos_preview(analysis: PaloAltoSourceResult) -> dict[str, Any]:
                      "sdwan_saas_quality_profiles": len(config.sdwan_saas_quality_profiles),
                      "sdwan_error_correction_profiles": len(config.sdwan_error_correction_profiles)}
     vdoms = sorted({scope.vsys for scope in config.scopes if scope.vsys})
+    inventory_rows = [{"extraction_status": analysis.accounting.inventory_status(record),
+                       "kind": record.kind, "source_path": record.source_path, "name": record.name,
+                       "source_order": record.source_order, "values": record.values, **scope_fields(record)}
+                      for record in records]
+    coverage = [_jsonable(item) for item in analysis.accounting.coverage]
+    source_only_count = sum(status == "SOURCE_ONLY" for status in analysis.accounting.record_statuses.values())
+    unsupported_count = sum(status == "UNSUPPORTED" for status in analysis.accounting.record_statuses.values())
     return {
         "vendor": "palo_alto",
         "hostname": config.hostname,
@@ -232,6 +264,9 @@ def build_panos_preview(analysis: PaloAltoSourceResult) -> dict[str, Any]:
             "scope_identities": list(analysis.derived.scope_identities),
             "scope_count": len(config.scopes),
             "records": len(records),
+            "source_only_count": source_only_count,
+            "unsupported_count": source_only_count + unsupported_count,
+            "partial_count": sum(status == "PARTIAL" for status in analysis.accounting.record_statuses.values()),
             "interfaces": len(config.interfaces),
             "addresses": len(config.addresses) + len(config.address_groups),
             "services": len(config.services) + len(config.service_groups),
@@ -278,7 +313,7 @@ def build_panos_preview(analysis: PaloAltoSourceResult) -> dict[str, Any]:
             "parents": list(analysis.derived.scope_hierarchy.parents),
             "ancestors": list(analysis.derived.scope_hierarchy.ancestors),
         },
-        "extraction_coverage": [_jsonable(item) for item in analysis.accounting.coverage],
+        "extraction_coverage": coverage,
         "records_total": len(records),
         "records_returned": min(len(records), _PREVIEW_RECORD_LIMIT),
         "records_truncated": len(records) > _PREVIEW_RECORD_LIMIT,
@@ -297,6 +332,17 @@ def build_panos_preview(analysis: PaloAltoSourceResult) -> dict[str, Any]:
         "unresolved_references": [_jsonable(item) for item in analysis.derived.reference_resolutions if item.status != "RESOLVED"],
         "validation": [_jsonable(issue) for issue in analysis.validation.issues],
         "sections": {
+            **{name: [source_row(item) for item in getattr(config, name)] for name in (
+                "tags", "schedules", "zones", "security_profile_groups", "admin_roles",
+                "dhcp_servers", "sdwan_rules", "administrators", "local_users", "local_user_groups",
+                "group_mappings", "ike_gateways", "ike_crypto_profiles", "ipsec_crypto_profiles",
+                "ipsec_tunnels", "globalprotect_portals", "globalprotect_gateways",
+                "sdwan_interface_profiles", "sdwan_path_quality_profiles", "sdwan_traffic_distribution_profiles",
+                "sdwan_saas_quality_profiles", "sdwan_error_correction_profiles",
+            )},
+            "default_security_rules": list(rule_rows(config.default_security_rules)),
+            "extraction_coverage": coverage,
+            "source_inventory": inventory_rows,
             "interfaces": interface_rows,
             "interface_topology": interface_rows,
             "addresses": addresses,
@@ -307,19 +353,15 @@ def build_panos_preview(analysis: PaloAltoSourceResult) -> dict[str, Any]:
             "nat": nat_rows,
             "routes": routes,
             "vpn_tunnels": vpn_tunnels,
-            "vpn_phase2": [],
+            "vpn_phase2": [{**proxy.model_dump(mode="json", exclude={"raw_extra", "explicit_fields"}),
+                            "tunnel": tunnel.name, "additional_settings": proxy.raw_extra, **scope_fields(tunnel)}
+                           for tunnel in config.ipsec_tunnels for proxy in tunnel.proxy_ids or ()],
             "validation": validation_rows,
             "unresolved_references": [_jsonable(item) for item in analysis.derived.unresolved_references],
-            "vulnerability_profiles": [{"name": item.name, "rules": len(item.rules or ()), "exceptions": len(item.exceptions or ()), **scope_fields(item)} for item in config.vulnerability_profiles],
-            "dhcp_servers": [{"name": item.name, "interface": item.interface, "mode": item.mode, **scope_fields(item)} for item in config.dhcp_servers],
-            "sdwan_rules": [{"name": item.name, "path_quality_profile": item.path_quality_profile, "saas_quality_profile": item.saas_quality_profile, **scope_fields(item)} for item in config.sdwan_rules],
-            "administrators": [{"name": item.name, "custom_admin_role": item.custom_admin_role, "password_configured": item.password_configured, **scope_fields(item)} for item in config.administrators],
-            "local_users": [{"name": item.name, "disabled": item.disabled, "password_configured": item.password_configured, **scope_fields(item)} for item in config.local_users],
-            "local_user_groups": [{"name": item.name, "members": item.members, **scope_fields(item)} for item in config.local_user_groups],
-            "group_mappings": [{"name": item.name, "server_profile": item.server_profile, "disabled": item.disabled, **scope_fields(item)} for item in config.group_mappings],
-            "ike_gateways": [{"name": item.name, "ike_version": item.ike_version, "pre_shared_key_configured": item.pre_shared_key_configured, **scope_fields(item)} for item in config.ike_gateways],
-            "ipsec_tunnels": [{"name": item.name, "ike_gateways": item.ike_gateways, "ipsec_crypto_profile": item.ipsec_crypto_profile, "manual_key_configured": item.manual_key_configured, **scope_fields(item)} for item in config.ipsec_tunnels],
-            "globalprotect_portals": [{"name": item.name, "ssl_tls_service_profile": item.ssl_tls_service_profile, **scope_fields(item)} for item in config.globalprotect_portals],
-            "globalprotect_gateways": [{"name": item.name, "local_interface": item.local_interface, **scope_fields(item)} for item in config.globalprotect_gateways],
+            "vulnerability_profiles": [{**source_row(item), "rules": len(item.rules or ()),
+                                         "exceptions": len(item.exceptions or ()),
+                                         "rule_details": [rule.model_dump(mode="json") for rule in item.rules or ()],
+                                         "exception_details": [rule.model_dump(mode="json") for rule in item.exceptions or ()]}
+                                        for item in config.vulnerability_profiles],
         },
     }

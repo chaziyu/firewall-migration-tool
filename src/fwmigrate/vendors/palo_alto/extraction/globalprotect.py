@@ -3,8 +3,6 @@ from __future__ import annotations
 import xml.etree.ElementTree as ET
 from typing import Any
 
-from fwmigrate.extraction.sanitize import sanitize_source_attributes
-
 from ..model import (
     PANGlobalProtectClientlessVPN,
     PANGlobalProtectGateway,
@@ -15,6 +13,7 @@ from ..model import (
     PANGlobalProtectRemoteUserTunnel,
 )
 from ..schema_registry import PANPathSpec
+from ..sanitization import sanitize_panos_attributes
 from ..source_context import PANWalkContext
 from .common import raw_extra, source_fields, structured_xml_capture
 
@@ -50,7 +49,7 @@ def _entries(element: ET.Element, tag: str) -> list[ET.Element] | None:
 
 
 def _capture(element: ET.Element | None) -> dict[str, Any] | None:
-    return sanitize_source_attributes(structured_xml_capture(element)) if element is not None else None
+    return sanitize_panos_attributes(structured_xml_capture(element)) if element is not None else None
 
 
 def _nested_metadata(element: ET.Element, known: set[str], field_map: dict[str, str] | None = None) -> tuple[dict[str, Any], set[str]]:

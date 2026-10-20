@@ -8,13 +8,14 @@ import yaml
 from flask import Response, jsonify, request, send_file
 
 from fwmigrate.conversion.fortigate_to_checkpoint.application import (
-    BINDINGS_FILE, GAIA_FILE, MANAGEMENT_FILE, approve_design, build_artifact,
+    BINDINGS_FILE, COMMANDS_FILE, GAIA_FILE, MANAGEMENT_FILE, approve_design, build_artifact,
     build_review, export_decisions, import_decisions, verify_export_artifact,
 )
 from fwmigrate.collection.snapshot import parse_snapshot
 from fwmigrate.source_reporting import source_reporters
 from fwmigrate.web_support.artifact_signing import sign_envelope, verify_envelope
 from fwmigrate.web_support.request_source import analyze_request_source, _require_complete_collection
+from fwmigrate.conversion.fortigate_to_checkpoint.requirements import source_vdoms
 
 
 def register_fortigate_to_checkpoint_routes(app, signing_key):
@@ -23,6 +24,7 @@ def register_fortigate_to_checkpoint_routes(app, signing_key):
         "management-operations": (MANAGEMENT_FILE, "application/json"),
         "gaia-config": (GAIA_FILE, "text/plain"),
         "bindings": (BINDINGS_FILE, "application/json"),
+        "management-commands": (COMMANDS_FILE, "text/plain"),
     }
 
     def source_entry(payload):
@@ -49,12 +51,15 @@ def register_fortigate_to_checkpoint_routes(app, signing_key):
             raise ValueError("Check Point artifact belongs to a different source")
         return artifact
 
+    def client_options(review):
+        return {key: value if value is not None else "" for key, value in review["options"].to_dict().items()}
+
     def handle(action):
         payload = request.get_json(silent=True)
         try:
             if not isinstance(payload, dict):
                 raise ValueError("A JSON object is required")
-            if action in {"artifact-preview", "management-operations", "gaia-config", "bindings", "bundle"}:
+            if action in {"artifact-preview", "management-operations", "management-commands", "gaia-config", "bindings", "bundle"}:
                 entry = source_entry(payload)
                 artifact = approved_artifact(payload, entry)
                 if action == "artifact-preview":
@@ -71,7 +76,7 @@ def register_fortigate_to_checkpoint_routes(app, signing_key):
                                     headers={"Content-Disposition": f'attachment; filename="{name}"'})
                 bundle = io.BytesIO()
                 with zipfile.ZipFile(bundle, "w", zipfile.ZIP_DEFLATED) as archive:
-                    for name in (MANAGEMENT_FILE, GAIA_FILE, BINDINGS_FILE):
+                    for name in artifact["files"]:
                         archive.writestr(name, artifact["files"][name]["content"].encode("utf-8"))
                     archive.writestr("migration_report.json",
                                      json.dumps(artifact["report"], ensure_ascii=False,
@@ -97,9 +102,12 @@ def register_fortigate_to_checkpoint_routes(app, signing_key):
             review = build_review(entry.analysis, options, entry.source_digest, **destination)
             if action == "requirements":
                 return jsonify({"success": True, "source_digest": entry.source_digest,
+                                "options": client_options(review),
+                                "source_vdoms": source_vdoms(entry.analysis.extracted.config),
                                 "requirements": review["requirements"], "report": review["report"]})
             if action == "design/prepare":
                 return jsonify({"success": True, "source_digest": entry.source_digest,
+                                "options": client_options(review),
                                 "draft": sign_envelope(review["draft"], signing_key),
                                 "requirements": review["requirements"], "report": review["report"]})
             if action == "design/approve":
@@ -118,7 +126,7 @@ def register_fortigate_to_checkpoint_routes(app, signing_key):
                             "error": "Invalid, blocked or stale FortiGate to Check Point request. Check source scope, target mapping, approval, and dependencies."}), 400
 
     actions = ("requirements", "design/prepare", "design/approve", "build",
-               "artifact-preview", "management-operations", "gaia-config", "bindings",
+               "artifact-preview", "management-operations", "management-commands", "gaia-config", "bindings",
                "bundle", "decisions/import", "decisions/export")
     for action in actions:
         app.add_url_rule(f"{prefix}/{action}", "fg_checkpoint_migration_" + action.replace("/", "_"),

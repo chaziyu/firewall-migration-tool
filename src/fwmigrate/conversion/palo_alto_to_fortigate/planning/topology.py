@@ -29,7 +29,7 @@ def plan_interfaces(ctx):
                 dependencies.append(identity(parents[0], "interface"))
                 settings.update({"interface": ctx.options.interfaces[parent], "vlanid": obj.tag})
         elif target not in ctx.options.profile.get("ports", []):
-            reasons.append("Physical interface must be in the explicitly declared destination port inventory.")
+            reasons.append("Physical interface must be in the reviewed target port list.")
         if obj.ipv4_addresses is None or len(obj.ipv4_addresses) != 1:
             reasons.append("Exactly one explicit primary IPv4 address is required.")
         else:

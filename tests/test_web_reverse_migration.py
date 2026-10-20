@@ -63,12 +63,14 @@ def test_proposal_first_api_approval_bundle_and_cli_use_one_resolved_design(setu
     import yaml
 
     client, payload = setup_reverse
-    payload["options"] = {"profile": {"ports": ["port1", "port2"]}}
+    payload["options"] = {}
     review_response = client.post(PREFIX + "/design/prepare", json=payload)
     assert review_response.status_code == 200
     review = review_response.get_json()
     assert review["resolved_options"]["vdom"] == "root"
     assert review["resolved_options"]["zones"] == {"trust": "trust", "untrust": "untrust"}
+    assert review["resolved_options"]["interfaces"] == {"ethernet1/1": "port1", "ethernet1/2": "port2"}
+    assert any(row["key"] == "profile:ports" and row["evidence_source"] == "ASSUMED_LAYOUT" for row in review["proposals"])
     assert review["effective_values"][0]["field"] == "schedule"
     assert review["draft"]["context"]["requested_options"]["interfaces"] == {}
     assert all(row["review_state"] == "PENDING" for row in review["proposals"])

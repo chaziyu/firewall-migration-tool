@@ -39,13 +39,11 @@ def test_zone_consolidation_retains_members_decisions_and_blockers(named_second,
         keys = [row.key for row in decisions.decisions if row.source_kind == ref.source_kind and row.source_name == ref.source_name]
         assert keys and all(item_key(zone) in index.item_keys_by_decision[key] for key in keys)
     artifact = PANSetRenderer().render(plan)
-    if missing_member:
-        assert zone.status is PANMigrationStatus.MANUAL_REVIEW
-        assert not any(' zone trust ' in command or 'rulebase security' in command for command in artifact.commands)
-    else:
+    assert zone.status is PANMigrationStatus.MANUAL_REVIEW
+    assert not any(' zone trust ' in command or 'rulebase security' in command for command in artifact.commands)
+    if not missing_member:
         assert zone.interfaces == ('ethernet1/1', 'ethernet1/2')
-        assert sum(' zone trust ' in command for command in artifact.commands) == 1
-        assert any('rulebase security' in command for command in artifact.commands)
+        assert any('intra-zone' in warning for warning in zone.warnings)
     assert source.model_dump() == original
 
 

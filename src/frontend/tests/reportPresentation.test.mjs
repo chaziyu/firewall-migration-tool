@@ -119,6 +119,38 @@ test('combined interface views retain separate rows and counts, including empty 
   assert.deepEqual(sections, before)
 })
 
+test('FortiGate source sections are reachable with useful columns and preserve scope and missing values', () => {
+  const sections = {
+    vips: [{ name: 'public', vdom: 'branch', extip: '198.51.100.10', mappedip: ['10.0.0.10'] }],
+    vip_groups: [{ name: 'group', vdom: 'branch', members: ['public'] }],
+    ip_pools: [{ name: 'snat', vdom: 'branch', type: null, startip: '198.51.100.20', arp_reply: 'disable' }],
+    wildcard_fqdns: [{ name: 'wildcard', vdom: 'branch', wildcard_fqdn: '*.example.test' }],
+    local_users: [{ name: 'alice', vdom: 'branch', type: 'password', status: 'disable' }],
+    administrators: [{ name: 'operator', vdom: null, accprofile: 'read-only', vdoms: ['branch'] }],
+    dhcp_servers: [{ id: 1, vdom: 'branch', interface: 'lan', lease_time: 0 }],
+    ssl_vpn_portals: [{ name: 'remote', vdom: 'branch', tunnel_mode: 'disable', ip_pools: ['SSLVPN'] }],
+  }
+  const before = structuredClone(sections)
+  const groups = reportSections(sections)
+  for (const [key, label, column] of [
+    ['vips', 'NAT', 'extip'], ['vip_groups', 'NAT', 'members'], ['ip_pools', 'NAT', 'startip'],
+    ['wildcard_fqdns', 'Objects', 'wildcard_fqdn'], ['local_users', 'Objects', 'status'],
+    ['administrators', 'Objects', 'vdoms'], ['dhcp_servers', 'Additional sections', 'lease_time'],
+    ['ssl_vpn_portals', 'VPN', 'ip_pools'],
+  ]) {
+    const subsection = groups.find((group) => group.label === label).subsections.find((item) => item.key === key)
+    assert.equal(subsection.rows.length, 1)
+    assert.ok(defaultColumns(subsection.rows, key, 'fortigate').includes(column))
+    const fields = detailGroups(subsection.rows[0], key, 'fortigate').flatMap((group) => group.fields)
+    assert.ok(fields.some(([name]) => name === column))
+    assert.ok(reportSearchText(subsection.rows[0]).includes(key === 'administrators' ? 'operator' : 'branch'))
+  }
+  assert.equal(cellSummary(sections.ip_pools[0].type), 'Not reported')
+  assert.equal(cellSummary(sections.dhcp_servers[0].lease_time), '0')
+  assert.equal(fieldLabel('vips'), 'Virtual IPs')
+  assert.deepEqual(sections, before)
+})
+
 test('interface topology rows retain topology relationships and enrich only unique scope-aware matches', () => {
   const inventory = [
     { name: 'port1', vdom: 'root', ip: '192.0.2.1/24', kind: null, status: false, 'Source section': 'interfaces' },

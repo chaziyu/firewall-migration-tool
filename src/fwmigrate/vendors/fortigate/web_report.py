@@ -28,6 +28,18 @@ def _review(*groups: Iterable[str]) -> str | None:
     return "; ".join(messages) or None
 
 
+def _source_rows(items: Iterable[Any], fields: tuple[str, ...]) -> list[dict[str, Any]]:
+    """Project only reviewed source fields; never serialize raw evidence or credentials."""
+    rows = []
+    for item in items:
+        row = item.model_dump(mode="json", include=set(fields))
+        for field, value in row.items():
+            if isinstance(value, list) and not value and field not in item.model_fields_set:
+                row[field] = None
+        rows.append(row)
+    return rows
+
+
 
 def _object_counts(config: FGConfig) -> dict[str, int]:
     return {
@@ -52,6 +64,11 @@ def _object_counts(config: FGConfig) -> dict[str, int]:
         "ip_pools": len(config.ip_pools) + len(config.ip_pools6),
         "vips": len(config.vips) + len(config.vips6),
         "vip_groups": len(config.vip_groups) + len(config.vip_groups6),
+        "wildcard_fqdns": len(config.wildcard_fqdns),
+        "local_users": len(config.local_users),
+        "administrators": len(config.administrators),
+        "dhcp_servers": len(config.dhcp_servers),
+        "ssl_vpn_portals": len(config.ssl_vpn_portals),
         "static_routes": len(config.static_routes),
         "ipsec_phase1": len(config.ipsec_phase1),
         "ipsec_policy_phase1": len(config.ipsec_policy_phase1),
@@ -571,6 +588,52 @@ def build_web_report(
         for item in derived.broken_references
     ]
 
+    source_sections = {
+        "vips": _source_rows(
+            (*config.vips, *config.vips6),
+            ("name", "vdom", "address_family", "type", "status", "extip", "extaddr", "extintf",
+             "mappedip", "mapped_addr", "portforward", "protocol", "extport", "mappedport",
+             "arp_reply", "nat_source_vip", "service", "ldb_method", "server_type", "monitor",
+             "nat64", "nat66", "ndp_reply", "ipv4_mappedip", "ipv4_mappedport", "comment"),
+        ),
+        "ip_pools": _source_rows(
+            (*config.ip_pools, *config.ip_pools6),
+            ("name", "vdom", "address_family", "type", "startip", "endip", "source_startip", "source_endip",
+             "startport", "endport", "associated_interface", "arp_reply", "arp_intf", "permit_any_host",
+             "nat64", "add_nat64_route", "nat46", "add_nat46_route", "exclude_ip", "comments"),
+        ),
+        "vip_groups": _source_rows(
+            (*config.vip_groups, *config.vip_groups6),
+            ("name", "vdom", "address_family", "interface", "members", "comments"),
+        ),
+        "wildcard_fqdns": _source_rows(config.wildcard_fqdns, ("name", "vdom", "wildcard_fqdn", "comment")),
+        "local_users": _source_rows(
+            config.local_users,
+            ("name", "vdom", "id", "type", "status", "two_factor", "ldap_server", "radius_server",
+             "tacacs_server", "authtimeout", "passwd_time", "passwd_policy", "email_to"),
+        ),
+        "administrators": [
+            {**item.model_dump(mode="json", include={"name", "accprofile", "vdoms", "trusthosts",
+                                                    "ip6_trusthosts", "remote_auth", "remote_group",
+                                                    "two_factor", "schedule", "comments"}),
+             "vdom": item.cli_vdom}
+            for item in config.administrators
+        ],
+        "dhcp_servers": _source_rows(
+            config.dhcp_servers,
+            ("id", "vdom", "interface", "status", "server_type", "ip_mode", "default_gateway",
+             "netmask", "lease_time", "dns_service", "dns_server1", "dns_server2", "dns_server3",
+             "dns_server4", "timezone_option", "timezone", "relay_agent"),
+        ),
+        "ssl_vpn_portals": _source_rows(
+            config.ssl_vpn_portals,
+            ("name", "vdom", "tunnel_mode", "ipv6_tunnel_mode", "ip_pools", "ipv6_pools", "web_mode",
+             "split_tunneling", "split_tunneling_routing_address", "ipv6_split_tunneling",
+             "ipv6_split_tunneling_routing_address", "limit_user_logins", "forticlient_download",
+             "host_check", "host_check_policy"),
+        ),
+    }
+
     vdoms = sorted(
         {
             row["vdom"]
@@ -593,6 +656,7 @@ def build_web_report(
                 policy_vpn_phase2_rows,
                 validation_rows,
                 unresolved,
+                *source_sections.values(),
             )
             for row in rows
             if row.get("vdom")
@@ -612,6 +676,7 @@ def build_web_report(
             "scopes": vdoms,
         },
         "sections": {
+            **source_sections,
             "interfaces": interfaces,
             "interface_topology": _interface_topology_rows(
                 interfaces,
