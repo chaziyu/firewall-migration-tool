@@ -10,7 +10,9 @@ import type { SourceEvidence } from '../../../storage/workspaceTypes'
 import type { MigrationStage } from '../types'
 import { downloadFile } from '../migrationApi'
 import * as api from './migrationApi'
-import type { JuniperSrxWorkspace, SrxOptions, SrxPlanItem } from './types'
+import type { JuniperSrxWorkspace, SrxOptions } from './types'
+import { expandSelection } from './reviewSelection'
+import { SrxDesignReview } from './DesignReview'
 
 const PAIR_ID = 'fortigate_to_juniper_srx' as const
 const emptyOptions = (): SrxOptions => ({
@@ -32,36 +34,6 @@ function payloadOptions(options: SrxOptions): SrxOptions {
   return { ...options, interfaces, zones }
 }
 
-function expandSelection(items: SrxPlanItem[], selected: string[]): string[] {
-  const byKey = new Map(items.map((item) => [item.key, item]))
-  const groups = new Map<string, string[]>()
-  for (const item of items) {
-    if (item.approval_group) groups.set(item.approval_group, [...(groups.get(item.approval_group) ?? []), item.key])
-  }
-  const expanded = new Set<string>()
-  const visiting = new Set<string>()
-  const expandedGroups = new Set<string>()
-  const add = (key: string) => {
-    if (visiting.has(key)) throw new Error('A dependency cycle blocks this selection')
-    if (expanded.has(key)) return
-    const item = byKey.get(key)
-    if (!item || !['CREATE', 'REUSE'].includes(item.render_disposition) || item.blockers.length) throw new Error('A selected item or required group is blocked')
-    visiting.add(key)
-    for (const dependency of item.dependencies) add(dependency)
-    visiting.delete(key)
-    expanded.add(key)
-  }
-  selected.forEach(add)
-  for (const key of expanded) {
-    const group = byKey.get(key)?.approval_group
-    if (group && !expandedGroups.has(group)) {
-      expandedGroups.add(group)
-      for (const member of groups.get(group) ?? []) add(member)
-    }
-  }
-  return items.filter((item) => expanded.has(item.key)).map((item) => item.key)
-}
-
 export function JuniperSRXMigrationWorkflow({ source, sourceKey, stage, onStageChange }: {
   source: SourceEvidence
   sourceKey: string
@@ -69,7 +41,7 @@ export function JuniperSRXMigrationWorkflow({ source, sourceKey, stage, onStageC
   onStageChange: (stage: MigrationStage) => void
 }) {
   const [state, setState] = useState<JuniperSrxWorkspace>(() => {
-    const saved = workspace().newPairMigration
+    const saved = workspace().panosMigration
     return saved?.pairId === PAIR_ID && saved.sourceKey === sourceKey
       ? saved
       : { pairId: PAIR_ID, sourceKey, options: emptyOptions(), requirements: [], review: null, approval: null, artifact: null, previewText: null }
@@ -80,12 +52,15 @@ export function JuniperSRXMigrationWorkflow({ source, sourceKey, stage, onStageC
   const [error, setError] = useState<string | null>(null)
   const [selected, setSelected] = useState<string[]>([])
   const [approvalPreview, setApprovalPreview] = useState<string[] | null>(null)
+  const [interfaceSearch, setInterfaceSearch] = useState('')
+  const [interfacePage, setInterfacePage] = useState(1)
+  const [findingPage, setFindingPage] = useState(1)
   const requests = useRef(0)
   const pending = useRef(false)
   const { options, requirements, review, approval, artifact } = state
   const initialOptions = useRef(payloadOptions(options))
 
-  useEffect(() => { void saveWorkspace({ newPairMigration: state }) }, [state])
+  useEffect(() => { void saveWorkspace({ panosMigration: state }) }, [state])
   useEffect(() => () => { requests.current++ }, [])
   useEffect(() => {
     let active = true
@@ -125,7 +100,10 @@ export function JuniperSRXMigrationWorkflow({ source, sourceKey, stage, onStageC
   async function prepareReview() {
     const request = ++requests.current
     const normalized = payloadOptions(options)
-    setState((current) => ({ ...current, approval: null, artifact: null, previewText: null }))
+    setState((current) => ({ ...current, review: null, approval: null, artifact: null, previewText: null }))
+    setSelected([])
+    setApprovalPreview(null)
+    setFindingPage(1)
     const result = await api.prepare(source, normalized, state.destination)
     if (request !== requests.current) return
     setState((current) => ({ ...current, options: normalized, requirements: result.requirements, review: result }))
@@ -143,9 +121,9 @@ export function JuniperSRXMigrationWorkflow({ source, sourceKey, stage, onStageC
     setState((current) => ({ ...current, artifact: result.artifact, previewText: null }))
     onStageChange('export')
     const preview = await api.commandPreview(result.artifact)
-    if (request === requests.current && preview.command_sha256 === result.artifact.command_sha256) {
-      setState((current) => ({ ...current, previewText: preview.text }))
-    }
+    if (request !== requests.current) return
+    if (preview.command_sha256 !== result.artifact.command_sha256) throw new Error('Command preview integrity check failed')
+    setState((current) => ({ ...current, previewText: preview.text }))
   }
 
   async function confirmApproval() {
@@ -160,6 +138,7 @@ export function JuniperSRXMigrationWorkflow({ source, sourceKey, stage, onStageC
   }
 
   function setGlobal(field: 'source_vdom' | 'target_context' | 'target_version' | 'target_mode' | 'routing_table' | 'timezone', value: string) {
+    if (field === 'source_vdom') { setInterfaceSearch(''); setInterfacePage(1) }
     changeOptions({ ...options, [field]: value })
   }
 
@@ -179,14 +158,14 @@ export function JuniperSRXMigrationWorkflow({ source, sourceKey, stage, onStageC
     changeOptions({ ...options, interfaces })
   }
 
-  function setZone(vdom: string, name: string, value: string) {
-    const vdomMappings = { ...options.zones[vdom] }
+  function setZone(vdom: string, name: string, value: string, kind: 'zones' | 'interface_zones' = 'zones') {
+    const vdomMappings = { ...options[kind]?.[vdom] }
     if (value) vdomMappings[name] = value
     else delete vdomMappings[name]
-    const zones = { ...options.zones }
+    const zones = { ...options[kind] }
     if (Object.keys(vdomMappings).length) zones[vdom] = vdomMappings
     else delete zones[vdom]
-    changeOptions({ ...options, zones })
+    changeOptions({ ...options, [kind]: zones })
   }
 
   function openApprovalPreview(keys: string[]) {
@@ -198,9 +177,17 @@ export function JuniperSRXMigrationWorkflow({ source, sourceKey, stage, onStageC
   const scopeRequirements = requirements.filter((item) => item.source_vdom === options.source_vdom)
   const interfaceRequirements = scopeRequirements.filter((item) => item.source_kind === 'interface' && item.target_field === 'target_interface')
   const zoneRequirements = scopeRequirements.filter((item) => item.source_kind === 'zone' && item.target_field === 'target_zone')
+  const interfaceZones = new Set(scopeRequirements.filter((item) => item.source_kind === 'interface' && item.target_field === 'target_zone').map((item) => item.source_name))
   const targetChoice = (field: string) => requirements.find((item) => item.target_field === field)
-  const createItems = review?.report.items.filter((item) => ['CREATE', 'REUSE'].includes(item.render_disposition)) ?? []
-  const approvalItems = review?.report.items.filter((item) => approvalPreview?.includes(item.key)) ?? []
+  const filteredInterfaces = interfaceRequirements.filter((item) => `${item.source_name} ${options.interfaces[options.source_vdom]?.[item.source_name]?.target_interface ?? ''}`.toLowerCase().includes(interfaceSearch.trim().toLowerCase()))
+  const interfacePages = Math.max(1, Math.ceil(filteredInterfaces.length / 10))
+  const currentInterfacePage = Math.min(interfacePage, interfacePages)
+  const mappedInterfaces = interfaceRequirements.filter((item) => {
+    const mapping = options.interfaces[options.source_vdom]?.[item.source_name]
+    return mapping?.target_interface?.trim() && Number.isInteger(mapping.unit) && mapping.unit! >= 0 && mapping.unit! <= 16385
+  }).length
+  const findingPages = Math.max(1, Math.ceil((review?.report.findings.length ?? 0) / 25))
+  const currentFindingPage = Math.min(findingPage, findingPages)
 
   return <section className="panel" aria-labelledby="juniper-srx-migration-title">
     <h2 id="juniper-srx-migration-title">FortiGate → Juniper SRX</h2>
@@ -212,26 +199,50 @@ export function JuniperSRXMigrationWorkflow({ source, sourceKey, stage, onStageC
     </>}
 
     {stage === 'place' && <>
+      <section className="review-work-card" aria-label="New-device proposals">
+        <h3>New SRX configuration</h3>
+        <p>Propose root placement, ge-0/0/N physical ports, VLAN units and separate security zones for unzoned source interfaces. Review the proposed ports and cabling before approval. Hardware capacity and feature support remain unverified.</p>
+        <Button disabled={busy || targetLoading || Boolean(state.destination)} onClick={() => void run(async () => {
+          const request = ++requests.current
+          const result = await api.proposeNewTarget(source, payloadOptions(options))
+          if (request !== requests.current) return
+          changeOptions({ ...emptyOptions(), ...result.options })
+        })}>Propose new-device mappings</Button>
+        {state.destination && <p>New-device proposals are unavailable while an existing destination snapshot is loaded.</p>}
+      </section>
       <DestinationSnapshot vendor="juniper_srx" families={['addresses', 'applications', 'interfaces', 'zones', 'static_routes', 'schedules', 'policies', 'nat']} value={state.destination ?? null} disabled={busy} onChange={changeDestination} onPendingChange={setTargetLoading} />
-      <h3>Target context</h3>
-      <label className="field">Target VLAN platform<select disabled={busy} value={options.target_platform ?? ''} onChange={(event) => changeOptions({ ...options, target_platform: event.target.value })}><option value="">VLAN export unavailable</option><option value="vsrx">vSRX 25.2R1 (tagged-only parent)</option></select></label>
-      <label className="field"><span><input disabled={busy} type="checkbox" checked={options.vlan_interfaces_available ?? false} onChange={(event) => changeOptions({ ...options, vlan_interfaces_available: event.target.checked })} /> I verified VLAN capacity and mapped parent/unit availability</span></label>
-      <label className="field"><span><input disabled={busy} type="checkbox" checked={options.nat_return_routing_confirmed ?? false} onChange={(event) => changeOptions({ ...options, nat_return_routing_confirmed: event.target.checked })} /> I confirmed return routing for the source NAT pool</span></label>
+      <section className="target-setup" aria-label="SRX target setup">
+      <p>Choose placement, enter target mappings, then validate. Approval happens separately in Review migration.</p>
+      <h3>Placement</h3>
+      <div className="target-ownership">
       <label className="field">FortiGate VDOM<select disabled={busy} value={options.source_vdom} onChange={(event) => setGlobal('source_vdom', event.target.value)}><option value="">Choose source VDOM</option>{sourceScope?.choices.map((choice) => <option key={choice}>{choice}</option>)}</select></label>
       {(['target_context', 'target_version', 'target_mode', 'routing_table'] as const).map((field) => {
         const requirement = targetChoice(field)
         const label = requirement?.label ?? field
         return <label className="field" key={field}>{label}<select disabled={busy} value={options[field]} onChange={(event) => setGlobal(field, event.target.value)}><option value="">Choose explicitly</option>{requirement?.choices.map((choice) => <option key={choice}>{choice}</option>)}</select></label>
       })}
+      </div>
+      <details><summary>VLAN and source NAT prerequisites</summary>
+      <label className="field">Target VLAN platform<select disabled={busy} value={options.target_platform ?? ''} onChange={(event) => changeOptions({ ...options, target_platform: event.target.value })}><option value="">VLAN export unavailable</option><option value="vsrx">vSRX 25.2R1 (tagged-only parent)</option></select></label>
+      <label className="field"><span><input disabled={busy} type="checkbox" checked={options.vlan_interfaces_available ?? false} onChange={(event) => changeOptions({ ...options, vlan_interfaces_available: event.target.checked })} /> I verified VLAN capacity and mapped parent/unit availability</span></label>
+      <label className="field"><span><input disabled={busy} type="checkbox" checked={options.nat_return_routing_confirmed ?? false} onChange={(event) => changeOptions({ ...options, nat_return_routing_confirmed: event.target.checked })} /> I confirmed return routing for the source NAT pool</span></label>
+      </details>
       {hasSchedules && <label className="field">Confirmed FortiGate and SRX system timezone<input disabled={busy} value={options.timezone} onChange={(event) => setGlobal('timezone', event.target.value)} placeholder="Asia/Kuala_Lumpur" /></label>}
 
       {options.source_vdom && <>
-        <h3>Interface placement</h3>
-        {interfaceRequirements.map((item) => <div className="connection-grid" key={item.key}>
-          <strong>{item.label}</strong>
-          <label className="field">Target physical interface<input disabled={busy} value={options.interfaces[options.source_vdom]?.[item.source_name]?.target_interface ?? ''} onChange={(event) => setInterface(options.source_vdom, item.source_name, 'target_interface', event.target.value)} placeholder="ge-0/0/0" /></label>
-          <label className="field">Logical unit<input disabled={busy} type="number" min="0" max="16385" step="1" value={options.interfaces[options.source_vdom]?.[item.source_name]?.unit ?? ''} onChange={(event) => setInterface(options.source_vdom, item.source_name, 'unit', event.target.value)} /></label>
-        </div>)}
+        <h3>Interface mappings</h3>
+        <p>{mappedInterfaces} of {interfaceRequirements.length} mappings entered. Validate to check target conflicts and source support.</p>
+        <label className="field">Search interfaces<input value={interfaceSearch} onChange={(event) => { setInterfaceSearch(event.target.value); setInterfacePage(1) }} placeholder="Source or target interface" /></label>
+        <div className="report-table-wrap"><table className="report-table"><caption>SRX interface mappings</caption><thead><tr><th>Source interface</th><th>Target physical interface</th><th>Logical unit</th><th>Security zone</th></tr></thead><tbody>
+        {filteredInterfaces.slice((currentInterfacePage - 1) * 10, currentInterfacePage * 10).map((item) => <tr key={item.key}>
+          <td>{item.source_vdom} / {item.source_name}</td>
+          <td><input aria-label={`Target interface for ${item.source_vdom} / ${item.source_name}`} disabled={busy} value={options.interfaces[options.source_vdom]?.[item.source_name]?.target_interface ?? ''} onChange={(event) => setInterface(options.source_vdom, item.source_name, 'target_interface', event.target.value)} placeholder="ge-0/0/0" /></td>
+          <td><input aria-label={`Logical unit for ${item.source_vdom} / ${item.source_name}`} disabled={busy} type="number" min="0" max="16385" step="1" value={options.interfaces[options.source_vdom]?.[item.source_name]?.unit ?? ''} onChange={(event) => setInterface(options.source_vdom, item.source_name, 'unit', event.target.value)} /></td>
+          <td>{interfaceZones.has(item.source_name) ? <input aria-label={`Security zone for interface ${item.source_vdom} / ${item.source_name}`} disabled={busy} value={options.interface_zones?.[options.source_vdom]?.[item.source_name] ?? ''} onChange={(event) => setZone(options.source_vdom, item.source_name, event.target.value, 'interface_zones')} /> : 'Source zone mapping below'}</td>
+        </tr>)}
+        </tbody></table></div>
+        {!filteredInterfaces.length && <p>No interfaces match this search.</p>}
+        {interfacePages > 1 && <div className="report-pager"><Button className="secondary-button" disabled={busy || currentInterfacePage <= 1} onClick={() => setInterfacePage(currentInterfacePage - 1)}>Previous interfaces</Button><span>Page {currentInterfacePage} of {interfacePages}</span><Button className="secondary-button" disabled={busy || currentInterfacePage >= interfacePages} onClick={() => setInterfacePage(currentInterfacePage + 1)}>Next interfaces</Button></div>}
         <h3>Security zone placement</h3>
         {zoneRequirements.map((item) => <label className="field" key={item.key}>{item.label}<input disabled={busy} value={options.zones[options.source_vdom]?.[item.source_name] ?? ''} onChange={(event) => setZone(options.source_vdom, item.source_name, event.target.value)} placeholder="inside-zone" /></label>)}
       </>}
@@ -252,28 +263,19 @@ export function JuniperSRXMigrationWorkflow({ source, sourceKey, stage, onStageC
           event.target.value = ''
         }} /></label>
       </details>
-      <Button disabled={busy || targetLoading} onClick={() => void run(prepareReview)}>Prepare migration review</Button>
+      <div className="action-row target-setup-actions"><Button disabled={busy || targetLoading || !options.source_vdom} onClick={() => void run(prepareReview)}>Validate changes</Button></div>
+      </section>
     </>}
 
     {stage === 'review' && <>
       {!review ? <><p>Prepare the current target choices before review.</p><Button disabled={busy || targetLoading} onClick={() => void run(prepareReview)}>Prepare migration review</Button></> : <>
         <MigrationCoverage coverage={review.report.coverage} />
-        <p>{createItems.length} items ready for review · {review.report.items.length - createItems.length} blocked or manual.</p>
-        {review.report.findings.map((finding, index) => <p role="status" key={`${String(finding.code)}-${index}`}>{String(finding.message ?? finding.code)}</p>)}
-        <Button disabled={busy || !createItems.length} onClick={() => openApprovalPreview(createItems.map((item) => item.key))}>Review all ready changes</Button>
-        <Button disabled={busy || !selected.length} onClick={() => void run(async () => openApprovalPreview(selected))}>Review selected changes</Button>
-        <div className="report-table-wrap"><table className="report-table"><caption>Planned Juniper SRX configuration</caption><thead><tr><th>Select</th><th>Source</th><th>Target</th><th>Operation</th><th>Blockers</th><th>Review details</th></tr></thead><tbody>{review.report.items.map((item) => <tr key={item.key}>
-          <td><input aria-label={`Select ${item.source_vdom} ${item.source_name}`} type="checkbox" disabled={busy || !['CREATE', 'REUSE'].includes(item.render_disposition)} checked={selected.includes(item.key)} onChange={(event) => setSelected(event.target.checked ? [...selected, item.key] : selected.filter((key) => key !== item.key))} /></td>
-          <td>{item.source_vdom} / {item.source_name}<small>{item.family}</small></td><td>{item.target_name}</td><td>{item.render_disposition}</td><td>{item.blockers.join(', ')}</td>
-          <td><details><summary>Settings and dependencies</summary><pre>{JSON.stringify({ settings: item.settings, dependencies: item.dependencies, approval_group: item.approval_group, guidance: item.guidance }, null, 2)}</pre></details></td>
-        </tr>)}</tbody></table></div>
-        {approvalPreview && <section className="review-work-card" aria-label="SRX approval preview">
-          <h3>Approve these exact changes</h3><p>{approvalItems.length} items, including required dependencies and atomic groups.</p>
-          {approvalItems.map((item) => <details key={item.key}><summary>{item.render_disposition}: {item.source_vdom} / {item.source_name} → {item.target_name}</summary><pre>{JSON.stringify({ settings: item.settings, dependencies: item.dependencies, approval_group: item.approval_group }, null, 2)}</pre></details>)}
-          <Button disabled={busy || !approvalPreview.length} onClick={() => void run(confirmApproval)}>Approve these changes and build export</Button>
-          <Button disabled={busy} onClick={() => setApprovalPreview(null)}>Cancel approval preview</Button>
-        </section>}
-        <Button disabled={busy} onClick={() => onStageChange('place')}>Change target choices</Button>
+        <SrxDesignReview key={String(review.draft.digest)} items={review.report.items} busy={busy} selected={selected} onSelect={setSelected} approvalKeys={approvalPreview}
+          onPreview={(keys) => void run(async () => openApprovalPreview(keys))} onApprove={() => void run(confirmApproval)} onCancel={() => setApprovalPreview(null)} onSetup={() => onStageChange('place')} />
+        {!!review.report.findings.length && <details><summary>Technical findings ({review.report.findings.length})</summary>
+          <ul>{review.report.findings.slice((currentFindingPage - 1) * 25, currentFindingPage * 25).map((finding, index) => <li key={index}><p>{String(finding.message ?? finding.code)}</p><pre>{JSON.stringify(finding, null, 2)}</pre></li>)}</ul>
+          <div className="report-pager"><Button disabled={currentFindingPage <= 1} onClick={() => setFindingPage(currentFindingPage - 1)}>Previous findings</Button><span>Page {currentFindingPage} of {findingPages}</span><Button disabled={currentFindingPage >= findingPages} onClick={() => setFindingPage(currentFindingPage + 1)}>Next findings</Button></div>
+        </details>}
       </>}
     </>}
 
@@ -282,16 +284,21 @@ export function JuniperSRXMigrationWorkflow({ source, sourceKey, stage, onStageC
       {!approval && <p>Review and approve the current plan before exporting.</p>}
       {artifact && <>
         <h3>{artifact.report.plan_status === 'READY_WITH_MANUAL_WORK' ? 'Partial offline export' : artifact.report.plan_status === 'BLOCKED' ? 'No approved commands' : 'Offline export ready'}</h3>
-        <p>{artifact.command_count} set lines · SHA-256: {artifact.command_sha256}</p>
+        <p className="artifact-identity">{artifact.command_count} command lines · SHA-256: {artifact.command_sha256}</p>
         <p>{String(artifact.report.verification ?? 'Destination compatibility and device acceptance are unverified.')}</p>
         {artifact.report.plan_status === 'READY_WITH_MANUAL_WORK' && <p role="status">Blocked, unsupported and unapproved work is excluded from this export.</p>}
+        <MigrationCoverage coverage={artifact.report.coverage} />
         {!state.previewText ? <Button disabled={busy} onClick={() => void run(async () => {
+          const request = ++requests.current
           const result = await api.commandPreview(artifact)
+          if (request !== requests.current) return
           if (result.command_sha256 !== artifact.command_sha256) throw new Error('Command preview integrity check failed')
           setState((current) => ({ ...current, previewText: result.text }))
-        })}>Load command preview</Button> : <details open><summary>Command preview</summary><textarea aria-label="Juniper SRX command preview" readOnly value={state.previewText} rows={14} /></details>}
+        })}>Load command preview</Button> : <details open><summary>Command preview</summary><label className="field">Approved Junos commands<textarea aria-label="Juniper SRX command preview" readOnly value={state.previewText} rows={14} wrap="off" /></label></details>}
+        <div className="action-row">
         <Button disabled={busy || !artifact.command_count} onClick={() => void run(async () => downloadFile(await api.download(source, artifact, 'commands'), 'juniper_config.set'))}>Download Junos set file</Button>
         <Button disabled={busy} onClick={() => void run(async () => downloadFile(await api.download(source, artifact, 'bundle'), 'migration_fortigate_to_juniper_srx.zip'))}>Download reviewed migration bundle</Button>
+        </div>
       </>}
     </>}
     {busy && <LoadingState label="Preparing reviewed SRX migration…" />}

@@ -1,0 +1,557 @@
+{
+  "commands": {
+    "/web_api/add-access-rule": {
+      "action": [
+        "string"
+      ],
+      "action-settings": [
+        "object"
+      ],
+      "comments": [
+        "string"
+      ],
+      "content": [
+        "object"
+      ],
+      "content-direction": [
+        "string"
+      ],
+      "content-negate": [
+        "boolean"
+      ],
+      "custom-fields": [
+        "object"
+      ],
+      "destination": [
+        "string",
+        "list"
+      ],
+      "destination-negate": [
+        "boolean"
+      ],
+      "details-level": [
+        "string"
+      ],
+      "enabled": [
+        "boolean"
+      ],
+      "ignore-errors": [
+        "boolean"
+      ],
+      "ignore-warnings": [
+        "boolean"
+      ],
+      "inline-layer": [
+        "string"
+      ],
+      "install-on": [
+        "string",
+        "list"
+      ],
+      "layer": [
+        "string"
+      ],
+      "name": [
+        "string"
+      ],
+      "position": [
+        "integer",
+        "string",
+        "object"
+      ],
+      "service": [
+        "string",
+        "list"
+      ],
+      "service-negate": [
+        "boolean"
+      ],
+      "service-resource": [
+        "string"
+      ],
+      "source": [
+        "string",
+        "list"
+      ],
+      "source-negate": [
+        "boolean"
+      ],
+      "tags": [
+        "object"
+      ],
+      "time": [
+        "string",
+        "list"
+      ],
+      "track": [
+        "object"
+      ],
+      "user-check": [
+        "object"
+      ],
+      "vpn": [
+        "string",
+        "object",
+        "list"
+      ]
+    },
+    "/web_api/add-address-range": {
+      "color": [
+        "string"
+      ],
+      "comments": [
+        "string"
+      ],
+      "details-level": [
+        "string"
+      ],
+      "groups": [
+        "string",
+        "list"
+      ],
+      "ignore-errors": [
+        "boolean"
+      ],
+      "ignore-warnings": [
+        "boolean"
+      ],
+      "ip-address-first": [
+        "string"
+      ],
+      "ip-address-last": [
+        "string"
+      ],
+      "ipv4-address-first": [
+        "string"
+      ],
+      "ipv4-address-last": [
+        "string"
+      ],
+      "ipv6-address-first": [
+        "string"
+      ],
+      "ipv6-address-last": [
+        "string"
+      ],
+      "name": [
+        "string"
+      ],
+      "nat-settings": [
+        "object"
+      ],
+      "set-if-exists": [
+        "boolean"
+      ],
+      "tags": [
+        "string",
+        "list"
+      ]
+    },
+    "/web_api/add-group": {
+      "color": [
+        "string"
+      ],
+      "comments": [
+        "string"
+      ],
+      "details-level": [
+        "string"
+      ],
+      "groups": [
+        "string",
+        "list"
+      ],
+      "ignore-errors": [
+        "boolean"
+      ],
+      "ignore-warnings": [
+        "boolean"
+      ],
+      "members": [
+        "string",
+        "list"
+      ],
+      "name": [
+        "string"
+      ],
+      "tags": [
+        "string",
+        "list"
+      ]
+    },
+    "/web_api/add-host": {
+      "color": [
+        "string"
+      ],
+      "comments": [
+        "string"
+      ],
+      "details-level": [
+        "string"
+      ],
+      "groups": [
+        "string",
+        "list"
+      ],
+      "host-servers": [
+        "object"
+      ],
+      "ignore-errors": [
+        "boolean"
+      ],
+      "ignore-warnings": [
+        "boolean"
+      ],
+      "interfaces": [
+        "object",
+        "list"
+      ],
+      "ip-address": [
+        "string"
+      ],
+      "ipv4-address": [
+        "string"
+      ],
+      "ipv6-address": [
+        "string"
+      ],
+      "name": [
+        "string"
+      ],
+      "nat-settings": [
+        "object"
+      ],
+      "set-if-exists": [
+        "boolean"
+      ],
+      "tags": [
+        "string",
+        "list"
+      ]
+    },
+    "/web_api/add-network": {
+      "broadcast": [
+        "string"
+      ],
+      "color": [
+        "string"
+      ],
+      "comments": [
+        "string"
+      ],
+      "details-level": [
+        "string"
+      ],
+      "groups": [
+        "string",
+        "list"
+      ],
+      "ignore-errors": [
+        "boolean"
+      ],
+      "ignore-warnings": [
+        "boolean"
+      ],
+      "mask-length": [
+        "integer"
+      ],
+      "mask-length4": [
+        "integer"
+      ],
+      "mask-length6": [
+        "integer"
+      ],
+      "name": [
+        "string"
+      ],
+      "nat-settings": [
+        "object"
+      ],
+      "set-if-exists": [
+        "boolean"
+      ],
+      "subnet": [
+        "string"
+      ],
+      "subnet-mask": [
+        "string"
+      ],
+      "subnet4": [
+        "string"
+      ],
+      "subnet6": [
+        "string"
+      ],
+      "tags": [
+        "string",
+        "list"
+      ]
+    },
+    "/web_api/add-package": {
+      "access": [
+        "boolean"
+      ],
+      "color": [
+        "string"
+      ],
+      "comments": [
+        "string"
+      ],
+      "desktop-security": [
+        "boolean"
+      ],
+      "details-level": [
+        "string"
+      ],
+      "ignore-errors": [
+        "boolean"
+      ],
+      "ignore-warnings": [
+        "boolean"
+      ],
+      "installation-targets": [
+        "string",
+        "list"
+      ],
+      "name": [
+        "string"
+      ],
+      "qos": [
+        "boolean"
+      ],
+      "qos-policy-type": [
+        "string"
+      ],
+      "tags": [
+        "string",
+        "list"
+      ],
+      "threat-prevention": [
+        "boolean"
+      ],
+      "vpn-traditional-mode": [
+        "boolean"
+      ]
+    },
+    "/web_api/add-service-group": {
+      "color": [
+        "string"
+      ],
+      "comments": [
+        "string"
+      ],
+      "details-level": [
+        "string"
+      ],
+      "groups": [
+        "string",
+        "list"
+      ],
+      "ignore-errors": [
+        "boolean"
+      ],
+      "ignore-warnings": [
+        "boolean"
+      ],
+      "members": [
+        "string",
+        "list"
+      ],
+      "name": [
+        "string"
+      ],
+      "tags": [
+        "string",
+        "list"
+      ]
+    },
+    "/web_api/add-service-tcp": {
+      "aggressive-aging": [
+        "object"
+      ],
+      "color": [
+        "string"
+      ],
+      "comments": [
+        "string"
+      ],
+      "details-level": [
+        "string"
+      ],
+      "groups": [
+        "string",
+        "list"
+      ],
+      "ignore-errors": [
+        "boolean"
+      ],
+      "ignore-warnings": [
+        "boolean"
+      ],
+      "keep-connections-open-after-policy-installation": [
+        "boolean"
+      ],
+      "match-by-protocol-signature": [
+        "boolean"
+      ],
+      "match-for-any": [
+        "boolean"
+      ],
+      "name": [
+        "string"
+      ],
+      "override-default-settings": [
+        "boolean"
+      ],
+      "port": [
+        "string"
+      ],
+      "protocol": [
+        "string"
+      ],
+      "session-timeout": [
+        "integer"
+      ],
+      "set-if-exists": [
+        "boolean"
+      ],
+      "source-port": [
+        "string"
+      ],
+      "sync-connections-on-cluster": [
+        "boolean"
+      ],
+      "tags": [
+        "string",
+        "list"
+      ],
+      "use-default-session-timeout": [
+        "boolean"
+      ]
+    },
+    "/web_api/add-service-udp": {
+      "accept-replies": [
+        "boolean"
+      ],
+      "aggressive-aging": [
+        "object"
+      ],
+      "color": [
+        "string"
+      ],
+      "comments": [
+        "string"
+      ],
+      "details-level": [
+        "string"
+      ],
+      "groups": [
+        "string",
+        "list"
+      ],
+      "ignore-errors": [
+        "boolean"
+      ],
+      "ignore-warnings": [
+        "boolean"
+      ],
+      "keep-connections-open-after-policy-installation": [
+        "boolean"
+      ],
+      "match-by-protocol-signature": [
+        "boolean"
+      ],
+      "match-for-any": [
+        "boolean"
+      ],
+      "name": [
+        "string"
+      ],
+      "override-default-settings": [
+        "boolean"
+      ],
+      "port": [
+        "string"
+      ],
+      "protocol": [
+        "string"
+      ],
+      "session-timeout": [
+        "integer"
+      ],
+      "set-if-exists": [
+        "boolean"
+      ],
+      "source-port": [
+        "string"
+      ],
+      "sync-connections-on-cluster": [
+        "boolean"
+      ],
+      "tags": [
+        "string",
+        "list"
+      ],
+      "use-default-session-timeout": [
+        "boolean"
+      ]
+    },
+    "/web_api/set-access-layer": {
+      "applications-and-url-filtering": [
+        "boolean"
+      ],
+      "color": [
+        "string"
+      ],
+      "comments": [
+        "string"
+      ],
+      "content-awareness": [
+        "boolean"
+      ],
+      "details-level": [
+        "string"
+      ],
+      "detect-using-x-forward-for": [
+        "boolean"
+      ],
+      "firewall": [
+        "boolean"
+      ],
+      "ignore-errors": [
+        "boolean"
+      ],
+      "ignore-warnings": [
+        "boolean"
+      ],
+      "implicit-cleanup-action": [
+        "string"
+      ],
+      "mobile-access": [
+        "boolean"
+      ],
+      "name": [
+        "string"
+      ],
+      "new-name": [
+        "string"
+      ],
+      "shared": [
+        "boolean"
+      ],
+      "tags": [
+        "object",
+        "object",
+        "string",
+        "list"
+      ],
+      "uid": [
+        "string"
+      ]
+    }
+  },
+  "reference": "https://sc1.checkpoint.com/documents/latest/APIs/data/v1.8.1/dynamic/apis.json",
+  "scope": "Selected request field names and top-level types; not a complete server validator.",
+  "source_sha256": "76cb153191dbb24fb4eba793151bfbe4970e661c52f8acec9412f2e5786bccc8",
+  "version": "1.8.1"
+}

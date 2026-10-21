@@ -1,0 +1,205 @@
+<config version="11.1.0">
+  <devices>
+    <entry name="pan-lab-01">
+      <network>
+        <interface>
+          <ethernet>
+            <entry name="ethernet1/1">
+              <layer3>
+                <ip>
+                  <entry name="192.0.2.1/24" />
+                </ip>
+              </layer3>
+            </entry>
+            <entry name="ethernet1/2">
+              <layer3>
+                <ip>
+                  <entry name="198.51.100.1/24" />
+                </ip>
+              </layer3>
+            </entry>
+          </ethernet>
+        </interface>
+        <virtual-router>
+          <entry name="vr-main">
+            <interface>
+              <member>ethernet1/1</member>
+              <member>ethernet1/2</member>
+            </interface>
+            <routing-table>
+              <ip>
+                <static-route>
+                  <entry name="default-out">
+                    <destination>0.0.0.0/0</destination>
+                    <nexthop>
+                      <ip-address>198.51.100.254</ip-address>
+                    </nexthop>
+                    <interface>ethernet1/2</interface>
+                    <metric>10</metric>
+                    <admin-dist>10</admin-dist>
+                  </entry>
+                </static-route>
+              </ip>
+            </routing-table>
+          </entry>
+        </virtual-router>
+      </network>
+      <vsys>
+        <entry name="vsys1">
+          <import>
+            <network>
+              <interface>
+                <member>ethernet1/1</member>
+                <member>ethernet1/2</member>
+              </interface>
+              <virtual-router>
+                <member>vr-main</member>
+              </virtual-router>
+            </network>
+          </import>
+          <address>
+            <entry name="inside-net">
+              <ip-netmask>10.10.0.0/24</ip-netmask>
+            </entry>
+            <entry name="app-server">
+              <ip-netmask>198.51.100.20</ip-netmask>
+            </entry>
+          </address>
+          <address-group>
+            <entry name="inside-hosts">
+              <static>
+                <member>inside-net</member>
+                <member>app-server</member>
+              </static>
+            </entry>
+          </address-group>
+          <service>
+            <entry name="tcp-range">
+              <protocol>
+                <tcp>
+                  <port>443,8443-8444</port>
+                  <source-port>1024-65535</source-port>
+                </tcp>
+              </protocol>
+            </entry>
+            <entry name="udp-range">
+              <protocol>
+                <udp>
+                  <port>500,4500</port>
+                  <source-port>1024-65535</source-port>
+                </udp>
+              </protocol>
+            </entry>
+          </service>
+          <service-group>
+            <entry name="approved-services">
+              <members>
+                <member>tcp-range</member>
+                <member>udp-range</member>
+              </members>
+            </entry>
+          </service-group>
+          <zone>
+            <entry name="inside">
+              <network>
+                <layer3>
+                  <member>ethernet1/1</member>
+                </layer3>
+              </network>
+            </entry>
+            <entry name="outside">
+              <network>
+                <layer3>
+                  <member>ethernet1/2</member>
+                </layer3>
+              </network>
+            </entry>
+          </zone>
+          <rulebase>
+            <security>
+              <rules>
+                <entry name="allow-explicit-outside-host">
+                  <from>
+                    <member>inside</member>
+                  </from>
+                  <to>
+                    <member>outside</member>
+                  </to>
+                  <source>
+                    <member>inside-net</member>
+                  </source>
+                  <destination>
+                    <member>app-server</member>
+                  </destination>
+                  <application>
+                    <member>any</member>
+                  </application>
+                  <service>
+                    <member>tcp-range</member>
+                  </service>
+                  <action>allow</action>
+                  <rule-type>universal</rule-type>
+                  <negate-source>no</negate-source>
+                  <negate-destination>no</negate-destination>
+                  <disabled>no</disabled>
+                  <log-start>no</log-start>
+                  <log-end>no</log-end>
+                  <source-user>
+                    <member>any</member>
+                  </source-user>
+                  <category>
+                    <member>any</member>
+                  </category>
+                </entry>
+              </rules>
+            </security>
+            <nat>
+              <rules>
+                <entry name="disabled-unsupported-nat">
+                  <from>
+                    <member>inside</member>
+                  </from>
+                  <to>
+                    <member>outside</member>
+                  </to>
+                  <source>
+                    <member>inside-net</member>
+                  </source>
+                  <destination>
+                    <member>any</member>
+                  </destination>
+                  <service>any</service>
+                  <disabled>yes</disabled>
+                  <source-translation>
+                    <dynamic-ip-and-port>
+                      <interface-address>
+                        <interface>ethernet1/2</interface>
+                      </interface-address>
+                    </dynamic-ip-and-port>
+                  </source-translation>
+                  <future-translation-mode>retain</future-translation-mode>
+                </entry>
+              </rules>
+            </nat>
+            <default-security-rules>
+              <rules>
+                <entry name="intrazone-default">
+                  <action>drop</action>
+                  <disabled>no</disabled>
+                  <log-start>no</log-start>
+                  <log-end>no</log-end>
+                </entry>
+                <entry name="interzone-default">
+                  <action>drop</action>
+                  <disabled>no</disabled>
+                  <log-start>no</log-start>
+                  <log-end>no</log-end>
+                </entry>
+              </rules>
+            </default-security-rules>
+          </rulebase>
+        </entry>
+      </vsys>
+    </entry>
+  </devices>
+</config>

@@ -26,28 +26,47 @@ const review = { draft: { digest: 'draft', signature: 'signed', context: {}, con
 
 function harness(saved, overrides = {}, callbacks = {}) {
   let state = saved
-  const slots = []; let cursor = 0; let dirty = false; let effects = []
+  let slots = []; let cursor = 0; let dirty = false; let effects = []
+  const instances = new Map()
   const hooks = {
-    useState(value) { const index = cursor++; if (!(index in slots)) slots[index] = typeof value === 'function' ? value() : value; return [slots[index], (next) => { slots[index] = typeof next === 'function' ? next(slots[index]) : next; dirty = true }] },
+    useState(value) { const container = slots; const index = cursor++; if (!(index in container)) container[index] = typeof value === 'function' ? value() : value; return [container[index], (next) => { container[index] = typeof next === 'function' ? next(container[index]) : next; dirty = true }] },
     useRef(value) { const index = cursor++; return slots[index] ??= { current: value } },
     useEffect(fn, deps) { const index = cursor++; if (!slots[index] || deps.some((d, i) => d !== slots[index][i])) { slots[index] = deps; effects.push(fn) } },
+    useCallback(fn) { return slots[cursor++] ??= fn },
   }
+  const sharedModules = { react: hooks, '../../../components/common/Button': { Button: 'Button' }, '../../../components/common/tabKeyboard': { tabKeyboard() {} } }
+  const offlineReview = load('../src/features/migration/components/OfflineMigrationReview.tsx', sharedModules)
+  const offlineExport = load('../src/features/migration/components/OfflineMigrationExport.tsx', sharedModules)
   const Component = load('../src/features/migration/paloAltoToFortigate/MigrationWorkflow.tsx', {
     react: hooks, '../../../components/common/Button': { Button: 'Button' }, '../../../components/common/ErrorBanner': { ErrorBanner: 'ErrorBanner' },
     '../../../components/common/tabKeyboard': { tabKeyboard() {} }, './reviewPresentation': presentation,
+    '../components/OfflineMigrationReview': offlineReview, '../components/OfflineMigrationExport': offlineExport,
     '../../source/FileUpload': { FileUpload: 'FileUpload' }, '../../source/sourceApi': {},
-    '../../../storage/workspaceStore': { workspace: () => ({ fortigateMigration: state }), saveWorkspace: async (value) => { state = value.fortigateMigration } },
+    '../../../storage/workspaceStore': { workspace: () => ({ panosMigration: state }), saveWorkspace: async (value) => { state = value.panosMigration } },
     '../migrationApi': { downloadFile() {} }, './migrationApi': { ...api, prepare: async () => review, ...overrides },
   }).FortiGateMigrationWorkflow
   const props = { source: { vendor: 'palo_alto', source_text: '<config />' }, sourceKey: 'source', ...callbacks }
+  function expand(tree) {
+    if (Array.isArray(tree)) return tree.map(expand)
+    if (!tree || typeof tree !== 'object') return tree
+    if (typeof tree.type === 'function') {
+      const parentSlots = slots; const parentCursor = cursor
+      if (!instances.has(tree.type)) instances.set(tree.type, [])
+      slots = instances.get(tree.type); cursor = 0
+      const rendered = expand(tree.type(tree.props))
+      slots = parentSlots; cursor = parentCursor
+      return rendered
+    }
+    return { ...tree, props: { ...tree.props, children: expand(tree.props?.children) } }
+  }
   return {
     state: () => state,
-    async render() { let tree; for (let i = 0; i < 15; i++) { cursor = 0; dirty = false; tree = Component(props); const callbacks = effects; effects = []; callbacks.forEach((fn) => fn()); await Promise.resolve(); await Promise.resolve(); if (!dirty) return tree } throw new Error('Did not settle') },
+    async render() { let tree; for (let i = 0; i < 15; i++) { cursor = 0; dirty = false; tree = expand(Component(props)); const callbacks = effects; effects = []; callbacks.forEach((fn) => fn()); await Promise.resolve(); await Promise.resolve(); if (!dirty) return tree } throw new Error('Did not settle') },
   }
 }
 function elements(tree) { if (!tree || typeof tree !== 'object') return []; if (Array.isArray(tree)) return tree.flatMap(elements); return [tree, ...elements(tree.props?.children)] }
 function button(tree, label) { const node = elements(tree).find((n) => n.type === 'Button' && n.props.children === label); assert.ok(node, label); return node }
-function initial(stage) { return { sourceKey: 'source', options: structuredClone(options), targetSource: null, review, approval: null, artifact: null, stage } }
+function initial(stage) { return { pairId: 'palo_alto_to_fortigate', sourceKey: 'source', options: structuredClone(options), targetSource: null, review, approval: null, artifact: null, stage } }
 function text(tree) { if (Array.isArray(tree)) return tree.map(text).join(''); return tree && typeof tree === 'object' ? text(tree.props?.children) : tree == null || typeof tree === 'boolean' ? '' : String(tree) }
 function tab(tree, id) { return elements(tree).find((n) => n.props?.id === `fortigate-tab-${id}`) }
 

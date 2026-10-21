@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { Button } from '../../../components/common/Button'
 import { ErrorBanner } from '../../../components/common/ErrorBanner'
-import { tabKeyboard } from '../../../components/common/tabKeyboard'
+import { OfflineMigrationReview } from '../components/OfflineMigrationReview'
+import { OfflineMigrationExport } from '../components/OfflineMigrationExport'
 import { FileUpload } from '../../source/FileUpload'
 import { previewSource } from '../../source/sourceApi'
 import { saveWorkspace, workspace } from '../../../storage/workspaceStore'
@@ -9,14 +10,14 @@ import type { SourceEvidence } from '../../../storage/workspaceTypes'
 import { downloadFile } from '../migrationApi'
 import * as api from './migrationApi'
 import type { FortiGateOptions, FortiGateReview, FortiGateWorkspace, Requirement } from './types'
-import { groupEffectiveValues, groupReviewIssues, isReady, orderPlacementRequirements } from './reviewPresentation'
+import { groupEffectiveValues, groupReviewIssues, isReady, offlineReviewRow, orderPlacementRequirements } from './reviewPresentation'
 
 const emptyOptions = (): FortiGateOptions => ({ source_scope: '', vdom: '', interfaces: {}, zones: {}, routers: {}, profile: {}, timezone: '', policy_settings: {} })
 
-export function FortiGateMigrationWorkflow({ source, sourceKey, onStageChange, onReviewSource }: { source: SourceEvidence; sourceKey: string; onStageChange?: (stage: FortiGateWorkspace['stage']) => void; onReviewSource?: () => void }) {
+export function FortiGateMigrationWorkflow({ source, sourceKey, stage: controlledStage, onStageChange, onReviewSource }: { source: SourceEvidence; sourceKey: string; stage?: FortiGateWorkspace['stage']; onStageChange?: (stage: FortiGateWorkspace['stage']) => void; onReviewSource?: () => void }) {
   const [state, setState] = useState<FortiGateWorkspace>(() => {
-    const saved = workspace().fortigateMigration
-    return saved?.sourceKey === sourceKey ? saved : { sourceKey, options: emptyOptions(), targetSource: null, review: null, approval: null, artifact: null, stage: 'load' }
+    const saved = workspace().panosMigration
+    return saved?.pairId === 'palo_alto_to_fortigate' && saved.sourceKey === sourceKey ? saved : { pairId: 'palo_alto_to_fortigate', sourceKey, options: emptyOptions(), targetSource: null, review: null, approval: null, artifact: null, stage: 'load' }
   })
   const [proposal, setProposal] = useState<FortiGateReview | null>(state.review)
   const [busy, setBusy] = useState(false)
@@ -32,10 +33,6 @@ export function FortiGateMigrationWorkflow({ source, sourceKey, onStageChange, o
   const [policyPage, setPolicyPage] = useState(1)
   const [showResolvedChoices, setShowResolvedChoices] = useState(false)
   const [reviewTabChoice, setReviewTabChoice] = useState<'changes' | 'decisions' | 'manual' | null>(null)
-  const [reviewFilter, setReviewFilter] = useState('all')
-  const [reviewSearch, setReviewSearch] = useState('')
-  const [reviewPage, setReviewPage] = useState(1)
-  const [previewPage, setPreviewPage] = useState(1)
   const [issueSearch, setIssueSearch] = useState('')
   const [issuePage, setIssuePage] = useState(1)
   const [selectedIssue, setSelectedIssue] = useState('')
@@ -47,21 +44,27 @@ export function FortiGateMigrationWorkflow({ source, sourceKey, onStageChange, o
   const requests = useRef(0)
   const pending = useRef(false)
   const { options, review, approval, artifact } = state
+  const stage = controlledStage ?? state.stage
   const working = busy || (!review && !error)
   const requirements = proposal?.requirements
   const resolved = proposal?.resolved_options ?? options
   const profile = { ...resolved.profile, ...options.profile }
 
-  useEffect(() => { void saveWorkspace({ fortigateMigration: state }) }, [state])
-  useEffect(() => { onStageChange?.(state.stage) }, [state.stage, onStageChange])
+  useEffect(() => { void saveWorkspace({ panosMigration: { ...state, stage } }) }, [state, stage])
   useEffect(() => () => { requests.current = -1 }, [])
+
+  function changeStage(next: FortiGateWorkspace['stage']) {
+    setState((current) => ({ ...current, stage: next }))
+    onStageChange?.(next)
+  }
   useEffect(() => {
     let active = true
     const request = ++requests.current
     api.prepare(source, options, state.targetSource).then((result) => {
       if (!active || request !== requests.current) return
       setProposal(result)
-      setState((current) => ({ ...current, review: result, stage: current.stage === 'load' && result.resolved_options?.source_scope ? 'place' : current.stage }))
+      setState((current) => ({ ...current, review: result }))
+      if (stage === 'load' && result.resolved_options?.source_scope) changeStage('place')
     }).catch((cause) => { if (active && request === requests.current) setError(cause instanceof Error ? cause.message : 'Could not prepare migration proposal') })
     return () => { active = false }
   }, [source, options, state.targetSource])
@@ -70,7 +73,7 @@ export function FortiGateMigrationWorkflow({ source, sourceKey, onStageChange, o
     requests.current++
     setState((current) => ({ ...current, options: next, targetSource, review: null, approval: null, artifact: null }))
     setApprovalPreview(null); setSelected([]); setBulkChoice(null); setError(null)
-    setReviewTabChoice(null); setSelectedIssue(''); setIssuePage(1); setReviewPage(1)
+    setReviewTabChoice(null); setSelectedIssue(''); setIssuePage(1)
   }
 
   async function run(action: () => Promise<void>) {
@@ -87,15 +90,16 @@ export function FortiGateMigrationWorkflow({ source, sourceKey, onStageChange, o
     const result = await api.prepare(source, options, state.targetSource)
     if (request !== requests.current) return
     setProposal(result)
-    setState((current) => ({ ...current, review: result, stage: 'review' }))
-    setSelected([]); setApprovalPreview(null); setReviewTabChoice(null); setPreviewPage(1)
+    setState((current) => ({ ...current, review: result }))
+    changeStage('review')
+    setSelected([]); setApprovalPreview(null); setReviewTabChoice(null)
   }
 
   async function generate(currentApproval = approval) {
     if (!currentApproval) return
     const request = ++requests.current
     const result = await api.build(source, options, state.targetSource, currentApproval)
-    if (request === requests.current) setState((current) => ({ ...current, artifact: result.artifact, stage: 'export' }))
+    if (request === requests.current) { setState((current) => ({ ...current, artifact: result.artifact })); changeStage('export') }
   }
 
   async function confirmApproval() {
@@ -103,9 +107,19 @@ export function FortiGateMigrationWorkflow({ source, sourceKey, onStageChange, o
     const request = ++requests.current
     const result = await api.approve(source, options, state.targetSource, review.draft, approvalPreview)
     if (request !== requests.current) return
-    setState((current) => ({ ...current, approval: result.approval, stage: 'export' }))
+    setState((current) => ({ ...current, approval: result.approval }))
+    changeStage('export')
     setApprovalPreview(null)
     await generate(result.approval)
+  }
+
+  function downloadArtifact(kind: 'commands' | 'bundle') {
+    if (!artifact) return
+    const request = requests.current
+    void run(async () => {
+      const blob = await api.download(source, artifact, kind)
+      if (request === requests.current) downloadFile(blob, kind === 'bundle' ? 'migration_palo_alto_to_fortigate.zip' : 'fortigate_config.conf')
+    })
   }
 
   function setRequirement(row: Requirement, value: string) {
@@ -140,7 +154,6 @@ export function FortiGateMigrationWorkflow({ source, sourceKey, onStageChange, o
 
   const configuration = review?.draft.configuration ?? []
   const ready = configuration.filter(isReady)
-  const previewRows = review?.draft.configuration.filter((row) => approvalPreview?.includes(row.key)) ?? []
   const placementRequirements = requirements?.decisions.filter((row) => row.key.startsWith(`${requirementKind}:`)) ?? []
   const orderedRequirements = requirementKind === 'interfaces' ? orderPlacementRequirements(placementRequirements, configuration)
     : [...placementRequirements].sort((a, b) => Number(!!requirementValue(a)) - Number(!!requirementValue(b)))
@@ -148,13 +161,6 @@ export function FortiGateMigrationWorkflow({ source, sourceKey, onStageChange, o
   const requirementPages = Math.max(1, Math.ceil(filteredRequirements.length / 25))
   const currentRequirementPage = Math.min(requirementPage, requirementPages)
   const visibleRequirements = filteredRequirements.slice((currentRequirementPage - 1) * 25, currentRequirementPage * 25)
-  const filteredRows = configuration.filter((row) => (reviewFilter === 'all' || (reviewFilter === 'ready' ? isReady(row) : !isReady(row)))
-    && `${row.source_scope} ${row.source_name} ${row.target_name} ${row.family} ${row.blocking_reasons.join(' ')}`.toLowerCase().includes(reviewSearch.toLowerCase()))
-  const reviewPages = Math.max(1, Math.ceil(filteredRows.length / 25))
-  const currentReviewPage = Math.min(reviewPage, reviewPages)
-  const visibleRows = filteredRows.slice((currentReviewPage - 1) * 25, currentReviewPage * 25)
-  const previewPages = Math.max(1, Math.ceil(previewRows.length / 25))
-  const currentPreviewPage = Math.min(previewPage, previewPages)
   const policyGroups = new Map<string, Requirement[]>()
   for (const row of requirements?.decisions ?? []) {
     if (!row.policy_key || !row.field || requirementValue(row)) continue
@@ -187,18 +193,17 @@ export function FortiGateMigrationWorkflow({ source, sourceKey, onStageChange, o
   const currentEvidenceSummaryPage = Math.min(evidenceSummaryPage, evidenceSummaryPages)
   const familyCounts = new Map<string, number>()
   for (const row of configuration) familyCounts.set(row.family, (familyCounts.get(row.family) ?? 0) + 1)
-  const stage = state.stage
   return <section className="panel" aria-labelledby="fortigate-migration-title">
     <h2 id="fortigate-migration-title">PAN-OS → FortiGate</h2>
     <p>Review a FortiOS 7.4.6 CLI export. Live FortiGate deployment is unavailable. Unsupported work stays visible.</p>
-    <nav className="migration-view-nav" aria-label="FortiGate migration workspace">
+    {!controlledStage && <nav className="migration-view-nav" aria-label="FortiGate migration workspace">
       {([['load', 'Source'], ['place', 'Target setup'], ['review', 'Review migration'], ['export', 'Download']] as const).map(([value, label], index) =>
-        <button key={value} type="button" disabled={working} aria-current={stage === value ? 'step' : undefined} onClick={() => setState({ ...state, stage: value })}>{index + 1}. {label}</button>)}
-    </nav>
+        <button key={value} type="button" disabled={working} aria-current={stage === value ? 'step' : undefined} onClick={() => changeStage(value)}>{index + 1}. {label}</button>)}
+    </nav>}
     {stage === 'load' && <>
       <label className="field">Source device / VSYS<select disabled={working} value={options.source_scope || resolved.source_scope} onChange={(event) => setRequirement({ key: 'source_scope', label: '' }, event.target.value)}><option value="">Choose source scope</option>{requirements?.source_scopes.map((scope) => <option key={scope}>{scope}</option>)}</select></label>
       <p>Choose one standalone VSYS. Managed Panorama inheritance remains manual.</p>
-      <Button disabled={working || !(options.source_scope || resolved.source_scope)} onClick={() => setState({ ...state, stage: 'place' })}>Continue to target setup</Button>
+      <Button disabled={working || !(options.source_scope || resolved.source_scope)} onClick={() => changeStage('place')}>Continue to target setup</Button>
     </>}
     {(stage === 'place' || stage === 'review') && findings.length > 0 && <section className="review-work-card" aria-label="Shared migration blockers">
       <h3>Resolve shared blockers first</h3>
@@ -275,14 +280,20 @@ export function FortiGateMigrationWorkflow({ source, sourceKey, onStageChange, o
     {stage === 'review' && <>
       {!review ? <><p>Prepare the current target choices before review.</p><Button disabled={working} onClick={() => void run(prepareReview)}>Prepare migration review</Button></> : <>
         <h3>Review migration</h3>
-        <p>{ready.length} items ready for review · {review.draft.configuration.length - ready.length} blocked or manual.</p>
         <p>Source: {resolved.source_scope} → target VDOM: {resolved.vdom || 'Unresolved'}.</p>
-        {!ready.length && <p role="status">No changes are ready to approve. Review shared blockers and the issue groups below.</p>}
-        <Button className="secondary-button" disabled={working} onClick={() => setState({ ...state, stage: 'place' })}>Edit target setup</Button>
-        <div role="tablist" aria-label="FortiGate migration review" className="migration-review-tabs" onKeyDown={tabKeyboard}>
-          {([['changes', 'Changes', configuration.length], ['decisions', 'Needs your input', inputGroups.length + findings.length], ['manual', 'Work outside this tool', manualGroups.length]] as const).map(([tab, label, count]) => <button key={tab} id={`fortigate-tab-${tab}`} role="tab" type="button" aria-selected={reviewTab === tab} aria-controls={`fortigate-panel-${tab}`} tabIndex={reviewTab === tab ? 0 : -1} onClick={() => { setReviewTabChoice(tab); setIssuePage(1); setSelectedIssue(''); setMemberPage(1) }}>{label} <span>{count} {tab === 'changes' ? 'items' : 'issue groups'}</span></button>)}
-        </div>
-        {reviewTab !== 'changes' && <section id={`fortigate-panel-${reviewTab}`} role="tabpanel" aria-labelledby={`fortigate-tab-${reviewTab}`}>
+        <OfflineMigrationReview id="fortigate" title="FortiGate" rows={configuration.map(offlineReviewRow)} busy={working}
+          tab={reviewTab} onTabChange={(tab) => { setReviewTabChoice(tab); setIssuePage(1); setSelectedIssue(''); setMemberPage(1) }}
+          inputCount={inputGroups.length + findings.length} manualCount={manualGroups.length}
+          selected={selected} onSelect={(keys) => { setSelected(keys); setApprovalPreview(null) }} approvalKeys={approvalPreview}
+          onPreview={(keys) => { try { setApprovalPreview(api.approvalSelection(configuration, keys)) } catch (cause) { setError(String(cause)) } }}
+          onApprove={() => void run(confirmApproval)} onCancel={() => setApprovalPreview(null)} onSetup={() => changeStage('place')}
+          approveLabel="Approve these changes and generate commands"
+          approvalContext={<>
+            <p>Confirm device modes, ownership, and physical cabling.</p>
+            <dl><dt>Target VDOM</dt><dd>{resolved.vdom}</dd>{Object.entries(resolved.profile).map(([field, value]) => <div key={field}><dt>{field.replaceAll('_', ' ')}</dt><dd>{Array.isArray(value) ? value.join(', ') : value}</dd></div>)}</dl>
+            <details><summary>Exact placement and technical context</summary><pre>{JSON.stringify({ profile: resolved.profile, vdom: resolved.vdom, interfaces: resolved.interfaces, zones: resolved.zones, routers: resolved.routers }, null, 2)}</pre></details>
+          </>}
+          issueContent={<>
           <p>{reviewTab === 'manual' ? 'These findings need separate review or implementation. Reading them does not resolve blocked configuration.' : 'Resolve target choices and prerequisites in Target setup. Review source corrections in the source report. Shared blockers are shown above.'}</p>
           <label className="field">Search issue groups<input value={issueSearch} onChange={(event) => { setIssueSearch(event.target.value); setIssuePage(1); setSelectedIssue(''); setMemberPage(1) }} /></label>
           <p>{groups.length} issue groups · {new Set(groups.flatMap((group) => group.affected.map((item) => item.key))).size} affected items. Impact can overlap between groups.</p>
@@ -291,36 +302,14 @@ export function FortiGateMigrationWorkflow({ source, sourceKey, onStageChange, o
           {activeIssue && <article className="review-work-card" aria-label="Selected issue group">
             <h3>{activeIssue.category === 'SOURCE' ? 'Source correction required' : activeIssue.category === 'PREREQUISITE' ? 'Resolve the prerequisite first' : reviewTab === 'manual' ? 'Separate work required' : 'Review this blocker'}</h3>
             <p>{activeIssue.explanation}</p>
-            {reviewTab !== 'manual' && <div className="action-row">{activeIssue.category !== 'SOURCE' && <Button disabled={working} onClick={() => setState({ ...state, stage: 'place' })}>Resolve in target setup</Button>}{onReviewSource && <Button className="secondary-button" onClick={onReviewSource}>Review source report</Button>}</div>}
+            {reviewTab !== 'manual' && <div className="action-row">{activeIssue.category !== 'SOURCE' && <Button disabled={working} onClick={() => changeStage('place')}>Resolve in target setup</Button>}{onReviewSource && <Button className="secondary-button" onClick={onReviewSource}>Review source report</Button>}</div>}
             <details><summary>Affected configuration ({activeIssue.affected.length})</summary><ul>{activeIssue.affected.slice((currentMemberPage - 1) * 25, currentMemberPage * 25).map((item) => <li key={item.key}>{item.source_scope} / {item.source_name}</li>)}</ul>
               {activeIssue.category === 'PREREQUISITE' && <details><summary>Reported dependency reasons ({activeIssue.reasons.length})</summary><ul>{activeIssue.reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul></details>}
               {memberPages > 1 && <div className="action-row"><Button disabled={currentMemberPage === 1} onClick={() => setMemberPage(currentMemberPage - 1)}>Previous affected items</Button><span>Page {currentMemberPage} of {memberPages}</span><Button disabled={currentMemberPage === memberPages} onClick={() => setMemberPage(currentMemberPage + 1)}>Next affected items</Button></div>}
             </details>
           </article>}
           {issuePages > 1 && <div className="action-row"><Button disabled={currentIssuePage === 1} onClick={() => { setIssuePage(currentIssuePage - 1); setMemberPage(1) }}>Previous issue groups</Button><span>Page {currentIssuePage} of {issuePages}</span><Button disabled={currentIssuePage === issuePages} onClick={() => { setIssuePage(currentIssuePage + 1); setMemberPage(1) }}>Next issue groups</Button></div>}
-        </section>}
-        {reviewTab === 'changes' && <section id="fortigate-panel-changes" role="tabpanel" aria-labelledby="fortigate-tab-changes">
-        <label className="field">Find a configuration item<input value={reviewSearch} onChange={(event) => { setReviewSearch(event.target.value); setReviewPage(1) }} /></label>
-        <label className="field">Review status<select value={reviewFilter} onChange={(event) => { setReviewFilter(event.target.value); setReviewPage(1) }}><option value="all">All</option><option value="ready">Ready</option><option value="blocked">Blocked and manual</option></select></label>
-        <div className="action-row"><label><input type="checkbox" aria-label="Select all ready changes" disabled={working || !ready.length} checked={ready.length > 0 && ready.every((row) => selected.includes(row.key))} onChange={(event) => { setSelected(event.target.checked ? ready.map((row) => row.key) : []); setApprovalPreview(null) }} /> Select all ready changes ({ready.length})</label>
-        <Button disabled={working || !selected.length} onClick={() => { try { setApprovalPreview(api.approvalSelection(review.draft.configuration, selected)); setPreviewPage(1) } catch (cause) { setError(String(cause)) } }}>Review selected changes</Button></div>
-        {approvalPreview && <section className="review-work-card" aria-label="FortiGate approval preview">
-          <h3>Approve exact changes and prerequisites</h3><p>{approvalPreview.length} items, including required supporting configuration and preceding policies.</p>
-          <p>{previewRows.filter((row) => !selected.includes(row.key)).length} prerequisites added to your selection. Approval includes the target profile and proposed placement. Confirm device modes, ownership, and physical cabling.</p>
-          <dl><dt>Target VDOM</dt><dd>{resolved.vdom}</dd>{Object.entries(resolved.profile).map(([field, value]) => <div key={field}><dt>{field.replaceAll('_', ' ')}</dt><dd>{Array.isArray(value) ? value.join(', ') : value}</dd></div>)}</dl>
-          <details><summary>Exact placement and technical context</summary><pre>{JSON.stringify({ profile: resolved.profile, vdom: resolved.vdom, interfaces: resolved.interfaces, zones: resolved.zones, routers: resolved.routers }, null, 2)}</pre></details>
-          {previewRows.slice((currentPreviewPage - 1) * 25, currentPreviewPage * 25).map((row) => <details key={row.key}><summary>{selected.includes(row.key) ? 'Selected' : 'Added prerequisite'} · {row.render_disposition}: {row.source_scope} / {row.source_name} → {row.target_vdom} / {row.target_name}</summary><dl>{row.settings.map(([field, values]) => <div key={field}><dt>{field}</dt><dd>{values.join(' ')}</dd></div>)}</dl><details><summary>Exact settings and dependency keys</summary><pre>{JSON.stringify({ settings: row.settings, dependencies: row.dependencies }, null, 2)}</pre></details></details>)}
-          {previewPages > 1 && <div className="action-row"><Button disabled={currentPreviewPage === 1} onClick={() => setPreviewPage(currentPreviewPage - 1)}>Previous approval details</Button><span>Page {currentPreviewPage} of {previewPages}</span><Button disabled={currentPreviewPage === previewPages} onClick={() => setPreviewPage(currentPreviewPage + 1)}>Next approval details</Button></div>}
-          <Button disabled={working || !approvalPreview.length} onClick={() => void run(confirmApproval)}>Approve these changes and generate commands</Button>
-          <Button disabled={working} onClick={() => setApprovalPreview(null)}>Cancel approval preview</Button>
-        </section>}
-        {!filteredRows.length && <p>No configuration items match these filters.</p>}
-        <div className="report-table-wrap"><table className="report-table"><caption>Planned FortiGate configuration</caption><thead><tr><th>Select</th><th>Source scope / name</th><th>Target</th><th>Operation</th><th>Reason</th></tr></thead><tbody>{visibleRows.map((row) => <tr key={row.key}>
-          <td><input aria-label={`Select ${row.source_scope} ${row.source_name}`} type="checkbox" disabled={working || !isReady(row)} checked={selected.includes(row.key)} onChange={(event) => { setSelected(event.target.checked ? [...selected, row.key] : selected.filter((key) => key !== row.key)); setApprovalPreview(null) }} /></td>
-          <td>{row.source_scope} / {row.source_name}<small>{row.family}</small><details><summary>Settings</summary><pre>{JSON.stringify(row.settings, null, 2)}</pre></details></td><td>{row.target_vdom} / {row.target_name}</td><td>{row.render_disposition}</td><td>{isReady(row) ? 'Ready for review' : <details><summary>{row.blocking_reasons.length} blocking reasons</summary><ul>{row.blocking_reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul></details>}</td>
-        </tr>)}</tbody></table></div>
-        {reviewPages > 1 && <div className="action-row"><Button disabled={currentReviewPage === 1} onClick={() => setReviewPage(currentReviewPage - 1)}>Previous changes</Button><span>Page {currentReviewPage} of {reviewPages}</span><Button disabled={currentReviewPage === reviewPages} onClick={() => setReviewPage(currentReviewPage + 1)}>Next changes</Button></div>}
-        </section>}
+          </>} />
         <details><summary>Technical evidence</summary>
           <h3>Configuration inventory</h3><ul>{[...familyCounts].map(([family, count]) => <li key={family}>{family.replaceAll('_', ' ')}: {count}</li>)}</ul>
           <h3>Target profile and placement</h3><pre>{JSON.stringify(resolved, null, 2)}</pre>
@@ -339,13 +328,14 @@ export function FortiGateMigrationWorkflow({ source, sourceKey, onStageChange, o
       {approval && !artifact && <Button disabled={working} onClick={() => void run(() => generate())}>Retry generation with current approval</Button>}
       {!approval && <p>Review and approve current configuration before generating commands.</p>}
       {artifact && <>
-        <h3>{artifact.report.plan_status === 'PARTIAL' ? 'Partial export' : artifact.report.plan_status === 'READY_NO_CHANGES' ? 'No changes needed' : 'Ready for export'}</h3>
-        <p>{artifact.command_count} CLI lines · SHA-256: {artifact.command_sha256}</p><p>{artifact.report.verification}</p>
-        <p>{artifact.report.deployment_eligibility.reason}</p>
-        {artifact.report.plan_status === 'PARTIAL' && <p role="status">Blocked, unsupported and unapproved work is excluded. Review the report before applying this partial configuration.</p>}
-        {!artifact.report.items.some((row) => ['policy', 'nat', 'static_route'].includes(row.family) && row.render_disposition !== 'BLOCK') && <p role="status">Supporting configuration only: no traffic policies, NAT or static routes are included.</p>}
-        <details><summary>Command preview</summary><textarea aria-label="FortiGate command preview" readOnly value={artifact.commands.join('\n')} rows={12} /></details>
-        {(['commands', 'bundle'] as const).map((kind) => <Button key={kind} disabled={working || (!artifact.command_count && kind === 'commands')} onClick={() => void run(async () => { const blob = await api.download(source, artifact, kind); downloadFile(blob, kind === 'bundle' ? 'migration_palo_alto_to_fortigate.zip' : 'fortigate_config.conf') })}>{kind === 'bundle' ? 'Download migration bundle' : 'Download FortiGate .conf'}</Button>)}
+        <OfflineMigrationExport artifactId={artifact.artifact_id} partial={artifact.report.plan_status === 'PARTIAL'}
+          noChanges={artifact.report.plan_status === 'READY_NO_CHANGES'} verification={artifact.report.verification} busy={working}
+          files={[{ key: 'commands', label: 'Approved FortiOS commands', previewLabel: 'FortiGate command preview', text: artifact.commands.join('\n'),
+            sha256: artifact.command_sha256, count: `${artifact.command_count} CLI lines`, downloadLabel: 'Download FortiGate .conf', downloadable: artifact.command_count > 0 }]}
+          onDownload={() => downloadArtifact('commands')} onBundle={() => downloadArtifact('bundle')}>
+          <p>{artifact.report.deployment_eligibility.reason}</p>
+          {!artifact.report.items.some((row) => ['policy', 'nat', 'static_route'].includes(row.family) && ['CREATE', 'CONFIGURE', 'REUSE'].includes(row.render_disposition)) && <p role="status">Supporting configuration only: no traffic policies, NAT or static routes are included.</p>}
+        </OfflineMigrationExport>
       </>}
     </>}
     {working && <p role="status" aria-live="polite">Preparing reviewed migration…</p>}

@@ -6,13 +6,21 @@ Vendor-native firewall configuration extraction, validation, reporting, live col
 
 > **Project status**
 >
-> Source extraction and reporting are implemented across multiple firewall vendors.
+> Source extraction and reporting are implemented across multiple firewall vendors (FortiGate, Cisco ASA, Cisco FTD, Juniper SRX, Check Point, and Palo Alto PAN-OS).
 >
-> FortiGate → Palo Alto PAN-OS migration planning is implemented for a supported subset of configuration, including reviewed target mappings, PAN-OS `set` command generation, migration artifacts, and optional candidate deployment.
+> Pair-specific migration planning is implemented across **nine directional pairs**:
+> - **FortiGate → Palo Alto PAN-OS** supports reviewed target mappings, PAN-OS `set` generation, and reviewed live candidate push, validation, and explicit commit.
+> - **Eight offline export pairs** support engineer review, dependency-aware disposition, and downloadable configuration or API artifacts:
+>   - **Palo Alto PAN-OS → FortiGate** (FortiOS 7.4.6 `.conf` CLI export)
+>   - **Palo Alto PAN-OS → Juniper SRX** (Junos 25.2R1 `.set` export)
+>   - **Palo Alto PAN-OS → Cisco ASA** (ASA 9.20 routed single-context `.cfg` export)
+>   - **Palo Alto PAN-OS → Check Point** (Management API 1.8.1 JSON request specs + Gaia Clish routes)
+>   - **Palo Alto PAN-OS → Cisco FTD** (FMC REST API 7.7.0 JSON request specs + curl script)
+>   - **FortiGate → Cisco ASA** (ASA 9.20 `.cfg` export)
+>   - **FortiGate → Juniper SRX** (Junos 25.2R1 `.set` export)
+>   - **FortiGate → Check Point** (Management API 1.8.1 JSON request specs + Gaia Clish routes)
 >
-> Palo Alto PAN-OS XML → FortiGate now supports a restricted, reviewed FortiOS 7.4.6 CLI export. FortiGate live deployment is disabled. See [reverse-pair coverage and usage](documentation/PAN-OS-to-FortiGate-migration.md).
->
-> Other migration pairs are not implemented.
+> Only FortiGate → PAN-OS supports live candidate operations; all other pairs export offline reviewed artifacts. For exact version baselines, limits, and operational rules, see the [Migration Support Matrix](documentation/migration-support-matrix.md).
 
 Website: https://firewall-migration-tool.onrender.com/
 
@@ -93,12 +101,16 @@ Unsupported or partially understood source configuration is preserved where prac
 - Secret sanitization for reportable source evidence.
 - Live source collection for supported vendors.
 - Sanitized collection snapshots.
-- FortiGate → Palo Alto migration planning.
+- FortiGate → Palo Alto migration planning with optional live candidate deployment.
+- PAN-OS → FortiGate reviewed FortiOS 7.4.6 `.conf` CLI export.
+- PAN-OS → Juniper SRX standalone Junos 25.2R1 `set` export.
+- PAN-OS → Cisco ASA 9.20 routed single-context `.cfg` export.
+- PAN-OS → Check Point Management API 1.8.1 request specs and Gaia Clish routes.
+- PAN-OS → Cisco FTD FMC REST API 7.7.0 request specs and curl execution script.
 - FortiGate → Juniper SRX and Cisco ASA reviewed offline exports.
 - FortiGate → Check Point Management API request specifications and separate Gaia static-route files.
-- Explicit migration mapping and decision review.
+- Explicit migration mapping and decision review across all 9 pairs.
 - PAN-OS `set` command generation.
-- PAN-OS XML → FortiGate planning, explicit approval, and FortiOS `.conf` export for the documented subset.
 - Migration reports and downloadable migration bundles.
 - Optional PAN-OS candidate deployment and validation.
 
@@ -353,21 +365,25 @@ Successful collection can produce a secret-sanitized snapshot for later preview 
 
 Collection snapshots are acquisition envelopes, not normalized firewall models.
 
-## FortiGate → Palo Alto Migration
+## Migration Planning & Supported Pairs
 
-The implemented directional migration pairs are:
+The tool supports **nine directional migration pairs**. Only FortiGate → Palo Alto PAN-OS supports live candidate operations; all other eight pairs export reviewed offline configuration or API artifacts.
 
-```text
-FortiGate → Palo Alto PAN-OS
-FortiGate → Juniper SRX (offline export)
-FortiGate → Cisco ASA (offline export)
-FortiGate → Check Point (offline request files)
-Palo Alto PAN-OS → FortiGate (CLI export)
-```
+| Source Vendor | Target Vendor | Target Baseline | Output Format | Execution Mode | Guide / Reference |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **FortiGate** | **Palo Alto PAN-OS** | 11.1 | `.set` commands | Reviewed Candidate Push & Commit | [Workflow below](#fortigate--palo-alto-migration-flow) |
+| **PAN-OS** | **FortiGate** | FortiOS 7.4.6 | CLI (`.conf`) | Offline Reviewed CLI | [PAN-OS to FortiGate](documentation/guides/PAN-OS-to-FortiGate-migration.md) |
+| **PAN-OS** | **Juniper SRX** | Junos 25.2R1 standalone | Set (`.set`) | Offline Reviewed Set | [Multi-Target Guide](documentation/guides/PAN-OS-multi-target-migration.md) |
+| **PAN-OS** | **Cisco ASA** | ASA 9.20 routed single-context | CLI (`.cfg`) | Offline Reviewed CLI | [Multi-Target Guide](documentation/guides/PAN-OS-multi-target-migration.md) |
+| **PAN-OS** | **Check Point** | Management API 1.8.1 | JSON + `.sh` | Offline API Specs + Clish | [Multi-Target Guide](documentation/guides/PAN-OS-multi-target-migration.md) |
+| **PAN-OS** | **Cisco FTD** | FMC REST API 7.7.0 | JSON + `.sh` | Offline REST Specs + curl | [Multi-Target Guide](documentation/guides/PAN-OS-multi-target-migration.md) |
+| **FortiGate** | **Cisco ASA** | ASA 9.20 routed single-context | CLI (`.cfg`) | Offline Reviewed CLI | [FortiGate to ASA](documentation/guides/fortigate-to-cisco-asa-migration.md) |
+| **FortiGate** | **Juniper SRX** | Junos 25.2R1 standalone | Set (`.set`) | Offline Reviewed Set | [Support Matrix](documentation/migration-support-matrix.md#juniper-srx) |
+| **FortiGate** | **Check Point** | Management API 1.8.1 | JSON + `.clish`| Offline API Specs + Clish | [FortiGate to Check Point](documentation/guides/fortigate-to-checkpoint-migration.md) |
 
-PAN-OS is the only target with destination-aware comparison and live candidate
-deployment. FMC-managed FTD export remains disabled while exact writable FMC
-request schemas are unverified.
+For comprehensive feature coverage, CLI commands, and operational boundaries across all targets, see the [Migration Support Matrix](documentation/migration-support-matrix.md) and [Documentation Hub](documentation/README.md).
+
+### FortiGate → Palo Alto Migration Flow
 
 Plan a migration from the CLI:
 
@@ -454,7 +470,7 @@ serial, sanitized baseline, clean candidate and explicit commit checks.
 
 The Check Point workflow is an offline, engineer-reviewed export. It does not
 connect to Management or Gaia, publish a package, install policy, or save Gaia
-configuration. See [Check Point coverage and usage](documentation/fortigate_to_checkpoint-migration.md)
+configuration. See [Check Point coverage and usage](documentation/guides/fortigate-to-checkpoint-migration.md)
 for the verified subset, CLI command, manual checks, and limitations.
 
 ## Migration Artifacts
@@ -541,7 +557,7 @@ parameters can be proposed by group. Existing management/protection profiles req
 explicit assignment; decryption and identity matching remain separate checks. Supported
 SNAT service unions expand into adjacent rules only after other NAT blockers are resolved.
 Gateway authentication and incomplete VPN semantics remain manual; no placeholder secrets
-are emitted. See [automation support and limits](documentation/migration-automation-implementation.md).
+are emitted. See [automation support and limits](documentation/architecture/migration-automation.md).
 
 ### Candidate recovery
 
@@ -999,8 +1015,12 @@ Source-reporting, collection, conversion, and deployment tests should remain sep
 
 ## Documentation
 
-Repository architecture and implementation guidance:
+Repository architecture, documentation hub, and operational guidance:
 
+- [`documentation/README.md`](documentation/README.md) — central documentation index and navigation sitemap.
+- [`documentation/migration-support-matrix.md`](documentation/migration-support-matrix.md) — authoritative cross-vendor capability matrix and version limits.
+- [`documentation/guides/`](documentation/guides/) — pair-specific and multi-target operational migration manuals.
+- [`documentation/architecture/`](documentation/architecture/) — core automation DAG engine and reporting workbook architecture.
 - [`AGENTS.md`](AGENTS.md) — architecture rules and development constraints.
 - [`src/fwmigrate/conversion/README.md`](src/fwmigrate/conversion/README.md) — pair-specific migration architecture.
 - `documentation/official-cli-references-selected version/` — selected official vendor configuration references.

@@ -32,7 +32,7 @@ function harness(overrides = {}, items = rows, fresh = false, findings = []) {
     '../../../components/common/Button': buttonExports,
     '../components/MigrationCoverage': { MigrationCoverage: () => null },
     '../components/DestinationSnapshot': { DestinationSnapshot: 'DestinationSnapshot' },
-    '../../../storage/workspaceStore': { workspace: () => ({ newPairMigration: saved }), saveWorkspace: async (value) => { saved = value.newPairMigration } },
+    '../../../storage/workspaceStore': { workspace: () => ({ panosMigration: saved }), saveWorkspace: async (value) => { saved = value.panosMigration } },
     './migrationApi': { requirements: async () => ({ requirements: [] }), prepare: async () => review, ...overrides },
   }
   const output = ts.transpileModule(readFileSync(new URL('../src/features/migration/fortigateToCheckPoint/MigrationWorkflow.tsx', import.meta.url), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022 } }).outputText

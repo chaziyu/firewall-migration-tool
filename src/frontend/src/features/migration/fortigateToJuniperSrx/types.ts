@@ -14,6 +14,7 @@ export type SrxOptions = {
   vlan_interfaces_available?: boolean
   interfaces: Record<string, Record<string, SrxInterfaceMapping>>
   zones: Record<string, Record<string, string>>
+  interface_zones?: Record<string, Record<string, string>>
 }
 export type SrxRequirement = {
   key: string

@@ -7,6 +7,41 @@ from fwmigrate.conversion.fortigate_to_juniper_srx.rendering.renderer import Jun
 from fwmigrate.vendors.juniper_srx.source_report import JuniperSRXSourceReporter
 
 
+def test_large_plan_order_matches_existing_priority_and_dependency_order():
+    from fwmigrate.conversion.fortigate_to_juniper_srx.models import SRXPlanItem
+    from fwmigrate.conversion.fortigate_to_juniper_srx.rendering.renderer import (
+        _FAMILY_ORDER,
+        _topological_order,
+    )
+
+    items = [SRXPlanItem(
+        key=f"item-{index}", family="service_group" if index % 3 else "service",
+        source_vdom="root", source_name=str(index), target_name=f"target-{index}",
+        source_order=index % 17,
+        dependencies=(f"item-{index - 1}",) if index % 5 else ("reused",),
+    ) for index in range(3000)]
+    ordered = _topological_order(list(reversed(items)), {"reused"})
+    assert len(ordered) == len(items)
+    emitted = {"reused"}
+    for item in ordered:
+        ready = [row for row in items if row.key not in emitted and set(row.dependencies) <= emitted]
+        assert item == min(ready, key=lambda row: (_FAMILY_ORDER[row.family], row.source_order, row.key))
+        emitted.add(item.key)
+
+
+def test_ordering_does_not_satisfy_missing_or_cyclic_dependencies():
+    from fwmigrate.conversion.fortigate_to_juniper_srx.models import SRXPlanItem
+    from fwmigrate.conversion.fortigate_to_juniper_srx.rendering.renderer import _topological_order
+
+    def item(key, dependencies=()):
+        return SRXPlanItem(key, "service", "root", key, key, dependencies=dependencies)
+
+    ready = item("ready")
+    assert _topological_order([
+        item("missing", ("absent",)), item("a", ("b",)), item("b", ("a",)), ready,
+    ]) == [ready]
+
+
 def _render(analysis, options):
     plan = FortiGateToJuniperSRXPlanner().plan(
         analysis.extracted.config,

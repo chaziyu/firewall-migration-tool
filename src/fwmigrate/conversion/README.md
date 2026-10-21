@@ -53,10 +53,10 @@ deterministic approval, application facade, and FortiOS renderer under
 `palo_alto_to_fortigate/`. It consumes the existing native PAN-OS analysis directly.
 It does not call the forward converter or construct a target source-model object.
 Its signed `fg_migration_artifact_v1` envelopes are rejected by PAN-OS deployment.
-See [coverage and usage](../../../documentation/PAN-OS-to-FortiGate-migration.md).
+See [coverage and usage](../../../documentation/guides/PAN-OS-to-FortiGate-migration.md).
 
 The Check Point pair is owned by `fortigate_to_checkpoint/`. It emits only
 version-pinned Management API request templates and a separate reviewed Gaia
 static-route file. UID dependencies are response bindings. It has no live
 Management API client, no target comparison, and no PAN-OS deployment path.
-See [Check Point coverage and usage](../../../documentation/fortigate_to_checkpoint-migration.md).
+See [Check Point coverage and usage](../../../documentation/guides/fortigate-to-checkpoint-migration.md).

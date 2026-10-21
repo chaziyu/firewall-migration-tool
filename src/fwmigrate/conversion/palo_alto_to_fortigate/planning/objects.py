@@ -72,7 +72,12 @@ def plan_services(ctx):
             branch = getattr(obj, protocol)
             if branch is None:
                 continue
-            if branch.raw_extra or branch.override is not None:
+            override = branch.override
+            inactive_override = (override is not None and override.enabled == "no"
+                                 and override.explicit_fields == {"enabled"} and not override.raw_extra
+                                 and all(getattr(override, field) is None for field in
+                                         ("timeout", "halfclose_timeout", "timewait_timeout")))
+            if branch.raw_extra or (override is not None and not inactive_override):
                 reasons.append("Service overrides or unknown protocol settings are unsupported.")
             try:
                 destinations = ports(branch.port)

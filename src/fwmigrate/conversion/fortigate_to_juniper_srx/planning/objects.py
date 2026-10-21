@@ -4,9 +4,11 @@ from ipaddress import IPv4Address, IPv4Network
 import re
 
 from fwmigrate.vendors.fortigate.relationships.references import ReferenceKind
+from fwmigrate.vendors.fortigate.relationships.address_bindings import association_verified
 
 from ..models import SRXPlanItem
 from .naming import item_key, target_name
+from .source_semantics import default_evidence, effective_fields, resolve_reference, source_value
 
 
 def _make_item(vdom, family, name, settings=(), dependencies=(), blockers=(), order=0):
@@ -30,13 +32,22 @@ def _ipv4_address(address):
         return None
 
 
-def _address_values(address):
+def _address_values(address, defaults, association_safe):
     if address.address_family != "ipv4":
         return None, "IPV6_ADDRESS_UNSUPPORTED"
-    if address.raw_extra or address.associated_interface or address.wildcard or address.wildcard_fqdn:
+    # FABRIC_DEVICE's configured subnet is a placeholder for runtime membership.
+    if address.name == "FABRIC_DEVICE":
+        return None, "DYNAMIC_FABRIC_ADDRESS_UNSUPPORTED"
+    if (set(address.raw_extra) - {"uuid", "color"} or not association_safe
+            or address.wildcard or address.wildcard_fqdn
+            or address.allow_routing not in {None, "disable", "enable"}):
         return None, "ADDRESS_HAS_UNSUPPORTED_SOURCE_SETTINGS"
-    if address.type == "ipmask" and {"type", "subnet"} <= address.explicit_fields and address.subnet:
-        parts = address.subnet.split()
+    kind = source_value(address, "type", defaults)
+    subnet = source_value(address, "subnet", defaults)
+    if kind == "ipmask" and subnet:
+        if any((address.start_ip, address.end_ip, address.fqdn, address.ip6)):
+            return None, "ADDRESS_REPRESENTATION_AMBIGUOUS"
+        parts = subnet.split()
         if len(parts) != 2:
             return None, "ADDRESS_SUBNET_IS_NOT_AN_EXPLICIT_IPV4_ADDRESS_AND_MASK"
         try:
@@ -44,7 +55,9 @@ def _address_values(address):
         except ValueError:
             return None, "ADDRESS_SUBNET_IS_NOT_VALID_IPV4"
         return {"address_type": "prefix", "value": str(network)}, None
-    if address.type == "iprange" and {"type", "start_ip", "end_ip"} <= address.explicit_fields:
+    if kind == "iprange" and {"type", "start_ip", "end_ip"} <= address.explicit_fields:
+        if any((address.subnet, address.fqdn, address.ip6)):
+            return None, "ADDRESS_REPRESENTATION_AMBIGUOUS"
         start, end = _ipv4_address(address.start_ip), _ipv4_address(address.end_ip)
         if start is None or end is None or int(IPv4Address(start)) > int(IPv4Address(end)):
             return None, "ADDRESS_RANGE_IS_NOT_VALID_IPV4"
@@ -55,11 +68,7 @@ def _address_values(address):
 
 
 def _reference(derived, vdom, name):
-    return derived.references.resolve_any(
-        vdom=vdom,
-        name=name,
-        kinds=(ReferenceKind.ADDRESS, ReferenceKind.ADDRESS_GROUP),
-    )
+    return resolve_reference(derived, vdom, name, (ReferenceKind.ADDRESS, ReferenceKind.ADDRESS_GROUP))
 
 
 def plan_address_objects(source, derived, vdom):
@@ -67,8 +76,14 @@ def plan_address_objects(source, derived, vdom):
     groups = [item for item in source.address_groups if item.vdom == vdom]
     address_items = {}
     group_items = {}
+    effective = effective_fields(derived, vdom, "address")
     for order, address in enumerate(addresses):
-        values, issue = _address_values(address)
+        defaults = effective.get(address.name, {})
+        association_safe = address.associated_interface in {None, "any"} or association_verified(address, source)
+        values, issue = _address_values(address, defaults, association_safe)
+        if values is not None:
+            values.update(source_effective_values=default_evidence(defaults), source_associated_interface=address.associated_interface,
+                          source_allow_routing=address.allow_routing)
         blockers = [issue] if issue else []
         if any(row.kind is ReferenceKind.ADDRESS and row.vdom == vdom and row.name == address.name
                for row in derived.references.duplicates):
@@ -79,7 +94,9 @@ def plan_address_objects(source, derived, vdom):
         blockers = []
         if group.address_family != "ipv4":
             blockers.append("IPV6_ADDRESS_GROUP_UNSUPPORTED")
-        if group.raw_extra or group.exclude or group.exclude_members:
+        if (set(group.raw_extra) - {"uuid", "color"} or group.exclude not in {None, "disable"}
+                or group.exclude_members or group.type not in {None, "default", "folder"}
+                or group.allow_routing not in {None, "disable", "enable"}):
             blockers.append("ADDRESS_GROUP_HAS_UNSUPPORTED_SOURCE_SETTINGS")
         if group.members is None:
             blockers.append("ADDRESS_GROUP_MEMBERS_NOT_EXPLICIT")
@@ -142,14 +159,29 @@ def plan_address_objects(source, derived, vdom):
 def plan_service_objects(source, derived, vdom):
     items = []
     service_targets = {}
+    source_services = {item.name: item for item in source.services if item.vdom == vdom}
+    effective = effective_fields(derived, vdom, "service")
     for order, service in enumerate(derived.services.services):
         if service.vdom != vdom:
             continue
         blockers = []
-        if service.protocol not in {"tcp", "udp"}:
+        source_item = source_services.get(service.source_name)
+        defaults = effective.get(service.source_name, {})
+        number = source_value(source_item, "protocol_number", defaults) if source_item is not None else service.protocol_number
+        if service.protocol not in {"tcp", "udp", "ip", "icmp"}:
             blockers.append("SERVICE_PROTOCOL_UNSUPPORTED")
-        if not service.port:
+        if service.protocol in {"tcp", "udp"} and not service.port:
             blockers.append("SERVICE_DESTINATION_PORT_NOT_EXPLICIT")
+        if service.protocol == "ip":
+            if type(number) is int and number == 0:
+                blockers.append("SERVICE_USES_BUILTIN_ANY")
+            elif type(number) is not int or not 1 <= number <= 254:
+                blockers.append("SERVICE_IP_PROTOCOL_NUMBER_INVALID_OR_UNKNOWN")
+        if service.protocol == "icmp" and any(type(value) is not int or not 0 <= value <= 255
+                                               for value in (service.icmp_type, service.icmp_code)):
+            blockers.append("SERVICE_ICMP_TYPE_AND_CODE_NOT_EXPLICIT")
+        if service.protocol not in {"tcp", "udp"} and (service.port is not None or service.source_port is not None):
+            blockers.append("SERVICE_PROTOCOL_PORT_MISMATCH")
         for port in (service.port, service.source_port):
             if port is not None and not re.fullmatch(r"[0-9]+(?:-[0-9]+)?", port):
                 blockers.append("SERVICE_PORT_FORMAT_UNSUPPORTED")
@@ -161,13 +193,14 @@ def plan_service_objects(source, derived, vdom):
         if any(issue.vdom == vdom and issue.service == (service.source_name or service.name)
                for issue in derived.services.issues):
             blockers.append("SERVICE_SOURCE_SETTINGS_UNSUPPORTED")
-        source_item = next((item for item in source.services if item.vdom == vdom and item.name == service.source_name), None)
-        if source_item is not None and (source_item.raw_extra or source_item.proxy):
+        if source_item is not None and (source_item.raw_extra or source_item.proxy not in {None, "disable"} or source_item.session_ttl is not None):
             blockers.append("SERVICE_HAS_UNSUPPORTED_SOURCE_SETTINGS")
         item = _make_item(
             vdom, "service", service.name,
             (("protocol", service.protocol), ("destination_port", service.port),
-             ("source_port", service.source_port)),
+             ("source_port", service.source_port), ("protocol_number", number),
+             ("icmp_type", service.icmp_type), ("icmp_code", service.icmp_code),
+             ("source_effective_values", default_evidence(defaults))),
             blockers=blockers,
             order=order,
         )
@@ -206,7 +239,7 @@ def plan_service_objects(source, derived, vdom):
     for order, group in enumerate(derived_groups):
         members, dependencies, blockers = group_members(group.name, ())
         source_group = source_groups.get(group.name)
-        if source_group is not None and (source_group.proxy or source_group.raw_extra):
+        if source_group is not None and (source_group.proxy not in {None, "disable"} or source_group.raw_extra):
             blockers = (*blockers, "SERVICE_GROUP_HAS_UNSUPPORTED_SOURCE_SETTINGS")
         if not members:
             blockers = (*blockers, "SERVICE_GROUP_EMPTY_OR_UNRESOLVED")
