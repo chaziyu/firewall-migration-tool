@@ -39,6 +39,7 @@ def options_mapping(options):
             for vdom, mappings in parsed.interfaces.items()
         },
         "zones": {vdom: dict(mappings) for vdom, mappings in parsed.zones.items()},
+        "interface_zones": {vdom: dict(mappings) for vdom, mappings in parsed.interface_zones.items()},
     }
 
 

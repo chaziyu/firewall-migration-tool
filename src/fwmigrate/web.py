@@ -27,6 +27,10 @@ from fwmigrate.web_api.fortigate_to_juniper_srx import register_fortigate_to_jun
 from fwmigrate.web_api.fortigate_to_cisco_asa import register_fortigate_to_cisco_asa_routes
 from fwmigrate.web_api.fortigate_to_checkpoint import register_fortigate_to_checkpoint_routes
 from fwmigrate.web_api.palo_alto_to_fortigate import register_palo_alto_to_fortigate_routes
+from fwmigrate.web_api.palo_alto_to_juniper_srx import register_palo_alto_to_juniper_srx_routes
+from fwmigrate.web_api.palo_alto_to_cisco_asa import register_palo_alto_to_cisco_asa_routes
+from fwmigrate.web_api.palo_alto_to_checkpoint import register_palo_alto_to_checkpoint_routes
+from fwmigrate.web_api.palo_alto_to_cisco_ftd import register_palo_alto_to_cisco_ftd_routes
 from fwmigrate.web_api.source import register_source_routes
 from fwmigrate.web_support.frontend import register_frontend_routes
 
@@ -175,6 +179,10 @@ def create_app(test_config=None):
     register_fortigate_to_cisco_asa_routes(app, signing_key)
     register_fortigate_to_checkpoint_routes(app, signing_key)
     register_palo_alto_to_fortigate_routes(app, signing_key)
+    register_palo_alto_to_juniper_srx_routes(app, signing_key)
+    register_palo_alto_to_cisco_asa_routes(app, signing_key)
+    register_palo_alto_to_checkpoint_routes(app, signing_key)
+    register_palo_alto_to_cisco_ftd_routes(app, signing_key)
     register_migration_routes(
         app,
         signing_key,

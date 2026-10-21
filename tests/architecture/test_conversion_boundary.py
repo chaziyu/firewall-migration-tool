@@ -54,6 +54,8 @@ def test_pair_package_uses_grouped_modules_without_top_level_compatibility_shims
     pair_roots = tuple(conversion_root / name for name in (
         "fortigate_to_palo_alto", "palo_alto_to_fortigate", "fortigate_to_juniper_srx",
         "fortigate_to_cisco_asa", "fortigate_to_checkpoint",
+        "palo_alto_to_juniper_srx", "palo_alto_to_cisco_asa", "palo_alto_to_checkpoint",
+        "palo_alto_to_cisco_ftd",
     ))
     retired_shims = {
         "addresses.py", "admin_suggestions.py", "cli_paths.py", "dhcp.py",

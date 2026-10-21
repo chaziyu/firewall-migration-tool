@@ -92,9 +92,17 @@ def plan_routes(ctx, interfaces):
                 deps.append(matches[0].key)
             try:
                 net = IPv4Network(obj.destination, strict=False)
-                if obj.nexthop_type != "ip-address" or obj.admin_distance is None or not 1 <= int(obj.admin_distance) <= 255:
+                if obj.nexthop_type != "ip-address":
                     raise ValueError
-                settings.update({"dst": (str(net.network_address), str(net.netmask)), "gateway": str(IPv4Address(obj.nexthop_ip_address)),
+                gateway = IPv4Address(obj.nexthop_ip_address)
+                outgoing = [i for i in (*ctx.source.interfaces, *ctx.source.interface_units)
+                            if i.name == obj.interface and i.scope == router.scope]
+                if any(gateway == IPv4Interface(address).ip
+                       for interface in outgoing for address in interface.ipv4_addresses or ()):
+                    reasons.append("Route next hop is the outgoing interface's own address; correct the source route.")
+                if obj.admin_distance is None or not 1 <= int(obj.admin_distance) <= 255:
+                    raise ValueError
+                settings.update({"dst": (str(net.network_address), str(net.netmask)), "gateway": str(gateway),
                                  "distance": obj.admin_distance})
             except (ValueError, TypeError):
                 reasons.append("Route needs explicit supported IPv4 next hop, prefix and administrative distance.")

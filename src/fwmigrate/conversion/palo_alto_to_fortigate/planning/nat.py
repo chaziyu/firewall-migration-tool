@@ -102,11 +102,16 @@ def plan_dnat(ctx, obj, rule_count):
 
 def plan_nat(ctx):
     rules = [r for r in ctx.source.nat_rules if in_scope(r, ctx.scope)]
-    independent = len(rules) == 1 or _disjoint_source_rules(ctx, rules)
+    active = [r for r in rules if r.disabled != "yes"]
+    independent = len(active) == 1 or _disjoint_source_rules(ctx, active)
     result = []
     for number, obj in enumerate(rules, 1):
+        if obj.disabled == "yes":
+            result.append(ctx.item(obj, "inactive_nat", "", disposition="BLOCK", reasons=(
+                "Explicitly disabled source NAT rule retained as inactive evidence; no target activation or traffic dependency.",)))
+            continue
         if obj.destination_translation is not None:
-            result.extend(plan_dnat(ctx, obj, len(rules)))
+            result.extend(plan_dnat(ctx, obj, len(active)))
             continue
         reasons = unsupported_fields(obj, {"from_zones", "to_zones", "source", "destination", "service", "disabled", "source_translation"})
         settings, dependencies = {}, []

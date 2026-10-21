@@ -39,12 +39,20 @@ def derive_effective_values(config, source_metadata=None):
     for kind, items, defaults in (
         ('ip_pool', config.ip_pools, (('type', 'overload', 403),)),
         ('vip', config.vips, (('protocol', 'tcp', 572),)),
-        ('policy', config.policies, (('nat', 'disable', 435), ('status', 'enable', 441))),
+        ('policy', config.policies, (('nat', 'disable', 435), ('status', 'enable', 441),
+            ('srcaddr_negate', 'disable', 440), ('dstaddr_negate', 'disable', 428),
+            ('service_negate', 'disable', 440), ('utm_status', 'disable', 442),
+            ('logtraffic', 'utm', 434))),
+        ('interface', config.interfaces, (('mode', 'static', 1405), ('status', 'up', 1414))),
+        ('static_route', config.static_routes, (('status', 'enable', 1013), ('distance', 10, 1012),
+            ('dst', '0.0.0.0 0.0.0.0', 1012), ('priority', 1, 1013))),
+        ('service', tuple(item for item in config.services if item.protocol == 'IP'), (('protocol_number', 0, 504),)),
         ('dhcp_server', config.dhcp_servers, (('status', 'enable', 1238), ('server_type', 'regular', 1238),
             ('ip_mode', 'range', 1237), ('dns_service', 'specify', 1236), ('lease_time', 604800, 1237))),
     ):
         for item in items:
-            name = item.policy_id if kind == 'policy' else item.id if kind == 'dhcp_server' else item.name
+            name = (item.policy_id if kind == 'policy' else item.id if kind == 'dhcp_server'
+                    else item.seq_num if kind == 'static_route' else item.name)
             for field, value, page in defaults:
                 if getattr(item, field) is None:
                     result.append(FGEffectiveValue(item.vdom or 'root', kind, str(name), field, value,

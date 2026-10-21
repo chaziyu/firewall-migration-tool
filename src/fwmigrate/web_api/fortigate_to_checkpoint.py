@@ -9,13 +9,12 @@ from flask import Response, jsonify, request, send_file
 
 from fwmigrate.conversion.fortigate_to_checkpoint.application import (
     BINDINGS_FILE, COMMANDS_FILE, GAIA_FILE, MANAGEMENT_FILE, approve_design, build_artifact,
-    build_review, export_decisions, import_decisions, verify_export_artifact,
+    build_review, export_decisions, import_decisions, verify_export_artifact, source_vdoms,
 )
 from fwmigrate.collection.snapshot import parse_snapshot
 from fwmigrate.source_reporting import source_reporters
 from fwmigrate.web_support.artifact_signing import sign_envelope, verify_envelope
 from fwmigrate.web_support.request_source import analyze_request_source, _require_complete_collection
-from fwmigrate.conversion.fortigate_to_checkpoint.requirements import source_vdoms
 
 
 def register_fortigate_to_checkpoint_routes(app, signing_key):

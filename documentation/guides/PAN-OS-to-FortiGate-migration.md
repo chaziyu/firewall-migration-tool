@@ -5,22 +5,12 @@ deployment or a complete replacement firewall configuration.
 
 ## Workflow
 
-1. Upload PAN-OS XML through Configuration report or Plan migration.
-2. Open Plan migration. PAN-OS sources select FortiGate as their target.
-3. Review the automatically prepared conversion. A sole standalone device/VSYS
-   is selected; multiple scopes require a selection. Managed inheritance stays manual.
-4. Open Mappings and remaining choices. Review the proposed target profile,
-   VDOM, zones, and routing placement. Declare actual physical ports once when
-   destination evidence cannot establish available ports. Interface and VLAN
-   allocations are proposals; confirm hardware ownership and cabling.
-5. Resolve remaining policy choices individually or preview and apply a bulk
-   choice. Existing individual choices are preserved. Unsupported policies stay
-   visible without ineffective omitted-field questions.
-6. Review the updated conversion and blocked/manual work. Destination evidence
-   may populate explicit settings but does not authorize overwrite or live execution.
-7. Select configuration, review exact settings and expanded prerequisites, then
-   explicitly approve and generate commands.
-8. Download `fortigate_config.conf` or `migration_palo_alto_to_fortigate.zip`.
+The workflow follows the unified four-stage migration path:
+
+1. **Source**: Upload PAN-OS XML through Configuration report or Plan migration. Select FortiGate as the target vendor.
+2. **Target setup**: Review the automatically prepared conversion. Select the standalone VSYS scope (if multiple are present). Review the proposed target profile, VDOM (default: `root`), interface mappings, and zones. Declare physical ports when destination evidence cannot establish available ports.
+3. **Review migration**: Review ready items, blocked items, and manual work across changes, decisions, and manual tabs. Select configuration items with expanded prerequisite dependencies, review exact CLI command preview, and sign explicit approval.
+4. **Download**: Download `fortigate_config.conf` or bundle `migration_palo_alto_to_fortigate.zip` with complete verification manifest.
 
 Mappings, drafts, approvals, and artifacts remain in memory. Source/scope,
 mapping, profile, or destination edits revoke approval and artifacts.
@@ -48,6 +38,14 @@ Source changes, expiration, and server signing-key changes can require reapprova
   and [source-user behavior](https://docs.paloaltonetworks.com/pan-os/11-1/pan-os-admin/policy/security-policy/create-a-security-policy-rule).
 - IPv4 subnet, range, and FQDN objects; static address groups; TCP/UDP services
   with supported source/destination port intervals; static service groups.
+  An exact `<override><no/></override>` is accepted as an explicitly inactive
+  service timeout override. Active, incomplete, conflicting or unknown override
+  settings remain blocked. UUID attributes are source identity metadata;
+  unknown attributes still block conversion.
+  Verified standalone PAN-OS 11.1 predefined references generate explicit target
+  services for HTTP TCP 80/8080 and HTTPS TCP 443. Version and official-reference
+  provenance remain visible in plan rows. Explicit custom objects take precedence;
+  ambiguous references and other source versions remain blocked.
 - One-time schedules with one interval, and uniform recurring intervals.
   Engineers must confirm matching source/destination timezone identifiers.
   Times are not converted. Overnight or differing weekly intervals remain manual.
@@ -60,10 +58,13 @@ Source changes, expiration, and server signing-key changes can require reapprova
 - Static IPv4 routes with explicit next hop, outgoing interface, administrative
   distance, and a single source router mapped to VRF 0. Metric, monitoring,
   dynamic routing, multiple routing domains and unverified isolation remain manual.
+  A next hop equal to the outgoing interface's own address is rejected.
 - Restricted ordered L3/L4 security policies with application `any`, supported
   match/action/logging, and reviewed values for omitted fields. Each policy
-  depends on its predecessor. Partial approval cannot omit an earlier rule and
-  thereby expose a later allow. App-ID, `application-default`, identity, HIP,
+  depends on its active predecessor. Explicitly disabled rows remain visible
+  without severing that chain. Partial approval cannot omit an earlier active
+  rule and thereby expose a later allow. Organizational group tags and explicit
+  HIP `any` selectors do not restrict matching. App-ID, `application-default`, identity, restricted HIP,
   category-specific matching, inspection profiles, application-dependent deny,
   reset actions, start-only logging, and explicit
   default security rules remain manual.
@@ -81,6 +82,10 @@ for offline planning. Generated commands do not enable central NAT.
 - Multiple source NAT rules require pairwise disjoint literal IPv4 source
   prefixes referenced directly by each rule. Source order is preserved. Groups,
   `any` and uncertain overlaps cannot prove isolation and remain blocked.
+- Explicitly disabled NAT rows remain visible as `inactive_nat` source evidence,
+  emit no commands and cannot be approved. Only these rows are excluded from
+  active overlap proofs and security-policy NAT dependencies. Omitted state
+  remains unknown and continues to block unsafe traffic export.
 - Static DNAT supports one address-only rule and one exactly matched security
   rule. It requires a public `/32` object, literal mapped IPv4 host, one ingress
   interface, a verified connected post-NAT zone, explicit VIP proxy-ARP choice,

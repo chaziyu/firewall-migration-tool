@@ -67,9 +67,10 @@ class PaloAltoToFortiGatePlanner:
             policies = [replace(policies[0], settings=tuple(settings.items()))]
         if nat:
             # Unknown NAT overlap blocks every affected traffic rule until a verified independent slice exists.
-            nat_dependencies = tuple(i.key for i in nat)
+            nat_dependencies = tuple(i.key for i in nat if i.family != "inactive_nat")
             policies = [replace(item, dependencies=(*item.dependencies, *nat_dependencies)) for item in policies]
         items.extend((*nat, *policies))
+        items.extend(ctx.predefined_services.values())
         if policies:
             items.append(FGPlannedItem("default-behavior:" + options.source_scope, "manual", options.source_scope,
                 "Default security and intrazone behavior", "", "default_behavior", options.vdom, "",

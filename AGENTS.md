@@ -55,13 +55,17 @@ Implemented migration pairs (partial, directional support):
 ```text
 FortiGate → Palo Alto PAN-OS
 PAN-OS → FortiGate
+PAN-OS → Juniper SRX
+PAN-OS → Cisco ASA
+PAN-OS → Check Point
+PAN-OS → Cisco FTD
 FortiGate → Cisco ASA
 FortiGate → Juniper SRX
 FortiGate → Check Point
 ```
 
 Only FortiGate → PAN-OS supports reviewed live candidate operations. The other
-four pairs export offline artifacts. See `documentation/migration-support-matrix.md`
+eight pairs export offline artifacts. See `documentation/migration-support-matrix.md`
 and workflow discovery metadata for mapping, comparison and activation limits.
 
 Deployment:
@@ -244,6 +248,10 @@ Implemented pair packages:
 ```text
 fortigate → palo_alto
 palo_alto → fortigate
+palo_alto → juniper_srx
+palo_alto → cisco_asa
+palo_alto → checkpoint
+palo_alto → cisco_ftd
 fortigate → cisco_asa
 fortigate → juniper_srx
 fortigate → checkpoint

@@ -13,6 +13,10 @@ PAIR_PACKAGES = (
     "fwmigrate.conversion.fortigate_to_juniper_srx",
     "fwmigrate.conversion.fortigate_to_cisco_asa",
     "fwmigrate.conversion.fortigate_to_checkpoint",
+    "fwmigrate.conversion.palo_alto_to_juniper_srx",
+    "fwmigrate.conversion.palo_alto_to_cisco_asa",
+    "fwmigrate.conversion.palo_alto_to_checkpoint",
+    "fwmigrate.conversion.palo_alto_to_cisco_ftd",
 )
 
 

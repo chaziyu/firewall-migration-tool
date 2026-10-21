@@ -3,6 +3,7 @@
 from collections import Counter
 from dataclasses import dataclass, replace
 import hashlib
+import heapq
 
 from ..models import SRXMigrationPlan, SRXPlanItem
 from ..plan_dependencies import assess_render_disposition, validate_plan
@@ -45,16 +46,25 @@ def _settings(item):
 
 def _topological_order(items, satisfied=()):
     by_key = {item.key: item for item in items}
+    satisfied = set(satisfied)
+    remaining = {item.key: set(item.dependencies) - satisfied for item in items}
+    dependents = {}
+    ready = []
+    for item in items:
+        for dependency in remaining[item.key]:
+            dependents.setdefault(dependency, []).append(item.key)
+        if not remaining[item.key]:
+            heapq.heappush(ready, (_FAMILY_ORDER[item.family], item.source_order, item.key))
     ordered = []
-    emitted = set()
-    while len(ordered) < len(items):
-        ready = [item for item in items if item.key not in emitted
-                 and set(item.dependencies) <= emitted | set(satisfied)]
-        if not ready:
-            return ordered
-        item = min(ready, key=lambda row: (_FAMILY_ORDER[row.family], row.source_order, row.key))
+    while ready:
+        _, _, key = heapq.heappop(ready)
+        item = by_key[key]
         ordered.append(item)
-        emitted.add(item.key)
+        for dependent in dependents.get(key, ()):
+            remaining[dependent].remove(key)
+            if not remaining[dependent]:
+                child = by_key[dependent]
+                heapq.heappush(ready, (_FAMILY_ORDER[child.family], child.source_order, child.key))
     return ordered
 
 
@@ -95,8 +105,12 @@ def _commands_for(item, by_target_name):
             return [_membership_command(item, member, by_target_name) for member in members]
     elif item.family == "service":
         protocol, destination = values.get("protocol"), values.get("destination_port")
+        prefix = f"set applications application {name}"
+        if protocol == "ip" and type(values.get("protocol_number")) is int and 1 <= values["protocol_number"] <= 254:
+            return [f"{prefix} protocol {values['protocol_number']}"]
+        if protocol == "icmp" and all(type(values.get(field)) is int and 0 <= values[field] <= 255 for field in ("icmp_type", "icmp_code")):
+            return [f"{prefix} protocol icmp", f"{prefix} icmp-type {values['icmp_type']}", f"{prefix} icmp-code {values['icmp_code']}"]
         if protocol in {"tcp", "udp"} and destination:
-            prefix = f"set applications application {name}"
             commands = [f"{prefix} protocol {protocol}"]
             if values.get("source_port"):
                 commands.append(f"{prefix} source-port {values['source_port']}")

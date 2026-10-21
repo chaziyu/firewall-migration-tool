@@ -13,6 +13,8 @@ from fwmigrate.conversion.fortigate_to_juniper_srx.application import (
     build_review,
     export_decisions,
     import_decisions,
+    options_mapping,
+    propose_new_target,
     verify_export_artifact,
 )
 from fwmigrate.source_reporting import source_reporters
@@ -103,6 +105,12 @@ def register_fortigate_to_juniper_srx_routes(app, signing_key):
                     "success": True,
                     "document": export_decisions(entry.source_digest, options),
                 })
+            if action == "proposals":
+                if payload.get("target_source") is not None or request.files.get("target_file"):
+                    raise ValueError("New-device proposals cannot assume an existing target is empty")
+                proposed = propose_new_target(entry.analysis.extracted.config, entry.analysis.derived, options)
+                return jsonify({"success": True, "options": options_mapping(proposed),
+                    "hardware_verified": False, "approval_required": True})
             target, target_text, target_metadata = target_source(payload)
             review = build_review(
                 entry.analysis, options, entry.source_digest, target=target,
@@ -142,7 +150,7 @@ def register_fortigate_to_juniper_srx_routes(app, signing_key):
             }), 400
 
     actions = (
-        "requirements", "design/prepare", "design/approve", "build",
+        "requirements", "proposals", "design/prepare", "design/approve", "build",
         "command-preview", "commands", "bundle", "decisions/import", "decisions/export",
     )
     for action in actions:

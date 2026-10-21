@@ -6,6 +6,7 @@ import * as jsxRuntime from 'react/jsx-runtime'
 import * as drafts from '../src/features/migration/reviewDrafts.ts'
 import * as presentation from '../src/features/migration/reviewPresentation.ts'
 import { tabKeyboard } from '../src/components/common/tabKeyboard.ts'
+import * as srxSelection from '../src/features/migration/fortigateToJuniperSrx/reviewSelection.ts'
 
 globalThis.requestAnimationFrame ??= () => 0
 
@@ -105,6 +106,8 @@ function component(file, name, modules, { strictEffectReplay = false } = {}) {
   const requireModule = (key) => {
     if (key.endsWith('/components/MigrationCoverage')) return { MigrationCoverage: 'MigrationCoverage' }
     if (key.endsWith('/components/DestinationSnapshot')) return { DestinationSnapshot: 'DestinationSnapshot' }
+    if (key === './reviewSelection') return srxSelection
+    if (key === './DesignReview') return { SrxDesignReview: 'SrxDesignReview' }
     if (key === 'react') return hooks
     if (key === 'react/jsx-runtime') return jsxRuntime
     if (key in modules) return modules[key]
@@ -197,7 +200,7 @@ for (const [folder, name, pairId] of [
   let finish
   const calls = []
   const harness = component(`../src/features/migration/${folder}/MigrationWorkflow.tsx`, name, {
-    '../../../storage/workspaceStore': { workspace: () => ({ newPairMigration: saved }), saveWorkspace: async (update) => { saved = update.newPairMigration } },
+    '../../../storage/workspaceStore': { workspace: () => ({ panosMigration: saved }), saveWorkspace: async (update) => { saved = update.panosMigration } },
     '../migrationApi': { downloadFile: () => {} },
     './migrationApi': { requirements: async () => ({ requirements: [], report }), prepare: (...args) => {
       calls.push(args)
@@ -212,7 +215,7 @@ for (const [folder, name, pairId] of [
   tree = await harness.render(props)
   assert.equal(saved.approval, null)
   assert.equal(saved.artifact, null)
-  elements(tree).find((node) => (node.type === 'Button' || node.type === 'button') && /^Prepare/.test(node.props.children)).props.onClick()
+  elements(tree).find((node) => (node.type === 'Button' || node.type === 'button') && /^(Prepare|Validate changes)/.test(node.props.children)).props.onClick()
   tree = await harness.render(props)
   assert.deepEqual(calls[0].at(-1), next)
   elements(tree).find((node) => node.type === 'DestinationSnapshot').props.onChange(null)
@@ -1945,14 +1948,17 @@ test('SRX approval preview expands dependencies and atomic groups before signed 
   })
   const props = { source, sourceKey: 'source-1', stage: 'place', onStageChange: () => {} }
   let tree = await harness.render(props)
-  elements(tree).find((node) => node.type === 'Button' && node.props.children === 'Prepare migration review').props.onClick()
+  elements(tree).find((node) => node.type === 'Button' && node.props.children === 'Validate changes').props.onClick()
   tree = await harness.render({ ...props, stage: 'review' })
-  elements(tree).find((node) => node.props['aria-label'] === 'Select root allow-web').props.onChange({ target: { checked: true } })
+  elements(tree).find((node) => node.type === 'SrxDesignReview').props.onSelect(['policy'])
   tree = await harness.render({ ...props, stage: 'review' })
-  elements(tree).find((node) => node.type === 'Button' && node.props.children === 'Review selected changes').props.onClick()
+  const design = elements(tree).find((node) => node.type === 'SrxDesignReview')
+  design.props.onPreview(design.props.selected)
   tree = await harness.render({ ...props, stage: 'review' })
-  assert.ok(JSON.stringify(tree).includes('Approve these exact changes'))
-  elements(tree).find((node) => node.type === 'Button' && node.props.children === 'Approve these changes and build export').props.onClick()
+  const preview = elements(tree).find((node) => node.type === 'SrxDesignReview')
+  assert.deepEqual(preview.props.approvalKeys, ['address', 'policy', 'schedule'])
+  assert.deepEqual(calls, [])
+  preview.props.onApprove()
   tree = await harness.render({ ...props, stage: 'export' })
   assert.deepEqual(calls, [['address', 'policy', 'schedule']])
   assert.equal(elements(tree).find((node) => node.type === 'textarea' && node.props['aria-label'] === 'Juniper SRX command preview').props.value, artifact.command_text)
@@ -1974,7 +1980,7 @@ test('a failed SRX revalidation keeps staged target choices for correction', asy
   const scope = elements(tree).find((node) => node.type === 'select' && elements(node).some((child) => child.type === 'option' && child.props.children === 'root'))
   scope.props.onChange({ target: { value: 'root' } })
   tree = await harness.render(props)
-  elements(tree).find((node) => node.type === 'Button' && node.props.children === 'Prepare migration review').props.onClick()
+  elements(tree).find((node) => node.type === 'Button' && node.props.children === 'Validate changes').props.onClick()
   tree = await harness.render(props)
   const retainedScope = elements(tree).find((node) => node.type === 'select' && elements(node).some((child) => child.type === 'option' && child.props.children === 'root'))
   assert.equal(retainedScope.props.value, 'root')
@@ -2121,8 +2127,8 @@ test('Check Point VDOM choices survive review preparation and workspace restorat
     const report = { items: [], findings: [], plan_status: 'BLOCKED' }
     const harness = component('../src/features/migration/fortigateToCheckPoint/MigrationWorkflow.tsx', 'CheckPointMigrationWorkflow', {
       '../../../storage/workspaceStore': {
-        workspace: () => ({ newPairMigration: saved }),
-        saveWorkspace: async (value) => { saved = value.newPairMigration },
+        workspace: () => ({ panosMigration: saved }),
+        saveWorkspace: async (value) => { saved = value.panosMigration },
       },
       './migrationApi': {
         requirements: async (_source, options) => {

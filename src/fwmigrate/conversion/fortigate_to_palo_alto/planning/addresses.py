@@ -13,6 +13,7 @@ from fwmigrate.conversion.fortigate_to_palo_alto.models import (
 from fwmigrate.conversion.fortigate_to_palo_alto.planning.routing import _normalize_subnet
 from .vips import vip_translation
 from fwmigrate.vendors.fortigate.transform.effective_values import effective_value
+from fwmigrate.vendors.fortigate.relationships.address_bindings import association_verified
 
 
 def explicit_all_vdoms(source):
@@ -106,40 +107,6 @@ def _target_vsys(source: Any, options: Any) -> str | None:
     return getattr(mapping, "vsys", None)
 
 
-def _association_verified(address, config):
-    """Retain interface-selection restrictions for every explicit policy consumer."""
-    binding = address.associated_interface
-    vdom = address.vdom or 'root'
-    if config is None or sum((item.vdom or 'root') == vdom and item.name == binding for item in config.interfaces) != 1:
-        return False
-    groups = {}
-    for item in config.address_groups:
-        if item.address_family == 'ipv4' and (item.vdom or 'root') == vdom:
-            groups.setdefault(item.name, []).append(item)
-    def contains(names, seen=()):
-        if address.name in names:
-            return True
-        for name in names:
-            if name in seen or len(seen) >= 64:
-                return None
-            matches = groups.get(name, ())
-            if len(matches) > 1:
-                return None
-            if matches:
-                found = contains(matches[0].members or (), (*seen, name))
-                if found is not False:
-                    return found
-        return False
-    for policy in config.policies:
-        if (policy.vdom or 'root') != vdom:
-            continue
-        for names, interfaces in ((policy.srcaddr or (), policy.srcintf), (policy.dstaddr or (), policy.dstintf)):
-            found = contains(names)
-            if found is None or found and set(interfaces or ()) != {binding}:
-                return False
-    return True
-
-
 def _plan_address(source: Any, options: Any, derived=None, config=None):
     status, warnings, issue = _scope(source, options)
     value = None
@@ -204,7 +171,7 @@ def _plan_address(source: Any, options: Any, derived=None, config=None):
     if selected == 'interface-subnet':
         unknown.discard('interface')
     association = getattr(source, 'associated_interface', None)
-    association_safe = association in {None, 'any'} or _association_verified(source, config)
+    association_safe = association in {None, 'any'} or association_verified(source, config)
     if (unknown or not association_safe
             or getattr(source, "allow_routing", None) not in {None, "disable", "enable"}):
         status = PANMigrationStatus.UNSUPPORTED

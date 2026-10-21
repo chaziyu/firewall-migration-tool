@@ -43,6 +43,9 @@ def test_deterministic_approval_and_exact_artifact_binding(analysis, options):
     artifact = build_artifact(analysis, options, "source", approval)
     assert artifact["commands"]
     assert artifact["report"]["deployment_eligibility"]["eligible"] is False
+    assert artifact["report"]["workflow_mode"] == "OFFLINE_EXPORT"
+    assert artifact["report"]["verification"].startswith("Offline reviewed FortiOS export.")
+    assert "Destination collisions" in artifact["report"]["verification"]
     assert len(approval["configuration"]) > 1
     with pytest.raises(ValueError, match="context"):
         build_artifact(analysis, {**options, "vdom": "other"}, "source", approval)

@@ -18,7 +18,11 @@ def policy_choice(ctx, obj, field):
 
 def policy_manual_reasons(obj, derived, *, default_rules=False):
     reasons = unsupported_fields(obj, {"from_zones", "to_zones", "source", "destination", "application", "service", "action", "source_user", "category",
-         "negate_source", "negate_destination", "schedule", "rule_type", "log_start", "log_end", "disabled"})
+         "negate_source", "negate_destination", "schedule", "rule_type", "log_start", "log_end", "disabled",
+         "group_tag", "source_hip", "destination_hip"})
+    for field in ("source_hip", "destination_hip"):
+        if getattr(obj, field) not in (None, ["any"]):
+            reasons.append(f"Restricted {field} requires verified target endpoint matching.")
     if obj.rulebase_position not in {None, "local"} or obj.source_order is None:
         reasons.append("Only verified standalone local rule ordering is supported.")
     if obj.action not in {"allow", "drop"}:
@@ -90,6 +94,7 @@ def plan_policies(ctx):
             settings["comments"] = obj.description
         item = ctx.item(obj, "policy", "firewall policy", settings, dependencies, reasons, target_name=str(number))
         result.append(item)
-        # All predecessors are dependencies: omitting even a supported deny from partial approval must not expose later allows.
-        predecessors[:] = [item.key]
+        # Preserve active predecessors across disabled rows, including supported denies omitted from partial approval.
+        if obj.disabled != "yes":
+            predecessors[:] = [item.key]
     return result

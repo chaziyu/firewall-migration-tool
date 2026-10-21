@@ -57,7 +57,7 @@ export function CheckPointMigrationWorkflow({ source, sourceKey, stage, onStageC
   onStageChange: (stage: MigrationStage) => void
 }) {
   const [state, setState] = useState<CheckPointWorkspace>(() => {
-    const saved = workspace().newPairMigration
+    const saved = workspace().panosMigration
     return saved?.pairId === 'fortigate_to_checkpoint' && saved.sourceKey === sourceKey
       ? saved
       : { pairId: 'fortigate_to_checkpoint', sourceKey, options: emptyCheckPointOptions(), requirements: [], review: null, approval: null, artifact: null, preview: null }
@@ -80,7 +80,7 @@ export function CheckPointMigrationWorkflow({ source, sourceKey, stage, onStageC
   const initialOptions = useRef(options)
   const newTarget = options.target_mode === 'new'
 
-  useEffect(() => { void saveWorkspace({ newPairMigration: state }) }, [state])
+  useEffect(() => { void saveWorkspace({ panosMigration: state }) }, [state])
   useEffect(() => () => { requests.current++ }, [])
   useEffect(() => {
     let active = true

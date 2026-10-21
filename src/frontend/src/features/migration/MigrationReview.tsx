@@ -46,7 +46,7 @@ function focusMappingInput(key: string) {
   })
 }
 
-export function MigrationReview({ preview, vendor, onDecisionDocument, onContextChange, requestedDecision, stage, onStageChange, onApproved, reviewTab = 'changes', onReviewTabChange = () => {} }: {
+export function MigrationReview({ preview, vendor, pairId = '', onDecisionDocument, onContextChange, requestedDecision, stage, onStageChange, onApproved, reviewTab = 'changes', onReviewTabChange = () => {} }: {
   stage: MigrationStage
   reviewTab?: MigrationReviewTab
   onReviewTabChange?: (tab: MigrationReviewTab) => void
@@ -54,6 +54,7 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
   onApproved?: () => void
   preview: SourcePreviewData
   vendor: string
+  pairId?: string
   onDecisionDocument?: (document: MigrationDecisionDocument | null) => void
   onContextChange?: (targetSource: SourceEvidence | null, targetDevice: string) => void
   requestedDecision?: { key: string; request: number } | null
@@ -126,7 +127,7 @@ export function MigrationReview({ preview, vendor, onDecisionDocument, onContext
     finishStandaloneAction,
     actionIsCurrent,
     invalidateActions,
-  } = useMigrationReviewActivity({ source, targetSource, targetDevice, workflowMode })
+  } = useMigrationReviewActivity({ source, targetSource, targetDevice, workflowMode, pairId })
   const editorsBusy = busy || (!reviewCurrent && !recoverableFailure)
   const manualToolsRef = useRef<HTMLDetailsElement>(null)
   const bulkMappingsRef = useRef<HTMLDetailsElement>(null)
