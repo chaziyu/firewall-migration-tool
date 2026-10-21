@@ -1,0 +1,93 @@
+{
+  "format": "cisco-fmc-rest-export-v1",
+  "source": "fmc-rest-api",
+  "domain": {
+    "id": "e276abec-e0f2-11e3-8169-6d9ed49b625f",
+    "name": "Global"
+  },
+  "objects": {
+    "networkaddresses": [
+      {
+        "id": "c1f7b0f6-0001-11e3-8169-6d9ed49b625f",
+        "name": "inside-net",
+        "type": "Network",
+        "value": "10.10.0.0/24",
+        "description": "Lab inside subnet"
+      },
+      {
+        "id": "c1f7b0f6-0002-11e3-8169-6d9ed49b625f",
+        "name": "app-server",
+        "type": "Host",
+        "value": "198.51.100.20",
+        "description": "Lab app server host"
+      }
+    ],
+    "protocolportobjects": [
+      {
+        "id": "p1f7b0f6-0001-11e3-8169-6d9ed49b625f",
+        "name": "tcp-443",
+        "type": "ProtocolPortObject",
+        "protocol": "TCP",
+        "port": "443"
+      }
+    ],
+    "portobjectgroups": [],
+    "securityzones": [
+      {
+        "id": "z1f7b0f6-0001-11e3-8169-6d9ed49b625f",
+        "name": "inside",
+        "type": "SecurityZone",
+        "interfaceMode": "ROUTED"
+      },
+      {
+        "id": "z1f7b0f6-0002-11e3-8169-6d9ed49b625f",
+        "name": "outside",
+        "type": "SecurityZone",
+        "interfaceMode": "ROUTED"
+      }
+    ]
+  },
+  "devices": [
+    {
+      "id": "d1f7b0f6-0001-11e3-8169-6d9ed49b625f",
+      "name": "ftd-lab-01",
+      "model": "Cisco Secure Firewall Threat Defense",
+      "sw_version": "7.7.0",
+      "interfaces": [
+        {
+          "id": "i1f7b0f6-0001-11e3-8169-6d9ed49b625f",
+          "name": "TenGigabitEthernet0/0",
+          "type": "PhysicalInterface",
+          "mode": "ROUTED",
+          "securityZone": {
+            "id": "z1f7b0f6-0001-11e3-8169-6d9ed49b625f",
+            "name": "inside",
+            "type": "SecurityZone"
+          }
+        },
+        {
+          "id": "i1f7b0f6-0002-11e3-8169-6d9ed49b625f",
+          "name": "TenGigabitEthernet0/1",
+          "type": "PhysicalInterface",
+          "mode": "ROUTED",
+          "securityZone": {
+            "id": "z1f7b0f6-0002-11e3-8169-6d9ed49b625f",
+            "name": "outside",
+            "type": "SecurityZone"
+          }
+        }
+      ]
+    }
+  ],
+  "access_policies": [],
+  "collection": {
+    "status": "SUCCESS",
+    "fmc_version": "7.7.0",
+    "parts": [
+      {"name": "objects", "status": "SUCCESS"},
+      {"name": "devices", "status": "SUCCESS"},
+      {"name": "access_policies", "status": "SUCCESS"},
+      {"name": "nat_policies", "status": "SUCCESS"}
+    ]
+  }
+}

@@ -5,10 +5,10 @@ import { clearWorkspace, restoreWorkspace, saveWorkspace, workspace, workspaceEx
 test('reverse migration authority is memory-only and clears when source context changes', async () => {
   await clearWorkspace()
   await saveWorkspace({ preview: { source_evidence: { vendor: 'palo_alto', source_text: '<config />' } } })
-  await saveWorkspace({ fortigateMigration: { sourceKey: 'old', options: { vdom: 'root' }, approval: { signature: 'signed' }, artifact: { artifact_id: 'old' } } })
-  assert.equal(workspace().fortigateMigration.approval.signature, 'signed')
+  await saveWorkspace({ panosMigration: { pairId: 'palo_alto_to_fortigate', sourceKey: 'old', options: { vdom: 'root' }, approval: { signature: 'signed' }, artifact: { artifact_id: 'old' } } })
+  assert.equal(workspace().panosMigration.approval.signature, 'signed')
   await saveWorkspace({ preview: { source_evidence: { vendor: 'palo_alto', source_text: '<config version="11.1" />' } } })
-  assert.equal(workspace().fortigateMigration, null)
+  assert.equal(workspace().panosMigration, null)
   await clearWorkspace()
 })
 
@@ -133,14 +133,12 @@ test('switching migration pairs revokes approvals, artifacts, and pair workspace
     decisionDocument: { design_approval: { signature: 'old' } },
     deterministicDraft: { digest: 'old' },
     artifact: { artifact_id: 'old' },
-    fortigateMigration: { sourceKey: 'source', approval: { signature: 'pan' } },
-    newPairMigration: { pairId: 'fortigate_to_juniper_srx', sourceKey: 'source', approval: { signature: 'srx' } },
+    panosMigration: { pairId: 'palo_alto_to_fortigate', sourceKey: 'source', approval: { signature: 'pan' } },
   })
   await saveWorkspace({ migrationPairId: 'fortigate_to_juniper_srx' })
   assert.equal(workspace().decisionDocument, null)
   assert.equal(workspace().deterministicDraft, null)
   assert.equal(workspace().artifact, null)
-  assert.equal(workspace().fortigateMigration, null)
-  assert.equal(workspace().newPairMigration, null)
+  assert.equal(workspace().panosMigration, null)
   await clearWorkspace()
 })

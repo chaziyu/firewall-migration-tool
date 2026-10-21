@@ -35,7 +35,7 @@ def vendors():
             f"(Ext: {', '.join(s.supported_extensions)})"
         )
 
-    click.echo("\nMigration planning: FortiGate -> Palo Alto PAN-OS / Juniper SRX / Cisco ASA / Check Point; Palo Alto PAN-OS -> FortiGate (CLI export)")
+    click.echo("\nMigration planning: FortiGate -> Palo Alto PAN-OS / Juniper SRX / Cisco ASA / Check Point; Palo Alto PAN-OS -> FortiGate / Juniper SRX / Cisco ASA / Check Point / Cisco FTD (CLI export)")
 
 @cli.command()
 @click.option('--input', '-i', required=True, type=click.Path(exists=True), help='Vendor-native source configuration file')

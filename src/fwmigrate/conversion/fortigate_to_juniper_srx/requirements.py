@@ -25,6 +25,14 @@ def source_vdoms(source) -> tuple[str, ...]:
     return tuple(sorted(values))
 
 
+def standalone_interfaces(source, vdom):
+    zones = [zone for zone in source.zones if zone.vdom == vdom]
+    if any("members" not in zone.explicit_fields for zone in zones):
+        return ()
+    members = {member for zone in zones for member in (zone.members or ())}
+    return tuple(interface for interface in source.interfaces if interface.vdom == vdom and interface.name not in members)
+
+
 def _decision(source_vdom, source_kind, source_name, target_field, label, value, choices=()):
     return SRXMigrationDecision(
         key=decision_key(source_vdom, source_kind, source_name, target_field),
@@ -75,5 +83,11 @@ def build_mapping_requirements(source, derived, options: SRXMigrationOptions | N
             decisions.append(_decision(
                 vdom, "zone", zone.name, "target_zone",
                 f"Target security zone for {vdom}/{zone.name}", value,
+            ))
+        for interface in standalone_interfaces(source, vdom):
+            decisions.append(_decision(
+                vdom, "interface", interface.name, "target_zone",
+                f"Target security zone for interface {vdom}/{interface.name}",
+                options.interface_zones.get(vdom, {}).get(interface.name),
             ))
     return tuple(decisions)

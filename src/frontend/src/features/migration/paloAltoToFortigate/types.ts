@@ -29,7 +29,7 @@ export type FortiGateReview = {
   issues: Array<{ id: string; category: string; source_scope: string; source_name: string; item_key?: string; explanation: string }>
 }
 export type FortiGateWorkspace = {
-  sourceKey: string; options: FortiGateOptions; targetSource: SourceEvidence | null
+  pairId: 'palo_alto_to_fortigate'; sourceKey: string; options: FortiGateOptions; targetSource: SourceEvidence | null
   review: FortiGateReview | null; approval: Record<string, unknown> | null; artifact: FortiGateArtifact | null
   stage: 'load' | 'place' | 'review' | 'export'
 }

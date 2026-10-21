@@ -1,0 +1,72 @@
+{
+  "api_version": "7.7.0",
+  "endpoints": {
+    "/api/fmc_config/v1/domain/{domainUUID}/object/hosts": {
+      "name": ["string"],
+      "value": ["string"],
+      "type": ["string"],
+      "description": ["string"]
+    },
+    "/api/fmc_config/v1/domain/{domainUUID}/object/networks": {
+      "name": ["string"],
+      "value": ["string"],
+      "type": ["string"],
+      "description": ["string"]
+    },
+    "/api/fmc_config/v1/domain/{domainUUID}/object/ranges": {
+      "name": ["string"],
+      "value": ["string"],
+      "type": ["string"],
+      "description": ["string"]
+    },
+    "/api/fmc_config/v1/domain/{domainUUID}/object/networkgroups": {
+      "name": ["string"],
+      "objects": ["list"],
+      "type": ["string"],
+      "description": ["string"]
+    },
+    "/api/fmc_config/v1/domain/{domainUUID}/object/protocolportobjects": {
+      "name": ["string"],
+      "protocol": ["string"],
+      "port": ["string"],
+      "type": ["string"],
+      "description": ["string"]
+    },
+    "/api/fmc_config/v1/domain/{domainUUID}/object/portobjectgroups": {
+      "name": ["string"],
+      "objects": ["list"],
+      "type": ["string"],
+      "description": ["string"]
+    },
+    "/api/fmc_config/v1/domain/{domainUUID}/object/securityzones": {
+      "name": ["string"],
+      "interfaceMode": ["string"],
+      "type": ["string"],
+      "description": ["string"]
+    },
+    "/api/fmc_config/v1/domain/{domainUUID}/policy/accesspolicies": {
+      "name": ["string"],
+      "defaultAction": ["object"],
+      "type": ["string"],
+      "description": ["string"]
+    },
+    "/api/fmc_config/v1/domain/{domainUUID}/policy/accesspolicies/{containerUUID}/accessrules": {
+      "name": ["string"],
+      "action": ["string"],
+      "enabled": ["boolean"],
+      "type": ["string"],
+      "sendEventsToFMC": ["boolean"],
+      "logBegin": ["boolean"],
+      "logEnd": ["boolean"],
+      "logFiles": ["boolean"],
+      "sourceZones": ["object"],
+      "destinationZones": ["object"],
+      "sourceNetworks": ["object"],
+      "destinationNetworks": ["object"],
+      "sourcePorts": ["object"],
+      "destinationPorts": ["object"],
+      "description": ["string"],
+      "comments": ["string"]
+    }
+  }
+}

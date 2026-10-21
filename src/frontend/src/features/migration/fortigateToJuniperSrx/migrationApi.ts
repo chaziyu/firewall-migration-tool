@@ -7,6 +7,9 @@ const destinationPayload = (destination?: DestinationEvidence | null) => destina
 
 const prefix = '/api/migration/fortigate_to_juniper_srx'
 
+export const proposeNewTarget = (source: SourceEvidence, options: SrxOptions) =>
+  postJson<{ options: SrxOptions; hardware_verified: false; approval_required: true }>(`${prefix}/proposals`, { source, options })
+
 export const requirements = (source: SourceEvidence, options: SrxOptions, destination?: DestinationEvidence | null) =>
   postJson<{ requirements: SrxReview['requirements']; report: SrxReview['report'] }>(`${prefix}/requirements`, { source, options, ...destinationPayload(destination) })
 

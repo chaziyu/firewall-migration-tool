@@ -1,6 +1,13 @@
 import type { ConfigurationRow, EffectiveValue, FortiGateReview, Requirement } from './types'
+import type { OfflineReviewRow } from '../components/OfflineMigrationReview'
 
-export const isReady = (row: ConfigurationRow) => row.render_disposition !== 'BLOCK' && !row.blocking_reasons.length
+export const isReady = (row: ConfigurationRow) => ['CREATE', 'CONFIGURE', 'REUSE'].includes(row.render_disposition) && !row.blocking_reasons.length
+
+export const offlineReviewRow = (row: ConfigurationRow): OfflineReviewRow => ({
+  key: row.key, family: row.family, sourceScope: row.source_scope, sourceName: row.source_name,
+  target: `${row.target_vdom} / ${row.target_name}`, operation: row.render_disposition,
+  settings: row.settings, dependencies: row.dependencies, reasons: row.blocking_reasons, ready: isReady(row),
+})
 
 export function orderPlacementRequirements(rows: Requirement[], configuration: ConfigurationRow[]) {
   const order = new Map(configuration.filter((row) => row.family === 'interface').map((row, index) => [row.source_name, index]))

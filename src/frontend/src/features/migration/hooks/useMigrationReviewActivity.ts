@@ -7,20 +7,33 @@ export function useMigrationReviewActivity({
   targetSource,
   targetDevice,
   workflowMode = 'destination',
+  pairId = '',
 }: {
   source: SourceEvidence | undefined
   targetSource: SourceEvidence | null
   targetDevice: string
   workflowMode?: 'offline' | 'destination'
+  pairId?: string
 }) {
   const requestVersion = useRef(0)
   const actionVersion = useRef(0)
+  const activePairId = useRef(pairId)
   const [actionBusy, setActionBusy] = useState(false)
   const [reviewLoading, setReviewLoading] = useState(false)
   const [error, setError] = useState('')
   const [status, setStatus] = useState('')
   const [elapsedSeconds, setElapsedSeconds] = useState(0)
   const busy = actionBusy || reviewLoading
+  useEffect(() => {
+    if (activePairId.current === pairId) return
+    activePairId.current = pairId
+    requestVersion.current++
+    actionVersion.current++
+    setActionBusy(false)
+    setReviewLoading(false)
+    setError('')
+    setStatus('')
+  }, [pairId])
   useEffect(() => {
     if (!busy) return
     const started = Date.now()

@@ -42,7 +42,29 @@ def _sdwan_link_settings(element: ET.Element | None) -> tuple[str | None, str | 
 
 def _mode_extra(element: ET.Element, modes: set[str]) -> dict[str, object]:
     known = {"layer3": {"interface-management-profile", "mtu", "ip", "ipv6", "units", "aggregate-group"}, "layer2": {"units", "lacp", "vlan", "aggregate-group"}, "virtual-wire": {"virtual-wire"}, "tap": set(), "ha": set(), "decrypt-mirror": set()}
-    return {mode: raw_extra(element.find(mode), known[mode]) for mode in modes if element.find(mode) is not None and raw_extra(element.find(mode), known[mode])}
+    result = {}
+    for mode in modes:
+        node = element.find(mode)
+        extra = raw_extra(node, known[mode])
+        ipv6_extra = _ipv6_extra(node) if mode == "layer3" else {}
+        if ipv6_extra:
+            extra["ipv6"] = ipv6_extra
+        if extra:
+            result[mode] = extra
+    return result
+
+
+def _ipv6_extra(element: ET.Element) -> dict[str, object]:
+    node = element.find("ipv6")
+    if node is None:
+        return {}
+    extra = raw_extra(node, {"address"})
+    addresses = node.find("address")
+    if addresses is not None:
+        address_extra = raw_extra(addresses, {"entry"})
+        if address_extra:
+            extra["address"] = address_extra
+    return extra
 
 
 def extract_interface(element: ET.Element, path: tuple[str, ...], context: PANWalkContext, source_order: int, spec: PANPathSpec) -> object | None:
@@ -53,6 +75,9 @@ def extract_interface(element: ET.Element, path: tuple[str, ...], context: PANWa
         return PANInterfaceImport(scope=context.scope, interfaces=interfaces if spec.name == "interface_import" else None, virtual_routers=interfaces if spec.name == "virtual_router_import" else None, source_path="/".join(path), source_order=source_order, raw_extra=extra, explicit_fields=explicit)
     if spec.name == "interface_unit":
         extra, explicit = source_fields(element, spec)
+        ipv6_extra = _ipv6_extra(element)
+        if ipv6_extra:
+            extra["ipv6"] = ipv6_extra
         sdwan_enabled, ipv6_sdwan_enabled, sdwan_profile, upstream_nat, sdwan_fields = _sdwan_link_settings(element)
         explicit.update(sdwan_fields)
         return PANInterfaceUnit(name=element.get("name"), parent=context.interface_name, interface_family=context.interface_family, **common, tag=value(element, "tag"), ipv4_addresses=_ipv4(element), ipv6_addresses=_ipv6(element), management_profile=value(element, "interface-management-profile"), sdwan_enabled=sdwan_enabled, ipv6_sdwan_enabled=ipv6_sdwan_enabled, sdwan_interface_profile=sdwan_profile, upstream_nat=upstream_nat, raw_extra=extra, explicit_fields=explicit)

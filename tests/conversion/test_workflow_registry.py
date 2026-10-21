@@ -76,3 +76,14 @@ def test_registration_requires_pair_id_to_match_direction():
             destination_aware_available=False,
             deployment_available=False,
         )
+
+
+def test_builtin_panos_workflows_have_registered_cli_handlers_and_formats():
+    from fwmigrate.conversion.builtin import _BUILTIN_WORKFLOWS
+    panos_workflows = [w for w in _BUILTIN_WORKFLOWS if w.source_vendor == "palo_alto"]
+    assert len(panos_workflows) >= 4
+    for w in panos_workflows:
+        assert w.export_available is True
+        assert len(w.supported_formats) > 0
+        if w.target_vendor in ("juniper_srx", "cisco_asa", "checkpoint", "cisco_ftd"):
+            assert callable(w.cli_application), f"{w.pair_id} must have a callable cli_application"

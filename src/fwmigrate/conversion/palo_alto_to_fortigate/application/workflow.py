@@ -74,7 +74,10 @@ def build_artifact(analysis, options, source_digest, approval, *, target=None, t
     report = {**rendered.report, "source_digest": source_digest, "target_digest": target_digest,
               "effective_values": review["effective_values"], "target_proposals": review["proposals"],
               "approved_design_digest": approval["draft_digest"], "workflow_mode": review["draft"]["context"]["workflow_mode"],
-              "destination_verified": False, "verification": "Destination configuration comparison only; device compatibility, cabling, capacity and licensing remain unverified."}
+              "destination_verified": False, "verification":
+              "Destination configuration comparison only; device compatibility, cabling, capacity and licensing remain unverified."
+              if target is not None else
+              "Offline reviewed FortiOS export. Destination collisions, device compatibility, cabling, capacity and licensing remain unverified."}
     return {"envelope_type": "fg_migration_artifact_v1", **PAIR, "artifact_id": str(uuid.uuid4()),
             "commands": list(rendered.commands), "command_count": len(rendered.commands), "command_sha256": report["command_sha256"],
             "report": report, "design_approval": approval, "expires_at": approval["expires_at"]}

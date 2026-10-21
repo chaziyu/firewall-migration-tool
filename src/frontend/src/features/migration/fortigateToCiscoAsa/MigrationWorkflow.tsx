@@ -66,7 +66,7 @@ export function CiscoAsaMigrationWorkflow({ source, sourceKey, stage, onStageCha
   onStageChange: (stage: MigrationStage) => void
 }) {
   const [state, setState] = useState<CiscoAsaWorkspace>(() => {
-    const saved = workspace().newPairMigration
+    const saved = workspace().panosMigration
     return saved?.pairId === PAIR_ID && saved.sourceKey === sourceKey
       ? saved
       : { pairId: PAIR_ID, sourceKey, options: emptyOptions(), requirements: [], review: null, approval: null, artifact: null, previewText: null }
@@ -82,7 +82,7 @@ export function CiscoAsaMigrationWorkflow({ source, sourceKey, stage, onStageCha
   const initialOptions = useRef(payloadOptions(state.options))
   const { options, requirements, review, approval, artifact } = state
 
-  useEffect(() => { void saveWorkspace({ newPairMigration: state }) }, [state])
+  useEffect(() => { void saveWorkspace({ panosMigration: state }) }, [state])
   useEffect(() => () => { requests.current++ }, [])
   useEffect(() => {
     let active = true

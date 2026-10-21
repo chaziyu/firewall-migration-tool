@@ -79,7 +79,7 @@ This increment adds scoped source accounting, optional browser destination revie
 for ASA/SRX/Check Point, Check Point UID reuse, native FortiGate central SNAT
 evidence, restricted fixed-pool NAT, and disjoint reverse-direction source NAT.
 ASAv and vSRX were selected as VLAN baselines. The first advanced increment is
-Check Point IPv6 host/network objects. See the [support matrix](migration-support-matrix.md)
+Check Point IPv6 host/network objects. See the [support matrix](../../migration-support-matrix.md)
 for exact prerequisites and manual boundaries.
 
 ### Executed checks

@@ -99,7 +99,7 @@ Management API calls, run Gaia commands, or include `save config`. No live
 Management API acceptance or Gaia device validation was performed. Management
 destination evidence does not prove Gaia topology; Gaia route export is blocked
 when using that evidence. Source inventory accounting remains visible in review
-and export reports. See the [support matrix](migration-support-matrix.md).
+and export reports. See the [support matrix](../migration-support-matrix.md).
 
 ## CLI
 

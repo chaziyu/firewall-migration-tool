@@ -7,6 +7,7 @@ from ..source_model import pan_scope_identity
 
 RULE_REFERENCE = "https://docs.paloaltonetworks.com/ngfw/help/11-1/policies/policies-security/building-blocks-in-a-security-policy-rule"
 USER_REFERENCE = "https://docs.paloaltonetworks.com/pan-os/11-1/pan-os-admin/policy/security-policy/create-a-security-policy-rule"
+SERVICE_REFERENCE = "https://docs.paloaltonetworks.com/pan-os/11-1/pan-os-admin/policy/policy-objects"
 
 
 @dataclass(frozen=True, slots=True)
@@ -23,11 +24,25 @@ def rule_identity(rule):
     return (pan_scope_identity(rule.scope) if rule.scope else "unscoped", rule.source_path, rule.name, rule.source_order)
 
 
-def derive_effective_values(config):
+def _standalone_11_1(config):
     version = config.source_version or ""
     if not re.fullmatch(r"11\.1(?:\.\d+)?(?:-h\d+)?", version):
-        return ()
+        return False
     if any(s.kind in {"device-group", "template", "template-stack"} or s.device_serial or s.device_group for s in config.scopes):
+        return False
+    return True
+
+
+def predefined_service_ports(config):
+    """Versioned vendor definitions, never inserted into explicit source objects."""
+    if not _standalone_11_1(config):
+        return {}
+    return {"service-http": ("80", "8080"), "service-https": ("443",)}
+
+
+def derive_effective_values(config):
+    version = config.source_version or ""
+    if not _standalone_11_1(config):
         return ()
     # Only documented local rule behavior is derived; disabled/negation/category remain unknown.
     defaults = {"rule_type": "universal", "log_start": "no", "log_end": "yes", "source_user": "any", "schedule": "always"}

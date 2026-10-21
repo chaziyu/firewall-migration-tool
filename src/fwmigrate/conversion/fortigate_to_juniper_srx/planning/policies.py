@@ -6,6 +6,7 @@ from fwmigrate.vendors.fortigate.relationships.references import ReferenceKind
 
 from ..models import SRXFinding, SRXPlanItem
 from .naming import decision_key, item_key, target_name
+from .source_semantics import default_evidence, effective_fields, resolve_reference, source_value
 
 
 _ADDRESS_KINDS = (ReferenceKind.ADDRESS, ReferenceKind.ADDRESS_GROUP)
@@ -61,23 +62,24 @@ def _inventory_blockers(source, source_inventory, vdom):
 
 
 def _zone_target(source, derived, options, vdom, name, zone_items):
-    reference = derived.references.resolve_any(
-        vdom=vdom, name=name, kinds=(ReferenceKind.ZONE, ReferenceKind.INTERFACE),
-    )
+    reference = resolve_reference(derived, vdom, name, (ReferenceKind.ZONE, ReferenceKind.INTERFACE))
     if reference is None or reference.predefined:
         return (), (), ("POLICY_INTERFACE_OR_ZONE_UNRESOLVED",)
     if reference.kind is ReferenceKind.ZONE:
-        zone_name = reference.name
+        zone_identity = ("zone", reference.name)
     elif reference.kind is ReferenceKind.INTERFACE:
         memberships = [zone for zone in source.zones if zone.vdom == vdom and name in (zone.members or ())]
-        if len(memberships) != 1 or "members" not in memberships[0].explicit_fields:
+        if not memberships and ("interface", name) in zone_items:
+            zone_identity = ("interface", name)
+        elif len(memberships) == 1 and "members" in memberships[0].explicit_fields:
+            zone_identity = ("zone", memberships[0].name)
+        else:
             return (), (), ("POLICY_INTERFACE_REQUIRES_ONE_EXPLICIT_ZONE",)
-        zone_name = memberships[0].name
     else:
         return (), (), ("POLICY_INTERFACE_OR_ZONE_UNSUPPORTED",)
 
-    item = zone_items.get(zone_name)
-    target = options.zones.get(vdom, {}).get(zone_name)
+    item = zone_items.get(zone_identity)
+    target = (options.interface_zones if zone_identity[0] == "interface" else options.zones).get(vdom, {}).get(zone_identity[1])
     if item is None or target is None:
         return (), (), ("POLICY_TARGET_ZONE_MAPPING_REQUIRED",)
     blockers = ("POLICY_TARGET_ZONE_BLOCKED",) if item.blockers else ()
@@ -89,7 +91,7 @@ def _match_values(derived, items_by_family, vdom, names, kinds, match_kind):
         return (), (), (f"POLICY_{match_kind.upper()}_NOT_EXPLICIT",)
     values, dependencies, blockers = [], [], []
     for name in names:
-        reference = derived.references.resolve_any(vdom=vdom, name=name, kinds=kinds)
+        reference = resolve_reference(derived, vdom, name, kinds)
         if reference is None:
             blockers.append(f"POLICY_{match_kind.upper()}_REFERENCE_UNRESOLVED")
             continue
@@ -114,6 +116,9 @@ def _match_values(derived, items_by_family, vdom, names, kinds, match_kind):
         if item is None:
             blockers.append(f"POLICY_{match_kind.upper()}_OUTSIDE_SELECTED_SCOPE")
             continue
+        if match_kind == "service" and item.blockers == ("SERVICE_USES_BUILTIN_ANY",):
+            values.append("any")
+            continue
         values.append(item.target_name)
         dependencies.append(item.key)
         if item.blockers:
@@ -121,31 +126,31 @@ def _match_values(derived, items_by_family, vdom, names, kinds, match_kind):
     return tuple(dict.fromkeys(values)), tuple(dict.fromkeys(dependencies)), tuple(dict.fromkeys(blockers))
 
 
-def _policy_blockers(policy, source_inventory_blockers):
+def _policy_blockers(policy, source_inventory_blockers, defaults):
     blockers = list(source_inventory_blockers)
-    if policy.raw_extra:
+    if set(policy.raw_extra) - {"uuid", "color"}:
         blockers.append("POLICY_HAS_UNSUPPORTED_SOURCE_SETTINGS")
 
     required = {"srcintf", "dstintf", "srcaddr", "dstaddr", "service", "schedule",
                 "action", "status", "nat", "utm_status", "logtraffic",
                 "srcaddr_negate", "dstaddr_negate", "service_negate"}
-    if not required <= policy.explicit_fields:
+    if any(field not in policy.explicit_fields and field not in defaults for field in required):
         blockers.append("POLICY_REQUIRED_FIELDS_NOT_EXPLICIT")
     for field in ("srcaddr_negate", "dstaddr_negate", "service_negate"):
-        if getattr(policy, field) != "disable":
+        if source_value(policy, field, defaults) != "disable":
             blockers.append("POLICY_NEGATION_UNSUPPORTED_OR_UNCONFIRMED")
-    if policy.action not in {"accept", "deny"}:
+    if source_value(policy, "action", defaults) not in {"accept", "deny"}:
         blockers.append("POLICY_ACTION_UNSUPPORTED_OR_UNCONFIRMED")
-    if policy.status not in {"enable", "disable"}:
+    if source_value(policy, "status", defaults) not in {"enable", "disable"}:
         blockers.append("POLICY_STATUS_UNSUPPORTED_OR_UNCONFIRMED")
-    if policy.nat != "disable" or any(getattr(policy, field) not in {None, "disable"}
+    if source_value(policy, "nat", defaults) != "disable" or any(getattr(policy, field) not in {None, "disable"}
                                        for field in ("nat64", "nat46", "natinbound", "natoutbound")):
         blockers.append("POLICY_NAT_REQUIRES_SEPARATE_SUPPORT")
     if policy.ippool not in {None, "disable"} or policy.natip or policy.poolname or policy.poolname6:
         blockers.append("POLICY_TRANSLATION_SETTINGS_UNSUPPORTED")
-    if policy.utm_status != "disable" or any(getattr(policy, field) for field in _UNSUPPORTED_FIELDS):
+    if source_value(policy, "utm_status", defaults) != "disable" or any(getattr(policy, field) for field in _UNSUPPORTED_FIELDS):
         blockers.append("POLICY_SECURITY_OR_IDENTITY_SETTINGS_UNSUPPORTED")
-    if policy.logtraffic not in {"all", "disable"}:
+    if source_value(policy, "logtraffic", defaults) not in {"all", "disable", "utm"}:
         blockers.append("POLICY_LOGGING_MODE_UNSUPPORTED_OR_UNCONFIRMED")
     if policy.srcaddr6 or policy.dstaddr6 or policy.srcaddr6_negate not in {None, "disable"} or policy.dstaddr6_negate not in {None, "disable"}:
         blockers.append("POLICY_IPV6_MATCH_UNSUPPORTED")
@@ -157,7 +162,10 @@ def _policy_blockers(policy, source_inventory_blockers):
 def plan_policies(source, derived, options, vdom, base_items, schedule_items, source_inventory=None):
     inventory_blockers, findings = _inventory_blockers(source, source_inventory, vdom)
     items_by_family = {(item.family, item.source_name): item for item in base_items}
-    zone_items = {item.source_name: item for item in base_items if item.family == "zone"}
+    zone_items = {
+        ("interface", dict(item.settings)["source_interface"]) if "source_interface" in dict(item.settings)
+        else ("zone", item.source_name): item for item in base_items if item.family == "zone"
+    }
     schedule_by_name = {item.source_name: item for item in schedule_items}
     policy_id_counts = {}
     for policy in source.policies:
@@ -166,9 +174,11 @@ def plan_policies(source, derived, options, vdom, base_items, schedule_items, so
     previous_by_pair = {}
     result = []
     unknown_order_scope = False
+    effective = effective_fields(derived, vdom, "policy")
 
     for order, policy in enumerate(item for item in source.policies if item.vdom == vdom):
-        blockers = _policy_blockers(policy, inventory_blockers)
+        defaults = effective.get(str(policy.policy_id), {})
+        blockers = _policy_blockers(policy, inventory_blockers, defaults)
         if policy.policy_id is not None and policy_id_counts[policy.policy_id] > 1:
             blockers.append("DUPLICATE_SOURCE_POLICY_ID")
         source_zones, source_zone_deps, source_zone_blockers = [], [], []
@@ -261,9 +271,10 @@ def plan_policies(source, derived, options, vdom, base_items, schedule_items, so
                 settings=(
                     ("from_zone", from_zone), ("to_zone", to_zone),
                     ("source_addresses", sources), ("destination_addresses", destinations),
-                    ("applications", applications), ("action", "permit" if policy.action == "accept" else "deny"),
-                    ("schedule", schedule_name), ("disabled", policy.status == "disable"),
-                    ("logging", policy.logtraffic), ("policy_id", policy.policy_id),
+                    ("applications", applications), ("action", "permit" if source_value(policy, "action", defaults) == "accept" else "deny"),
+                    ("schedule", schedule_name), ("disabled", source_value(policy, "status", defaults) == "disable"),
+                    ("logging", source_value(policy, "logtraffic", defaults)), ("policy_id", policy.policy_id),
+                    ("source_effective_values", default_evidence(defaults)),
                 ),
                 dependencies=tuple(dict.fromkeys(dependencies)),
                 decision_keys=(decision_key(vdom, "policy", policy.name or str(policy.policy_id), "source_order"),),

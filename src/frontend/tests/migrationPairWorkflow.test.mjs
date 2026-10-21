@@ -10,6 +10,11 @@ function loadWorkflow() {
   }).outputText
   const exports = {}
   const components = {
+    './paloAltoToFortigate/MigrationWorkflow': { FortiGateMigrationWorkflow: 'PANOS_FortiGate' },
+    './paloAltoToJuniperSrx/MigrationWorkflow': { PaloAltoToJuniperSrxWorkflow: 'PANOS_SRX' },
+    './paloAltoToCiscoAsa/MigrationWorkflow': { PaloAltoToCiscoAsaWorkflow: 'PANOS_ASA' },
+    './paloAltoToCheckPoint/MigrationWorkflow': { PaloAltoToCheckPointWorkflow: 'PANOS_CheckPoint' },
+    './paloAltoToCiscoFtd/MigrationWorkflow': { PaloAltoToCiscoFtdWorkflow: 'PANOS_FTD' },
     './fortigateToJuniperSrx/MigrationWorkflow': { JuniperSRXMigrationWorkflow: 'JuniperSRX' },
     './fortigateToCiscoAsa/MigrationWorkflow': { CiscoAsaMigrationWorkflow: 'CiscoASA' },
     './fortigateToCheckPoint/MigrationWorkflow': { CheckPointMigrationWorkflow: 'CheckPoint' },
@@ -27,6 +32,11 @@ test('migration pair dispatcher keeps each pair on its own workflow and passes t
   const source = { source_text: 'config' }
   const onStageChange = () => {}
   for (const [pairId, component] of [
+    ['palo_alto_to_fortigate', 'PANOS_FortiGate'],
+    ['palo_alto_to_juniper_srx', 'PANOS_SRX'],
+    ['palo_alto_to_cisco_asa', 'PANOS_ASA'],
+    ['palo_alto_to_checkpoint', 'PANOS_CheckPoint'],
+    ['palo_alto_to_cisco_ftd', 'PANOS_FTD'],
     ['fortigate_to_juniper_srx', 'JuniperSRX'],
     ['fortigate_to_cisco_asa', 'CiscoASA'],
     ['fortigate_to_checkpoint', 'CheckPoint'],

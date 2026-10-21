@@ -29,6 +29,7 @@ class SRXMigrationOptions:
     nat_return_routing_confirmed: bool = False
     target_platform: str | None = None
     vlan_interfaces_available: bool = False
+    interface_zones: dict[str, dict[str, str]] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if self.target_platform not in {None, "", "vsrx"} or type(self.vlan_interfaces_available) is not bool:

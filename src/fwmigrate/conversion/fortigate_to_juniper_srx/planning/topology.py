@@ -8,8 +8,9 @@ from fwmigrate.vendors.fortigate.relationships.references import ReferenceKind
 
 from ..models import SRXPlanItem
 from ..options import SRXMigrationOptions
-from ..requirements import source_vdoms
+from ..requirements import source_vdoms, standalone_interfaces
 from .naming import decision_key, item_key, target_name
+from .source_semantics import default_evidence, effective_fields, source_value
 
 
 def _ipv4_interface(value):
@@ -68,12 +69,15 @@ def plan_topology(source, derived, options: SRXMigrationOptions, vdom):
     zones = [item for item in source.zones if item.vdom == vdom]
     topology_by_name = {item.name: item for item in derived.topology.interfaces if item.vdom == vdom}
     interface_items = {}
+    control_plane_items = []
     target_owners = {}
     physical_target_owners = {}
     global_blockers = _global_blockers(options)
     tagged_parents = {row.interface for row in interfaces if row.type == "vlan" and row.interface}
+    interface_defaults = effective_fields(derived, vdom, "interface")
 
     for order, interface in enumerate(interfaces):
+        defaults = interface_defaults.get(interface.name, {})
         blockers = list(global_blockers)
         topology = topology_by_name.get(interface.name)
         if topology is None:
@@ -82,12 +86,20 @@ def plan_topology(source, derived, options: SRXMigrationOptions, vdom):
             blockers.append("INTERFACE_TOPOLOGY_HAS_ISSUES")
         if topology is not None and topology.kind not in {"physical", "vlan"}:
             blockers.append("INTERFACE_KIND_UNSUPPORTED")
+        if interface.type not in {"physical", "vlan", None} or (
+            topology is not None and topology.kind == "physical" and interface.type != "physical"
+        ):
+            blockers.append("INTERFACE_TYPE_NOT_EXPLICIT_OR_SUPPORTED")
+        if topology is not None and topology.kind == "physical" and interface.explicit_fields - {
+            "vdom", "type", "mode", "status", "ip", "description", "alias", "allowaccess", "vrf", "role",
+        }:
+            blockers.append("INTERFACE_HAS_UNSUPPORTED_TYPED_SETTINGS")
         if any(row.kind is ReferenceKind.INTERFACE and row.vdom == vdom and row.name == interface.name
                for row in derived.references.duplicates):
             blockers.append("DUPLICATE_SOURCE_INTERFACE")
-        if not {"mode", "status", "ip"} <= interface.explicit_fields:
+        if any(field not in interface.explicit_fields and field not in defaults for field in ("mode", "status", "ip")):
             blockers.append("INTERFACE_MODE_STATUS_OR_IPV4_NOT_EXPLICIT")
-        if interface.mode != "static" or interface.status != "up":
+        if source_value(interface, "mode", defaults) != "static" or source_value(interface, "status", defaults) != "up":
             blockers.append("INTERFACE_IS_NOT_EXPLICITLY_STATIC_AND_UP")
         if interface.secondary_ips:
             blockers.append("INTERFACE_SECONDARY_IP_UNSUPPORTED")
@@ -155,15 +167,29 @@ def plan_topology(source, derived, options: SRXMigrationOptions, vdom):
                 ipv4_address=str(address) if address and not tagged_only else None,
                 vlan_trunk=tagged_only,
                 source_kind=topology.kind if topology else None,
+                source_effective_values=default_evidence(defaults),
             ),
             dependencies=(item_key(vdom, "interface", topology.parent),)
                 if topology is not None and topology.kind == "vlan" and topology.parent else (),
             decision_keys=(decision_key(vdom, "interface", interface.name, "target_interface"),),
-            blockers=tuple(dict.fromkeys((*blockers, *(["INTERFACE_HAS_MANAGEMENT_ACCESS_UNSUPPORTED"] if interface.allowaccess else []),
-                *(["INTERFACE_HAS_UNSUPPORTED_SOURCE_SETTINGS"] if interface.raw_extra else [])))),
+            blockers=tuple(dict.fromkeys((*blockers,
+                *(["INTERFACE_HAS_UNSUPPORTED_SOURCE_SETTINGS"] if set(interface.raw_extra) - {
+                    "snmp-index", "monitor-bandwidth", "device-identification", "lldp-transmission",
+                } else [])))),
             source_order=order,
         )
         interface_items[interface.name] = item
+        observation = {key: value for key, value in interface.raw_extra.items()
+                       if key in {"device-identification", "lldp-transmission"}}
+        if interface.allowaccess or observation:
+            control_plane_items.append(SRXPlanItem(
+                key=item_key(vdom, "interface_control_plane", interface.name), family="interface_control_plane",
+                source_vdom=vdom, source_name=interface.name,
+                target_name=target_name("interface_control_plane", vdom, interface.name),
+                settings=_settings(source_allowaccess=tuple(interface.allowaccess or ()), source_observation=observation),
+                dependencies=(item.key,), blockers=("INTERFACE_CONTROL_PLANE_REQUIRES_SEPARATE_DESIGN",),
+                source_order=order,
+            ))
 
     for (target_interface, unit), names in target_owners.items():
         if len(names) > 1:
@@ -182,7 +208,6 @@ def plan_topology(source, derived, options: SRXMigrationOptions, vdom):
 
     zone_items = {}
     zone_mappings = options.zones.get(vdom, {})
-    target_zone_owners = {}
     for order, zone in enumerate(zones):
         target_zone = zone_mappings.get(zone.name)
         blockers = list(global_blockers)
@@ -190,8 +215,6 @@ def plan_topology(source, derived, options: SRXMigrationOptions, vdom):
             blockers.append("ZONE_TARGET_MAPPING_REQUIRED")
         elif not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,62}", target_zone):
             blockers.append("ZONE_TARGET_NAME_INVALID")
-        else:
-            target_zone_owners.setdefault(target_zone.casefold(), []).append(zone.name)
         if "members" not in zone.explicit_fields or not zone.members:
             blockers.append("ZONE_MEMBERS_NOT_EXPLICIT")
         target_interfaces = []
@@ -207,7 +230,7 @@ def plan_topology(source, derived, options: SRXMigrationOptions, vdom):
             if item.blockers:
                 blockers.append("ZONE_INTERFACE_MEMBER_BLOCKED")
         key = item_key(vdom, "zone", zone.name)
-        zone_items[zone.name] = SRXPlanItem(
+        zone_items["zone", zone.name] = SRXPlanItem(
             key=key,
             family="zone",
             source_vdom=vdom,
@@ -219,28 +242,51 @@ def plan_topology(source, derived, options: SRXMigrationOptions, vdom):
             blockers=tuple(dict.fromkeys(blockers)),
             source_order=order,
         )
-    for owners in target_zone_owners.values():
-        if len(owners) > 1:
-            for name in owners:
-                item = zone_items[name]
-                zone_items[name] = replace(
-                    item, blockers=tuple(dict.fromkeys((*item.blockers, "TARGET_ZONE_MERGES_SOURCE_ZONES")))
-                )
+    for interface in standalone_interfaces(source, vdom):
+        identity = ("interface", interface.name)
+        target_zone = options.interface_zones.get(vdom, {}).get(interface.name)
+        interface_item = interface_items[interface.name]
+        blockers = list(global_blockers)
+        if not target_zone:
+            blockers.append("ZONE_TARGET_MAPPING_REQUIRED")
+        elif not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,62}", target_zone):
+            blockers.append("ZONE_TARGET_NAME_INVALID")
+        if interface_item.blockers:
+            blockers.append("ZONE_INTERFACE_MEMBER_BLOCKED")
+        zone_items[identity] = SRXPlanItem(
+            key=item_key(vdom, "interface_zone", interface.name), family="zone", source_vdom=vdom,
+            source_name=f"interface:{interface.name}", target_name=target_zone or target_name("zone", vdom, f"interface:{interface.name}"),
+            settings=_settings(interfaces=(interface_item.target_name,), source_interface=interface.name),
+            dependencies=(interface_item.key,),
+            decision_keys=(decision_key(vdom, "interface", interface.name, "target_zone"),),
+            blockers=tuple(dict.fromkeys(blockers)), source_order=len(zones) + len(zone_items),
+        )
+    owners = {}
+    for identity, item in zone_items.items():
+        owners.setdefault(item.target_name.casefold(), []).append(identity)
+    for identities in owners.values():
+        if len(identities) > 1:
+            for identity in identities:
+                item = zone_items[identity]
+                zone_items[identity] = replace(item, blockers=tuple(dict.fromkeys((*item.blockers, "TARGET_ZONE_MERGES_SOURCE_ZONES"))))
 
     route_destinations = {}
     routes = [item for item in source.static_routes if item.vdom == vdom]
+    route_defaults = effective_fields(derived, vdom, "static_route")
     for route in routes:
-        destination = _route_destination(route.dst) if "dst" in route.explicit_fields else None
+        defaults = route_defaults.get(str(route.seq_num), {})
+        destination = _route_destination(source_value(route, "dst", defaults))
         if destination:
             route_destinations.setdefault(destination, []).append(route)
     route_items = []
     for order, route in enumerate(routes):
+        defaults = route_defaults.get(str(route.seq_num), {})
         blockers = list(global_blockers)
-        if "status" not in route.explicit_fields or route.status != "enable":
+        if source_value(route, "status", defaults) != "enable":
             blockers.append("STATIC_ROUTE_STATUS_NOT_EXPLICITLY_ENABLED")
         if route.address_family != "ipv4":
             blockers.append("IPV6_STATIC_ROUTE_UNSUPPORTED")
-        destination = _route_destination(route.dst) if "dst" in route.explicit_fields else None
+        destination = _route_destination(source_value(route, "dst", defaults))
         gateway = None
         try:
             if "gateway" in route.explicit_fields and route.gateway:
@@ -253,13 +299,14 @@ def plan_topology(source, derived, options: SRXMigrationOptions, vdom):
             blockers.append("STATIC_ROUTE_GATEWAY_NOT_EXPLICIT_IPV4")
         if "device" not in route.explicit_fields or not route.device:
             blockers.append("STATIC_ROUTE_INTERFACE_NOT_EXPLICIT")
-        if "distance" not in route.explicit_fields or route.distance is None:
+        distance = source_value(route, "distance", defaults)
+        if distance is None:
             blockers.append("STATIC_ROUTE_DISTANCE_NOT_EXPLICIT")
-        elif type(route.distance) is not int or not 0 <= route.distance <= 4_294_967_295:
+        elif type(distance) is not int or not 1 <= distance <= 255:
             blockers.append("STATIC_ROUTE_DISTANCE_INVALID_FOR_TARGET")
-        if route.raw_extra or route.dstaddr or route.priority is not None or route.vrf not in {None, 0} or route.src or route.preferred_source:
+        if route.raw_extra or route.dstaddr or route.priority not in {None, 1} or route.vrf not in {None, 0} or route.src or route.preferred_source:
             blockers.append("STATIC_ROUTE_HAS_UNSUPPORTED_SOURCE_SETTINGS")
-        if route.dynamic_gateway or route.sdwan_zone or route.blackhole:
+        if route.dynamic_gateway not in {None, "disable"} or route.sdwan_zone or route.blackhole not in {None, "disable"}:
             blockers.append("STATIC_ROUTE_FORWARDING_MODE_UNSUPPORTED")
         interface = derived.references.get(ReferenceKind.INTERFACE, vdom=vdom, name=route.device or "")
         interface_item = interface_items.get(route.device or "")
@@ -285,12 +332,13 @@ def plan_topology(source, derived, options: SRXMigrationOptions, vdom):
                 destination=destination,
                 next_hop=gateway,
                 interface=interface_item.target_name if interface_item else None,
-                preference=route.distance if "distance" in route.explicit_fields else None,
+                preference=distance,
                 routing_table=options.routing_table,
+                source_effective_values=default_evidence(defaults),
             ),
             dependencies=(interface_item.key,) if interface_item else (),
             blockers=tuple(dict.fromkeys(blockers)),
             source_order=order,
         ))
 
-    return [*interface_items.values(), *zone_items.values(), *route_items]
+    return [*interface_items.values(), *control_plane_items, *zone_items.values(), *route_items]

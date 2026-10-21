@@ -1,7 +1,7 @@
 import type { Workspace } from './workspaceTypes'
 
 const TTL = 24 * 60 * 60 * 1000
-const empty = (): Workspace => ({ updatedAt: Date.now(), migrationPairId: '', fortigateMigration: null, newPairMigration: null, preview: null, targetSource: null, targetDevice: '', decisionDocument: null, deterministicDraft: null, referenceRole: 'TEMPLATE', artifact: null })
+const empty = (): Workspace => ({ updatedAt: Date.now(), migrationPairId: '', panosMigration: null, preview: null, targetSource: null, targetDevice: '', decisionDocument: null, deterministicDraft: null, referenceRole: 'TEMPLATE', artifact: null })
 let current = empty()
 
 function open(): Promise<IDBDatabase> {
@@ -53,8 +53,7 @@ export function saveWorkspace(update: Partial<Workspace>): Promise<void> {
     && JSON.stringify(update.decisionDocument) !== JSON.stringify(current.decisionDocument)
   const derivedStateChanged = contextChanged || decisionsChanged
   current = {
-    fortigateMigration: contextChanged ? null : update.fortigateMigration === undefined ? current.fortigateMigration : update.fortigateMigration,
-    newPairMigration: contextChanged ? null : update.newPairMigration === undefined ? current.newPairMigration : update.newPairMigration,
+    panosMigration: contextChanged ? null : update.panosMigration === undefined ? current.panosMigration : update.panosMigration,
     proposals: update.proposals ?? (contextChanged ? {} : current.proposals ?? {}),
     serviceNames: update.serviceNames ?? (contextChanged ? {} : current.serviceNames ?? {}),
     workflowMode: update.workflowMode ?? current.workflowMode ?? 'offline',

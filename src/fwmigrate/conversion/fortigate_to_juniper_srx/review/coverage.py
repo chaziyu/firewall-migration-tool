@@ -7,7 +7,7 @@ from ..plan_dependencies import assess_render_disposition, validate_plan
 
 _SECTION_FAMILIES = {
     "firewall ippool": ("source_nat_pool",),
-    "system interface": ("interface",),
+    "system interface": ("interface", "interface_zone", "interface_control_plane"),
     "system zone": ("zone",),
     "firewall address": ("address",),
     "firewall addrgrp": ("address_group",),
@@ -43,7 +43,10 @@ def build_coverage(plan, source_inventory, derived, *, approved_items=None):
             is not None
         ):
             name = str(settings["policy_id"])
-        index[item.source_vdom, item.family, name].append(item)
+        family = item.family
+        if family == "zone" and settings.get("source_interface"):
+            family, name = "interface_zone", settings["source_interface"]
+        index[item.source_vdom, family, name].append(item)
     rows = []
     for record in source_inventory:
         if plan.source_vdom is not None and record.vdom not in {None, plan.source_vdom}:

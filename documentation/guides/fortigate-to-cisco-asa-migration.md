@@ -30,7 +30,7 @@ The browser and API require current signed approval bound to the source, pair op
 
 The ASA artifact is not accepted by PAN-OS deployment transport. There is no ASA live execution, configuration commit, `write memory`, or automatic access-group replacement.
 
-Reviews and artifact reports include scoped source coverage. Unknown source records remain manual work; rendered commands do not imply complete migration. See the [support matrix](migration-support-matrix.md).
+Reviews and artifact reports include scoped source coverage. Unknown source records remain manual work; rendered commands do not imply complete migration. See the [support matrix](../migration-support-matrix.md).
 
 ## Cisco references checked
 

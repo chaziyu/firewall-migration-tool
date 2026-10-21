@@ -3,11 +3,14 @@ from ..models import FGPlannedItem
 from .naming import allocate_plan_names
 from .source_scope import identity, in_scope
 from fwmigrate.vendors.palo_alto.source_model import pan_scope_identity
+from fwmigrate.vendors.palo_alto.transform.effective_values import SERVICE_REFERENCE, predefined_service_ports
 
 
 class PlanningContext:
     def __init__(self, source, derived, options, scope):
         self.source, self.derived, self.options, self.scope = source, derived, options, scope
+        self.predefined_services = {}
+        self.predefined_ports = predefined_service_ports(source)
         families = {"address": "addresses", "address_group": "address_groups", "service": "services",
                     "service_group": "service_groups", "schedule": "schedules", "zone": "zones"}
         self.objects = {(family, identity(obj, family)): obj for family, field in families.items()
@@ -39,6 +42,16 @@ class PlanningContext:
         values, dependencies, reasons = [], [], []
         for name in names:
             matches = self.references.get((owner.source_path, owner.name, pan_scope_identity(owner.scope), field, name), ())
+            if (families == ("service", "service_group") and name in self.predefined_ports and len(matches) == 1
+                    and matches[0].status == "SOURCE_ONLY" and matches[0].resolution_reason == "PAN-OS predefined service"):
+                key = "predefined-service:" + pan_scope_identity(self.scope) + ":" + name
+                item = self.predefined_services.setdefault(key, FGPlannedItem(
+                    key, "service", "predefined:PAN-OS:" + self.source.source_version, name,
+                    SERVICE_REFERENCE, name, self.options.vdom, "firewall service custom",
+                    (("protocol", ("TCP/UDP/SCTP",)), ("tcp-portrange", self.predefined_ports[name]))))
+                values.append(item.target_name)
+                dependencies.append(item.key)
+                continue
             targets = {(r.target_source_path, pan_scope_identity(r.resolved_target_scope)) for r in matches
                        if r.status == "RESOLVED" and r.resolved_target_scope is not None}
             candidates = [(family, obj) for path, scope in targets for family in families
@@ -54,7 +67,10 @@ class PlanningContext:
 
 def unsupported_fields(obj, allowed):
     reasons = []
-    if obj.raw_extra:
+    # UUIDs identify source records; other attributes may change source behavior.
+    extra_settings = {key: value for key, value in obj.raw_extra.items()
+                      if key != "@attributes" or not isinstance(value, dict) or set(value) - {"uuid"}}
+    if extra_settings:
         reasons.append("Unsupported source settings require manual implementation.")
     extra = set(obj.explicit_fields) - set(allowed) - {"description", "tags", "name"}
     if extra:
