@@ -34,7 +34,7 @@ netmiko==4.8.0
 ntc-templates==9.3.0
 openpyxl==3.1.5
 packaging==26.3
-paramiko==5.0.0
+paramiko==5.1.0
 pycparser==3.11
 pydantic==2.14.1
 pydantic-core==2.50.1
