@@ -56,6 +56,7 @@ def build_migration_coverage(source, recommendations=(), *, planned_vpn_sources=
     unplanned = []
     if plan is not None:
         unplanned.extend(_unplanned_interfaces(source, plan, options))
+    unplanned.extend(_unplanned_ip_pools(source, plan))
 
     for recommendation in recommendations:
         if recommendation.family == 'VPN' and (recommendation.source_vdom or 'root', recommendation.source_kind, recommendation.source_name) in planned_vpn_sources:
@@ -103,6 +104,35 @@ def build_migration_coverage(source, recommendations=(), *, planned_vpn_sources=
         },
         "unplanned": unplanned,
     }
+
+
+def _unplanned_ip_pools(source, plan):
+    """Track pool definitions through scoped NAT consumers, not names alone.
+
+    Like interfaces, a pool with a corresponding plan is covered even if that
+    plan is blocked: its rule status/warnings describe the remaining work.
+    Split service rules and combined SNAT/DNAT retain the source policy ID.
+    """
+    policies = {}
+    for policy in getattr(source, 'policies', ()):
+        policies.setdefault((policy.vdom or 'root', policy.policy_id), []).append(policy)
+    represented = set()
+    for rule in getattr(plan, 'nat_rules', ()):
+        if (rule.source_policy_id is None or not rule.translated_addresses
+                or not rule.source_translation_type or rule.source_interface_address):
+            continue
+        owners = policies.get((rule.source_vdom or 'root', rule.source_policy_id), ())
+        if len(owners) == 1:
+            represented.update((owners[0].vdom or 'root', name) for name in owners[0].poolname or ())
+    for pool in getattr(source, 'ip_pools', ()):
+        vdom = pool.vdom or 'root'
+        if (vdom, pool.name) in represented:
+            continue
+        yield {'status': 'SOURCE_ONLY', 'source_vdom': vdom, 'source_kind': 'ip_pool',
+               'source_name': pool.name, 'family': 'ip_pools', 'target_object_type': None,
+               'readiness': 'UNSUPPORTED',
+               'reason': 'IPv4 IP-pool definition has no corresponding translated-address NAT plan. '
+                         'Review its consumers or explicitly retire the definition; no standalone pool commands are emitted.'}
 
 
 def _unplanned_interfaces(source, plan, options):
