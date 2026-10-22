@@ -169,12 +169,15 @@ def run_migration_pipeline(
     target_object_reuse_classifier=None,
     approved_item_keys=None,
     workflow_mode: str = "DESTINATION_AWARE",
+    include_interface_zones: bool = False,
 ) -> PANMigrationPipelineResult:
     """Run the complete supported FortiGate -> PAN-OS planning pipeline.
 
     Deterministic automation can confirm VERIFIED/DERIVED mappings, but
     suggestions and candidates remain unconfirmed. Planner input is always
     regenerated from the final decision set to prevent stale mappings.
+    CLI exports may request interface-backed zones from those final mappings;
+    this does not grant web design approval or enable other configuration items.
     """
     mode = PANAutomationMode(automation_mode)
     if workflow_mode not in {"OFFLINE_EXPORT", "DESTINATION_AWARE"}:
@@ -222,7 +225,8 @@ def run_migration_pipeline(
             conversion_settings=(options.conversion_settings if isinstance(options, PANMigrationOptions) else options.get('conversion_settings', {})))
     actual_planner = planner or FortiGateToPaloAltoPlanner()
     plan = actual_planner.plan(source, derived, options=final_options,
-                               **({"include_configuration": True} if approved_item_keys is not None else {}))
+                               **({"include_configuration": True} if approved_item_keys is not None else {}),
+                               **({"include_interface_zones": True} if include_interface_zones else {}))
     from .planning.naming import allocate_plan_names
     named_plan = allocate_plan_names(plan, target, target_device, final_options.service_names)
     plan = named_plan if approved_item_keys is not None else replace(plan, static_routes=named_plan.static_routes,
