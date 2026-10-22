@@ -1,4 +1,5 @@
 import hashlib
+from pathlib import Path
 import click
 import yaml
 
@@ -165,6 +166,11 @@ def migrate(ctx, input, output, source_vendor, target_vendor, zone_map, target_c
     click.echo(f"Plan status: {result.artifact_status}")
     click.echo(f"Validation findings: {len(result.validation.issues)}")
     click.echo(f"Unresolved required mappings: {len(result.unresolved_decisions)}")
+    coverage_counts = result.coverage['counts']
+    click.echo(f"Unplanned source configuration: {result.coverage['unplanned_count']} "
+               f"({coverage_counts['RECOMMENDATION_ONLY']} recommendation-only, "
+               f"{coverage_counts['SOURCE_ONLY']} source-only)")
+    click.echo(f"Migration report: {Path(output) / 'migration_report.json'}")
 
 @cli.command()
 @click.argument('commands_file', type=click.Path(exists=True, dir_okay=False))

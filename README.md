@@ -430,6 +430,12 @@ A `MigrationPlan` is not a complete target firewall configuration.
 
 The migration report keeps supported, partial, manual-review, blocked, and unsupported items visible rather than silently dropping them.
 
+The CLI prints the count of unplanned source items and the report path alongside
+mapping and validation findings. Review these manual-work requirements even when
+target mappings are complete. IPv4 IP-pool definitions without a corresponding
+translated-address NAT plan remain visible; they are not exported as standalone
+PAN-OS pools.
+
 Target-specific information that cannot be derived safely requires an explicit mapping or decision.
 
 Suggestions are not treated as confirmed engineer decisions.
