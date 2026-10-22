@@ -438,6 +438,12 @@ mapping and validation findings. Review these manual-work requirements even when
 target mappings are complete. IPv4 IP-pool definitions without a corresponding
 translated-address NAT plan remain visible; they are not exported as standalone
 PAN-OS pools.
+CLI and web migration review also account for preserved native source sections
+outside the modeled feature families. These records remain manual work with
+their source scope and hierarchy; raw setting values are not copied into
+migration coverage. Programmatic callers can supply `source_inventory` to the
+pair-specific pipeline; `coverage.inventory_available` records whether that
+evidence was supplied.
 
 Target-specific information that cannot be derived safely requires an explicit mapping or decision.
 

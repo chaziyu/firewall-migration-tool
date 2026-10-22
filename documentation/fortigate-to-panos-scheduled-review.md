@@ -120,3 +120,19 @@ Next scheduled run:
 4. Record evidence and a concrete prioritized plan, implement actionable issues, run affected paths and required checks, and push validated fixes to `main`. Preserve manual requirements and source evidence.
 
 Usage quota is not exposed to this runtime; no claim is made that quota was exhausted. This checkpoint supports continuation within the later run's actual execution limits.
+
+## 07:40 run — cycle 5: preserved native source inventory
+
+Resumed on 23 October 2026 in Asia/Kuala_Lumpur from clean `540c28cb`; remote `main` matched, no prior migration/test process was active, and the original upload checksum matched. All earlier implementation cycles were finished, so this run followed the source-inventory audit in the checkpoint.
+
+Evidence: native extraction contains **3,514 SOURCE_ONLY records across 172 source paths** outside typed `FGConfig` families, none previously counted by migration coverage. Examples by section (aggregate counts only): 1,774 Internet Service name records; 452 dashboard widgets; 427 web-filter category records; 131 dashboards; 101 DNS-filter category records; 64 SSL/SSH exemptions; 29 URL-filter entries; 27 DNS domain-filter entries; 22 DLP file-pattern entries; 16 local certificate records; 16 application-list entries; and other preserved settings. These records include both security-relevant configuration and configuration an engineer may choose to retire. Their absence from coverage was not evidence of successful conversion.
+
+Plan and implementation: pass the existing vendor-native `source_inventory` explicitly into the pair-specific CLI pipeline, web draft and signed-artifact pipeline, following the established source-inventory pattern in other directional pairs. Reuse extraction's typed-object identity/classification helpers. Report native `SOURCE_ONLY` and `MODEL_GAP` records as unsupported manual work; skip empty sections and already modeled records. Preserve CLI scope, VDOM, source path, parent identities and line provenance. Encode full source identity without delimiter collisions. Do not copy command values or credential material into coverage rows, infer target semantics, or expand automatic approval.
+
+The four focused tests cover real parser/derived/planner/render paths, CLI export, native scope/parent identity, absence of raw setting values, web manual-only drafts, rejected approval and partial signed artifacts. Focused tests pass. Ruff, compileall and whitespace checks pass.
+
+Real full-input CLI rerun: **4,476** coverage rows = 723 recommendation-only + 3,753 source-only (the prior 962 plus 3,514 newly visible native records). Still `NEEDS_MAPPING`, 111 unresolved mappings, zero commands, zero renderable/satisfied items. This is improved accounting, not new conversion failures.
+
+Validation completed: **3,015 Python tests passed, two skipped, 16 subtests passed**; Ruff, compileall and whitespace checks passed. The existing offline Chromium approval/export walkthrough passed with no JavaScript errors. A full-input Chromium check reached prepared review in **24.60 seconds**, found all **16 local certificate records** by their native section name in manual work, saw five HTTP 200 API responses and no page errors. No frontend source changed. No target firewall was contacted.
+
+Next cycle: inspect remaining typed source families for missing migration accounting, especially central SNAT and unknown zone settings. Do not infer activation/defaults from the mere presence of preserved records.
