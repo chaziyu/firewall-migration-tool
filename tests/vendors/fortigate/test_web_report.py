@@ -17,6 +17,149 @@ from fwmigrate.vendors.fortigate.validation.validator import validate_config
 from fwmigrate.vendors.fortigate.web_report import build_web_report
 
 
+def test_report_keeps_policy_inspection_authentication_and_absent_lists():
+    source = '''config firewall policy
+ edit 1
+  set name inspected
+  set logtraffic all
+  set comments "review comment"
+  set groups "staff"
+  set utm-status enable
+  set ips-sensor "sensor"
+  set ssl-ssh-profile "inspection"
+  set srcaddr-negate disable
+  set poolname "pool"
+  set custom-review "safe evidence"
+ next
+ edit 2
+  set srcaddr all
+  unset srcaddr
+ next
+end
+'''
+    reporter = FortiGateSourceReporter()
+    analysis = reporter.analyze_source(source)
+    before = deepcopy(analysis.extracted.config.model_dump())
+    rows = reporter.build_preview(analysis)["sections"]["policies"]
+    row = rows[0]
+    assert {key: row[key] for key in ("logtraffic", "comments", "groups", "utm_status", "ips_sensor",
+                                     "ssl_ssh_profile", "srcaddr_negate", "poolname")} == {
+        "logtraffic": "all", "comments": "review comment", "groups": ["staff"], "utm_status": "enable",
+        "ips_sensor": "sensor", "ssl_ssh_profile": "inspection", "srcaddr_negate": "disable", "poolname": ["pool"]}
+    assert row["additional_settings"]["custom_review"] == "safe evidence"
+    assert "logtraffic" in row["explicit_fields"]
+    assert row["source_addresses"] is None and row["services"] is None
+    assert rows[1]["source_addresses"] is None
+    assert analysis.extracted.config.model_dump() == before
+    config = FGConfig(policies=[FGPolicy(policy_id=0, srcaddr=[], service=[])])
+    derived = build_derived_views(config)
+    empty = build_web_report(config, derived, validate_config(config, derived=derived), top_level_sections=1)
+    assert empty["sections"]["policies"][0]["source_addresses"] == []
+    assert empty["sections"]["policies"][0]["services"] == []
+
+
+def test_report_exposes_nested_typed_families_and_redacts_nested_evidence():
+    from fwmigrate.vendors.fortigate.model.admin import FGAdminProfile, FGAdminSystemPermission
+    from fwmigrate.vendors.fortigate.model.dhcp import FGDHCPServer, FGDHCPIPRange
+    from fwmigrate.vendors.fortigate.model.ips import FGIPSSensor, FGIPSSensorEntry
+    from fwmigrate.vendors.fortigate.model.sdwan import FGSDWAN, FGSDWANMember
+    from fwmigrate.vendors.fortigate.model.user import FGUserGroup, FGUserGroupMatch
+    from fwmigrate.vendors.fortigate.model.vip import FGVIP, FGVIPRealServer
+    from fwmigrate.vendors.fortigate.model.vpn_ssl import FGSSLVPNSettings, FGSSLVPNAuthenticationRule
+
+    config = FGConfig(
+        user_groups=[FGUserGroup(name="staff", vdom="branch", matches=[FGUserGroupMatch(id=1, group_name="remote")])],
+        admin_profiles=[FGAdminProfile(name="operator", cli_vdom="branch", scope="vdom",
+            system_permission=FGAdminSystemPermission(raw_extra={"password": "NESTED_SECRET", "safe": "retained"}))],
+        ips_sensors=[FGIPSSensor(name="sensor", entries=[FGIPSSensorEntry(id=2, action="block")])],
+        sdwans=[FGSDWAN(vdom="branch", members=[FGSDWANMember(seq_num=1, cost=0)])],
+        vips=[FGVIP(name="vip", realservers=[FGVIPRealServer(id=1, ip="192.0.2.10")])],
+        dhcp_servers=[FGDHCPServer(id=1, ip_ranges=[FGDHCPIPRange(id=1, start_ip="192.0.2.20", end_ip="192.0.2.30")])],
+        ssl_vpn_settings=[FGSSLVPNSettings(authentication_rules=[FGSSLVPNAuthenticationRule(id=1, groups=["staff"])])],
+    )
+    derived = build_derived_views(config)
+    before = deepcopy(config.model_dump())
+    report = build_web_report(config, derived, validate_config(config, derived=derived), top_level_sections=1)
+    sections = report["sections"]
+    assert sections["user_groups"][0]["matches"][0]["group_name"] == "remote"
+    assert sections["admin_profiles"][0]["vdom"] == "branch"
+    assert sections["admin_profiles"][0]["profile_scope"] == "vdom"
+    assert sections["admin_profiles"][0]["system_permission"]["additional_settings"]["safe"] == "retained"
+    assert sections["ips_sensors"][0]["entries"][0]["action"] == "block"
+    assert sections["sdwan"][0]["members"][0]["cost"] == 0
+    assert sections["vips"][0]["realservers"][0]["ip"] == "192.0.2.10"
+    assert sections["dhcp_servers"][0]["ip_ranges"][0]["start_ip"] == "192.0.2.20"
+    assert sections["ssl_vpn_settings"][0]["authentication_rules"][0]["groups"] == ["staff"]
+    assert "NESTED_SECRET" not in json.dumps(report)
+    assert "raw_extra" not in json.dumps(report)
+    assert config.model_dump() == before
+
+
+def test_preview_retains_complete_scoped_inventory_commands_and_coverage():
+    from collections import Counter
+    from dataclasses import replace
+    from fwmigrate.vendors.fortigate.extraction.result import ExtractionResult
+
+    source = '''config global
+ config system dns
+  set primary 192.0.2.53
+ end
+ config system ntp
+  set ntpsync enable
+  config ntpserver
+   edit 1
+    set server ntp.example.test
+   next
+  end
+ end
+end
+config vdom
+ edit branch
+  config firewall address
+   edit same
+    set subnet 192.0.2.0 255.255.255.0
+    unset comment
+   next
+  end
+  config unsupported-empty
+  end
+  config unsupported-setting
+   set password TEST_SECRET
+   set useful retained
+   set custom-control retained
+  end
+ next
+end
+'''
+    reporter = FortiGateSourceReporter()
+    analysis = reporter.analyze_source(source)
+    before = deepcopy(analysis.extracted.config.model_dump())
+    report = reporter.build_preview(analysis)
+    records = report["sections"]["source_inventory"]
+    assert len(records) == report["summary"]["records"] == len(analysis.extracted.source_objects)
+    counts = Counter(row["extraction_status"] for row in records)
+    assert counts["SOURCE_ONLY"] == report["summary"]["source_only_count"]
+    assert counts["EMPTY_SECTION"] == report["summary"]["empty_section_count"] == 1
+    assert report["summary"]["model_gap_count"] == 0
+    dns = next(row for row in records if row["source_path"] == "system dns")
+    assert dns["cli_scope"] == "global" and dns["values"]["primary"] == "192.0.2.53"
+    server = next(row for row in records if row["source_path"] == "system ntp ntpserver")
+    assert server["name"] == "1" and server["values"]["server"] == "ntp.example.test"
+    address = next(row for row in records if row["source_path"] == "firewall address")
+    assert address["vdom"] == "branch" and "comment" in address["unset_fields"]
+    assert any(command["operation"] == "unset" and command["field"] == "comment" for command in address["commands"])
+    assert address["start_line_number"] < address["end_line_number"]
+    assert "TEST_SECRET" not in json.dumps(report)
+    source_record = next(record for record in analysis.extracted.source_objects if record.source_path == "unsupported-setting")
+    assert next(row for row in records if row["source_path"] == "unsupported-setting")["values"] == source_record.values
+    assert analysis.extracted.config.model_dump() == before
+    missing_model = ExtractionResult(config=FGConfig(), source_objects=analysis.extracted.source_objects)
+    gaps = reporter.build_preview(replace(analysis, extracted=missing_model))
+    assert gaps["summary"]["model_gap_count"] == 1
+    assert next(row for row in gaps["sections"]["extraction_coverage"]
+                if row["source_path"] == "firewall address")["status"] == "MODEL_GAP"
+
+
 class WebReportTest(unittest.TestCase):
     def setUp(self) -> None:
         self.secret = "do-not-serialize-this-psk"
@@ -158,9 +301,9 @@ class WebReportTest(unittest.TestCase):
         self.assertEqual("disable", by_id[2]["destination_address_negate_ipv6"])
         self.assertIsNone(self.config.policies[-1].srcaddr)
         self.assertIsNone(self.config.policies[-1].dstaddr)
-        self.assertEqual([], by_id[3]["source_addresses"])
+        self.assertIsNone(by_id[3]["source_addresses"])
         self.assertEqual(["ONLY-SRC-V6"], by_id[3]["source_addresses_ipv6"])
-        self.assertEqual([], by_id[3]["destination_addresses"])
+        self.assertIsNone(by_id[3]["destination_addresses"])
         self.assertEqual(["ONLY-DST-V6"], by_id[3]["destination_addresses_ipv6"])
 
     def test_validation_and_broken_references_are_serialized(self):

@@ -41,7 +41,7 @@ test('topology rows load incrementally, reset on filters, and keep full inspecto
   const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText
   const exports = {}
   const modules = { react: hooks, 'react/jsx-runtime': jsxRuntime, './reportPresentation': presentation,
-    './ReportDetails': { ReportDetails: 'ReportDetails' }, './ExcelExportControls': {}, '../../components/common/tabKeyboard': {} }
+    './ReportDetails': { ReportDetails: 'ReportDetails' }, './ExcelExportControls': {}, '../../components/common/tabKeyboard': {}, '../../components/common/ErrorBanner': {} }
   new Function('require', 'exports', compiled)((name) => { assert.ok(name in modules); return modules[name] }, exports)
   const rows = Array.from({ length: 450 }, (_, index) => ({ name: `port-${index}`, vdom: index % 2 ? 'branch' : 'root', ip: Array.from({ length: 12 }, (_, i) => `192.0.${index % 256}.${i}/24`), enabled: false, metric: 0 }))
   const data = { vendor: 'fortigate', sections: { interface_topology: rows } }
@@ -130,7 +130,7 @@ test('report table keeps a stable scroll viewport and row details', () => {
     const compiled = ts.transpileModule(`${source}\nexport { SourceRowsTable }`, { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText
     const exports = {}
     const hooks = { useRef: () => ({ current: table }), useState: () => [undefined, () => {}], useEffect: (callback) => callback() }
-    const modules = { react: hooks, 'react/jsx-runtime': jsxRuntime, './reportPresentation': presentation, './ReportDetails': {}, './ExcelExportControls': {}, '../../components/common/tabKeyboard': {} }
+    const modules = { react: hooks, 'react/jsx-runtime': jsxRuntime, './reportPresentation': presentation, './ReportDetails': {}, './ExcelExportControls': {}, '../../components/common/tabKeyboard': {}, '../../components/common/ErrorBanner': {} }
     new Function('require', 'exports', compiled)((name) => modules[name], exports)
     const tree = exports.SourceRowsTable({ rows: [{ name: 'port1' }], columns: ['name'], loadMoreRef: { current: null }, onSelect(row) { selected = row } })
     const rendered = nodes(tree)

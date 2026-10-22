@@ -45,6 +45,7 @@ export function SourceConfiguration({ view, onViewChange, liveDeviceAccess }: {
   const [loading, setLoading] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [exportStatus, setExportStatus] = useState('')
+  const [exportError, setExportError] = useState<string | null>(null)
   const [excelProfile, setExcelProfile] = useState<'fast' | 'full'>('fast')
   const [ingestMode, setIngestMode] = useState<'config' | 'snapshot'>('config')
   const [error, setError] = useState<string | null>(null)
@@ -66,10 +67,11 @@ export function SourceConfiguration({ view, onViewChange, liveDeviceAccess }: {
   const [generationRequest, setGenerationRequest] = useState(0)
   const [requestedDecision, setRequestedDecision] = useState<{ key: string; request: number } | null>(null)
   const analysisRequest = useRef(0)
+  const exportRequest = useRef(0)
 
   if ((view === 'migration' || view === 'live') && !migrationVisited) setMigrationVisited(true)
 
-  useEffect(() => () => { analysisRequest.current++ }, [])
+  useEffect(() => () => { analysisRequest.current++; exportRequest.current++ }, [])
 
   useEffect(() => {
     loadSourceVendors()
@@ -127,6 +129,9 @@ export function SourceConfiguration({ view, onViewChange, liveDeviceAccess }: {
   function clearAnalysis() {
     setSourceExpanded(true)
     setExportStatus('')
+    setExportError(null)
+    setExporting(false)
+    exportRequest.current++
     analysisRequest.current++
     void saveWorkspace({ deterministicDraft: null, artifact: null }).catch((cause) => setError(String(cause)))
     setLoading(false)
@@ -178,24 +183,26 @@ export function SourceConfiguration({ view, onViewChange, liveDeviceAccess }: {
   }
 
   async function exportWorkbook() {
-    if (!previewId) return
+    if (!previewId || !preview?.source_evidence) return
     const request = analysisRequest.current
+    const exportId = ++exportRequest.current
+    const current = () => request === analysisRequest.current && exportId === exportRequest.current
     setExporting(true)
     setExportStatus('')
-    setError(null)
+    setExportError(null)
     try {
-      const blob = await downloadSourceWorkbook(vendor, preview!.source_evidence!, excelProfile)
+      const blob = await downloadSourceWorkbook(vendor, preview.source_evidence, excelProfile)
+      if (!current()) return
       const url = URL.createObjectURL(blob)
       const link = document.createElement('a')
       link.href = url
       link.download = `${vendor}-source-report.xlsx`
-      link.click()
-      URL.revokeObjectURL(url)
-      if (request === analysisRequest.current) setExportStatus(`Excel workbook ready. Download started: ${link.download}.`)
+      try { link.click() } finally { URL.revokeObjectURL(url) }
+      setExportStatus(`Excel workbook ready. Download started: ${link.download}.`)
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Workbook export failed')
+      if (current()) setExportError(cause instanceof Error ? cause.message : 'Workbook export failed')
     } finally {
-      setExporting(false)
+      if (current()) setExporting(false)
     }
   }
 
@@ -261,12 +268,14 @@ export function SourceConfiguration({ view, onViewChange, liveDeviceAccess }: {
         onExcelProfileChange={(value) => setExcelProfile(value)}
         exporting={exporting}
         exportStatus={exportStatus}
+        exportError={exportError}
         onExport={() => void exportWorkbook()} />}
     </div>
 
     <div className="workflow-panel" hidden={view !== 'collect'}>
       <p className="preview-status" role="status" aria-live="polite">{exportStatus}</p>
       {preview && <div className="report-actions"><p className="report-source-context">{selectedVendor?.display_name ?? vendor} · Live collection</p><ExcelExportControls vendor={vendor} profile={excelProfile} onProfileChange={setExcelProfile} exporting={exporting} onExport={() => void exportWorkbook()} /></div>}
+      {exportError && <ErrorBanner message={exportError} />}
     </div>
 
     <div className="workflow-panel" hidden={view !== 'migration' && view !== 'live'}>

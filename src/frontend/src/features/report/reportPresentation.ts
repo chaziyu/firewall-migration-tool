@@ -31,12 +31,12 @@ export function reportSearchText(row: ReportRow): string {
 
 const SECTION_KEYS: Record<string, string[]> = {
   Interfaces: ['interfaces', 'interface_topology'],
-  Objects: ['addresses', 'addresses_ipv6', 'address_groups', 'wildcard_fqdns', 'services', 'service_groups', 'network_objects', 'network_groups', 'protocol_port_objects', 'applications', 'zones', 'tags', 'security_profile_groups', 'vulnerability_profiles', 'local_users', 'local_user_groups', 'group_mappings', 'administrators', 'admin_roles'],
+  Objects: ['addresses', 'addresses_ipv6', 'address_groups', 'wildcard_fqdns', 'services', 'service_groups', 'service_categories', 'network_objects', 'network_groups', 'protocol_port_objects', 'applications', 'zones', 'tags', 'security_profile_groups', 'vulnerability_profiles', 'ips_sensors', 'external_resources', 'local_users', 'local_user_groups', 'user_groups', 'group_mappings', 'administrators', 'admin_roles', 'admin_profiles'],
   Schedules: ['schedules', 'schedule_groups', 'time_ranges'],
   Policies: ['policies', 'security_policies', 'security_rules', 'default_security_rules', 'access_control_policies', 'access_rules', 'nac_policies', 'sdwan_rules'],
   NAT: ['nat', 'nat_rules', 'translations', 'central_snat', 'vips', 'vip_groups', 'ip_pools'],
   Routes: ['routes', 'static_routes', 'routing_instances'],
-  VPN: ['vpn_tunnels', 'vpn_phase2', 'policy_vpn_phase1', 'policy_vpn_phase2', 'ssl_vpn_realms', 'ssl_vpn_bookmarks', 'ssl_vpn_portals', 'ike_gateways', 'ike_crypto_profiles', 'ipsec_crypto_profiles', 'ipsec_tunnels', 'globalprotect_portals', 'globalprotect_gateways'],
+  VPN: ['vpn_tunnels', 'vpn_phase2', 'policy_vpn_phase1', 'policy_vpn_phase2', 'ssl_vpn_settings', 'ssl_vpn_realms', 'ssl_vpn_bookmarks', 'ssl_vpn_portals', 'ike_gateways', 'ike_crypto_profiles', 'ipsec_crypto_profiles', 'ipsec_tunnels', 'globalprotect_portals', 'globalprotect_gateways'],
   References: ['unresolved_references', 'references', 'relationships'],
   Extraction: ['extraction_coverage', 'source_inventory'],
 }
@@ -156,6 +156,8 @@ const FORTIGATE_COLUMNS: Record<string, string[]> = {
   ssl_vpn_bookmarks: ['name', 'vdom', 'owner_name', 'apptype', 'host', 'url'],
   ssl_vpn_portals: ['name', 'vdom', 'tunnel_mode', 'web_mode', 'ip_pools', 'split_tunneling'],
   schedules: ['name', 'vdom', 'type', 'days', 'start', 'end'],
+  source_inventory: ['source_path', 'name', 'vdom', 'cli_scope', 'parent_objects', 'extraction_status', 'start_line_number', 'end_line_number'],
+  extraction_coverage: ['source_path', 'status', 'source_records', 'typed_objects', 'source_only_records', 'empty_sections', 'model_gaps', 'typed_with_additional_settings'],
 }
 const CHECKPOINT_COLUMNS: Record<string, string[]> = {
   addresses: ['name', 'scope', 'type', 'address_family', 'ipv4_value', 'ipv4_mask_length', 'ipv4_range_end', 'ipv6_value', 'ipv6_mask_length', 'value', 'review'],
@@ -235,6 +237,9 @@ const FORTIGATE_DETAILS: Record<string, Array<[string, string[]]>> = {
     ['Source', ['source_interfaces', 'source_addresses', 'source_addresses_ipv6', 'source_address_negate_ipv6']],
     ['Destination', ['destination_interfaces', 'destination_addresses', 'destination_addresses_ipv6', 'destination_address_negate_ipv6']],
     ['Services and schedule', ['services', 'schedule']],
+    ['Authentication', ['groups', 'users']],
+    ['Inspection', ['utm_status', 'inspection_mode', 'profile_type', 'profile_group', 'av_profile', 'ips_sensor', 'webfilter_profile', 'dnsfilter_profile', 'application_list', 'ssl_ssh_profile']],
+    ['Logging', ['logtraffic', 'comments']],
     ['Reported action/settings', ['action', 'status', 'nat', 'per_ip_shaper', 'profile_protocol_options']],
   ],
   interfaces: [['Addressing', ['ip']], ['Topology', ['kind', 'type', 'parent', 'members', 'aggregate', 'physical_interfaces', 'topology_path']], ['Reported settings', ['role', 'status', 'review']]],
@@ -288,6 +293,10 @@ export function activeSubsection(subsections: Array<{ key: string; rows: ReportR
 }
 
 export function matchingSourceRows(rows: ReportRow[], finding: ReportRow) {
+  if (Array.isArray(finding.source_identity) && finding.source_identity.length) {
+    const identity = JSON.stringify(finding.source_identity)
+    return rows.filter((row) => JSON.stringify(row.source_identity) === identity)
+  }
   const scope = finding.scope ?? finding.vdom
   const stableIds = [finding.source_id, finding.rule_id].filter((value) => value != null).map(String)
   const findingNames = [finding.object_name, finding.policy_id,

@@ -11,6 +11,31 @@ from fwmigrate.source_reporting.excel_style import (
 )
 
 
+@pytest.mark.parametrize("write_only", [False, True])
+def test_readable_business_rows_keep_values_and_hidden_cells_without_restyling_scalars(write_only):
+    from fwmigrate.source_reporting.excel_style import readable_report_row
+
+    workbook = Workbook(write_only=write_only)
+    sheet = workbook.create_sheet("Business") if write_only else workbook.active
+    sheet.column_dimensions["A"].width = 20
+    sheet.column_dimensions["B"].width = 24
+    sheet.column_dimensions["C"].hidden = True
+    long = "first address\nsecond address\nthird address"
+    hidden = "hidden technical evidence " * 100
+    sheet.append(readable_report_row(sheet, 1, [0, long, hidden, False]))
+    sheet.append(readable_report_row(sheet, 2, [1, "short", None, False]))
+    sheet.append(readable_report_row(sheet, 3, [2, "many\n" * 500, None, False]))
+    output = BytesIO()
+    workbook.save(output)
+    restored = load_workbook(output).active
+    assert [cell.value for cell in restored[1]] == [0, long, hidden, False]
+    assert restored["B1"].alignment.wrap_text and restored["B1"].alignment.vertical == "top"
+    assert 49 <= restored.row_dimensions[1].height <= 409
+    assert restored.row_dimensions[3].height == 409
+    assert not restored["C1"].has_style
+    assert all(not cell.has_style for cell in restored[2])
+
+
 @pytest.mark.parametrize('write_only', [False, True])
 def test_xml_unsafe_text_is_visible_and_formula_protection_is_idempotent(write_only):
     value = '=é\x00\x01\x0b\x0c\x1f\ufffe\uffff\ud800\t\r\n漢字😀'

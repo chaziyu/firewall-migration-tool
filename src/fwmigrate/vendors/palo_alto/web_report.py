@@ -75,6 +75,7 @@ def build_panos_preview(analysis: PaloAltoSourceResult) -> dict[str, Any]:
             for child in fields.get(name) or ():
                 child["additional_settings"] = child["raw_extra"]
         return {**fields,
+                "source_identity": list(source_identity(item)),
                 "additional_settings": item.raw_extra, "explicit_fields": sorted(item.explicit_fields),
                 "review": review(item), **scope_fields(item)}
 
@@ -227,6 +228,8 @@ def build_panos_preview(analysis: PaloAltoSourceResult) -> dict[str, Any]:
                                "review": review(item), **scope_fields(router), "router_type": "logical-router",
                                "router": router.name, "vrf": vrf.name})
     validation_rows = [{"severity": item.severity, "domain": item.domain, "object_name": item.source_name,
+                        "object_type": item.object_type, "source_path": item.source_path,
+                        "source_identity": list(item.source_identity),
                         "field": item.field, "message": item.message, **scope_fields(item.source_scope)}
                        for item in analysis.validation.issues]
     object_counts = {"interfaces": sum(row.get("kind") != "vpn" for row in interface_rows), "addresses": len(addresses), "address_groups": len(address_groups),

@@ -90,6 +90,7 @@ class FortiGateSourceReporter:
             analysis.derived,
             analysis.validation,
             top_level_sections=analysis.top_level_sections,
+            extracted=analysis.extracted,
         )
 
     def export_excel(

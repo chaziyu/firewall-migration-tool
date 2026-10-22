@@ -496,7 +496,8 @@ def test_fortigate_preview_exposes_policy_fields_and_overview_sections():
     assert len(report["sections"]["routes"]) == 1
     assert report["sections"]["vpn_tunnels"] == []
     assert report["sections"]["vpn_phase2"] == []
-    assert "unsupported_count" not in report["summary"]
+    assert report["summary"]["unsupported_count"] == report["summary"]["source_only_count"]
+    assert report["summary"]["records"] == len(report["sections"]["source_inventory"])
 
 
 def test_fortigate_preview_preserves_ipv6_policy_addresses():
@@ -511,9 +512,9 @@ def test_fortigate_preview_preserves_ipv6_policy_addresses():
     )
     assert response.status_code == 200
     policy = response.get_json()["sections"]["policies"][0]
-    assert policy["source_addresses"] == []
+    assert policy["source_addresses"] is None
     assert policy["source_addresses_ipv6"] == ["SRC-V6"]
-    assert policy["destination_addresses"] == []
+    assert policy["destination_addresses"] is None
     assert policy["destination_addresses_ipv6"] == ["DST-V6"]
 
 
@@ -611,7 +612,12 @@ def test_excel_selector_reaches_real_vendor_profiles(vendor, fixture, excluded, 
         assert fast_sheet.freeze_panes == full_sheet.freeze_panes
         if fast_sheet.max_row > header_row:
             assert fast_sheet.auto_filter.ref == full_sheet.auto_filter.ref, (vendor, name)
-        assert all(not cell.has_style for row in fast_sheet.iter_rows(min_row=header_row + 1) for cell in row)
+        for row in fast_sheet.iter_rows(min_row=header_row + 1):
+            for cell in row:
+                if vendor in {"fortigate", "palo_alto"} and cell.has_style:
+                    assert cell.alignment.wrap_text and cell.alignment.vertical == "top"
+                else:
+                    assert not cell.has_style
         for column, dimension in full_sheet.column_dimensions.items():
             if dimension.hidden:
                 assert fast_sheet.column_dimensions[column].hidden, (vendor, name, column)

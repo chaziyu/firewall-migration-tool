@@ -9,6 +9,20 @@ import * as jsxRuntime from 'react/jsx-runtime'
 import * as presentation from '../src/features/report/reportPresentation.ts'
 import { defaultColumns, detailGroups, fieldLabel, reportSections, rowColumns } from '../src/features/report/reportPresentation.ts'
 
+test('overview counts string references as well as structured reference rows', async () => {
+  const server = await createServer({ server: { middlewareMode: true }, appType: 'custom' })
+  try {
+    const { SourceReport } = await server.ssrLoadModule('/src/features/report/SourceReport.tsx')
+    for (const refs of [['first', 'second'], [{ reference: 'first' }, { reference: 'second' }], []]) {
+      const html = renderToStaticMarkup(createElement(SourceReport, {
+        data: { vendor: 'palo_alto', sections: { unresolved_references: refs } },
+        excelProfile: 'full', onExcelProfileChange() {}, exporting: false, exportStatus: '', onExport() {},
+      })).replace(/<!-- -->/g, '')
+      assert.match(html, new RegExp(`Unresolved references</button></th><td>${refs.length}</td>`))
+    }
+  } finally { await server.close() }
+})
+
 test('PAN-OS rule columns and details distinguish source order, position, UUID and disabled state', () => {
   const policy = { name: 'disabled-rule', rule_order: 1, policy_id: 502, source_order: 502,
     rule_uuid: 'native-uuid', scope: 'vsys:vsys1', from_zones: ['trust'], to_zones: ['untrust'],
@@ -116,7 +130,7 @@ test('switching from scoped inventory to aggregate coverage does not filter away
     { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText
   const exports = {}
   const modules = { react: hooks, 'react/jsx-runtime': jsxRuntime, './reportPresentation': presentation,
-    './ReportDetails': {}, './ExcelExportControls': {}, '../../components/common/tabKeyboard': {} }
+    './ReportDetails': {}, './ExcelExportControls': {}, '../../components/common/tabKeyboard': {}, '../../components/common/ErrorBanner': {} }
   new Function('require', 'exports', compiled)((name) => modules[name], exports)
   function nodes(node) {
     if (Array.isArray(node)) return node.flatMap(nodes)
