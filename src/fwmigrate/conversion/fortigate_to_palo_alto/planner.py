@@ -47,7 +47,7 @@ class FortiGateToPaloAltoPlanner:
         if requirements is None:
             requirements = build_mapping_requirements(source, derived, include_configuration=include_configuration)
         zones = plan_topology(source, derived, options, requirements["required_zone_keys"],
-                              include_configuration=include_configuration)
+                              include_configuration=kwargs.get("include_interface_zones", include_configuration))
         routes = plan_routes(source, options, derived)
         dhcp_servers = plan_dhcp(source, options, derived)
         explicit_all = explicit_all_vdoms(source)

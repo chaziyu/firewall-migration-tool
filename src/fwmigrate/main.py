@@ -160,6 +160,7 @@ def migrate(ctx, input, output, source_vendor, target_vendor, zone_map, target_c
         target_evidence=target_evidence,
         target_intent=intent,
         automation_mode=PANAutomationMode(automation_mode.upper()),
+        include_interface_zones=True,
     )
     PANSetRenderer().write_files(result.rendered, output)
     click.echo(f"Generated {len(result.rendered.commands)} commands in {output}")
