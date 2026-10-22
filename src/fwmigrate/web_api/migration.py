@@ -210,7 +210,8 @@ def register_migration_routes(
             overrides=payload.get('draft_overrides', bound.get('overrides')),
             service_names=payload.get('service_name_overrides', bound.get('service_names')),
             conversion_settings=payload.get('conversion_settings', bound.get('conversion_settings')),
-            workflow_mode=payload.get('workflow_mode'), requirements=state['requirements'])
+            workflow_mode=payload.get('workflow_mode'), requirements=state['requirements'],
+            source_inventory=state['analysis'].extracted.source_objects)
         return state, draft, approval
 
     @app.route('/api/migration/design/prepare', methods=['POST'])
@@ -650,6 +651,7 @@ def register_migration_routes(
                 planner=migration_planner_registry.get(source_vendor, target_vendor),
                 target_object_reuse_classifier=object_reuse_classifier,
                 approved_item_keys=set(design_approval['configuration']),
+                source_inventory=analysis.extracted.source_objects,
                 workflow_mode=design_approval['context']['workflow_mode'],
             )
             validate_approved_plan(result.plan, design_approval)

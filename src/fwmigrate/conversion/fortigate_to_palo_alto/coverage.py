@@ -1,6 +1,7 @@
 """Pair-specific completeness accounting for FortiGate to PAN-OS migration."""
 
 from collections import Counter
+import json
 
 
 # FortiGate source families that are extracted and preserved but are not currently
@@ -47,7 +48,7 @@ def _identity(item, index):
 
 
 def build_migration_coverage(source, recommendations=(), *, planned_vpn_sources=(), planned_vip_groups=(),
-                             plan=None, options=None):
+                             plan=None, options=None, source_inventory=None):
     """Return migration work that is preserved but not executable yet.
 
     This is deliberately FortiGate -> PAN-OS specific. It does not create a
@@ -57,6 +58,7 @@ def build_migration_coverage(source, recommendations=(), *, planned_vpn_sources=
     if plan is not None:
         unplanned.extend(_unplanned_interfaces(source, plan, options))
     unplanned.extend(_unplanned_ip_pools(source, plan))
+    unplanned.extend(_unmodeled_source_records(source, source_inventory))
 
     for recommendation in recommendations:
         if recommendation.family == 'VPN' and (recommendation.source_vdom or 'root', recommendation.source_kind, recommendation.source_name) in planned_vpn_sources:
@@ -96,6 +98,7 @@ def build_migration_coverage(source, recommendations=(), *, planned_vpn_sources=
     ))
     counts = Counter(item["status"] for item in unplanned)
     return {
+        "inventory_available": source_inventory is not None,
         "complete": not unplanned,
         "unplanned_count": len(unplanned),
         "counts": {
@@ -104,6 +107,35 @@ def build_migration_coverage(source, recommendations=(), *, planned_vpn_sources=
         },
         "unplanned": unplanned,
     }
+
+
+def _unmodeled_source_records(source, inventory):
+    """Account for native extraction evidence without exporting its values."""
+    if inventory is None:
+        return
+    from ...vendors.fortigate.extraction.coverage import (
+        build_typed_source_identity_index, build_typed_source_inventory,
+        extraction_status, find_typed_source_object, supports_path,
+    )
+    index = build_typed_source_identity_index(build_typed_source_inventory(source))
+    for record in inventory:
+        status = extraction_status(supports_path(record.source_path),
+                                   find_typed_source_object(index, record), record)
+        if status not in {'SOURCE_ONLY', 'MODEL_GAP'}:
+            continue
+        # Encode the complete native identity: repeated leaf names under
+        # different sections/parents must remain separate review objects.
+        name = json.dumps((record.cli_scope, record.source_path, *record.parent_objects, record.object_name),
+                          ensure_ascii=False)
+        yield {'status': 'SOURCE_ONLY', 'source_vdom': record.vdom,
+               'source_kind': 'source_section', 'source_name': name, 'family': 'source_sections',
+               'target_object_type': None, 'readiness': 'UNSUPPORTED',
+               'source_scope': record.cli_scope, 'source_path': record.source_path,
+               'parent_objects': list(record.parent_objects), 'source_line': record.start_line_number,
+               'extraction_status': status,
+               'reason': f'Preserved FortiGate section {record.source_path!r} ({record.cli_scope} scope) '
+                         'is outside supported migration source coverage. Review or explicitly retire '
+                         'this configuration; no target commands are emitted for this record.'}
 
 
 def _unplanned_ip_pools(source, plan):

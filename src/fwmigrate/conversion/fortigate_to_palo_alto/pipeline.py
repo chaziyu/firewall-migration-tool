@@ -170,6 +170,7 @@ def run_migration_pipeline(
     approved_item_keys=None,
     workflow_mode: str = "DESTINATION_AWARE",
     include_interface_zones: bool = False,
+    source_inventory=None,
 ) -> PANMigrationPipelineResult:
     """Run the complete supported FortiGate -> PAN-OS planning pipeline.
 
@@ -278,6 +279,7 @@ def run_migration_pipeline(
 
     from .coverage import represented_vip_groups
     coverage = build_migration_coverage(source, recommendations, plan=plan, options=final_options,
+        source_inventory=source_inventory,
         planned_vpn_sources=represented_vpn_sources(plan),
         planned_vip_groups=represented_vip_groups(source, plan, {row['item_key'] for row in rendered.report['items'] if row['satisfied']}))
     unresolved = tuple(

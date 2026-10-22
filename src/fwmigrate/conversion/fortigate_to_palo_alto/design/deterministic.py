@@ -72,7 +72,7 @@ def _intent_values(context, decisions):
 def build_deterministic_draft(config, derived, decisions, *, source_digest, target=None,
                               target_device=None, reference=None, reference_role=None,
                               intent=None, overrides=None, service_names=None, workflow_mode=None, conversion_settings=None,
-                              requirements=None):
+                              requirements=None, source_inventory=None):
     context = draft_context(source_digest, reference, reference_role, target_device, intent, workflow_mode, conversion_settings)
     settings = context.get('conversion_settings', {})
     excluded = set(settings.get('excluded_interfaces', ()))
@@ -452,6 +452,7 @@ def build_deterministic_draft(config, derived, decisions, *, source_digest, targ
     findings.extend(shared_action_groups(configuration))
     coverage = build_migration_coverage(config,
         build_recommendations(config, derived, provisional, destination, target_device), plan=plan, options=planner_options,
+        source_inventory=source_inventory,
         planned_vpn_sources=represented_vpn_sources(plan),
         planned_vip_groups=represented_vip_groups(config, plan, {row['item_key'] for row in configuration if row['status'] == 'READY'}))
     for number, gap in enumerate(coverage["unplanned"]):
