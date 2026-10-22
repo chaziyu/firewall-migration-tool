@@ -11,6 +11,28 @@ def build_sdwan_recommendations(source, derived, decisions, target=None, target_
     result = []
     for sdwan in getattr(source, "sdwans", ()):
         vdom = sdwan.vdom or "root"
+        settings = source_facts(sdwan, ("status", "load_balance_mode"))
+        if sdwan.raw_extra:
+            settings += (f"additional preserved settings = {len(sdwan.raw_extra)}",)
+        if settings:
+            result.append(PANMigrationRecommendation(
+                key=recommendation_key(vdom, "sdwan_settings", "sdwan", "PAN_SDWAN_DESIGN"),
+                family="SD-WAN", source_vdom=vdom, source_kind="sdwan_settings", source_name="sdwan",
+                target_object_type="PAN_SDWAN_DESIGN", title="SD-WAN settings",
+                summary="Review explicitly configured SD-WAN status, load balancing and preserved settings; no equivalent target settings are emitted.",
+                method=PANRecommendationMethod.DETERMINISTIC, confidence=PANRecommendationConfidence.LOW,
+                evidence=settings, blockers=("Target SD-WAN settings require manual design",)))
+        for zone in sdwan.zones:
+            evidence = source_facts(zone, ("minimum_sla_meet_members",))
+            if zone.raw_extra:
+                evidence += (f"additional preserved settings = {len(zone.raw_extra)}",)
+            result.append(PANMigrationRecommendation(
+                key=recommendation_key(vdom, "sdwan_zone", zone.name, "PAN_SDWAN_DESIGN"),
+                family="SD-WAN", source_vdom=vdom, source_kind="sdwan_zone", source_name=zone.name,
+                target_object_type="PAN_SDWAN_DESIGN", title=f"SD-WAN zone {zone.name}",
+                summary="Preserve the SD-WAN zone and its explicit SLA settings for manual target design; an SD-WAN zone is not automatically a PAN-OS security zone.",
+                method=PANRecommendationMethod.DETERMINISTIC, confidence=PANRecommendationConfidence.LOW,
+                evidence=evidence, blockers=("Target SD-WAN zone semantics require manual design",)))
         for member in sdwan.members:
             name = str(member.seq_num if member.seq_num is not None else member.interface or "member")
             key = decision_key_if_present(decisions, vdom, "interface", member.interface, "target_interface") if member.interface else None

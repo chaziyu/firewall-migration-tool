@@ -68,7 +68,7 @@ def build_migration_coverage(source, recommendations=(), *, planned_vpn_sources=
             "family": recommendation.family,
             "target_object_type": recommendation.target_object_type,
             "readiness": recommendation.readiness.value,
-            "reason": "Source configuration is represented as review guidance but is not emitted by PANMigrationPlan.",
+            "reason": f"{recommendation.family} source configuration is represented as review guidance but is not emitted by PANMigrationPlan.",
         })
 
     for attribute, source_kind in _SOURCE_ONLY_FAMILIES:
