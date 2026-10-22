@@ -8,6 +8,7 @@ import json
 # represented by PANMigrationPlan or by the recommendation engine. Their presence
 # must prevent a rendered subset from being reported as a complete migration.
 _SOURCE_ONLY_FAMILIES = (
+    ("central_snat", "central_snat"),
     ("wildcard_fqdns", "wildcard_fqdn"),
     ("ip_pools6", "ip_pool6"),
     ("vip_groups", "vip_group"),
@@ -40,7 +41,7 @@ _SOURCE_ONLY_FAMILIES = (
 
 def _identity(item, index):
     vdom = getattr(item, "vdom", None) or "root"
-    for field in ("name", "id", "seq_num"):
+    for field in ("name", "policy_id", "id", "seq_num"):
         value = getattr(item, field, None)
         if value not in (None, ""):
             return vdom, str(value)

@@ -261,13 +261,14 @@ def build_deterministic_draft(config, derived, decisions, *, source_digest, targ
             approved_operation="CREATE") for item in decisions.decisions))
     planner_options = replace(provisional.to_options(), conversion_settings=settings)
     plan = FortiGateToPaloAltoPlanner().plan(config, derived, planner_options, include_configuration=True,
-                                          requirements=requirements)
+                                          requirements=requirements, source_inventory=source_inventory)
     if service_names:
         eligible = {(item.source_vdom or "root", item.source_name) for item in plan.services if item.status.value == "SUPPORTED"}
         if any((vdom, name) not in eligible for vdom, names in service_names.items() for name in names):
             raise ValueError("Service name overrides must select current supported services")
         plan = FortiGateToPaloAltoPlanner().plan(config, derived,
-            replace(planner_options, service_names=service_names), include_configuration=True, requirements=requirements)
+            replace(planner_options, service_names=service_names), include_configuration=True,
+            requirements=requirements, source_inventory=source_inventory)
     plan = allocate_plan_names(plan, destination, target_device, service_names)
     plan = bind_vip_external_zones(plan, settings, destination, target_device)
     # Discover additive deltas using proposed values, never the executable pipeline.

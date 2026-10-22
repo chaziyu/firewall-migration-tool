@@ -136,3 +136,19 @@ Real full-input CLI rerun: **4,476** coverage rows = 723 recommendation-only + 3
 Validation completed: **3,015 Python tests passed, two skipped, 16 subtests passed**; Ruff, compileall and whitespace checks passed. The existing offline Chromium approval/export walkthrough passed with no JavaScript errors. A full-input Chromium check reached prepared review in **24.60 seconds**, found all **16 local certificate records** by their native section name in manual work, saw five HTTP 200 API responses and no page errors. No frontend source changed. No target firewall was contacted.
 
 Next cycle: inspect remaining typed source families for missing migration accounting, especially central SNAT and unknown zone settings. Do not infer activation/defaults from the mere presence of preserved records.
+
+Pushed to `origin/main`: **`bca0f47e`** (`Account for preserved native sections in PAN-OS migration coverage`).
+
+## Cycle 6 — central NAT coverage and conservative conversion guard
+
+A synthetic source variant on the same pipeline reproduced a separate correctness hole: one explicit modeled central-SNAT entry plus an independent supported address produced `READY`, zero unplanned records and no NAT plan. Typed central-SNAT records were missing from the source-only family list. Native central/NGFW mode evidence could also be omitted from planner inputs, allowing per-policy NAT or VIP plans despite unsupported source-mode semantics.
+
+Official authority: Fortinet's [FortiOS 7.4.3 Central SNAT guide](https://docs.fortinet.com/document/fortigate/7.4.3/administration-guide/421028/central-snat) describes ordered central-SNAT matching and the bypass of per-policy NAT when central mode is enabled; [Central DNAT](https://docs.fortinet.com/document/fortigate/7.4.3/administration-guide/448790/central-dnat) distinguishes central VIP handling. The exact 7.4.6 pages could not be fetched through the documentation tool. This change adds no positive cross-version translation: it preserves evidence and requires review.
+
+Plan and implementation: expose central-SNAT entries as source-only manual work using their source policy IDs; pass native inventory through both pipeline and draft planner calls, including the service-name override rebuild; mark policy NAT and VIP plans for manual mode/order verification in affected source scopes. An unscoped/global control is not guessed into a single VDOM. No activation state is inferred from table presence or enable/disable/unset evidence. Explicit disabled controls currently also require manual review because verified source-mode translation is not implemented. Other VDOMs retain their existing supported paths.
+
+Nine focused regressions passed after reproducing seven failures: retained disabled central entries and IDs; native enabled/disabled/unset/NGFW controls; VDOM separation; VIP and dependent security blocking; and web replanning after a service-name override. Related pool/combined-NAT/native-inventory tests also passed. Ruff and compileall pass.
+
+The uploaded example has zero central/NGFW mode controls and zero modeled central-SNAT entries. Its CLI repeat remains **4,476** unplanned records, **111** unresolved mappings and zero executable commands. This additional fix addresses a verified source variant, not a newly discovered central-NAT setting in the uploaded file.
+
+Validation completed: **3,024 Python tests passed, two skipped, 16 subtests passed**. Ruff, compileall and whitespace checks passed. Chromium showed the central-mode verification reason in manual work with zero JavaScript errors. The full uploaded-config CLI repeat retained the counts above.
