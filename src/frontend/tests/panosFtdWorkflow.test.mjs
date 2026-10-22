@@ -93,7 +93,7 @@ function harness(overrides = {}, savedOptions = options) {
         'cisco_fmc_bindings.json': { content: '{}\n', sha256: 'hash3', byte_count: 3 },
         'ftd_application_instructions.txt': { content: 'Instructions\n', sha256: 'hash4', byte_count: 13 },
       },
-      report: { verification: 'Offline', fmc_operation_count: 1 },
+      report: { items: [], verification: 'Offline', fmc_operation_count: 1 },
     },
   }
 

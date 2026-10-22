@@ -86,9 +86,11 @@ def register_fortigate_to_cisco_asa_routes(app, signing_key):
                 return jsonify({"success": True, "approval": sign_envelope(approval, signing_key)})
             if action == "requirements":
                 return jsonify({"success": True, "source_digest": entry.source_digest,
+                                "options": review["options"].to_dict(),
                                 "requirements": review["requirements"], "report": review["report"]})
             if action == "design/prepare":
                 return jsonify({"success": True, "source_digest": entry.source_digest,
+                                "options": review["options"].to_dict(),
                                 "draft": sign_envelope(review["draft"], signing_key),
                                 "requirements": review["requirements"], "report": review["report"]})
             raise ValueError("Unsupported ASA migration action")

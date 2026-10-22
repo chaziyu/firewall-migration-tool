@@ -8,6 +8,7 @@ import uuid
 
 from ..design.deterministic import PAIR, approve_draft, build_draft, export_decisions as export_mapping, import_decisions as import_mapping, validate_approval
 from ..options import ASAMigrationOptions
+from ..design.proposals import build_target_proposals
 from ..planner import PaloAltoToCiscoASAPlanner
 from ..rendering.renderer import ASACLIRenderer
 from ..requirements import build_mapping_requirements
@@ -32,7 +33,7 @@ def _options(value):
 
 
 def _plan(analysis, options, *, target=None, target_source_text=None, target_metadata=None):
-    parsed = _options(options)
+    parsed, _ = build_target_proposals(analysis.config, analysis.derived, _options(options))
     plan = PaloAltoToCiscoASAPlanner().plan(analysis.config, analysis.derived, parsed)
     evidence = None
     if target is not None:
@@ -54,6 +55,7 @@ def build_review(analysis, options, source_digest, *, target=None, target_source
                                    target_source_text=target_source_text, target_metadata=target_metadata)
     rendered = ASACLIRenderer().render(plan)
     report = build_review_report(plan)
+    report["proposals"] = build_target_proposals(analysis.config, analysis.derived, parsed)[1]
     report["coverage"] = build_coverage(plan, analysis.config.source_inventory)
     report.update({"source_digest": source_digest, "target_digest": None,
                    "command_count": rendered.command_count, "command_sha256": rendered.command_sha256,

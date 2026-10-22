@@ -1,3 +1,5 @@
+import { OfflineMigrationReview } from '../components/OfflineMigrationReview'
+import { OfflineMigrationExport } from '../components/OfflineMigrationExport'
 import { MigrationCoverage } from '../components/MigrationCoverage'
 import { DestinationSnapshot } from '../components/DestinationSnapshot'
 import type { DestinationEvidence } from '../components/DestinationSnapshot'
@@ -12,7 +14,7 @@ import { downloadFile } from '../migrationApi'
 import * as api from './migrationApi'
 import type { JuniperSrxWorkspace, SrxOptions } from './types'
 import { expandSelection } from './reviewSelection'
-import { SrxDesignReview } from './DesignReview'
+import { isReviewable } from './reviewSelection'
 
 const PAIR_ID = 'fortigate_to_juniper_srx' as const
 const emptyOptions = (): SrxOptions => ({
@@ -50,28 +52,36 @@ export function JuniperSRXMigrationWorkflow({ source, sourceKey, stage, onStageC
   const [targetLoading, setTargetLoading] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [preparing, setPreparing] = useState(false)
+  const [reviewTab, setReviewTab] = useState<'changes' | 'decisions' | 'manual'>('changes')
   const [selected, setSelected] = useState<string[]>([])
   const [approvalPreview, setApprovalPreview] = useState<string[] | null>(null)
   const [interfaceSearch, setInterfaceSearch] = useState('')
   const [interfacePage, setInterfacePage] = useState(1)
-  const [findingPage, setFindingPage] = useState(1)
   const requests = useRef(0)
   const pending = useRef(false)
   const { options, requirements, review, approval, artifact } = state
-  const initialOptions = useRef(payloadOptions(options))
 
-  useEffect(() => { void saveWorkspace({ panosMigration: state }) }, [state])
+  useEffect(() => { void saveWorkspace({ panosMigration: { ...state, stage } }) }, [state, stage])
   useEffect(() => () => { requests.current++ }, [])
   useEffect(() => {
     let active = true
-    api.requirements(source, { ...initialOptions.current, source_vdom: options.source_vdom }).then((result) => {
-      if (active) {
-        setState((current) => ({ ...current, requirements: result.requirements }))
-        setHasSchedules(Boolean(result.report?.items.some((item) => item.family === 'schedule')))
+    const request = ++requests.current
+
+    const timer = setTimeout(() => { setPreparing(true); void api.prepare(source, payloadOptions(options), state.destination).then((result) => {
+      if (!active || request !== requests.current) return
+      const nextOptions = { ...options, ...result.options, interfaces: { ...result.options?.interfaces } }
+      for (const [scope, rows] of Object.entries(options.interfaces)) {
+        nextOptions.interfaces[scope] = { ...nextOptions.interfaces[scope], ...rows }
       }
-    }).catch((cause) => { if (active) setError(cause instanceof Error ? cause.message : 'Could not load SRX placement requirements') })
-    return () => { active = false }
-  }, [source, sourceKey, options.source_vdom])
+      setState((current) => ({ ...current, requirements: result.requirements, review: JSON.stringify(nextOptions) === JSON.stringify(options) ? result : null,
+        options: JSON.stringify(nextOptions) === JSON.stringify(options) ? options : nextOptions,
+        ...(JSON.stringify(nextOptions) === JSON.stringify(options) ? {} : { approval: null, artifact: null }) }))
+      setHasSchedules(result.report.items.some((item) => item.family === 'schedule'))
+    }).catch((cause) => { if (active && request === requests.current) setError(cause instanceof Error ? cause.message : 'Could not prepare conversion') })
+      .finally(() => { if (active) setPreparing(false) }) }, 250)
+    return () => { active = false; clearTimeout(timer) }
+  }, [source, options, state.destination])
 
   function changeOptions(next: SrxOptions) {
     requests.current++
@@ -103,7 +113,6 @@ export function JuniperSRXMigrationWorkflow({ source, sourceKey, stage, onStageC
     setState((current) => ({ ...current, review: null, approval: null, artifact: null, previewText: null }))
     setSelected([])
     setApprovalPreview(null)
-    setFindingPage(1)
     const result = await api.prepare(source, normalized, state.destination)
     if (request !== requests.current) return
     setState((current) => ({ ...current, options: normalized, requirements: result.requirements, review: result }))
@@ -168,11 +177,6 @@ export function JuniperSRXMigrationWorkflow({ source, sourceKey, stage, onStageC
     changeOptions({ ...options, [kind]: zones })
   }
 
-  function openApprovalPreview(keys: string[]) {
-    if (!review) return
-    setApprovalPreview(expandSelection(review.report.items, keys))
-  }
-
   const sourceScope = requirements.find((item) => item.target_field === 'source_vdom')
   const scopeRequirements = requirements.filter((item) => item.source_vdom === options.source_vdom)
   const interfaceRequirements = scopeRequirements.filter((item) => item.source_kind === 'interface' && item.target_field === 'target_interface')
@@ -186,9 +190,8 @@ export function JuniperSRXMigrationWorkflow({ source, sourceKey, stage, onStageC
     const mapping = options.interfaces[options.source_vdom]?.[item.source_name]
     return mapping?.target_interface?.trim() && Number.isInteger(mapping.unit) && mapping.unit! >= 0 && mapping.unit! <= 16385
   }).length
-  const findingPages = Math.max(1, Math.ceil((review?.report.findings.length ?? 0) / 25))
-  const currentFindingPage = Math.min(findingPage, findingPages)
 
+  const unresolvedInputs = requirements.filter((item) => (item.value == null || item.value === '' || item.value === false) && (item.target_field !== 'timezone' || hasSchedules) && (!item.source_vdom || item.source_vdom === options.source_vdom))
   return <section className="panel" aria-labelledby="juniper-srx-migration-title">
     <h2 id="juniper-srx-migration-title">FortiGate → Juniper SRX</h2>
     <p>Review and export a Junos 25.2R1 set file with optional destination snapshot comparison. Device execution is unavailable.</p>
@@ -198,16 +201,10 @@ export function JuniperSRXMigrationWorkflow({ source, sourceKey, stage, onStageC
       <Button disabled={busy} onClick={() => onStageChange('place')}>Set up SRX target</Button>
     </>}
 
-    {stage === 'place' && <>
+    {(stage === 'place' || stage === 'review') && <details open={stage === 'place'}><summary>Target setup and choices</summary>
       <section className="review-work-card" aria-label="New-device proposals">
         <h3>New SRX configuration</h3>
         <p>Propose root placement, ge-0/0/N physical ports, VLAN units and separate security zones for unzoned source interfaces. Review the proposed ports and cabling before approval. Hardware capacity and feature support remain unverified.</p>
-        <Button disabled={busy || targetLoading || Boolean(state.destination)} onClick={() => void run(async () => {
-          const request = ++requests.current
-          const result = await api.proposeNewTarget(source, payloadOptions(options))
-          if (request !== requests.current) return
-          changeOptions({ ...emptyOptions(), ...result.options })
-        })}>Propose new-device mappings</Button>
         {state.destination && <p>New-device proposals are unavailable while an existing destination snapshot is loaded.</p>}
       </section>
       <DestinationSnapshot vendor="juniper_srx" families={['addresses', 'applications', 'interfaces', 'zones', 'static_routes', 'schedules', 'policies', 'nat']} value={state.destination ?? null} disabled={busy} onChange={changeDestination} onPendingChange={setTargetLoading} />
@@ -265,41 +262,43 @@ export function JuniperSRXMigrationWorkflow({ source, sourceKey, stage, onStageC
       </details>
       <div className="action-row target-setup-actions"><Button disabled={busy || targetLoading || !options.source_vdom} onClick={() => void run(prepareReview)}>Validate changes</Button></div>
       </section>
-    </>}
+    </details>}
 
-    {stage === 'review' && <>
-      {!review ? <><p>Prepare the current target choices before review.</p><Button disabled={busy || targetLoading} onClick={() => void run(prepareReview)}>Prepare migration review</Button></> : <>
-        <MigrationCoverage coverage={review.report.coverage} />
-        <SrxDesignReview key={String(review.draft.digest)} items={review.report.items} busy={busy} selected={selected} onSelect={setSelected} approvalKeys={approvalPreview}
-          onPreview={(keys) => void run(async () => openApprovalPreview(keys))} onApprove={() => void run(confirmApproval)} onCancel={() => setApprovalPreview(null)} onSetup={() => onStageChange('place')} />
-        {!!review.report.findings.length && <details><summary>Technical findings ({review.report.findings.length})</summary>
-          <ul>{review.report.findings.slice((currentFindingPage - 1) * 25, currentFindingPage * 25).map((finding, index) => <li key={index}><p>{String(finding.message ?? finding.code)}</p><pre>{JSON.stringify(finding, null, 2)}</pre></li>)}</ul>
-          <div className="report-pager"><Button disabled={currentFindingPage <= 1} onClick={() => setFindingPage(currentFindingPage - 1)}>Previous findings</Button><span>Page {currentFindingPage} of {findingPages}</span><Button disabled={currentFindingPage >= findingPages} onClick={() => setFindingPage(currentFindingPage + 1)}>Next findings</Button></div>
-        </details>}
-      </>}
+    {(stage === 'review' || stage === 'place') && review && <>
+      <MigrationCoverage coverage={review.report.coverage} />
+      <OfflineMigrationReview id="fg-srx" title="Juniper SRX" rows={review.report.items.map((item) => ({
+        key: item.key, family: item.family, sourceScope: item.source_vdom, sourceName: item.source_name,
+        target: item.target_name, operation: item.render_disposition, settings: item.settings,
+        dependencies: item.dependencies, reasons: item.blockers, ready: isReviewable(item),
+      }))} busy={busy || preparing || targetLoading} tab={reviewTab} onTabChange={setReviewTab}
+        inputCount={unresolvedInputs.length}
+        manualCount={review.report.items.filter((item) => item.blockers.length).length}
+        issueContent={reviewTab === 'decisions' ? <><p>Complete these target choices in the setup details above.</p>
+          <ul>{unresolvedInputs.map((item) => <li key={item.key}>{item.label} {item.source_name}</li>)}</ul></>
+          : <><p>Blocked configuration and separate work retain their source reasons. Target choices may resolve some blockers; unsupported semantics remain manual.</p>
+          <ul>{[...new Set(review.report.items.flatMap((item) => item.blockers))].map((reason) => <li key={reason}>{reason.replaceAll('_', ' ')}</li>)}</ul></>}
+
+        selected={selected} onSelect={(keys) => { setSelected(keys); setApprovalPreview(null); setState((current) => ({ ...current, approval: null, artifact: null })) }}
+        approvalKeys={approvalPreview} onPreview={(keys) => { try { setApprovalPreview(expandSelection(review.report.items, keys)) } catch (cause) { setError(String(cause)) } }}
+        onApprove={() => void run(confirmApproval)} onCancel={() => setApprovalPreview(null)}
+        approvalContext={<><p>Proposed offline placement; hardware availability is unverified. Approval binds these target choices and exact configuration.</p><pre className="set-command-preview">{JSON.stringify(options, null, 2)}</pre></>}
+        onSetup={() => onStageChange('place')} findings={review.report.findings} approveLabel="Approve and generate" />
     </>}
+    {preparing && <p role="status">Preparing conversion review…</p>}
 
     {stage === 'export' && <>
       {approval && !artifact && <Button disabled={busy} onClick={() => void run(() => generate())}>Retry with current approval</Button>}
       {!approval && <p>Review and approve the current plan before exporting.</p>}
-      {artifact && <>
-        <h3>{artifact.report.plan_status === 'READY_WITH_MANUAL_WORK' ? 'Partial offline export' : artifact.report.plan_status === 'BLOCKED' ? 'No approved commands' : 'Offline export ready'}</h3>
-        <p className="artifact-identity">{artifact.command_count} command lines · SHA-256: {artifact.command_sha256}</p>
-        <p>{String(artifact.report.verification ?? 'Destination compatibility and device acceptance are unverified.')}</p>
-        {artifact.report.plan_status === 'READY_WITH_MANUAL_WORK' && <p role="status">Blocked, unsupported and unapproved work is excluded from this export.</p>}
+      {artifact && <OfflineMigrationExport dispositions={artifact.report.items.map((row) => row.render_disposition)} artifactId={artifact.artifact_id}
+        partial={Object.entries(artifact.report.coverage?.status_counts ?? {}).some(([status, count]) => count > 0 && !['RENDERED', 'REUSED'].includes(status)) || artifact.report.items.some((item) => !['CREATE', 'REUSE'].includes(item.render_disposition))}
+        noChanges={!artifact.command_count && artifact.report.items.length > 0 && artifact.report.items.every((item) => item.render_disposition === 'REUSE')}
+        verification={String(artifact.report.verification ?? 'Offline export; device acceptance remains unverified.')}
+        busy={busy || targetLoading} files={[{ key: 'commands', label: 'Junos set configuration', previewLabel: 'Juniper SRX command preview', text: artifact.command_text ?? '',
+          sha256: artifact.command_sha256, count: `${artifact.command_count} commands`, downloadLabel: 'Download Junos set file', downloadable: true }]}
+        onDownload={() => void run(async () => { const request = requests.current; const blob = await api.download(source, artifact, 'commands'); if (request === requests.current) downloadFile(blob, 'juniper_config.set') })}
+        onBundle={() => void run(async () => { const request = requests.current; const blob = await api.download(source, artifact, 'bundle'); if (request === requests.current) downloadFile(blob, 'migration_fortigate_to_juniper_srx.zip') })}>
         <MigrationCoverage coverage={artifact.report.coverage} />
-        {!state.previewText ? <Button disabled={busy} onClick={() => void run(async () => {
-          const request = ++requests.current
-          const result = await api.commandPreview(artifact)
-          if (request !== requests.current) return
-          if (result.command_sha256 !== artifact.command_sha256) throw new Error('Command preview integrity check failed')
-          setState((current) => ({ ...current, previewText: result.text }))
-        })}>Load command preview</Button> : <details open><summary>Command preview</summary><label className="field">Approved Junos commands<textarea aria-label="Juniper SRX command preview" readOnly value={state.previewText} rows={14} wrap="off" /></label></details>}
-        <div className="action-row">
-        <Button disabled={busy || !artifact.command_count} onClick={() => void run(async () => downloadFile(await api.download(source, artifact, 'commands'), 'juniper_config.set'))}>Download Junos set file</Button>
-        <Button disabled={busy} onClick={() => void run(async () => downloadFile(await api.download(source, artifact, 'bundle'), 'migration_fortigate_to_juniper_srx.zip'))}>Download reviewed migration bundle</Button>
-        </div>
-      </>}
+      </OfflineMigrationExport>}
     </>}
     {busy && <LoadingState label="Preparing reviewed SRX migration…" />}
     {error && <ErrorBanner message={error} />}

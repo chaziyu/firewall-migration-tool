@@ -6,7 +6,7 @@ export type ASAOptions = {
   target_context: string
   target_version: string
   target_mode: 'routed'
-  interfaces: Record<string, { target_interface: string; nameif: string; security_level: number }>
+  interfaces: Record<string, { target_interface: string; nameif: string; security_level?: number }>
   new_target_confirmed: boolean
   routing_complete: boolean
   permit_inter_interface: boolean
@@ -21,7 +21,7 @@ export type ASAPlanRow = {
 export type ASAReview = {
   draft: { digest: string; context_digest: string; items: ASAPlanRow[]; [key: string]: unknown }
   requirements: { source_scopes: string[]; decisions: Array<{ key: string; family: string; source_name: string; value: unknown; mode: string }> }
-  report: { items: Array<ASAPlanRow & { render_disposition: string; guidance?: string[] }>; coverage?: { manual_records?: number }; verification: string; plan_status: string; findings: string[] }
+  report: { proposals?: Array<{ family: string; source_name: string; value: ASAOptions['interfaces'][string] | null }>; items: Array<ASAPlanRow & { render_disposition: string; guidance?: string[] }>; coverage?: { manual_records?: number }; verification: string; plan_status: string; findings: string[] }
   options: ASAOptions
 }
 export type ASAArtifact = {

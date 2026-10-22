@@ -1,12 +1,13 @@
 import { useCallback, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { DraftRow, MigrationDraft } from '../types'
-import { draftDependencies, draftRowKey } from '../reviewDrafts'
-import { draftReviewRows, draftStatusCounts, taskCategory } from '../reviewPresentation'
+import { draftDependencies, draftRowKey, readyConfigurationKeys } from '../reviewDrafts'
+import { draftReviewRows, draftStatusCounts, taskCategory, conversionFamilies } from '../reviewPresentation'
 import { Button } from '../../../components/common/Button'
 
-export function MigrationDesignReview({ draft, busy, approvedItems, onApprove, onRenameService, onSelectIssue, onResolveInputs }: {
+export function MigrationDesignReview({ draft, busy, approvedItems, onApprove, onRenameService, onSelectIssue, onResolveInputs, directApproval = false }: {
   draft: MigrationDraft
+  directApproval?: boolean
   busy: boolean
   approvedItems: string[]
   onApprove: (groups: string[]) => void
@@ -19,7 +20,7 @@ export function MigrationDesignReview({ draft, busy, approvedItems, onApprove, o
   const [family, setFamily] = useState('all')
   const [search, setSearch] = useState('')
   const [detailsKey, setDetailsKey] = useState('')
-  const [approvalPreview, setApprovalPreview] = useState<string[]>([])
+  const [customPreview, setApprovalPreview] = useState<string[] | null>(null)
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(25)
   const focusPreview = useCallback((element: HTMLElement | null) => element?.focus(), [])
@@ -32,6 +33,8 @@ export function MigrationDesignReview({ draft, busy, approvedItems, onApprove, o
   const filtered = useMemo(() => draftReviewRows(rows, filter, family, search, new Set(), approved)
     .filter((row) => !row.decision_key)
     .sort((a, b) => (a.operation || '').localeCompare(b.operation || '') || (a.family || a.source_kind || '').localeCompare(b.family || b.source_kind || '')), [rows, filter, family, search, approved])
+  const defaultSelection = useMemo(() => draftDependencies(byKey, readyConfigurationKeys(rows, approvedItems), approvedItems), [byKey, rows, approvedItems])
+  const approvalPreview = useMemo(() => customPreview ?? (directApproval ? defaultSelection : []), [customPreview, directApproval, defaultSelection])
   const pendingSelection = selected.filter((key) => byKey.has(key) && !isApproved(byKey.get(key)!))
   const previewPending = approvalPreview.some((key) => !byKey.has(key) || !isApproved(byKey.get(key)!))
   const families = [...new Set(draft.configuration.map((row) => row.family || row.source_kind))].sort()
@@ -47,12 +50,34 @@ export function MigrationDesignReview({ draft, busy, approvedItems, onApprove, o
   const preview = (keys: string[]) => setApprovalPreview(draftDependencies(byKey, keys, approvedItems))
   const previewKeys = useMemo(() => new Set(approvalPreview), [approvalPreview])
   const approvalBlocked = approvalPreview.some((key) => !byKey.has(key) || (byKey.get(key)?.status !== 'READY' && !isApproved(byKey.get(key)!)))
-  const showPreview = approvalPreview.length > 0 && previewPending
+  const showPreview = directApproval || (approvalPreview.length > 0 && previewPending)
+  const approvalValues = <PagedList items={approvalPreview} render={(key) => { const row = byKey.get(key); return row ? <div><p>{row.source_vdom} / {row.source_name} · {row.target_field || row.family} → <strong>{row.proposed_value || row.target_name || 'Unresolved'}</strong> · {row.target_scope || 'Scope unresolved'} · {row.operation || row.status}</p>
+        {row.configuration && <><p>{Object.entries(row.configuration).filter(([field, value]) => !['warnings', 'status', 'source_vdom', 'source_kind', 'source_name', 'source_object_type', 'target_vsys', 'target_name'].includes(field) && value != null).map(([field, value]) => `${field.replaceAll('_', ' ')}: ${Array.isArray(value) ? value.join(', ') : typeof value === 'object' ? JSON.stringify(value) : String(value)}`).join(' · ')}</p><LazyDetails summary="Exact configuration values">{() => <pre>{JSON.stringify(row.configuration, null, 2)}</pre>}</LazyDetails></>}
+        <p>Prerequisites: {row.dependencies.map((key) => { const dependency = byKey.get(key); return dependency ? `${dependency.source_vdom} / ${dependency.source_name} · ${dependency.target_field || dependency.family}` : 'Unresolved prerequisite' }).join('; ') || 'None'}</p>
+      </div> : 'Unresolved prerequisite'  }} />
   return <section aria-label="Deterministic design review" className="migration-changes">
     {rows.some((row) => row.status === 'UNSUPPORTED') && <p role="status">Manual items are excluded.</p>}
-    {!showPreview && <>
+    {showPreview && <section className="migration-approval-preview" aria-label="Approval preview" tabIndex={-1} ref={focusPreview}>
+      <h3>{directApproval ? 'Proposed conversion' : 'Review selection'}</h3>
+      {directApproval && <p>All ready configuration is proposed by default, across every page and search. Mappings are proposals until you approve. Blocked and manual work stays excluded.</p>}
+      {directApproval && <><p>Proposed placement:</p><ul aria-label="Mapping assumptions">{draft.decisions.filter((row) => ['vsys', 'virtual_router'].includes(row.target_field || '')).map((row) => <li key={draftRowKey(row)}>{row.source_vdom} / {row.target_field?.replaceAll('_', ' ')}: {row.proposed_value || 'Unresolved'}</li>)}</ul><p>Numbered port proposals preserve portN as ethernet1/N where available. Review exceptions in Edit mappings. Destination capacity, licensing and cabling remain unverified.</p></>}
+      <p>Configuration: {approvalPreview.filter((key) => !byKey.get(key)?.decision_key).length} · Mappings: {approvalPreview.filter((key) => byKey.get(key)?.decision_key).length}. Prerequisites included.</p>
+      <p>{ready.filter((row) => !previewKeys.has(keyFor(row)) && !row.decision_key).length} ready items not selected · {draft.configuration.filter((row) => row.status !== 'READY' && !isApproved(row)).length} items need attention.</p>
+      {!directApproval && approvalPreview.filter((key) => !byKey.get(key)?.decision_key).length === 1 && <p role="status">One item selected. Go back to review all ready items.</p>}
+      <ul aria-label="Selected configuration families">{families.map((name) => {
+        const count = draft.configuration.filter((row) => (row.family || row.source_kind) === name && previewKeys.has(keyFor(row))).length
+        return count ? <li key={name}>{name.replaceAll('_', ' ')}: {count}</li> : null
+      })}</ul>
+      <ConversionCoverage rows={draft.configuration} selected={previewKeys} />
+      {directApproval && customPreview !== null && <Button className="secondary-button" onClick={() => setApprovalPreview(null)}>Use all ready configuration</Button>}
+      {directApproval ? <LazyDetails summary="Included mappings and exact values">{() => approvalValues}</LazyDetails> : approvalValues}
+      {approvalBlocked && <p role="alert">Resolve prerequisites before approval.</p>}
+      <div className="action-row"><Button disabled={busy || approvalBlocked || !previewPending || !approvalPreview.some((key) => !byKey.get(key)?.decision_key)} onClick={() => onApprove(approvalPreview)}>{directApproval ? 'Approve conversion and generate' : 'Approve selection and generate commands'}</Button>
+      {!directApproval && <Button className="secondary-button" onClick={() => { setApprovalPreview([]); requestAnimationFrame(() => document.getElementById('review-ready')?.focus()) }}>Back</Button>}</div>
+    </section>}
+    {(!showPreview || directApproval) && <details open={!directApproval}><summary>Custom selection and item details</summary>
     <div className="action-row">
-      <Button id="review-ready" disabled={busy || !ready.length} onClick={() => preview(ready.map(keyFor))}>Review all ready changes ({ready.length.toLocaleString()})</Button>
+      {!directApproval && <Button id="review-ready" disabled={busy || !ready.length} onClick={() => preview(ready.map(keyFor))}>Review all ready changes ({ready.length.toLocaleString()})</Button>}
       {(family !== 'all' || search.trim() || filter !== 'READY') && <Button className="secondary-button" disabled={busy || !matchingReady.length} onClick={() => preview(matchingReady.map(keyFor))}>Review matching changes ({matchingReady.length.toLocaleString()})</Button>}
       {!!pendingSelection.length && <Button className="secondary-button" disabled={busy} onClick={() => preview(pendingSelection)}>Review selected ({pendingSelection.length})</Button>}
       {!!inputCount && onResolveInputs && <Button className="secondary-button" onClick={onResolveInputs}>Resolve required inputs ({inputCount.toLocaleString()})</Button>}
@@ -72,25 +97,6 @@ export function MigrationDesignReview({ draft, busy, approvedItems, onApprove, o
       <label className="field">Type<select value={family} onChange={(event) => { setFamily(event.target.value); setPage(1) }}><option value="all">All</option>{families.map((value) => <option key={value} value={value}>{value.replaceAll('_', ' ')}</option>)}</select></label>
       <label className="field">Search<input value={search} onChange={(event) => { setSearch(event.target.value); setPage(1) }} placeholder="Source or target name" /></label>
     </div>
-    </>}
-    {showPreview && <section className="migration-approval-preview" aria-label="Approval preview" tabIndex={-1} ref={focusPreview}>
-      <h3>Review selection</h3>
-      <p>Configuration: {approvalPreview.filter((key) => !byKey.get(key)?.decision_key).length} · Mappings: {approvalPreview.filter((key) => byKey.get(key)?.decision_key).length}. Prerequisites included.</p>
-      <p>{ready.filter((row) => !previewKeys.has(keyFor(row)) && !row.decision_key).length} ready items not selected · {draft.configuration.filter((row) => row.status !== 'READY' && !isApproved(row)).length} items need attention.</p>
-      {approvalPreview.filter((key) => !byKey.get(key)?.decision_key).length === 1 && <p role="status">One item selected. Go back to review all ready items.</p>}
-      <ul aria-label="Selected configuration families">{families.map((name) => {
-        const count = draft.configuration.filter((row) => (row.family || row.source_kind) === name && previewKeys.has(keyFor(row))).length
-        return count ? <li key={name}>{name.replaceAll('_', ' ')}: {count}</li> : null
-      })}</ul>
-      <PagedList items={approvalPreview} render={(key) => { const row = byKey.get(key); return row ? <div><p>{row.source_vdom} / {row.source_name} · {row.target_field || row.family} → <strong>{row.proposed_value || row.target_name || 'Unresolved'}</strong> · {row.target_scope || 'Scope unresolved'} · {row.operation || row.status}</p>
-        {row.configuration && <><p>{Object.entries(row.configuration).filter(([field, value]) => !['warnings', 'status', 'source_vdom', 'source_kind', 'source_name', 'source_object_type', 'target_vsys', 'target_name'].includes(field) && value != null).map(([field, value]) => `${field.replaceAll('_', ' ')}: ${Array.isArray(value) ? value.join(', ') : typeof value === 'object' ? JSON.stringify(value) : String(value)}`).join(' · ')}</p><LazyDetails summary="Exact configuration values">{() => <pre>{JSON.stringify(row.configuration, null, 2)}</pre>}</LazyDetails></>}
-        <p>Prerequisites: {row.dependencies.map((key) => { const dependency = byKey.get(key); return dependency ? `${dependency.source_vdom} / ${dependency.source_name} · ${dependency.target_field || dependency.family}` : 'Unresolved prerequisite' }).join('; ') || 'None'}</p>
-      </div> : 'Unresolved prerequisite'  }} />
-      {approvalBlocked && <p role="alert">Resolve prerequisites before approval.</p>}
-      <div className="action-row"><Button disabled={busy || approvalBlocked} onClick={() => onApprove(approvalPreview)}>Approve selection and generate commands</Button>
-      <Button className="secondary-button" onClick={() => { setApprovalPreview([]); requestAnimationFrame(() => document.getElementById('review-ready')?.focus()) }}>Back</Button></div>
-    </section>}
-    {!showPreview && <>
     {!filtered.length && <p>No matching changes.</p>}
     {visible.map((row) => <article key={keyFor(row)} className="migration-proposal-row">
       <label><input type="checkbox" checked={!isApproved(row) && selected.includes(keyFor(row))} disabled={busy || taskCategory(row, byKey, approved) !== 'Ready for review'}
@@ -119,7 +125,7 @@ export function MigrationDesignReview({ draft, busy, approvedItems, onApprove, o
       <button type="button" disabled={currentPage <= 1} onClick={() => setPage(currentPage - 1)}>Previous</button><span>Page {currentPage} of {pages} · {filtered.length.toLocaleString()} changes</span><button type="button" disabled={currentPage >= pages} onClick={() => setPage(currentPage + 1)}>Next</button>
       <label>Go to page <input aria-label="Changes page" type="number" min={1} max={pages} value={currentPage} onChange={(event) => { const value = Number(event.target.value); if (Number.isInteger(value) && value >= 1) setPage(Math.min(value, pages)) }} /></label>
     </div>
-    </>}
+    </details>}
     {!!draft.issues?.some((issue) => issue.action?.kind === 'EDIT_SETTINGS') && <details><summary>Decisions related to these changes</summary>
       <ul>{draft.issues.filter((issue) => issue.action?.kind === 'EDIT_SETTINGS').map((issue) => <li key={issue.id}>
         {issue.source_vdom} / {issue.source_name}: {issue.explanation} {onSelectIssue && <Button className="text-button" onClick={() => onSelectIssue(issue.id)}>Open decision</Button>}
@@ -150,6 +156,7 @@ export function MigrationDesignSummary({ draft, approvedItems }: { draft: Migrat
     <details><summary>Details</summary>
       <p>{draft.destination_verified ? 'Destination checked against uploaded configuration.' : 'Destination collisions, hardware capacity and licensing remain unverified.'}</p>
       <p>Mappings: {mappingCounts.READY || 0} ready · {mappingCounts.NEEDS_INPUT || 0} need input · {mappingCounts.CONFLICT || 0} conflicts · {draft.decisions.filter(isApproved).length} approved</p>
+      {!!excludedInterfaces.length && <p>Excluded interfaces: {excludedInterfaces.join(', ')}</p>}
       <p>Manual / unsupported items and explicitly excluded interfaces are omitted from commands. Approval includes exact values, operations and prerequisites.</p>
     </details>
   </div>
@@ -164,4 +171,14 @@ function PagedList<T>({ items, render }: { items: T[]; render: (item: T) => Reac
   const [page, setPage] = useState(1)
   return <><ul>{items.slice((page - 1) * 30, page * 30).map((item, index) => <li key={(page - 1) * 30 + index}>{render(item)}</li>)}</ul>
     {items.length > 30 && <div className="report-pager"><button type="button" disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>Previous details</button><span>Page {page} of {Math.ceil(items.length / 30)}</span><button type="button" disabled={page * 30 >= items.length} onClick={() => setPage((value) => value + 1)}>Next details</button></div>}</>
+}
+
+function ConversionCoverage({ rows, selected }: { rows: DraftRow[]; selected: Set<string> }) {
+  const selectedCount = (names: readonly string[]) => rows.filter((row) => names.includes(row.family || '') && selected.has(draftRowKey(row))).length
+  return <section aria-label="Selected conversion coverage">
+    <h3>Configuration coverage</h3>
+    <ul>{conversionFamilies.map(([label, names]) => <li key={label}>{label}: {selectedCount(names)} selected / {rows.filter((row) => names.includes(row.family || '')).length} configuration items</li>)}</ul>
+    {!selectedCount(['security_rule', 'nat_rule', 'static_route']) && <p role="status">No security policies, NAT rules or static routes are selected. This conversion contains supporting configuration only.</p>}
+    <p>Excluded items produce no commands. Resolve required inputs in Needs your input; unsupported semantics need separate work. Hardware choices do not resolve those semantics.</p>
+  </section>
 }

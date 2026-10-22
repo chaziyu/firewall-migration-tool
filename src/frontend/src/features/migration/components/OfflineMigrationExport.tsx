@@ -5,15 +5,17 @@ import { tabKeyboard } from '../../../components/common/tabKeyboard'
 
 export type OfflineExportFile = { key: string; label: string; previewLabel: string; text: string; sha256: string; count: string; downloadLabel: string; downloadable: boolean }
 
-export function OfflineMigrationExport({ artifactId, partial, noChanges, verification, files, busy, onDownload, onBundle, children }: {
+export function OfflineMigrationExport({ artifactId, partial, noChanges, verification, files, busy, onDownload, onBundle, children, dispositions = [] }: {
   artifactId: string; partial: boolean; noChanges: boolean; verification: string; files: readonly OfflineExportFile[]
   busy: boolean; onDownload: (key: string) => void; onBundle: () => void; children?: ReactNode
+  dispositions?: readonly string[]
 }) {
   const [selectedFile, setSelectedFile] = useState('')
   const current = files.find((file) => file.key === selectedFile) ?? files[0]
   return <section aria-label="Approved offline export">
     <h3>{partial ? 'Partial export' : noChanges ? 'No changes needed' : 'Ready for export'}</h3>
     <p className="artifact-identity">Artifact: {artifactId}</p><p>{verification}</p>
+    {!!dispositions.length && <p>{dispositions.filter((value) => ['CREATE', 'CONFIGURE'].includes(value)).length} included · {dispositions.filter((value) => value === 'REUSE').length} reused · {dispositions.filter((value) => value === 'NOT_APPROVED').length} excluded · {dispositions.filter((value) => !['CREATE', 'CONFIGURE', 'REUSE', 'NOT_APPROVED'].includes(value)).length} blocked or manual.</p>}
     {partial && <p role="status">Blocked, unsupported and unapproved work is excluded. Review the report before applying this partial configuration.</p>}
     {children}
     {files.length > 1 && <div role="tablist" aria-label="Approved export files" className="migration-review-tabs" onKeyDown={tabKeyboard}>

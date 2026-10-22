@@ -93,6 +93,7 @@ def plan_topology(source, options):
         items.append(ASAPlanItem(key, "interface", vdom, interface.name, target,
                                  tuple(settings.items()), dependencies=dependencies, blockers=tuple(dict.fromkeys(blockers))))
 
+    interface_keys = {item.key for item in items}
     for route in source.static_routes:
         vdom = route.vdom or "root"
         if vdom != options.source_vdom:
@@ -126,6 +127,7 @@ def plan_topology(source, options):
         items.append(ASAPlanItem(item_key(vdom, "static_route", str(route.seq_num or destination)),
                                  "static_route", vdom, str(route.seq_num or destination),
                                  target_name("static_route", vdom, str(route.seq_num or destination)),
-                                 settings, tuple(filter(None, (item_key(vdom, "interface", route.device),))),
+                                 settings, (item_key(vdom, "interface", route.device),)
+                                 if item_key(vdom, "interface", route.device) in interface_keys else (),
                                  tuple(dict.fromkeys(blockers)), int(route.seq_num or 0)))
     return items, names

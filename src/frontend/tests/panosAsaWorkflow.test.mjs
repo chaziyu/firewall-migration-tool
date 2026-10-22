@@ -38,7 +38,7 @@ function harness(overrides = {}) {
     return exports
   }
   const activity = load('../src/features/migration/hooks/useMigrationReviewActivity.ts', { '../../../api/client': { RequestError: class extends Error {} } })
-  const saved = { pairId: 'palo_alto_to_cisco_asa', sourceKey: 'source', options, review, stage: 'export', approval: {}, artifact: { artifact_id: 'id', command_count: 1, command_text: 'exact\n', command_sha256: 'hash', report: { verification: 'Offline' } } }
+  const saved = { pairId: 'palo_alto_to_cisco_asa', sourceKey: 'source', options, review, stage: 'export', approval: {}, artifact: { artifact_id: 'id', command_count: 1, command_text: 'exact\n', command_sha256: 'hash', report: { items: [], verification: 'Offline' } } }
   const Component = load('../src/features/migration/paloAltoToCiscoAsa/MigrationWorkflow.tsx', {
     '../../../components/common/Button': { Button: 'Button' }, '../../../components/common/ErrorBanner': { ErrorBanner: 'ErrorBanner' },
     '../../../storage/workspaceStore': { workspace: () => ({ panosMigration: saved }), saveWorkspace: async () => {} },

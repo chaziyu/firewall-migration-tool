@@ -121,6 +121,7 @@ def register_fortigate_to_juniper_srx_routes(app, signing_key):
                     "success": True,
                     "source_digest": entry.source_digest,
                     "requirements": review["requirements"],
+                    "options": options_mapping(review["options"]),
                     "report": review["report"],
                 })
             if action == "design/prepare":
@@ -129,6 +130,7 @@ def register_fortigate_to_juniper_srx_routes(app, signing_key):
                     "source_digest": entry.source_digest,
                     "draft": sign_envelope(review["draft"], signing_key),
                     "requirements": review["requirements"],
+                    "options": options_mapping(review["options"]),
                     "report": review["report"],
                 })
             if action == "design/approve":

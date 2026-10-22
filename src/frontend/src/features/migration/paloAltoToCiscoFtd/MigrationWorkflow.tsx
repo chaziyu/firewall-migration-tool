@@ -55,7 +55,7 @@ export function PaloAltoToCiscoFtdWorkflow({
           review: null,
           approval: null,
           artifact: null,
-          stage: 'place',
+          stage: 'review',
         }
   })
   const [selected, setSelected] = useState<string[]>([])
@@ -100,8 +100,8 @@ export function PaloAltoToCiscoFtdWorkflow({
           setScopes(result.source_scopes)
           setState((current) => ({
             ...current,
-            review: result,
-            options: JSON.stringify(options) === JSON.stringify(result.options) ? options : result.options,
+            review: JSON.stringify(options) === JSON.stringify(result.options) ? result : null,
+            options: JSON.stringify(options) === JSON.stringify(result.options) ? options : result.options, ...(JSON.stringify(options) === JSON.stringify(result.options) ? {} : { approval: null, artifact: null }),
           }))
         })
         .catch((cause) => {
@@ -174,7 +174,8 @@ export function PaloAltoToCiscoFtdWorkflow({
   }
 
   const manual = rows.filter((row) => row.render_disposition === 'BLOCK')
-  const inputCount = review?.requirements.length ?? 0
+  const unresolvedInputs = review?.requirements.filter((row) => row.value == null || row.value === '') ?? []
+  const inputCount = unresolvedInputs.length
 
   return (
     <section className="panel" aria-label="PAN-OS to Cisco FTD">
@@ -189,8 +190,8 @@ export function PaloAltoToCiscoFtdWorkflow({
         </Button>
       )}
 
-      {stage === 'place' && (
-        <section aria-label="Target setup">
+      {(stage === 'place' || stage === 'review') && (
+        <details aria-label="Target setup" open={stage === 'place'}><summary>Target setup and choices</summary>
           <h3>Target setup</h3>
           <p>Configure FMC management domain, version, and Access Control Policy container parameters.</p>
           <fieldset disabled={busy} style={{ display: 'grid', gap: '0.75rem', maxWidth: '32rem' }}>
@@ -276,10 +277,10 @@ export function PaloAltoToCiscoFtdWorkflow({
               Continue to Review ({inputCount} parameters checked)
             </Button>
           </div>
-        </section>
+        </details>
       )}
 
-      {stage === 'review' && review && (
+      {(stage === 'review' || stage === 'place') && review && (
         <OfflineMigrationReview
           id="panos-ftd"
           title="Cisco FTD"
@@ -300,7 +301,7 @@ export function PaloAltoToCiscoFtdWorkflow({
           onTabChange={setTab}
           inputCount={inputCount}
           manualCount={manual.length}
-          issueContent={
+          issueContent={tab === 'decisions' ? <><p>Complete these FMC choices in setup.</p><ul>{unresolvedInputs.map((row) => <li key={row.key}>{row.label}</li>)}</ul></> :
             <>
               <h3>Remaining choices and manual work</h3>
               <p>
@@ -317,6 +318,7 @@ export function PaloAltoToCiscoFtdWorkflow({
           onSelect={(keys: string[]) => {
             setSelected(keys)
             setApprovalKeys(null)
+            setState((current) => ({ ...current, approval: null, artifact: null }))
           }}
           approvalKeys={approvalKeys}
           onPreview={(keys: string[]) => {
@@ -338,7 +340,7 @@ export function PaloAltoToCiscoFtdWorkflow({
             </>
           }
           onSetup={() => setStage('place')}
-          approveLabel="Approve and build offline export"
+          findings={review.report.findings} approveLabel="Approve and generate"
         />
       )}
 
@@ -350,6 +352,7 @@ export function PaloAltoToCiscoFtdWorkflow({
       )}
       {stage === 'export' && artifact && (
         <OfflineMigrationExport
+          dispositions={artifact.report.items.map((row) => row.render_disposition)}
           artifactId={artifact.artifact_id}
           partial={
             manual.length > 0 ||
@@ -359,7 +362,7 @@ export function PaloAltoToCiscoFtdWorkflow({
                 !(approval.selected_items as string[] | undefined)?.includes(row.key),
             )
           }
-          noChanges={!Number(artifact.report.fmc_operation_count ?? artifact.report.operation_count ?? 0)}
+          noChanges={artifact.report.items.length > 0 && artifact.report.items.every((row) => row.render_disposition === 'REUSE')}
           verification={artifact.report.verification}
           busy={busy}
           files={fileSpecs

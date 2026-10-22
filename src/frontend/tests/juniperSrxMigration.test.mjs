@@ -134,6 +134,8 @@ function workflowHarness(api = {}, stage = 'review', interfaceCount = 0) {
   let saved = { pairId: 'fortigate_to_juniper_srx', sourceKey: 'source', options, requirements, review, approval: null, artifact: null, previewText: null }
   const modules = {
     react: h.api, '../../../components/common/Button': buttons,
+    '../components/OfflineMigrationReview': { OfflineMigrationReview: 'DesignReview' },
+    '../components/OfflineMigrationExport': { OfflineMigrationExport: 'OfflineExport' },
     '../components/MigrationCoverage': { MigrationCoverage: 'Coverage' },
     '../components/DestinationSnapshot': { DestinationSnapshot: 'DestinationSnapshot' },
     '../../../components/common/LoadingState': { LoadingState: 'LoadingState' },
@@ -166,7 +168,7 @@ test('SRX mapping editor paginates 83 interfaces and edits clear previous review
 test('SRX signed approval survives build failure and retry does not approve again', async () => {
   let approvals = 0; let builds = 0
   const approval = { signature: 'signed', selected_items: ['object'] }
-  const artifact = { command_sha256: 'hash', command_count: 1, report: { plan_status: 'READY_FOR_REVIEW' } }
+  const artifact = { command_sha256: 'hash', command_count: 1, report: { items: [item('object')], plan_status: 'READY_FOR_REVIEW' } }
   const h = workflowHarness({
     approve: async (_s, _o, _d, keys) => { approvals++; assert.deepEqual(keys, ['object']); return { approval } },
     build: async (_s, _o, signed) => { assert.equal(signed, approval); if (++builds === 1) throw new Error('Build failed'); return { artifact } },
@@ -191,7 +193,7 @@ test('SRX failed validation clears the old review and mismatched previews surfac
   assert.ok(elements(tree).some((node) => node.type === 'ErrorBanner' && node.props.message === 'Validation failed'))
   const mismatch = workflowHarness({
     approve: async () => ({ approval: { signature: 'signed' } }),
-    build: async () => ({ artifact: { command_sha256: 'expected', command_count: 1, report: {} } }),
+    build: async () => ({ artifact: { command_sha256: 'expected', command_count: 1, report: { items: [item('object')] } } }),
     commandPreview: async () => ({ text: 'wrong', command_sha256: 'wrong' }),
   })
   tree = await mismatch.render(); design(tree).props.onPreview(['object']); tree = await mismatch.render()
@@ -200,20 +202,20 @@ test('SRX failed validation clears the old review and mismatched previews surfac
   assert.ok(elements(tree).some((node) => node.type === 'ErrorBanner' && /integrity/.test(node.props.message)))
 })
 
-test('new-device proposals remain editable and revoke the old review without approval', async () => {
+test('new-device proposals arrive during preparation and remain editable without approval', async () => {
   const proposed = { source_vdom: 'root', target_context: 'root', target_version: '25.2R1', target_mode: 'standalone', routing_table: 'inet.0', timezone: '', interfaces: { root: { port0: { target_interface: 'ge-0/0/0', unit: 0 } } }, zones: {}, interface_zones: { root: { port0: 'lan-zone' } } }
   let approvals = 0
-  const h = workflowHarness({ proposeNewTarget: async () => ({ options: proposed, approval_required: true, hardware_verified: false }), approve: async () => approvals++ }, 'place', 1)
+  const requirements = [{ key: 'port0', source_vdom: 'root', source_kind: 'interface', source_name: 'port0', target_field: 'target_interface', choices: [] }]
+  const h = workflowHarness({ prepare: async () => ({ options: proposed, requirements, draft: { digest: 'proposed' }, report: { items: [item('object')], findings: [] } }), approve: async () => approvals++ }, 'place', 1)
+  await h.render(); await new Promise((resolve) => setTimeout(resolve, 300))
   let tree = await h.render()
-  button(tree, 'Propose new-device mappings').props.onClick(); tree = await h.render()
   assert.equal(h.state().options.interface_zones.root.port0, 'lan-zone')
-  assert.equal(h.state().review, null)
   assert.equal(h.state().approval, null)
   assert.equal(approvals, 0)
+  assert.ok(!JSON.stringify(tree).includes('Propose new-device mappings'))
   const port = elements(tree).find((node) => node.props?.['aria-label'] === 'Target interface for root / port0')
   assert.equal(port.props.value, 'ge-0/0/0')
-  assert.equal(port.props.disabled, false)
-  elements(tree).find((node) => node.type === 'DestinationSnapshot').props.onChange({ source: { vendor: 'juniper_srx' } })
-  tree = await h.render()
-  assert.equal(button(tree, 'Propose new-device mappings').props.disabled, true)
+  port.props.onChange({ target: { value: 'ge-0/0/7' } }); tree = await h.render()
+  assert.equal(h.state().options.interfaces.root.port0.target_interface, 'ge-0/0/7')
+  assert.equal(h.state().approval, null)
 })
