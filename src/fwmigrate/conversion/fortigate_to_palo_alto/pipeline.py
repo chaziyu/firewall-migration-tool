@@ -227,6 +227,7 @@ def run_migration_pipeline(
     actual_planner = planner or FortiGateToPaloAltoPlanner()
     plan = actual_planner.plan(source, derived, options=final_options,
                                **({"include_configuration": True} if approved_item_keys is not None else {}),
+                               **({"source_inventory": source_inventory} if source_inventory is not None else {}),
                                **({"include_interface_zones": True} if include_interface_zones else {}))
     from .planning.naming import allocate_plan_names
     named_plan = allocate_plan_names(plan, target, target_device, final_options.service_names)
