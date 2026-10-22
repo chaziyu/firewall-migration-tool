@@ -38,4 +38,26 @@ Validation:
 - Frontend: `npm ci`, **249 tests**, lint and production build passed. Build retains its existing >500 kB bundle-size warning.
 - Real input CLI rerun confirmed corrected counts as recorded above.
 
-Next: commit/push this cycle, then implement cycle 2 SD-WAN coverage, rerun the input and validate again.
+Pushed to `origin/main`: **`00e8f429`** (`Require target VSYS before reporting PAN-OS objects as renderable`).
+
+## Cycle 2 — SD-WAN manual-work coverage
+
+Implemented recommendation-only coverage for each SD-WAN zone and for explicit top-level status/load-balance settings or preserved additional settings. These recommendations require manual target design and cannot emit commands or be approved as supported configuration. SD-WAN zones are not guessed to be PAN-OS security zones. Absent status/load-balancing remains absent. Additional raw settings are reported by count, without exposing their values.
+
+Five focused regressions cover zone-only parsed source through the real pipeline and approval draft, enabled/disabled settings without children, VDOM-scoped duplicate zone names, non-mutation, raw-value redaction and empty sections without invented manual work. Four cases reproduced the omissions before the fix. All five pass after it; the related recommendation/deterministic-draft selection totals 38 passing tests.
+
+Real uploaded-config rerun: **948** unplanned rows (723 recommendation-only, 225 source-only), including one `sdwan_zone`. The existing 111 unresolved decisions and zero executable/renderable/satisfied counts remain correct.
+
+Web API checks on the full input: source upload and offline design preparation both returned HTTP 200. Before the SD-WAN fix, draft configuration counts were 7,775 ready proposals, 2,636 unsupported and 917 needing input. These are pre-approval proposals, not evidence of deployment readiness.
+
+Follow-up audit: 32 IPv4 pools are defined, 18 are referenced by policies, and 14 are unreferenced. Standalone IP-pool definitions currently have no coverage row. Next cycle should distinguish pools completely represented by satisfied NAT consumers from unrepresented definitions; do not simply mark every pool unsupported or silently discard unused definitions.
+
+Validation:
+
+- Full Python suite: **2,999 passed, two skipped, 16 subtests passed**.
+- Real Chromium walkthroughs against the built frontend/Flask passed in offline and destination-aware modes, including approval, export integrity and a 2,000-object search case; no JavaScript errors.
+- The full uploaded-config browser check found a workflow defect: searching manual work for `SD-WAN` returned no results because the coverage reason was generic. Coverage reasons now include their feature family. The updated regression verifies the family survives into the draft issue explanation. After this final wording change, **711 migration/API tests**, compileall and Ruff passed.
+- Full uploaded-config browser check after the fix: upload → prepared review in **19.38 seconds**, `SD-WAN` search found the source zone, all five API responses were HTTP 200, and zero JavaScript errors occurred.
+- The Playwright-managed browser download was denied by the environment network policy; the preinstalled `/usr/bin/chromium` ran the checks successfully. No network-policy bypass was used.
+
+Next: commit/push cycle 2, then review standalone IPv4-pool coverage.
