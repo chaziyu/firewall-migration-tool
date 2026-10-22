@@ -40,6 +40,16 @@ test('configuration summary renders each count once, preserves missing and zero 
     assert.ok(!missingTable.includes('Unsupported / source-only'))
     assert.match(render({ vendor: 'fortigate', sections: { unresolved_references: [{}] } }), /class="configuration-summary-warning"/)
     assert.deepEqual(data, before)
+    const { SourceOverview } = await server.ssrLoadModule('/src/features/source/SourceOverview.tsx')
+    for (const count of [0, 1, 2]) {
+      const sections = { validation: ['error', 'warning'].flatMap((severity) => Array.from({ length: count }, (_, index) => ({ severity, message: `${severity}-${index}` }))) }
+      const label = `${count} ${count === 1 ? 'error' : 'errors'} · ${count} ${count === 1 ? 'warning' : 'warnings'}`
+      assert.ok(render({ vendor: 'fortigate', sections }).includes(`${label} <small>`))
+      assert.ok(render({ vendor: 'fortigate', sections }).includes(`${count} warning ${count === 1 ? 'group' : 'groups'}</small>`))
+      const overview = renderToStaticMarkup(createElement(SourceOverview, { vendor: 'fortigate', vendorName: 'FortiGate', file: null, preview: { sections } }))
+      assert.ok(overview.includes(`${label}</span>`))
+    }
+    assert.match(missing, /report-validation-attention[^]*?Not reported/)
   } finally {
     await server.close()
   }
