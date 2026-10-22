@@ -139,6 +139,11 @@ def validate_plan(plan: PANMigrationPlan) -> MigrationValidationResult:
             add("duplicate_target_name", "duplicate target name", item)
         seen.add(key)
 
+        # Scope is required independently of each family's value checks. Device
+        # routes and management profiles are intentionally not VSYS-scoped.
+        if item.source_object_type not in {"static_route", "management_profile"} and not item.target_vsys:
+            add("missing_target_vsys", "missing target VSYS mapping", item)
+
         if item.source_object_type == 'management_profile':
             if (not re.fullmatch(r'[A-Za-z0-9_.-]{1,31}', item.target_name or '') or item.target_vsys is not None
                     or not item.protocols or set(item.protocols) - {'ping', 'https', 'ssh', 'snmp', 'http', 'telnet'}
@@ -166,8 +171,6 @@ def validate_plan(plan: PANMigrationPlan) -> MigrationValidationResult:
                        | ({"no-pfs"} if item.source_object_type == "ipsec_crypto_profile" else set())
                     or crypto_lifetime(item.lifetime_seconds) is None):
                 add("invalid_crypto_profile", "crypto profile algorithms, DH group or lifetime are unsupported", item)
-            if not item.target_vsys:
-                add("missing_target_vsys", "missing target VSYS mapping", item)
         elif item.source_object_type == "interface":
             if item.management_profile and not re.fullmatch(r'[A-Za-z0-9_.-]{1,31}', item.management_profile):
                 add('invalid_management_profile', 'Invalid target management profile name', item)
@@ -190,8 +193,6 @@ def validate_plan(plan: PANMigrationPlan) -> MigrationValidationResult:
             if item.interface_family == "loopback":
                 if not re.fullmatch(r"loopback\.[1-9][0-9]{0,3}", item.target_name or "") or item.parent or item.tag is not None:
                     add("invalid_loopback_interface", "loopback requires an identifier from 1 to 9999 and no VLAN parent or tag", item)
-            if not item.target_vsys:
-                add("missing_target_vsys", "missing target VSYS mapping", item)
             if not item.virtual_router:
                 add("missing_virtual_router", "missing target virtual-router mapping", item)
             if item.parent and item.tag is None:
@@ -238,8 +239,6 @@ def validate_plan(plan: PANMigrationPlan) -> MigrationValidationResult:
             if not valid:
                 add("missing_schedule_value", "schedule has no valid supported target entries", item)
         elif item.source_object_type == "dhcp_server":
-            if not item.target_vsys:
-                add("missing_target_vsys", "missing target VSYS mapping", item)
             if not getattr(item, "interface", None):
                 add("missing_dhcp_interface", "DHCP server has no mapped target interface", item)
             if getattr(item, "mode", None) not in {"enabled", "disabled"}:
@@ -286,8 +285,6 @@ def validate_plan(plan: PANMigrationPlan) -> MigrationValidationResult:
                     add("invalid_snat_address", "SNAT requires an explicit IPv4 host or ordered address range", item)
             if item.source_interface_address and not item.to_interface:
                 add("missing_nat_interface", "interface-address NAT requires an explicit mapped interface", item)
-            if not item.target_vsys:
-                add("missing_target_vsys", "missing target VSYS mapping", item)
             if not item.from_zones or not item.to_zones:
                 add("missing_nat_zone", "NAT rule is missing a required from or to zone", item)
             if item.source_kind == "source_nat":
@@ -301,8 +298,6 @@ def validate_plan(plan: PANMigrationPlan) -> MigrationValidationResult:
                     not item.source_interface_address and not item.translated_addresses
                 ):
                     add("missing_snat_translation", "SNAT translation is missing", item)
-        elif item.source_object_type != "static_route" and not item.target_vsys:
-            add("missing_target_vsys", "missing target VSYS mapping", item)
 
     for groups in (plan.address_groups, plan.service_groups):
         by_identity = {(item.target_vsys, item.target_name or item.source_name): item for item in groups}
