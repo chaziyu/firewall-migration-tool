@@ -58,7 +58,7 @@ function ValidationSummary({ rows, activeGroup, onGroupChange }: {
   const warnings = rows.filter((row) => String(row.severity).toLowerCase() === 'warning').length
 
   return <section className="validation-summary" aria-label="Validation summary">
-    <div className="validation-counts"><strong>{rows.length} findings</strong><span>{errors} errors</span><span>{warnings} warnings</span></div>
+    <div className="validation-counts"><strong>{rows.length} {rows.length === 1 ? 'finding' : 'findings'}</strong><span>{errors} {errors === 1 ? 'error' : 'errors'}</span><span>{warnings} {warnings === 1 ? 'warning' : 'warnings'}</span></div>
     <button type="button" className="secondary-button" aria-pressed={!activeGroup} onClick={() => onGroupChange('')}>All findings</button>
     {!!ordered.length && <div className="validation-groups" aria-label="Finding groups">{ordered.map((group) => { const key = group.key; return (
       <button type="button" key={key} className={`validation-group ${activeGroup === key ? 'active' : ''}`} aria-pressed={activeGroup === key} onClick={() => onGroupChange(activeGroup === key ? '' : key)}>
@@ -317,7 +317,7 @@ export function SourceReport({ data, excelProfile, onExcelProfileChange, exporti
     <div role="tabpanel" id={`report-panel-${encodeURIComponent(activeSection)}`} aria-labelledby={`report-tab-${encodeURIComponent(activeSection)}`} tabIndex={0}>
     {activeSection === 'Overview' ? <>
       <h3 className="report-overview-heading">Validation</h3>
-      <button type="button" className={`report-validation-attention${errorCount ? ' has-errors' : warningCount ? ' has-warnings' : ''}`} onClick={() => changeSection('Validation')}><div>{sectionsData.validation == null && asRecord(summary.validation).severity_counts == null ? 'Not reported' : <>{errorCount.toLocaleString()} errors · {warningCount.toLocaleString()} warnings <small>{warningGroups.toLocaleString()} warning groups</small></>}</div><span>Review findings →</span></button>
+      <button type="button" className={`report-validation-attention${errorCount ? ' has-errors' : warningCount ? ' has-warnings' : ''}`} onClick={() => changeSection('Validation')}><div>{sectionsData.validation == null && asRecord(summary.validation).severity_counts == null ? 'Not reported' : <>{errorCount.toLocaleString()} {errorCount === 1 ? 'error' : 'errors'} · {warningCount.toLocaleString()} {warningCount === 1 ? 'warning' : 'warnings'} <small>{warningGroups.toLocaleString()} warning {warningGroups === 1 ? 'group' : 'groups'}</small></>}</div><span>Review findings →</span></button>
       <div className="report-overview-group">
         <h3 className="report-overview-heading" id="configuration-summary-title">Configuration summary</h3>
         <div className="configuration-summary-wrap">

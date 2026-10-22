@@ -6,6 +6,28 @@ import * as jsxRuntime from 'react/jsx-runtime'
 import * as presentation from '../src/features/report/reportPresentation.ts'
 import { renderToStaticMarkup } from 'react-dom/server'
 
+test('validation count labels distinguish zero, one and multiple findings', () => {
+  const source = readFileSync(new URL('../src/features/report/SourceReport.tsx', import.meta.url), 'utf8')
+  const compiled = ts.transpileModule(`${source}\nexport { ValidationSummary }`, {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX },
+  }).outputText
+  const exports = {}
+  const modules = { react: {}, 'react/jsx-runtime': jsxRuntime, './reportPresentation': presentation,
+    './ReportDetails': {}, './ExcelExportControls': {}, '../../components/common/tabKeyboard': {}, '../../components/common/ErrorBanner': {} }
+  new Function('require', 'exports', compiled)((name) => modules[name], exports)
+  for (const severity of ['error', 'warning']) {
+    for (const count of [0, 1, 2]) {
+      const rows = Array.from({ length: count }, () => ({ severity, message: 'review source' }))
+      const html = renderToStaticMarkup(exports.ValidationSummary({ rows, activeGroup: '', onGroupChange() {} }))
+      assert.ok(html.includes(`<strong>${count} ${count === 1 ? 'finding' : 'findings'}</strong>`))
+      const errors = severity === 'error' ? count : 0
+      const warnings = severity === 'warning' ? count : 0
+      assert.ok(html.includes(`<span>${errors} ${errors === 1 ? 'error' : 'errors'}</span>`))
+      assert.ok(html.includes(`<span>${warnings} ${warnings === 1 ? 'warning' : 'warnings'}</span>`))
+    }
+  }
+})
+
 test('native IPsec and static-route reference findings have source-object links', () => {
   const source = readFileSync(new URL('../src/features/report/SourceReport.tsx', import.meta.url), 'utf8')
   const compiled = ts.transpileModule(`${source}\nexport { ValidationTable }`, {
