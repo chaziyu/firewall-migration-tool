@@ -395,6 +395,9 @@ fwmigrate migrate \
 ```
 
 Use `--zone-map mapping.yaml` when target VSYS, virtual-router, interface, or zone mappings are required.
+Explicit interface-to-zone mappings also plan the corresponding target zones,
+so policies and NAT rules can reference them. Missing mappings remain unresolved;
+the CLI does not invent target placements.
 
 For destination evidence and intent, the CLI also accepts:
 

@@ -107,8 +107,8 @@ end
                                  'outside': {'target_interface': 'ethernet1/2', 'target_zone': 'untrust'}}}))
     assert result.coverage['complete'] == (nat == 'enable')
     assert any(rule.translated_addresses == ('198.51.100.10',) for rule in result.plan.nat_rules) == (nat == 'enable')
-    # CLI-style planning without destination evidence does not create interface
-    # zones. A covered pool does not make its blocked NAT consumer executable.
+    # Default programmatic planning does not request interface-backed zones.
+    # A covered pool does not make its blocked NAT consumer executable.
     assert result.artifact_status == 'PARTIAL'
     assert not any('source-translation' in command for command in result.rendered.commands)
 

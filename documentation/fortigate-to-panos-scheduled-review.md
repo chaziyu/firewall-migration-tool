@@ -75,3 +75,46 @@ CLI review improvement: print unplanned-source totals, recommendation-only/sourc
 Full uploaded-config rerun: **962** coverage rows (723 recommendation-only, 239 source-only), including exactly **14 IP pools** and the SD-WAN zone. `NEEDS_MAPPING`, 111 unresolved required mappings and zero commands/renderable/satisfied items remain correct. Compileall and Ruff pass. Full Python suite: **3,007 passed, two skipped, 16 subtests passed**. Follow-up after adding terminal summary and extra consumer/approval checks: **721 migration/API tests passed**, plus Ruff and compileall. Final real-input CLI output prints `Unplanned source configuration: 962 (723 recommendation-only, 239 source-only)` and the private report path.
 
 Further reproduced workflow issue: CLI-style migration with explicit interface/zone mappings creates the physical interfaces but no corresponding target zones when the source uses interfaces directly. Security/NAT consumers then block on missing zone references. Web configuration planning already supports these interface-backed zones. Next cycle: reuse that existing pair-specific topology path for CLI exports with explicit confirmed mappings, without manufacturing mappings or enabling device execution.
+
+Pushed to `origin/main`: **`2511142f`** (`Report unrepresented IPv4 pools and CLI manual-work totals`).
+
+## Cycle 4 — CLI interface-backed zones
+
+Reproduced a source with two physical interfaces, one outbound policy and interface-address SNAT: a complete explicit mapping document still produced `PARTIAL` because no zone definitions were planned. Added an opt-in pair-specific pipeline/planner switch so the CLI uses the existing interface-backed zone planning path. It consumes only final confirmed target mappings. Existing web approval behavior and default programmatic pipeline behavior are unchanged. This does not enable broader configuration approval or CLI device operations.
+
+The CLI regression failed before the fix with complete mappings. It now verifies both branches: explicit VSYS/VR/ports/zones produce their correctly scoped zone commands before dependent policy/NAT commands and a ready export; omitted zone mappings produce no zones or rule commands and remain unresolved. Source input is not mutated. Combined selection with pool and pipeline regressions: **31 passed**; Ruff, compileall and diff whitespace checks pass.
+
+Final validation:
+
+- **3,011 Python tests passed, two skipped, 16 subtests passed** on the final implementation.
+- Compileall, Ruff and whitespace checks passed.
+- Full-input CLI: zero commands, `NEEDS_MAPPING`, 111 unresolved mappings, 962 unplanned items (723 recommendation-only, 239 source-only). The new zone path creates nothing without confirmed mappings.
+- Full-input Chromium: prepared review in **19.85 seconds**; searching `IP-pool` showed all **14** source objects in manual work; five API endpoints returned HTTP 200; zero JavaScript errors.
+- Earlier frontend validation remains applicable: 249 tests, lint and production build passed; no frontend files were changed in this run.
+
+### Browser/API verification
+
+Story: an operator uploads the FortiGate source, Flask analyzes it and prepares the design, and React shows supported proposals and separate manual work.
+
+| Boundary | Result | Evidence |
+| --- | --- | --- |
+| UI renders | Passed | Built frontend served by Flask; Chromium loaded migration flow |
+| Client to API | Passed | Full source upload and design preparation returned HTTP 200 |
+| API to source/planner | Passed | Real input used CLI/API pipelines; scoped regressions cover parsing through rendering |
+| Data to response | Passed | Coverage/report consistency and unavailable approval for unsupported work verified in tests |
+| Response to UI | Passed | SD-WAN family search found the omitted zone; pool search showed 14 source objects; no page errors |
+
+## Continuation checkpoint
+
+All four implementation cycles are complete and validated. The raw input checksum remains unchanged. No firewall was contacted or committed. Full JSON output and diagnostic logs are private workspace artifacts, not repository files; final migration report is `/workspace/migration-review-private/cycle4/migration_report.json`.
+
+Remaining work is explicit in the report: 111 target mapping decisions and 962 coverage rows, plus validation/render blockers on planned items. The coverage total is not the number of software bugs or all blocked items. In particular, source defects, unsupported matching/inspection, identity/authentication, IPsec/SSL VPN, source-only objects, and hardware/capacity constraints require review. A complete executable migration cannot be produced from this source alone without target choices and verified semantics.
+
+Next scheduled run:
+
+1. Fetch current `origin/main`, read this checkpoint and verify the original upload checksum. Resume only if a code cycle was interrupted after this checkpoint; otherwise start a fresh audit on the latest implementation.
+2. Reproduce the full-input CLI and browser review. Do not invent target placements to turn `NEEDS_MAPPING` into `READY`. Use supplied engineer evidence if it becomes available.
+3. Prioritize checking the full preserved source-section inventory against migration coverage, including sections outside modeled `FGConfig` families. Then review unsupported matching/NAT/order/dependency cases for small, verified subsets that can be improved safely.
+4. Record evidence and a concrete prioritized plan, implement actionable issues, run affected paths and required checks, and push validated fixes to `main`. Preserve manual requirements and source evidence.
+
+Usage quota is not exposed to this runtime; no claim is made that quota was exhausted. This checkpoint supports continuation within the later run's actual execution limits.
