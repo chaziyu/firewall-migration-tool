@@ -41,6 +41,7 @@ export type SrxPlanItem = {
   approval_group?: string | null
 }
 export type SrxReview = {
+  options?: SrxOptions
   draft: Record<string, unknown>
   requirements: SrxRequirement[]
   report: {
@@ -66,6 +67,7 @@ export type SrxArtifact = {
 export type JuniperSrxWorkspace = {
   pairId: 'fortigate_to_juniper_srx'
   sourceKey: string
+  stage?: 'load' | 'place' | 'review' | 'export'
   destination?: DestinationEvidence | null
   options: SrxOptions
   requirements: SrxRequirement[]

@@ -52,6 +52,43 @@ end
 '''
 
 
+def test_numbered_ports_are_stable_under_reordering_and_collisions_remain_unmapped():
+    text = SOURCE.replace('edit lan', 'edit port2').replace('edit wan', 'edit port1')
+    analysis = FortiGateSourceReporter().analyze_source(text)
+    config = analysis.extracted.config
+    first = propose_new_target(config, analysis.derived, {})
+    reversed_config = config.model_copy(update={"interfaces": list(reversed(config.interfaces))})
+    assert propose_new_target(reversed_config, analysis.derived, {}).interfaces == first.interfaces
+    assert first.interfaces['root']['port1'].target_interface == 'ge-0/0/0'
+    assert first.interfaces['root']['port2'].target_interface == 'ge-0/0/1'
+    explicit = SRXMigrationOptions(source_vdom='root', interfaces={'root': {'port1': SRXInterfaceMapping('ge-0/0/1', 0)}})
+    collision = propose_new_target(config, analysis.derived, explicit)
+    assert 'port2' not in collision.interfaces['root']
+    review = build_review(analysis, {}, 'source')
+    assert review['options'].interfaces == first.interfaces
+
+
+def test_proposed_vlan_uses_mapped_parent_and_explicit_tag_without_capacity_attestation():
+    text = '''config system interface
+edit port2
+set type physical
+next
+edit tagged
+set type vlan
+set interface port2
+set vlanid 201
+next
+end
+'''
+    analysis = FortiGateSourceReporter().analyze_source(text)
+    proposed = propose_new_target(analysis.extracted.config, analysis.derived, {})
+    assert proposed.interfaces['root']['tagged'] == SRXInterfaceMapping('ge-0/0/1', 201)
+    assert proposed.target_platform is None and proposed.vlan_interfaces_available is False
+    override = SRXMigrationOptions(source_vdom='root', interfaces={'root': {'port2': SRXInterfaceMapping('ge-0/0/8', 0)}})
+    proposed = propose_new_target(analysis.extracted.config, analysis.derived, override)
+    assert proposed.interfaces['root']['tagged'] == SRXInterfaceMapping('ge-0/0/8', 201)
+
+
 def test_new_device_proposals_preserve_source_and_require_exact_approval():
     analysis = FortiGateSourceReporter().analyze_source(SOURCE)
     before = analysis.extracted.config.model_dump(mode="json")

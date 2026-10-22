@@ -13,7 +13,7 @@ import {
 import type { CandidateRecovery, PlanArtifact, SetImportArtifact, SetReview } from './migrationApi'
 import { MigrationSetUpload } from './components/MigrationSetUpload'
 import { PlanReview } from './PlanReview'
-import { exportCategoryLabels, planFamilySummary } from './reviewPresentation'
+import { conversionFamilies, exportCategoryLabels, planFamilySummary } from './reviewPresentation'
 
 type Props = { liveDeviceAccess?: boolean; generationRequest?: number; preview: SourcePreviewData; decisionDocument: MigrationDecisionDocument | null; targetSource: SourceEvidence | null; targetDevice: string; activeSection: 'plan' | 'live'; onViewChange: (view: 'live') => void; onReviewDecision: (key: string) => void }
 
@@ -232,11 +232,13 @@ export function MigrationWorkflow({ preview, decisionDocument, targetSource, tar
     {status && <p role="status" aria-live="polite">{status}</p>}
     {artifact && <div className="artifact-summary">
       <h3>Approved migration changes</h3>
-      <p><strong>{artifact.plan_status === 'READY_NO_CHANGES' ? 'No changes needed' : artifact.plan_status === 'NEEDS_MAPPING' ? 'Needs mapping' : partial ? 'Partial export' : 'Ready for export'}</strong></p>
+      <p><strong>{artifact.plan_status === 'READY_NO_CHANGES' ? 'No changes needed' : artifact.plan_status === 'NEEDS_MAPPING' ? 'Partial conversion - unresolved work excluded' : partial ? 'Partial export' : 'Ready for export'}</strong></p>
       {artifact.report.workflow_mode === 'OFFLINE_EXPORT' ? <p>Destination unverified. Check destination collisions, hardware compatibility and licensing before applying these commands.</p> : <p>Candidate preparation: {artifact.report.deployment_eligibility?.eligible ? 'Eligible — live preflight still required' : artifact.report.deployment_eligibility?.reason || 'Eligibility unverified'}</p>}
+      <ul aria-label="Generated conversion coverage">{conversionFamilies.map(([label, names]) => <li key={label}>{label}: {names.reduce((total, name) => total + (families[name]?.INCLUDED ?? 0), 0)} included configuration items</li>)}</ul>
+      {partial && <p>Unresolved work: {Object.entries(exportCategoryLabels).filter(([category]) => category !== 'INCLUDED' && artifact.report.export_counts?.[category]).map(([category, label]) => `${label}: ${artifact.report.export_counts?.[category]}`).join(' · ') || 'Review the exclusion reasons below.'} Hardware choices do not resolve unsupported semantics.</p>}
       <p>Planned items: {artifact.render_summary.create || 0} to create · {artifact.render_summary.configure || 0} to configure · {artifact.render_summary.reuse || 0} to reuse · {artifact.render_summary.blocked || 0} excluded · {artifact.artifact.command_count} commands</p>
       {!!artifact.report.coverage?.unplanned_count && <p role="status">{artifact.report.coverage.unplanned_count} source records remain outside this plan. Review Remaining source work below.</p>}
-      {!!artifact.report.export_counts?.NOT_APPROVED && <p role="status">{artifact.report.export_counts.NOT_APPROVED} supported configuration items were not selected for approval. Review all ready changes to include them.</p>}
+      {!!artifact.report.export_counts?.NOT_APPROVED && <p role="status">{artifact.report.export_counts.NOT_APPROVED} supported configuration items were not selected for approval. Review the proposed selection to include them.</p>}
       {partial && <p className="error-banner" role="status">Partial export: blocked and unsupported work is excluded. This artifact is not deployment-ready.</p>}
       {noTrafficRules && <p role="status">No security policies, NAT rules or static routes are included. This export contains supporting configuration only.</p>}
       {partial && <Button className="secondary-button" disabled={busy} onClick={() => onReviewDecision('')}>Review remaining changes</Button>}

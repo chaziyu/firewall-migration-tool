@@ -141,6 +141,7 @@ def build_deterministic_draft(config, derived, decisions, *, source_digest, targ
                           if by_key[key].target_field == "target_interface"}
         number = 1
         port_pool = MODEL_PORTS.get(settings.get('target_model'))
+        ports = []
         consumers = interface_consumers(config)
         for identity, source in sorted(interfaces.items(), key=lambda row: (
                 bool(port_pool) and not (row[0] in consumers or row[1].ip or row[1].allowaccess),
@@ -149,19 +150,42 @@ def build_deterministic_draft(config, derived, decisions, *, source_digest, targ
             key = make_decision_key(identity[0], "interface", identity[1], "target_interface")
             if (key not in by_key or key in values or by_key[key].mode is PANDecisionMode.UNSUPPORTED
                     or (source.type or "").casefold() not in {"physical", "ethernet"}
-                    or source.interface or source.vlanid is not None or source.members):
+                    or source.interface or source.vlanid is not None or source.members
+                    or f'{identity[0]}/{identity[1]}' in excluded):
                 continue
-            if f'{identity[0]}/{identity[1]}' in excluded:
-                continue
-            while f"ethernet1/{number}" in reserved_ports:
+            match = re.fullmatch(r"port([1-9]\d*)", identity[1])
+            preferred = f"ethernet1/{int(match[1])}" if match else None
+            ports.append((key, preferred))
+        # Reserve numbered proposals before named ports; collisions require an explicit choice.
+        claims = {}
+        for key, preferred in ports:
+            if preferred:
+                claims.setdefault(preferred, []).append(key)
+        for key, preferred in ports:
+            if preferred:
+                if preferred in reserved_ports or len(claims[preferred]) > 1:
+                    evidence[key] = [f"Preferred port {preferred} is claimed by another interface. Choose a distinct target port explicitly."]
+                    continue
+                if port_pool is not None and preferred not in port_pool:
+                    evidence[key] = [f"Preferred port {preferred} is outside the selected target port pool. Review migration scope or choose an available port explicitly."]
+                    continue
+                values[key] = preferred
+                reserved_ports.add(preferred)
+        reserved_ports.update(claims)
+        for key, preferred in ports:
+            if preferred:
+                if key not in values:
+                    continue
+            else:
+                while f"ethernet1/{number}" in reserved_ports:
+                    number += 1
+                if port_pool is not None and f'ethernet1/{number}' not in port_pool:
+                    evidence[key] = ['Target port pool exhausted. Review migration scope or provide a different supported target design.']
+                    continue
+                values[key] = f"ethernet1/{number}"
+                reserved_ports.add(values[key])
                 number += 1
-            if port_pool is not None and f'ethernet1/{number}' not in port_pool:
-                evidence[key] = ['Target port pool exhausted. Review migration scope or provide a different supported target design.']
-                continue
-            values[key] = f"ethernet1/{number}"
-            reserved_ports.add(values[key])
             evidence[key] = ["Automatic offline port allocation proposal; target port availability, hardware and cabling are unverified. Engineer approval is required."]
-            number += 1
     # Draft parents unlock evidence discovery; authoritative decisions never change.
     for _ in range(len(by_key) + 1):
         previous = dict(values)

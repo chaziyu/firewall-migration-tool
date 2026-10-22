@@ -7,6 +7,7 @@ from dataclasses import replace
 
 from ..design.deterministic import (ARTIFACT_TYPE, PAIR, approve_draft, build_draft,
                                     digest, validate_approval)
+from ..design.proposals import build_target_proposals
 from ..models import ASAFinding
 from ..options import ASAMigrationOptions
 from ..planner import FortiGateToCiscoASAPlanner
@@ -40,7 +41,7 @@ def _target_evidence(target, target_text, metadata):
 
 def _prepare(analysis, options, source_digest, *, target=None, target_source_text=None,
              target_metadata=None):
-    parsed = _options(options)
+    parsed, proposals = build_target_proposals(analysis.extracted.config, _options(options))
     evidence = _target_evidence(target, target_source_text, target_metadata)
     plan = FortiGateToCiscoASAPlanner().plan(
         analysis.extracted.config, analysis.derived, parsed,
@@ -60,7 +61,8 @@ def _prepare(analysis, options, source_digest, *, target=None, target_source_tex
               "destination_snapshot_compared": evidence is not None,
               "snapshot_evidence_complete": bool(evidence and required <= set(evidence["complete_families"])),
               "destination_verified": False,
-              "coverage": build_coverage(plan, analysis.extracted.source_objects, analysis.derived)}
+              "coverage": build_coverage(plan, analysis.extracted.source_objects, analysis.derived),
+              "proposals": proposals}
     draft = build_draft(plan, parsed, source_digest, evidence["digest"] if evidence else None)
     return {"plan": plan, "options": parsed, "rendered": rendered, "report": report,
             "draft": draft, "target_evidence": evidence}

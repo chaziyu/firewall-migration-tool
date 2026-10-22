@@ -235,3 +235,8 @@ export function mappingIdentityLabel(key: string): string {
   } catch { /* Legacy keys remain available in technical details. */ }
   return 'related placement'
 }
+
+export const conversionFamilies: Array<[string, string[]]> = [
+  ['Policies', ['security_rule']], ['NAT', ['nat_rule']], ['Routes', ['static_route']],
+  ['Interfaces', ['interface']], ['Objects', ['address', 'address_group', 'service', 'service_group']],
+]

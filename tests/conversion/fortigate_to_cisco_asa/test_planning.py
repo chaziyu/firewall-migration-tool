@@ -7,6 +7,43 @@ from fwmigrate.conversion.fortigate_to_cisco_asa.rendering.renderer import ASACL
 from fwmigrate.conversion.fortigate_to_cisco_asa.planning.naming import item_key
 
 
+def test_missing_references_keep_blockers_without_dangling_edges(asa_source_text, asa_options):
+    from fwmigrate.vendors.fortigate.source_report import FortiGateSourceReporter
+
+    text = asa_source_text + '''config router static
+edit 1
+set dst 192.0.2.0 255.255.255.0
+set device missing-interface
+set gateway 198.51.100.2
+set distance 10
+set priority 0
+set status enable
+next
+end
+config firewall service group
+edit missing-child
+set member missing-service
+set proxy disable
+next
+edit parent
+set member missing-child
+set proxy disable
+next
+end
+'''
+    source = FortiGateSourceReporter().analyze_source(text)
+    plan = FortiGateToCiscoASAPlanner().plan(source.extracted.config, source.derived, asa_options)
+    by_name = {row.source_name: row for row in plan.items}
+    assert 'STATIC_ROUTE_INTERFACE_MAPPING_REQUIRED' in by_name['1'].blockers
+    assert by_name['1'].dependencies == ()
+    assert 'SERVICE_GROUP_MEMBER_UNRESOLVED' in by_name['missing-child'].blockers
+    assert by_name['missing-child'].dependencies == ()
+    assert by_name['parent'].dependencies == (by_name['missing-child'].key,)
+    rendered = ASACLIRenderer().render(plan)
+    assert any(line.startswith('object network ') for line in rendered.commands)
+    assert not any(by_name['parent'].target_name in line for line in rendered.commands)
+
+
 @pytest.mark.parametrize("reverse", [False, True])
 def test_nested_groups_use_group_object_and_dependency_order(asa_source_text, asa_options, reverse):
     from fwmigrate.vendors.fortigate.source_report import FortiGateSourceReporter

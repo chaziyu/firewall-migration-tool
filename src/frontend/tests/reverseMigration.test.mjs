@@ -105,7 +105,7 @@ test('approval stays explicit and failed generation can retry the same approval'
   tree = await h.render()
   assert.equal(approvals, 0)
   assert.ok(elements(tree).some((n) => n.props?.['aria-label'] === 'FortiGate approval preview'))
-  await button(tree, 'Approve these changes and generate commands').props.onClick()
+  await button(tree, 'Approve and generate').props.onClick()
   tree = await h.render()
   assert.equal(approvals, 1)
   assert.equal(h.state().approval.signature, 'current')
@@ -117,20 +117,20 @@ test('approval stays explicit and failed generation can retry the same approval'
   assert.ok(elements(tree).some((n) => n.props?.['aria-label'] === 'FortiGate command preview'))
 })
 
-test('a standalone source opens target setup before review without approving', async () => {
+test('a standalone source opens conversion review without approving', async () => {
   let prepares = 0; let approvals = 0
-  const saved = { ...initial('load'), review: null, options: { ...structuredClone(options), source_scope: '', vdom: '' } }
+  const saved = { ...initial('review'), review: null, options: { ...structuredClone(options), source_scope: '', vdom: '' } }
   const h = harness(saved, {
     prepare: async (_source, requested) => { prepares++; assert.equal(requested.vdom, ''); return review },
     approve: async () => { approvals++; throw new Error('Unexpected approval') },
   })
   const tree = await h.render()
   assert.equal(prepares, 1)
-  assert.equal(h.state().stage, 'place')
+  assert.equal(h.state().stage, 'review')
   assert.equal(h.state().options.vdom, '')
   assert.ok(button(tree, 'Review migration'))
   const nav = elements(tree).find((n) => n.type === 'nav')
-  assert.deepEqual(elements(nav).filter((n) => n.type === 'button').map((n) => n.props.children.at(-1)), ['Source', 'Target setup', 'Review migration', 'Download'])
+  assert.deepEqual(elements(nav).filter((n) => n.type === 'button').map((n) => n.props.children.at(-1)), ['Source', 'Review conversion', 'Download'])
   assert.equal(approvals, 0)
   assert.equal(h.state().artifact, null)
 })
@@ -223,7 +223,7 @@ test('zero-ready drafts show global blockers and input groups instead of an empt
   assert.equal(elements(tree).find((n) => n.type === 'select' && n.props.value === 'all')?.props.value, 'all')
   assert.equal(elements(tree).filter((n) => n.type === 'tr').length, rows.length + 1)
   assert.equal(button(tree, 'Review selected changes').props.disabled, true)
-  assert.ok(elements(tree).filter((n) => n.type === 'input' && n.props.type === 'checkbox').every((n) => n.props.disabled))
+  assert.ok(elements(tree).filter((n) => n.type === 'input' && n.props['aria-label']?.startsWith('Select ')).every((n) => n.props.disabled))
 })
 
 test('manual-only drafts and unfamiliar categories remain visible and searchable', async () => {
@@ -260,6 +260,8 @@ test('selecting a policy previews added prerequisites without approving before c
   let approvals = 0
   const h = harness(initial('review'), { approve: async () => { approvals++; return {} } })
   let tree = await h.render()
+  elements(tree).find((n) => n.props?.['aria-label'] === 'Select all ready changes').props.onChange({ target: { checked: false } })
+  tree = await h.render()
   elements(tree).find((n) => n.props?.['aria-label'] === 'Select vsys:one allow').props.onChange({ target: { checked: true } })
   tree = await h.render()
   button(tree, 'Review selected changes').props.onClick()

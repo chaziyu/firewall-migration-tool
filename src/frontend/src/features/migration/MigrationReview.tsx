@@ -46,12 +46,13 @@ function focusMappingInput(key: string) {
   })
 }
 
-export function MigrationReview({ preview, vendor, pairId = '', onDecisionDocument, onContextChange, requestedDecision, stage, onStageChange, onApproved, reviewTab = 'changes', onReviewTabChange = () => {} }: {
+export function MigrationReview({ preview, vendor, pairId = '', onDecisionDocument, onContextChange, requestedDecision, stage, onStageChange, onApproved, onWorkflowModeChange, reviewTab = 'changes', onReviewTabChange = () => {} }: {
   stage: MigrationStage
   reviewTab?: MigrationReviewTab
   onReviewTabChange?: (tab: MigrationReviewTab) => void
   onStageChange: (stage: MigrationStage) => void
   onApproved?: () => void
+  onWorkflowModeChange?: (mode: 'offline' | 'destination') => void
   preview: SourcePreviewData
   vendor: string
   pairId?: string
@@ -66,7 +67,9 @@ export function MigrationReview({ preview, vendor, pairId = '', onDecisionDocume
   const [targetDevices, setTargetDevices] = useState<string[]>([])
   const [targetDevice, setTargetDevice] = useState(workspace().targetDevice)
   const [referenceRole, setReferenceRole] = useState<ReferenceRole>(workspace().referenceRole)
+  const mappingsEditor = useRef<HTMLDetailsElement>(null)
   const setReviewSection = useCallback((value: 'target' | 'mappings' | 'configuration') => {
+    if (value === 'mappings' && mappingsEditor.current) mappingsEditor.current.open = true
     onStageChange(value === 'target' ? 'load' : value === 'mappings' ? 'place' : 'review')
   }, [onStageChange])
   const [mappingView, setMappingView] = useState<'guided' | 'bulk'>('guided')
@@ -599,12 +602,15 @@ export function MigrationReview({ preview, vendor, pairId = '', onDecisionDocume
 
   return (
     <section className="panel migration-review" aria-labelledby="migration-review-title">
-      <h2 id="migration-review-title" tabIndex={-1}>{stage === 'load' ? 'Source and conversion settings' : stage === 'review' ? 'Review migration' : workflowMode === 'offline' ? 'Target setup' : 'Resolve mappings'}</h2>
+      <h2 id="migration-review-title" tabIndex={-1}>{workflowMode === 'offline' && stage !== 'load' ? 'Review conversion' : stage === 'load' ? 'Source and conversion settings' : stage === 'review' ? 'Review migration' : 'Resolve mappings'}</h2>
 
-      <div hidden={stage !== 'load'}>
+      <details className="conversion-options" hidden={stage !== 'load' && workflowMode !== 'offline'}>
+      <summary>Advanced: destination comparison and hardware</summary>
       <label className="field">Migration intent<select aria-label="Migration intent" value={workflowMode} disabled={busy} onChange={async (event) => {
         const mode = event.target.value as 'offline' | 'destination'
         setWorkflowMode(mode)
+        onWorkflowModeChange?.(mode)
+        onStageChange(mode === 'offline' ? 'review' : 'load')
         setReviewCurrent(false)
         setDeterministicDraft(null)
         setTargetSource(null); setTargetDevice(''); setTargetFilename(''); setTargetDevices([])
@@ -642,8 +648,9 @@ export function MigrationReview({ preview, vendor, pairId = '', onDecisionDocume
       </div>
 
       </details>
-      <Button disabled={busy || !reviewCurrent} onClick={() => setReviewSection('mappings')}>Continue to target setup</Button>
-      </div>
+      {workflowMode === 'offline' && settingsEditor('hardware')}
+      {workflowMode === 'destination' && <Button disabled={busy || !reviewCurrent} onClick={() => setReviewSection('mappings')}>Continue to target setup</Button>}
+      </details>
 
       {error && <div className="error-banner" role="alert">{error}<button type="button" disabled={busy} onClick={() => void run(async () => { if (recoverableFailure) await applyMappings(); else await retryReview.current?.() })}>Retry intended draft update</button></div>}
       {recoverableFailure && <p role="status">Correct the staged values below and validate again. Other pending edits are preserved. Approval and export remain unavailable.</p>}
@@ -652,12 +659,12 @@ export function MigrationReview({ preview, vendor, pairId = '', onDecisionDocume
       {(status || busy) && <p role="status" aria-live="polite" className="migration-status">{busy ? 'Preparing and validating the design draft…' : status}{busy && <span aria-hidden="true"> · {elapsedSeconds}s elapsed</span>}</p>}
       {review && <>
         {workflowMode !== 'offline' && !!changedMappings.length && <div className="review-work-card" role="status"><p>{changedMappings.length} staged mapping edits. Blank fields stay local and unresolved.</p><button type="button" className="secondary-button" disabled={busy || !changedMappings.some((row) => drafts[row.decision_key!].trim())} onClick={() => reviewProposals(changedMappings.map((row) => row.decision_key!), (decision) => drafts[decision.key])}>Review staged mappings</button></div>}
-        {deterministicDraft && <div hidden={stage !== 'review'}>
+        {deterministicDraft && <div hidden={stage !== 'review' && !(workflowMode === 'offline' && stage === 'place')}>
           <section aria-label="Configuration decisions">
             {pendingChangesControls()}
           </section>
           <MigrationDesignSummary draft={deterministicDraft} approvedItems={approvedItems} />
-          <p>Resolve the required inputs, validate your changes, then approve supported configuration in Changes. Separate work remains outside the generated commands.</p>
+          <p>Review the included configuration and mapping assumptions before approval. Edit and validate proposals as needed. Unresolved and manual work stays outside the generated commands.</p>
           <p className="migration-issue-counts">Changes counts configuration items. The other tabs count issues; one issue can affect several items.</p>
           <div role="tablist" aria-label="Review migration" className="migration-review-tabs" onKeyDown={tabKeyboard}>
             {reviewTabs.map(([key, label, count]) => <button key={key} id={`migration-tab-${key}`} role="tab" type="button"
@@ -665,7 +672,7 @@ export function MigrationReview({ preview, vendor, pairId = '', onDecisionDocume
               onClick={() => onReviewTabChange(key)}>{label} <span>{count.toLocaleString()} {key === 'changes' ? 'items' : 'issues'}</span></button>)}
           </div>
           <div id="migration-panel-changes" role="tabpanel" aria-labelledby="migration-tab-changes" hidden={reviewTab !== 'changes'}>
-          <MigrationDesignReview draft={deterministicDraft} busy={busy || !reviewCurrent || !!changedMappings.length || settingsDirty || approvalRevoked}
+          <MigrationDesignReview key={deterministicDraft.digest} directApproval={workflowMode === 'offline'} draft={deterministicDraft} busy={busy || !reviewCurrent || !!changedMappings.length || settingsDirty || approvalRevoked}
           approvedItems={approvedItems}
           onResolveInputs={() => openInputIssue()}
           onSelectIssue={openInputIssue}
@@ -684,14 +691,14 @@ export function MigrationReview({ preview, vendor, pairId = '', onDecisionDocume
             {workflowMode === 'destination' && settingsEditor('management')}
           </details>
         </div>}
-        <section hidden={stage !== 'place'} aria-label="Resolve mappings">
+        <section hidden={stage !== 'place' && !(workflowMode === 'offline' && stage === 'review')} aria-label="Resolve mappings">
         {workflowMode === 'destination' && settingsEditor('hardware')}
-        {workflowMode === 'offline' && deterministicDraft && <MigrationTargetSetup draft={deterministicDraft} review={review} drafts={drafts}
+        {workflowMode === 'offline' && deterministicDraft && <details ref={mappingsEditor}><summary>Edit mappings</summary><MigrationTargetSetup draft={deterministicDraft} review={review} drafts={drafts}
           approvedItems={approvedItems} busy={editorsBusy} focusRequest={setupFocus}
           settings={stagedSettings} onSettingsChange={changeSettings} settingsDirty={settingsDirty} approvalRevoked={approvalRevoked}
-          onUndo={undoPendingEdits} onViewIssues={viewIssues} hardwareCheck={settingsEditor('hardware')} managementAccess={settingsEditor('management')}
+          onUndo={undoPendingEdits} onViewIssues={viewIssues} managementAccess={settingsEditor('management')}
           onChange={(key, value) => setDrafts((current) => ({ ...current, [key]: value }))}
-          onApply={() => run(applyMappings)} onReview={() => setReviewSection('configuration')} />}
+          onApply={() => run(applyMappings)} onReview={() => { if (mappingsEditor.current) mappingsEditor.current.open = false; setReviewSection('configuration') }} /></details>}
         {workflowMode === 'destination' && <details className="migration-review-tools" open>
         <summary>Advanced mapping editors</summary>
         <p>Review VDOM, VSYS, and virtual-router ownership, then allocate parent ports. Changes remain proposals until design approval.</p>

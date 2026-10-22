@@ -22,6 +22,8 @@ from ..options import SRXMigrationOptions
 from ..planner import FortiGateToJuniperSRXPlanner
 from ..rendering.renderer import JunosSetRenderer
 from ..requirements import build_mapping_requirements
+from ..requirements import source_vdoms
+from ..recommendations.target_mapping import propose_new_target
 from ..review.workflow import build_review_report
 from ..target.comparison import compare_target_plan
 from ..target.evidence import build_target_evidence
@@ -44,6 +46,8 @@ def _parsed_options(options):
 
 def _plan(analysis, options, *, target=None, target_source_text=None, target_metadata=None):
     parsed = _parsed_options(options)
+    if target is None and (parsed.source_vdom or len(source_vdoms(analysis.extracted.config)) == 1):
+        parsed = propose_new_target(analysis.extracted.config, analysis.derived, parsed)
     plan = FortiGateToJuniperSRXPlanner().plan(
         analysis.extracted.config,
         analysis.derived,

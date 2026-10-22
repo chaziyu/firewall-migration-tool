@@ -34,6 +34,7 @@ def test_new_checkpoint_target_without_upload_exports_approved_commands():
     assert requirements.json["requirements"] == []
     prepared = client.post(prefix + "/design/prepare", json=payload)
     assert prepared.status_code == 200, prepared.json
+    assert prepared.json["source_vdoms"] == ["root"]
     assert prepared.json["options"]["policy_package"]
     selected = [row["key"] for row in prepared.json["report"]["items"] if row["family"] == "policy"]
     approved = client.post(prefix + "/design/approve", json={**payload, "draft": prepared.json["draft"], "selected_items": selected})
