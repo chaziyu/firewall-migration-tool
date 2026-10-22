@@ -6,7 +6,7 @@ from pathlib import Path
 from time import perf_counter
 from typing import Any, BinaryIO, Iterable, Mapping, Sequence
 
-from ....source_reporting.excel_style import report_cell_value, style_report_header, write_report_summary
+from ....source_reporting.excel_style import REPORT_BODY_NOTE, report_cell_value, readable_report_row, style_report_header, write_report_summary
 
 from openpyxl import Workbook
 from openpyxl.cell import WriteOnlyCell
@@ -473,7 +473,7 @@ def _write_table_sheet(
         row_count += 1
         values = [report_cell_value(sheet, row_count + 3, column, _excel_safe(row.get(header)))
                   for column, header in enumerate(headers, 1)]
-        sheet.append(values)
+        sheet.append(readable_report_row(sheet, row_count + 3, values))
         if sheet_name == "Review Summary" and row.get("First Detail"):
             column = headers.index("First Detail") + 1
             cell = sheet.cell(row_count + 3, column)
@@ -489,7 +489,7 @@ def _write_table_sheet(
         if isinstance(outline, int) and outline > 0:
             sheet.row_dimensions[row_count + 3].outlineLevel = min(outline, 7)
 
-    note.value = _sheet_note(sheet_name, row_count)
+    note.value = _sheet_note(sheet_name, row_count) + " " + REPORT_BODY_NOTE
 
     if row_count:
         sheet.auto_filter.ref = f"A3:{get_column_letter(max_col)}{row_count + 3}"
@@ -533,7 +533,7 @@ def _write_table_sheet_fast(
                 "FAST lightweight export. " + _POLICY_ACTION_NOTE
                 if sheet_name == "Policies"
                 else "FAST lightweight export; values preserve explicit source data and analysis columns."
-            ),
+            ) + " " + REPORT_BODY_NOTE,
             font=_MUTED_FONT,
             alignment=Alignment(wrap_text=True, vertical="top"),
         ),
@@ -557,7 +557,7 @@ def _write_table_sheet_fast(
             cell = _fast_cell(sheet, "Open detail")
             cell.hyperlink = f"#'{target_sheet}'!{target_cell}"
             values[column] = cell
-        sheet.append(values)
+        sheet.append(readable_report_row(sheet, row_count + 3, values))
 
     if row_count:
         sheet.auto_filter.ref = f"A3:{get_column_letter(max_col)}{row_count + 3}"

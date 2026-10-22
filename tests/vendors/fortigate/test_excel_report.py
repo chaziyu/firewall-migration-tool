@@ -275,7 +275,7 @@ class ExcelReportTest(unittest.TestCase):
             assert not fast[sheet_name].merged_cells.ranges
         assert fast["Addresses"].column_dimensions["A"].width == 30
 
-    def test_full_keeps_styled_headers_and_plain_data_rows(self):
+    def test_full_keeps_plain_scalars_and_wraps_long_business_values(self):
         workbook = self._workbook(_SAMPLE_CONFIG)
         sheet = workbook["Addresses"]
 
@@ -285,7 +285,10 @@ class ExcelReportTest(unittest.TestCase):
         assert sheet["A3"].fill.fill_type == "solid"
         assert sheet["A3"].font.bold
         assert sheet["A3"].border.bottom.style == "thin"
-        assert all(not cell.has_style for cell in sheet[4])
+        assert not sheet["A4"].has_style
+        for cell in sheet[4]:
+            if cell.has_style:
+                assert cell.alignment.wrap_text and cell.alignment.vertical == "top"
         assert workbook["FortiGate Source Inventory"].sheet_view.showGridLines is True
         assert all(not cell.has_style for cell in workbook["FortiGate Source Inventory"][4])
         assert "Extraction Coverage" in workbook.sheetnames

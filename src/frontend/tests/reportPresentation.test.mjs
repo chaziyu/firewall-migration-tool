@@ -61,7 +61,7 @@ test('summary buttons retain their section and subsection destinations', () => {
   const source = readFileSync(new URL('../src/features/report/SourceReport.tsx', import.meta.url), 'utf8')
   const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText
   const exports = {}
-  const modules = { react: hooks, 'react/jsx-runtime': jsxRuntime, './reportPresentation': presentation, './ReportDetails': {}, './ExcelExportControls': {}, '../../components/common/tabKeyboard': {} }
+  const modules = { react: hooks, 'react/jsx-runtime': jsxRuntime, './reportPresentation': presentation, './ReportDetails': {}, './ExcelExportControls': {}, '../../components/common/tabKeyboard': {}, '../../components/common/ErrorBanner': {} }
   new Function('require', 'exports', compiled)((name) => { assert.ok(name in modules); return modules[name] }, exports)
   function nodes(node) {
     if (Array.isArray(node)) return node.flatMap(nodes)
@@ -338,4 +338,29 @@ test('Check Point addresses show explicit IPv4 and IPv6 definitions', () => {
   ])
   assert.equal(fieldLabel('ipv4_value'), 'IPv4 definition')
   assert.equal(fieldLabel('ipv6_value'), 'IPv6 definition')
+})
+test('native finding identity matches the exact rulebase owner without name fallback', () => {
+  const rows = [
+    { name: 'same', scope: 'vsys:a', source_identity: ['vsys:a', 'security', 'same', 1, 'pre'] },
+    { name: 'same', scope: 'vsys:a', source_identity: ['vsys:a', 'security', 'same', 2, 'post'] },
+    { name: 'same', scope: 'vsys:b', source_identity: ['vsys:b', 'security', 'same', 1, 'pre'] },
+  ]
+  assert.deepEqual(matchingSourceRows(rows, { object_name: 'same', source_identity: [...rows[1].source_identity] }), [rows[1]])
+  assert.deepEqual(matchingSourceRows(rows, { object_name: 'same', source_identity: ['missing'] }), [])
+  assert.deepEqual(matchingSourceRows(rows, { object_name: 'same', scope: 'vsys:a', source_identity: [] }), rows.slice(0, 2))
+})
+
+test('FortiGate restored sections and inspection details retain full nested source data', () => {
+  const policy = { name: 'review', vdom: 'branch', groups: ['staff'], logtraffic: 'all', comments: 'original',
+    ips_sensor: 'sensor', source_addresses: null, services: [], additional_settings: { unknown: 0, password: 'SECRET_SENTINEL' } }
+  const fields = detailGroups(policy, 'policies', 'fortigate').flatMap((group) => group.fields)
+  assert.equal(fields.find(([key]) => key === 'logtraffic')[1], 'all')
+  assert.deepEqual(fields.find(([key]) => key === 'groups')[1], ['staff'])
+  assert.equal(fields.find(([key]) => key === 'source_addresses')[1], null)
+  assert.deepEqual(fields.find(([key]) => key === 'services')[1], [])
+  assert.ok(!JSON.stringify(fields).includes('SECRET_SENTINEL'))
+  const sections = reportSections({ zones: [{}], user_groups: [{}], admin_profiles: [{}], ips_sensors: [{}],
+    external_resources: [{}], ssl_vpn_settings: [{ authentication_rules: [{ id: 1, groups: ['staff'] }] }] })
+  assert.equal(sections.find((group) => group.label === 'Objects').rows.length, 5)
+  assert.deepEqual(sections.find((group) => group.label === 'VPN').rows[0].authentication_rules[0].groups, ['staff'])
 })

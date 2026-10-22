@@ -1,6 +1,27 @@
 from pathlib import Path
 
 from fwmigrate.vendors.palo_alto.source_report import PaloAltoSourceReporter
+from fwmigrate.source_reporting.web_report import normalize_web_report
+
+
+def test_reference_findings_keep_exact_owner_identity_in_normalized_preview():
+    source = """<config><shared><profile-group><entry name='same'><vulnerability><member>missing-profile</member></vulnerability></entry></profile-group>
+      <pre-rulebase><security><rules><entry name='same'><source><member>missing-address</member></source></entry></rules></security></pre-rulebase>
+      <post-rulebase><security><rules><entry name='same'><source><member>any</member></source></entry></rules></security></post-rulebase>
+    </shared></config>"""
+    reporter = PaloAltoSourceReporter()
+    preview = normalize_web_report(reporter.build_preview(reporter.analyze_source(source)), "palo_alto")
+    sections = preview["sections"]
+    assert len(sections["unresolved_references"]) == 2
+    assert all(isinstance(item, str) for item in sections["unresolved_references"])
+    targets = {"policy": sections["policies"], "security-profile-group": sections["security_profile_groups"]}
+    for finding in sections["validation"]:
+        matches = [row for row in targets[finding["object_type"]]
+                   if row["source_identity"] == finding["source_identity"]]
+        assert len(matches) == 1
+        assert matches[0]["source_path"] == finding["source_path"]
+        if finding["object_type"] == "policy":
+            assert matches[0]["rulebase_position"] == "pre"
 
 
 def test_web_report_has_expected_sections():

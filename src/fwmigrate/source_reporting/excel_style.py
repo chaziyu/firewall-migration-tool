@@ -14,6 +14,8 @@ _HEADER_FONT = Font(color="FFFFFF", bold=True, size=10)
 _TITLE_FILL = PatternFill("solid", fgColor="17324D")
 _TITLE_FONT = Font(color="FFFFFF", bold=True, size=14)
 _HEADER_ALIGNMENT = Alignment(wrap_text=True, vertical="center")
+_BODY_ALIGNMENT = Alignment(wrap_text=True, vertical="top")
+REPORT_BODY_NOTE = "Long values use bounded-height rows; use the formula bar for full cell text."
 _HEADER_BORDER = Border(bottom=Side(style="thin", color="D9E2DF"))
 _XML_UNSAFE = compile_regex(r"[\x00-\x08\x0b\x0c\x0e-\x1f\ud800-\udfff\ufffe\uffff]")
 
@@ -22,6 +24,26 @@ def style_report_header(cell) -> None:
     """Use the same compact header in native and streaming vendor worksheets."""
     cell.fill, cell.font, cell.alignment = _HEADER_FILL, _HEADER_FONT, _HEADER_ALIGNMENT
     cell.border = _HEADER_BORDER
+
+
+def readable_report_row(sheet, row_number, values):
+    """Wrap long visible business values; keep short and hidden evidence cells plain."""
+    result = []
+    lines = 1
+    for column, value in enumerate(values, 1):
+        dimension = sheet.column_dimensions[get_column_letter(column)]
+        width = max(1, int(dimension.width or 28) - 2)
+        if isinstance(value, str) and not dimension.hidden and ("\n" in value or len(value) > width):
+            cell = WriteOnlyCell(sheet, value)
+            cell.alignment = _BODY_ALIGNMENT
+            result.append(cell)
+            lines = max(lines, sum(max(1, len(wrap(line, width=width))) for line in value.split("\n")))
+        else:
+            result.append(value)
+    if lines > 1:
+        # Excel caps row heights; full values remain available in the cell/overflow sheet.
+        sheet.row_dimensions[row_number].height = min(409, lines * 15 + 4)
+    return result
 
 
 def report_column_width(header) -> int:
