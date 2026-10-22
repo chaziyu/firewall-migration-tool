@@ -445,6 +445,12 @@ migration coverage. Programmatic callers can supply `source_inventory` to the
 pair-specific pipeline; `coverage.inventory_available` records whether that
 evidence was supplied.
 
+Central-SNAT entries remain manual work. In a VDOM with a central-SNAT table or
+preserved central/NGFW mode controls, policy NAT and VIP conversion require a
+separate mode/order review. This includes explicit disable/unset controls: the
+pair does not yet verify these source-mode semantics and does not infer an
+activation state or default from them.
+
 Target-specific information that cannot be derived safely requires an explicit mapping or decision.
 
 Suggestions are not treated as confirmed engineer decisions.

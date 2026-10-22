@@ -52,7 +52,8 @@ class FortiGateToPaloAltoPlanner:
         dhcp_servers = plan_dhcp(source, options, derived)
         explicit_all = explicit_all_vdoms(source)
         policies = plan_policies(source, options, derived, explicit_all=explicit_all)
-        nat_rules = plan_nat(source, derived, options, explicit_all=explicit_all)
+        nat_rules = plan_nat(source, derived, options, explicit_all=explicit_all,
+                             source_inventory=kwargs.get("source_inventory"))
         ike_crypto_profiles, ipsec_crypto_profiles = plan_vpn_crypto(source, options, derived)
         from .planning.vpn import plan_vpn_structure
         gateways, tunnels = plan_vpn_structure(source, options) if include_configuration else ((), ())

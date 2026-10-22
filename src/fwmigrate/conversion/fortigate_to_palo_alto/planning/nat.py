@@ -134,9 +134,27 @@ def _packet_disjoint_test(source, derived=None):
     return independent
 
 
-def plan_nat(source: Any, derived: Any, options: Any, *, explicit_all=None):
+def _central_nat_review_scopes(source, source_inventory):
+    """Preserved controls require mode review; presence does not prove activation.
+
+    Central/NGFW mode controls are not yet typed and verified by this pair.
+    Do not interpret enable, disable, unset or defaults as a migration approval.
+    An unscoped/global control cannot safely be assigned to just one VDOM.
+    """
+    scopes = {item.vdom or 'root' for item in getattr(source, 'central_snat', ())}
+    for record in source_inventory or ():
+        if record.source_path == 'system settings' and any(
+                command.key in {'central-nat', 'ngfw-mode'} for command in record.commands):
+            scopes.add(record.vdom if record.cli_scope == 'vdom' else None)
+    return scopes
+
+
+def plan_nat(source: Any, derived: Any, options: Any, *, explicit_all=None, source_inventory=None):
     if explicit_all is None:
         explicit_all = explicit_all_vdoms(source)
+    central_review = _central_nat_review_scopes(source, source_inventory)
+    central_warning = ('Central NAT configuration requires manual verification of source mode and ordered '
+                       'translation semantics before policy NAT or VIP conversion')
     external_zones = getattr(options, 'conversion_settings', {}).get('vip_external_zones', {})
     identities = {(vip.vdom or 'root', vip.name) for vip in getattr(source, 'vips', ())}
     if any((vdom, name) not in identities for vdom, mappings in external_zones.items() for name in mappings):
@@ -159,6 +177,8 @@ def plan_nat(source: Any, derived: Any, options: Any, *, explicit_all=None):
             if len(item.egress_interfaces) == 1 else None
         )
         warnings = list(item.issues)
+        if vdom in central_review or None in central_review:
+            warnings.append(central_warning)
         warnings.extend(precedence.get((vdom, item.policy_id), ()))
         translated = item.translated_addresses[0] if len(item.translated_addresses) == 1 else None
         if len(item.translated_addresses) != 1:
@@ -230,6 +250,8 @@ def plan_nat(source: Any, derived: Any, options: Any, *, explicit_all=None):
         consumers = vip_consumers.get((vdom, vip.name), ())
         referencing = [policy for policy, _ in consumers]
         ext, mapped, warnings = vip_translation(vip, derived)
+        if vdom in central_review or None in central_review:
+            warnings.append(central_warning)
         port_translation = vip_port_translation(vip, derived)
         warnings.extend(warning for _, issues in consumers for warning in issues)
         if not referencing:
