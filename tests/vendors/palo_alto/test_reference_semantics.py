@@ -31,6 +31,34 @@ def test_reference_resolution_reports_missing_references_without_repairing_sourc
     assert rule.source == ["missing-x"]
 
 
+def test_predefined_edls_and_vulnerability_profiles_remain_source_only():
+    source = """<config><shared><profile-group><entry name="profiles"><vulnerability>
+      <member>strict</member><member>missing-custom-profile</member>
+    </vulnerability></entry></profile-group><rulebase><security><rules><entry name="rule">
+      <source><member>panw-highrisk-ip-list</member><member>panw-known-ip-list</member>
+      <member>panw-bulletproof-ip-list</member><member>panw-torexit-ip-list</member><member>panw-typo-ip-list</member></source>
+      <profile-setting><profiles><vulnerability><member>default</member></vulnerability></profiles></profile-setting>
+    </entry></rules></security></rulebase></shared></config>"""
+    analysis = PaloAltoSourceReporter().analyze_source(source)
+    references = {item.reference_name: item for item in analysis.derived.reference_resolutions}
+    for name in ('panw-highrisk-ip-list', 'panw-known-ip-list', 'panw-bulletproof-ip-list', 'panw-torexit-ip-list', 'default', 'strict'):
+        assert references[name].status == "SOURCE_ONLY"
+        assert "predefined" in references[name].resolution_reason
+    assert references['panw-typo-ip-list'].status == 'UNRESOLVED'
+    assert references['missing-custom-profile'].status == 'UNRESOLVED'
+    assert len(analysis.validation.errors) == 2
+    assert analysis.config.vulnerability_profiles == []
+    assert analysis.config.addresses == []
+    explicit = source.replace('<shared>', '<shared><address><entry name="panw-bulletproof-ip-list"><ip-netmask>192.0.2.0/24</ip-netmask></entry></address><profiles><vulnerability><entry name="default"/></vulnerability></profiles>')
+    analysis = PaloAltoSourceReporter().analyze_source(explicit)
+    references = {item.reference_name: item for item in analysis.derived.reference_resolutions}
+    assert references['panw-bulletproof-ip-list'].status == 'RESOLVED'
+    assert references['default'].status == 'RESOLVED'
+    ambiguous = explicit.replace('<address>', '<address><entry name="panw-bulletproof-ip-list"><ip-netmask>198.51.100.0/24</ip-netmask></entry>', 1)
+    analysis = PaloAltoSourceReporter().analyze_source(ambiguous)
+    assert next(item for item in analysis.derived.reference_resolutions if item.reference_name == 'panw-bulletproof-ip-list').status == 'AMBIGUOUS'
+
+
 def test_source_only_target_is_reviewed_but_missing_target_is_error():
     shared = PANScope(kind="shared", name="shared")
     config = PANOSConfig(scopes=[shared], security_profile_groups=[PANSecurityProfileGroup(name="group", scope=shared, vulnerability=["visible", "missing"])],

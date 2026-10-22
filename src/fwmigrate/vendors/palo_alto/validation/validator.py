@@ -201,6 +201,11 @@ def validate_panos_config(config: PANOSConfig, derived: PANOSDerivedViews) -> PA
     for message in getattr(derived.scope_hierarchy, "issues", ()):
         _issue(issues, "error", "scope", message)
     for item in derived.reference_resolutions:
+        if item.resolution_reason.startswith("NETWORK_ADDRESS_OBJECT_REVIEW:"):
+            _issue(issues, "warning", "reference", f"named network address {item.reference_name!r} requires review: {item.resolution_reason.split(': ', 1)[1]}",
+                   field=item.owner_field, scope=item.source_scope, source_name=item.owner_name, object_type=item.owner_family,
+                   source_path=item.owner_source_path, identity=item.owner_identity)
+            continue
         if item.status == "SOURCE_ONLY" and item.resolution_reason.startswith("EXTRACTION_INCOMPLETE"):
             _issue(issues, "warning", "reference", f"source-only PAN-OS reference {item.reference_name!r}: extraction incomplete",
                    field=item.owner_field, scope=item.source_scope, source_name=item.owner_name, object_type=item.owner_family or "reference", source_path=item.owner_source_path, identity=item.owner_identity)
@@ -237,9 +242,14 @@ def validate_panos_config(config: PANOSConfig, derived: PANOSDerivedViews) -> PA
                 group, "group_type",
             )
 
+    network_address_references = {
+        (item.owner_identity, item.owner_field, item.reference_name)
+        for item in derived.reference_resolutions
+        if item.resolution_reason.startswith("NETWORK_ADDRESS_OBJECT_REVIEW:")
+    }
     for item in (*config.interfaces, *config.interface_units):
         for value in getattr(item, "ipv4_addresses", ()) or ():
-            if not _validate_interface_address(value, 4):
+            if (source_identity(item), "ipv4_addresses", value) not in network_address_references and not _validate_interface_address(value, 4):
                 _issue(issues, "error", "interface", f"malformed IPv4 address: {value!r}", item, "ipv4_addresses")
         for value in getattr(item, "ipv6_addresses", ()) or ():
             text = value if isinstance(value, str) else getattr(value, "address", None)
@@ -259,9 +269,9 @@ def validate_panos_config(config: PANOSConfig, derived: PANOSDerivedViews) -> PA
                 )
             else:
                 route_names[key] = route
-        if route.destination and not _validate_ip(route.destination):
+        if route.destination and (source_identity(route), "destination", route.destination) not in network_address_references and not _validate_ip(route.destination):
             _issue(issues, "error", "route", f"malformed route destination: {route.destination!r}", route, "destination")
-        if route.nexthop_ip_address and not _validate_ip(route.nexthop_ip_address, ranges=False):
+        if route.nexthop_ip_address and (source_identity(route), "nexthop_ip_address", route.nexthop_ip_address) not in network_address_references and not _validate_ip(route.nexthop_ip_address, ranges=False):
             _issue(issues, "error", "route", f"malformed next-hop IP: {route.nexthop_ip_address!r}", route, "nexthop_ip_address")
 
     for service in config.services:

@@ -1,13 +1,81 @@
 from __future__ import annotations
 
-from collections import defaultdict
+from collections import Counter, defaultdict
 from typing import Any, Iterable
+
+from pydantic import BaseModel
 
 from .report_values import address_value, policy_nat_entries, policy_nat_review
 from .derived import DerivedViews
 from .model.source import FGConfig
 from .validation.index import ValidationIssueIndex
 from .validation.models import ValidationResult
+from .security.extraction import sanitize_source_attributes
+from .security.extraction import sanitize_source_value
+from .extraction.result import ExtractionResult
+from .extraction.coverage import (
+    build_typed_source_inventory, build_typed_source_identity_index,
+    find_typed_source_object, extraction_status, supports_path,
+)
+
+
+def _source_evidence(extracted: ExtractionResult) -> tuple[dict[str, Any], dict[str, Any]]:
+    typed = build_typed_source_inventory(extracted.config)
+    index = build_typed_source_identity_index(typed)
+    by_path: dict[str, Counter] = defaultdict(Counter)
+    records = []
+    for record in extracted.source_objects:
+        status = extraction_status(supports_path(record.source_path), find_typed_source_object(index, record), record)
+        by_path[record.source_path][status] += 1
+        records.append({
+            "name": record.object_name, "vdom": record.vdom, "source_path": record.source_path,
+            "cli_scope": record.cli_scope, "cli_path": list(record.cli_path),
+            "parent_objects": list(record.parent_objects), "extraction_status": status,
+            "values": sanitize_source_attributes(record.values, preserve_keys=True), "explicit_fields": list(record.explicit_fields),
+            "unset_fields": list(record.unset_fields), "start_line_number": record.start_line_number,
+            "end_line_number": record.end_line_number,
+            "commands": [{"operation": command.operation, "field": command.key,
+                          "values": sanitize_source_value(command.key, list(command.values)),
+                          "line_number": command.line_number} for command in record.commands],
+        })
+    coverage = []
+    for path in sorted(set(by_path) | {path for path, items in typed.items() if items}):
+        statuses = by_path[path]
+        coverage.append({
+            "source_path": path, "source_records": sum(statuses.values()), "typed_objects": len(typed.get(path, ())),
+            "status": "MODEL_GAP" if statuses["MODEL_GAP"] else next(iter(statuses)) if len(statuses) == 1 else "MIXED",
+            "source_only_records": statuses["SOURCE_ONLY"], "empty_sections": statuses["EMPTY_SECTION"],
+            "model_gaps": statuses["MODEL_GAP"], "typed_with_additional_settings": statuses["TYPED_WITH_RAW_EXTRA"],
+        })
+    counts = Counter(row["extraction_status"] for row in records)
+    return ({"records": len(records), "source_only_count": counts["SOURCE_ONLY"],
+             "unsupported_count": counts["SOURCE_ONLY"], "empty_section_count": counts["EMPTY_SECTION"],
+             "model_gap_count": counts["MODEL_GAP"], "typed_with_additional_settings_count": counts["TYPED_WITH_RAW_EXTRA"]},
+            {"extraction_coverage": coverage, "source_inventory": records})
+
+
+def _source_details(value: Any) -> Any:
+    """Retain explicit source detail and safe nested evidence without adding defaults."""
+    if isinstance(value, BaseModel):
+        row = {}
+        for name in type(value).model_fields:
+            item = getattr(value, name)
+            if name == "raw_extra":
+                row["additional_settings"] = _source_details(item)
+            elif name == "explicit_fields":
+                row[name] = sorted(item)
+            elif isinstance(item, list) and not item and name not in value.model_fields_set:
+                row[name] = None
+            else:
+                row[name] = _source_details(item)
+        return sanitize_source_attributes(row)
+    if isinstance(value, dict):
+        return sanitize_source_attributes({key: _source_details(item) for key, item in value.items()})
+    if isinstance(value, (list, tuple)):
+        return [_source_details(item) for item in value]
+    if isinstance(value, (set, frozenset)):
+        return sorted(value)
+    return value
 
 
 def _messages(
@@ -29,13 +97,12 @@ def _review(*groups: Iterable[str]) -> str | None:
 
 
 def _source_rows(items: Iterable[Any], fields: tuple[str, ...]) -> list[dict[str, Any]]:
-    """Project only reviewed source fields; never serialize raw evidence or credentials."""
+    """Project reviewed source fields plus sanitized evidence and explicitness."""
     rows = []
     for item in items:
-        row = item.model_dump(mode="json", include=set(fields))
-        for field, value in row.items():
-            if isinstance(value, list) and not value and field not in item.model_fields_set:
-                row[field] = None
+        details = _source_details(item)
+        row = {key: value for key, value in details.items()
+               if key in fields or key in {"additional_settings", "explicit_fields"}}
         rows.append(row)
     return rows
 
@@ -91,7 +158,7 @@ def _interface_topology_rows(
         key = (row["vdom"], row["name"])
         if row["parent"] and (row["vdom"], row["parent"]) in by_key:
             children[(row["vdom"], row["parent"])].append(key)
-        for member in row["members"]:
+        for member in row["members"] or ():
             member_key = (row["vdom"], member)
             aggregate_members[key].append(member_key)
             owned.add(member_key)
@@ -195,6 +262,7 @@ def build_web_report(
     validation: ValidationResult,
     *,
     top_level_sections: int,
+    extracted: ExtractionResult | None = None,
 ) -> dict[str, Any]:
     """Build a secret-safe presentation model for the browser report."""
 
@@ -226,8 +294,11 @@ def build_web_report(
     interfaces = []
     for item in config.interfaces:
         top = topology.get((item.vdom, item.name))
+        source = _source_rows((item,), ("alias", "description", "mode", "allowaccess", "vlanid", "vrf",
+                                       "secondary_ips", "members", "cli_scope", "cli_vdom", "unset_fields"))[0]
         interfaces.append(
             {
+                **source,
                 "name": item.name,
                 "vdom": item.vdom,
                 "ip": item.ip,
@@ -239,7 +310,7 @@ def build_web_report(
                 "aggregate": top.aggregate if top else None,
                 "physical_interfaces": list(top.physical_interfaces) if top else [],
                 "topology_path": list(top.path) if top else [],
-                "members": list(item.members),
+                "members": source["members"],
                 "review": _review(
                     top.issues if top else (),
                     _messages(
@@ -374,24 +445,34 @@ def build_web_report(
     ]
 
     policies = []
-    for item in config.policies:
+    policy_details = _source_rows(config.policies, (
+        "srcaddr_negate", "dstaddr_negate", "service_negate", "groups", "users", "logtraffic", "comments",
+        "utm_status", "inspection_mode", "profile_type", "profile_group", "av_profile", "ips_sensor",
+        "webfilter_profile", "dnsfilter_profile", "application_list", "ssl_ssh_profile", "vpntunnel",
+        "nat64", "nat46", "natinbound", "natoutbound", "natip", "ippool", "poolname", "poolname6",
+        "fixedport", "port_preserve", "internet_service", "internet_service_name", "internet_service_group",
+        "internet_service_custom", "internet_service_src", "internet_service_src_name",
+        "internet_service_src_group", "internet_service_src_custom",
+    ))
+    for item, detail in zip(config.policies, policy_details):
         key = (item.vdom, item.policy_id)
         nat_items = nat.get(key, ())
         policies.append(
             {
+                **detail,
                 "policy_id": item.policy_id,
                 "name": item.name,
                 "source_name": item.name,
                 "vdom": item.vdom,
-                "source_interfaces": list(item.srcintf or ()),
-                "destination_interfaces": list(item.dstintf or ()),
-                "source_addresses": list(item.srcaddr or ()),
-                "destination_addresses": list(item.dstaddr or ()),
-                "source_addresses_ipv6": list(item.srcaddr6 or ()),
-                "destination_addresses_ipv6": list(item.dstaddr6 or ()),
+                "source_interfaces": list(item.srcintf) if item.srcintf is not None else None,
+                "destination_interfaces": list(item.dstintf) if item.dstintf is not None else None,
+                "source_addresses": list(item.srcaddr) if item.srcaddr is not None else None,
+                "destination_addresses": list(item.dstaddr) if item.dstaddr is not None else None,
+                "source_addresses_ipv6": list(item.srcaddr6) if item.srcaddr6 is not None else None,
+                "destination_addresses_ipv6": list(item.dstaddr6) if item.dstaddr6 is not None else None,
                 "source_address_negate_ipv6": item.srcaddr6_negate,
                 "destination_address_negate_ipv6": item.dstaddr6_negate,
-                "services": list(item.service or ()),
+                "services": list(item.service) if item.service is not None else None,
                 "schedule": item.schedule,
                 "profile_protocol_options": item.profile_protocol_options,
                 "per_ip_shaper": item.per_ip_shaper,
@@ -589,12 +670,25 @@ def build_web_report(
     ]
 
     source_sections = {
+        "zones": _source_rows(config.zones, ("name", "vdom", "members", "description", "intrazone")),
+        "user_groups": _source_rows(config.user_groups, ("name", "vdom", "id", "group_type", "members", "matches", "guests",
+                                                         "authtimeout", "auth_concurrent_override", "auth_concurrent_value")),
+        "admin_profiles": [{**{key: value for key, value in _source_details(item).items() if key != "scope"},
+                            "profile_scope": item.scope, "vdom": item.cli_vdom} for item in config.admin_profiles],
+        "ips_sensors": _source_rows(config.ips_sensors, ("name", "vdom", "comment", "block_malicious_url",
+                                                       "scan_botnet_connections", "extended_log", "replacemsg_group", "entries")),
+        "external_resources": _source_rows(config.external_resources, ("name", "vdom", "type", "resource", "comments", "refresh_rate")),
+        "service_categories": _source_rows(config.service_categories, ("name", "vdom", "comment")),
+        "sdwan": _source_rows(config.sdwans, ("vdom", "status", "load_balance_mode", "zones", "members", "health_checks", "services")),
+        "ssl_vpn_settings": _source_rows(config.ssl_vpn_settings, ("vdom", "status", "source_interface", "source_address",
+            "source_address6", "tunnel_ip_pools", "tunnel_ipv6_pools", "default_portal", "port", "servercert",
+            "dns_server1", "dns_server2", "ssl_min_proto_ver", "ssl_max_proto_ver", "auth_timeout", "idle_timeout", "authentication_rules")),
         "vips": _source_rows(
             (*config.vips, *config.vips6),
             ("name", "vdom", "address_family", "type", "status", "extip", "extaddr", "extintf",
              "mappedip", "mapped_addr", "portforward", "protocol", "extport", "mappedport",
              "arp_reply", "nat_source_vip", "service", "ldb_method", "server_type", "monitor",
-             "nat64", "nat66", "ndp_reply", "ipv4_mappedip", "ipv4_mappedport", "comment"),
+             "nat64", "nat66", "ndp_reply", "ipv4_mappedip", "ipv4_mappedport", "comment", "realservers"),
         ),
         "ip_pools": _source_rows(
             (*config.ip_pools, *config.ip_pools6),
@@ -623,7 +717,7 @@ def build_web_report(
             config.dhcp_servers,
             ("id", "vdom", "interface", "status", "server_type", "ip_mode", "default_gateway",
              "netmask", "lease_time", "dns_service", "dns_server1", "dns_server2", "dns_server3",
-             "dns_server4", "timezone_option", "timezone", "relay_agent"),
+             "dns_server4", "timezone_option", "timezone", "relay_agent", "ip_ranges", "exclude_ranges", "reserved_addresses"),
         ),
         "ssl_vpn_portals": _source_rows(
             config.ssl_vpn_portals,
@@ -663,9 +757,11 @@ def build_web_report(
         }
     )
 
+    evidence_summary, evidence_sections = _source_evidence(extracted) if extracted is not None else ({}, {})
     return {
         "vendor": "fortigate",
         "summary": {
+            **evidence_summary,
             "top_level_sections": top_level_sections,
             "objects": _object_counts(config),
             "validation": {
@@ -676,6 +772,7 @@ def build_web_report(
             "scopes": vdoms,
         },
         "sections": {
+            **evidence_sections,
             **source_sections,
             "interfaces": interfaces,
             "interface_topology": _interface_topology_rows(

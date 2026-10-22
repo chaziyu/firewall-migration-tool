@@ -5,6 +5,7 @@ import { activeSubsection, asRecord, asRows, compactValue, interfaceTopologyRows
 import { ReportDetails } from './ReportDetails'
 import { ExcelExportControls } from './ExcelExportControls'
 import { tabKeyboard } from '../../components/common/tabKeyboard'
+import { ErrorBanner } from '../../components/common/ErrorBanner'
 
 type Finding = Record<string, unknown>
 const EMPTY_ROWS: Finding[] = []
@@ -20,15 +21,24 @@ const VALIDATION_TARGETS: Record<string, [string, string]> = {
   service: ['services', 'Services'],
   service_group: ['service_groups', 'Service groups'],
   policy: ['policies', 'Policies'],
+  'default-security-rule': ['default_security_rules', 'Default security rules'],
+  'security-profile-group': ['security_profile_groups', 'Security profile groups'],
   schedule: ['schedules', 'Schedules'],
   scheduler: ['schedules', 'Schedules'],
   time_range: ['schedules', 'Schedules'],
   route: ['routes', 'Routes'],
   static_route: ['routes', 'Routes'],
+  'static-route': ['routes', 'Routes'],
   static_route6: ['routes', 'Routes'],
   vpn: ['vpn_tunnels', 'VPN tunnels'],
+  'ipsec-tunnel': ['vpn_tunnels', 'VPN tunnels'],
   ipsec_phase1: ['vpn_tunnels', 'VPN tunnels'],
   vpn_phase2: ['vpn_phase2', 'VPN phase 2'],
+}
+
+function validationTarget(finding: Finding) {
+  return VALIDATION_TARGETS[String(finding.object_type ?? '').toLowerCase()]
+    ?? VALIDATION_TARGETS[String(finding.domain ?? '').toLowerCase()]
 }
 
 function text(value: unknown): string {
@@ -90,7 +100,7 @@ function ValidationTable({ rows, selected, onSelect, onNavigate, grouped }: {
   if (!rows.length) return <p className="validation-empty">No findings match the current filters.</p>
   return <div className="validation-table-wrap"><table className="validation-table"><thead><tr><th>Object</th><th>Scope</th><th>Domain / field</th><th>Severity</th>{!grouped && <th>Finding</th>}<th>Review</th></tr></thead>
     <tbody>{rows.map((row, index) => {
-      const targetInfo = VALIDATION_TARGETS[String(row.domain || '').toLowerCase()]
+      const targetInfo = validationTarget(row)
       return <tr key={`${row.code ?? ''}-${row.domain ?? ''}-${row.object_name ?? ''}-${index}`} className={selected === row ? 'selected' : ''}>
         <td><strong>{text(row.object_name)}</strong></td><td>{text(row.scope ?? row.vdom)}</td><td>{text(row.domain)}<br />{text(row.field)}</td>
         <td><span className={`finding-severity severity-${String(row.severity ?? 'other').toLowerCase()}`}>{text(row.severity ?? 'Issue')}</span></td>
@@ -153,7 +163,7 @@ function ValidationReport({ data, reportScope, onReportScope, active }: { data: 
   }
 
   function navigateToObject(finding: Finding) {
-    const route = VALIDATION_TARGETS[String(finding.domain || '').toLowerCase()]
+    const route = validationTarget(finding)
     if (!route || finding.object_name == null) return
     const rows = matchingSourceRows(asRows(sections[route[0]]), finding)
     setSelected(finding)
@@ -194,12 +204,13 @@ function SourceRowsTable({ rows, columns, selected, hasSource, topology, loadMor
   </div>
 }
 
-export function SourceReport({ data, excelProfile, onExcelProfileChange, exporting, exportStatus, onExport }: {
+export function SourceReport({ data, excelProfile, onExcelProfileChange, exporting, exportStatus, exportError, onExport }: {
   data: SourcePreviewData
   excelProfile: 'fast' | 'full'
   onExcelProfileChange: (value: 'fast' | 'full') => void
   exporting: boolean
   exportStatus: string
+  exportError?: string | null
   onExport: () => void
 }) {
   const sectionsData = asRecord(data.sections)
@@ -223,7 +234,7 @@ export function SourceReport({ data, excelProfile, onExcelProfileChange, exporti
     const group = sections.find((item) => item.label === section)
     overviewMetrics.push({ label: section, value: reportSectionRowCount(group), section })
   }
-  const unresolved = asRows(sectionsData.unresolved_references).length
+  const unresolved = Array.isArray(sectionsData.unresolved_references) ? sectionsData.unresolved_references.length : null
   if (sectionsData.unresolved_references) overviewMetrics.push({ label: 'Unresolved references', value: unresolved, section: 'References', tone: unresolved ? 'warning' : undefined })
   const unsupported = Number(summary.unsupported_count ?? summary.source_only_count ?? 0)
   if (summary.unsupported_count != null || summary.source_only_count != null) overviewMetrics.push({ label: 'Unsupported / source-only', value: unsupported })
@@ -290,7 +301,9 @@ export function SourceReport({ data, excelProfile, onExcelProfileChange, exporti
       </div>
       {data.collection != null && <div className="report-count-note"><p>Collection: {String(asRecord(data.collection).status ?? 'Unknown')} · Method: {String(asRecord(data.collection).method ?? 'Not reported')}</p>{Array.isArray(asRecord(data.collection).warnings) && <ul>{(asRecord(data.collection).warnings as unknown[]).map((warning, index) => <li key={index}>{String(safeValue(warning))}</li>)}</ul>}</div>}
       <p className="preview-status" role="status" aria-live="polite">{exportStatus}</p>
+      {exportError && <ErrorBanner message={exportError} />}
       {data.vendor === 'palo_alto' && sectionsData.extraction_coverage != null && <p className="report-count-note">Extraction coverage: {Number(summary.source_only_count ?? 0).toLocaleString()} source-only records · {Number(summary.partial_count ?? 0).toLocaleString()} partial records. Review Extraction for coverage and all {asRows(sectionsData.source_inventory).length.toLocaleString()} source inventory records. FULL Excel includes the sanitized source appendix.</p>}
+      {data.vendor === 'fortigate' && sectionsData.extraction_coverage != null && <p className="report-count-note">Extraction coverage: {Number(summary.source_only_count ?? 0).toLocaleString()} source-only records · {Number(summary.empty_section_count ?? 0).toLocaleString()} empty sections · {Number(summary.model_gap_count ?? 0).toLocaleString()} model gaps · {Number(summary.typed_with_additional_settings_count ?? 0).toLocaleString()} typed records with additional settings. Review Extraction for all {asRows(sectionsData.source_inventory).length.toLocaleString()} source object records, including DNS/NTP settings. FULL Excel expands commands into inventory detail rows.</p>}
       <label className="report-section-select">Report section<select value={activeSection} onChange={(event) => changeSection(event.target.value)}>{reportTabs.map((name) => <option key={name}>{name}</option>)}</select></label>
       <nav className="report-tabs" role="tablist" aria-label="Report sections" onKeyDown={tabKeyboard}>
       {reportTabs.map((sectionLabel) => (

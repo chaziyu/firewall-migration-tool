@@ -4,6 +4,29 @@ import { readFileSync } from 'node:fs'
 import ts from 'typescript'
 import * as jsxRuntime from 'react/jsx-runtime'
 import * as presentation from '../src/features/report/reportPresentation.ts'
+import { renderToStaticMarkup } from 'react-dom/server'
+
+test('native IPsec and static-route reference findings have source-object links', () => {
+  const source = readFileSync(new URL('../src/features/report/SourceReport.tsx', import.meta.url), 'utf8')
+  const compiled = ts.transpileModule(`${source}\nexport { ValidationTable }`, {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX },
+  }).outputText
+  const exports = {}
+  const modules = { react: {}, 'react/jsx-runtime': jsxRuntime, './reportPresentation': presentation,
+    './ReportDetails': {}, './ExcelExportControls': {}, '../../components/common/tabKeyboard': {}, '../../components/common/ErrorBanner': {} }
+  new Function('require', 'exports', compiled)((name) => modules[name], exports)
+  for (const object_type of ['ipsec-tunnel', 'static-route', 'route']) {
+    const row = { domain: 'reference', object_type, object_name: 'owner', severity: 'warning' }
+    let navigated
+    const tree = exports.ValidationTable({ rows: [row], selected: null, onSelect() {}, onNavigate(value) { navigated = value }, grouped: false })
+    const html = renderToStaticMarkup(tree)
+    assert.match(html, /View object/)
+    const buttons = tree.props.children.props.children[1].props.children[0].props.children.at(-1).props.children
+    buttons[1].props.onClick()
+    assert.equal(navigated, row)
+    assert.ok(html.includes('owner'))
+  }
+})
 
 test('warning group selection settles and retains the matching findings', () => {
   const slots = []
@@ -35,7 +58,7 @@ test('warning group selection settles and retains the matching findings', () => 
   }).outputText
   const exports = {}
   const modules = { react: hooks, 'react/jsx-runtime': jsxRuntime, './reportPresentation': presentation,
-    './ReportDetails': {}, './ExcelExportControls': {}, '../../components/common/tabKeyboard': {} }
+    './ReportDetails': {}, './ExcelExportControls': {}, '../../components/common/tabKeyboard': {}, '../../components/common/ErrorBanner': {} }
   new Function('require', 'exports', compiled)((name) => {
     assert.ok(name in modules, `Unexpected import: ${name}`)
     return modules[name]

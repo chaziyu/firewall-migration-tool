@@ -14,7 +14,7 @@ from .scopes import PANDeviceGroupHierarchy, build_scope_hierarchy, visible_scop
 
 
 _PREDEFINED_SERVICES = {"service-http", "service-https"}
-_PREDEFINED_IP_EDLS = {"panw-highrisk-ip-list", "panw-known-ip-list"}
+_PREDEFINED_IP_EDLS = {"panw-highrisk-ip-list", "panw-known-ip-list", "panw-bulletproof-ip-list", "panw-torexit-ip-list"}
 _PREDEFINED_REGIONS = frozenset("""
 AD AE AF AG AI AL AM AO AQ AR AS AT AU AW AX AZ BA BB BD BE BF BG BH BI BJ BL BM BN BO BQ BR BS BT BV BW BY BZ
 CA CC CD CF CG CH CI CK CL CM CN CO CR CU CV CW CX CY CZ DE DJ DK DM DO DZ EC EE EG EH ER ES ET FI FJ FK FM FO FR
@@ -133,7 +133,9 @@ def _resolve(index: ReferenceIndex, owner, field: str, name: str, families: tupl
     if families[0] == "address" and _is_address_literal(name):
         return resolution("SOURCE_ONLY", owner.name, field, name, "address", owner.scope, resolution_reason="PAN-OS address literal", owner_family=owner_family, owner_source_path=owner_path)
     if families[0] == "address" and name in _PREDEFINED_IP_EDLS:
-        return resolution("SOURCE_ONLY", owner.name, field, name, "address", owner.scope, resolution_reason="PAN-OS predefined IP external dynamic list", owner_family=owner_family, owner_source_path=owner_path)
+        return resolution("SOURCE_ONLY", owner.name, field, name, "address", owner.scope, resolution_reason="PAN-OS predefined IP external dynamic list; version, content and license availability are unverified", owner_family=owner_family, owner_source_path=owner_path)
+    if families == ("vulnerability-profile",) and name in {"default", "strict"}:
+        return resolution("SOURCE_ONLY", owner.name, field, name, "vulnerability-profile", owner.scope, resolution_reason="PAN-OS predefined vulnerability profile; effective content is not extracted", owner_family=owner_family, owner_source_path=owner_path)
     if families[0] == "address" and name in _PREDEFINED_REGIONS:
         return resolution("SOURCE_ONLY", owner.name, field, name, "region", owner.scope, resolution_reason="PAN-OS predefined country region", owner_family=owner_family, owner_source_path=owner_path)
     if families[0] == "service" and name in _PREDEFINED_SERVICES:
@@ -219,6 +221,23 @@ def _static_routes(config: PANOSConfig):
             yield from vrf.static_routes or ()
 
 
+def _append_network_address_reference(result, index, owner, field, name, owner_family):
+    if not name or _is_address_literal(name):
+        return
+    direct = index.candidates("address", name, owner.scope)
+    device = _scope_device(owner.scope)
+    candidates = tuple(item for item in index.objects if item.family == "address" and item.name == name
+                       and (item in direct or device is not None and _scope_device(item.scope) == device))
+    if not candidates:
+        return
+    # Candidate existence does not prove effective network ownership or compatible address use.
+    result.append(PANReferenceResolution(
+        "AMBIGUOUS" if len(candidates) > 1 else "SOURCE_ONLY", owner.name, field, name, "address", owner.scope,
+        resolution_reason="NETWORK_ADDRESS_OBJECT_REVIEW: address type, value and effective VSYS/template visibility require review",
+        owner_family=owner_family, owner_source_path=owner.source_path, owner_identity=source_identity(owner),
+    ))
+
+
 def resolve_references(config: PANOSConfig, index: ReferenceIndex | None = None) -> tuple[tuple[PANReferenceResolution, ...], tuple[PANShadowedObject, ...]]:
     index = index or build_reference_index(config)
     result: list[PANReferenceResolution] = []
@@ -272,6 +291,8 @@ def resolve_references(config: PANOSConfig, index: ReferenceIndex | None = None)
                 for name in (names if isinstance(names, (list, tuple)) else (names,) if names else ()):
                     result.append(_resolve(index, rule, f"{field}.{attr}", name, ("address", "address-group"), owner_family="nat"))
     for owner in (*config.interfaces, *config.interface_units):
+        for name in owner.ipv4_addresses or ():
+            _append_network_address_reference(result, index, owner, "ipv4_addresses", name, "interface")
         if owner.sdwan_interface_profile:
             result.append(_resolve(index, owner, "sdwan_interface_profile", owner.sdwan_interface_profile, ("sdwan-interface-profile",), owner_family="interface"))
     for zone in config.zones:
@@ -328,6 +349,8 @@ def resolve_references(config: PANOSConfig, index: ReferenceIndex | None = None)
         for name in group.members or ():
             result.append(_resolve(index, group, "members", name, ("local-user",), owner_family="local-user-group"))
     for route in _static_routes(config):
+        for field in ("destination", "nexthop_ip_address"):
+            _append_network_address_reference(result, index, route, field, getattr(route, field), "route")
         if route.interface:
             result.append(_resolve_interface(index, route, "interface", route.interface, owner_family="static-route"))
         if route.bfd_profile:

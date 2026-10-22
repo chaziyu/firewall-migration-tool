@@ -11,7 +11,7 @@ from openpyxl.utils import get_column_letter
 
 from ....source_reporting.options import ExcelExportProfile
 from ....source_reporting.collection_excel import collection_summary, write_collection_evidence
-from ....source_reporting.excel_style import excel_safe_value, report_cell_value, report_column_width, style_report_header, write_report_summary
+from ....source_reporting.excel_style import REPORT_BODY_NOTE, excel_safe_value, report_cell_value, readable_report_row, report_column_width, style_report_header, write_report_summary
 
 from .excel_rows import ROW_BUILDERS, _PANExcelContext
 from .excel_schema import SHEET_ORDER, HIDDEN_COLUMNS_BY_DEFAULT, SHEET_HEADERS, OWNER_COLUMNS
@@ -22,7 +22,6 @@ _TITLE_FONT = Font(color="FFFFFF", bold=True, size=14)
 _MUTED_FONT = Font(color="64748B", italic=True)
 _LINK_FONT = Font(color="0563C1", underline="single")
 _TITLE_ALIGNMENT = Alignment(vertical="center")
-_BODY_ALIGNMENT = Alignment(wrap_text=True, vertical="top")
 _LINK_ALIGNMENT = Alignment(horizontal="right")
 
 
@@ -89,7 +88,7 @@ def _write_table(
     note = WriteOnlyCell(sheet, (
         "FAST lightweight export. " if row_count is None else f"{row_count} row(s). "
     ) + "Analysis Status reports validation only; NO_VALIDATION_ISSUES does not imply complete extraction. "
-        "Source Inventory reports extraction coverage." + (" Source Inventory is available in FULL." if row_count is None else ""))
+        "Source Inventory reports extraction coverage." + (" Source Inventory is available in FULL." if row_count is None else "") + " " + REPORT_BODY_NOTE)
     note.font = _MUTED_FONT
     values = [note]
     if row_count is not None and len(headers) > 1:
@@ -105,8 +104,11 @@ def _write_table(
     sheet.append(cells)
     row_count = 0
     for row_count, row in enumerate(rows, 1):
-        sheet.append([report_cell_value(sheet, row_count + 3, column, _excel_safe(row.get(header)))
-                      for column, header in enumerate(headers, 1)])
+        values = [report_cell_value(sheet, row_count + 3, column, _excel_safe(row.get(header)))
+                  for column, header in enumerate(headers, 1)]
+        if name not in {"PAN-OS Source Inventory", "Extraction Coverage", "PAN-OS Source Appendix"}:
+            values = readable_report_row(sheet, row_count + 3, values)
+        sheet.append(values)
     if row_count:
         sheet.auto_filter.ref = f"A3:{get_column_letter(len(headers))}{row_count + 3}"
     return row_count
