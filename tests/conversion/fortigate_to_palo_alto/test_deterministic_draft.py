@@ -71,11 +71,11 @@ def test_port_pool_exhaustion_scope_and_manual_overrides():
     assert next(row for row in excluded.configuration if row['source_name'] == 'port1' and row['family'] == 'interface')['status'] == 'UNSUPPORTED'
 
 
-def test_bounded_port_pool_proposes_referenced_or_addressed_interfaces_before_unused_ports():
+def test_bounded_port_pool_preserves_numbered_ports_before_named_ports():
     config = FGConfig(interfaces=[FGInterface(name=f'port{number}', type='physical') for number in range(1, 14)]
         + [FGInterface(name='wan', type='physical', ip='192.0.2.1/24')])
     result, _ = draft(config, workflow_mode='OFFLINE_EXPORT', conversion_settings={'target_model': 'PA-820'})
-    assert next(row for row in result.decisions if row.source_name == 'wan' and row.target_field == 'target_interface').proposed_value == 'ethernet1/1'
+    assert next(row for row in result.decisions if row.source_name == 'wan' and row.target_field == 'target_interface').proposed_value is None
     assert any(row.source_name.startswith('port') and not row.proposed_value for row in result.decisions if row.target_field == 'target_interface')
 
 
@@ -176,16 +176,17 @@ def test_offline_proposals_preserve_vdoms_and_do_not_confirm_ownership():
     assert all(row.status == 'CONFLICT' for row in conflict.decisions if row.target_field == 'vsys')
 
 
-def test_offline_port_proposals_use_natural_order_and_preserve_explicit_allocations():
+def test_offline_numbered_port_collisions_require_explicit_allocations():
     config = FGConfig(interfaces=[FGInterface(name=name, type='physical') for name in ('port10', 'port2', 'port1')])
     original = deepcopy(config)
     key = make_decision_key('root', 'interface', 'port1', 'target_interface')
     result, decisions = draft(config, {key: 'ethernet1/2'}, workflow_mode='OFFLINE_EXPORT')
     ports = {row.source_name: row for row in result.decisions if row.target_field == 'target_interface'}
     assert {name: row.proposed_value for name, row in ports.items()} == {
-        'port1': 'ethernet1/2', 'port2': 'ethernet1/1', 'port10': 'ethernet1/3'}
-    assert all(row.status == 'READY' and not row.approved for row in ports.values())
-    assert 'unverified' in ports['port2'].evidence[0]
+        'port1': 'ethernet1/2', 'port2': None, 'port10': 'ethernet1/10'}
+    assert all(not row.approved for row in ports.values())
+    assert ports['port2'].status == 'NEEDS_INPUT'
+    assert 'Choose a distinct target port' in ports['port2'].evidence[0]
     assert ports['port1'].evidence == ('Explicit engineer allocation',)
     assert not decisions.to_options().interfaces
     assert config == original
@@ -367,3 +368,36 @@ def test_populated_target_rulebase_placement_blocker_is_visible_in_draft():
     assert any(item["code"] == "TARGET_RULE_PLACEMENT_UNVERIFIED" for item in result.findings)
     planned = next(item for item in result.configuration if item["family"] == "security_rule")
     assert "TARGET_RULE_PLACEMENT_UNVERIFIED" in planned["blocking_reasons"]
+
+
+def test_numbered_ports_reserve_gaps_before_named_ports_and_preserve_vlan_tags():
+    config = FGConfig(interfaces=[FGInterface(name=name, type='physical') for name in ('wan', 'port10', 'dmz', 'port2')]
+        + [FGInterface(name='vlan20', interface='port10', vlanid=20)])
+    original = deepcopy(config)
+    result, _ = draft(config, workflow_mode='OFFLINE_EXPORT')
+    ports = {row.source_name: row.proposed_value for row in result.decisions if row.target_field == 'target_interface'}
+    assert ports == {'wan': 'ethernet1/3', 'port10': 'ethernet1/10', 'dmz': 'ethernet1/1', 'port2': 'ethernet1/2', 'vlan20': 'ethernet1/10.20'}
+    assert config == original
+    again, _ = draft(FGConfig(interfaces=list(reversed(config.interfaces))), workflow_mode='OFFLINE_EXPORT')
+    assert ports == {row.source_name: row.proposed_value for row in again.decisions if row.target_field == 'target_interface'}
+
+
+def test_duplicate_numbered_ports_across_vdoms_stay_unresolved_until_explicit_choice():
+    config = FGConfig(interfaces=[FGInterface(name='port2', vdom=vdom, type='physical') for vdom in ('blue', 'root')]
+        + [FGInterface(name='dmz', type='physical')])
+    result, _ = draft(config, workflow_mode='OFFLINE_EXPORT')
+    ports = [row for row in result.decisions if row.target_field == 'target_interface']
+    assert all(row.status == 'NEEDS_INPUT' and row.proposed_value is None for row in ports if row.source_name == 'port2')
+    assert next(row for row in ports if row.source_name == 'dmz').proposed_value == 'ethernet1/1'
+    override = {make_decision_key('blue', 'interface', 'port2', 'target_interface'): 'ethernet1/5'}
+    resolved, _ = draft(config, override, workflow_mode='OFFLINE_EXPORT')
+    assert {row.source_vdom: row.proposed_value for row in resolved.decisions if row.source_name == 'port2' and row.target_field == 'target_interface'} == {'blue': 'ethernet1/5', 'root': 'ethernet1/2'}
+
+
+def test_remaining_bounded_ports_prioritize_used_named_interfaces():
+    config = FGConfig(interfaces=[FGInterface(name=f'port{number}', type='physical') for number in range(1, 12)]
+        + [FGInterface(name='a-unused', type='physical'), FGInterface(name='z-used', type='physical', ip='192.0.2.1/24')])
+    result, _ = draft(config, workflow_mode='OFFLINE_EXPORT', conversion_settings={'target_model': 'PA-820'})
+    ports = {row.source_name: row.proposed_value for row in result.decisions if row.target_field == 'target_interface'}
+    assert ports['z-used'] == 'ethernet1/12'
+    assert ports['a-unused'] is None

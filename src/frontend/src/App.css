@@ -85,7 +85,7 @@
 .migration-approval-preview { padding: 16px; border: 2px solid var(--color-primary); border-radius: 10px; }
 .migration-approval-preview li { overflow-wrap: anywhere; }
 .migration-approval-item { overflow-wrap: anywhere; }
-.checkpoint-workflow { display: grid; gap: var(--space-4); overflow-wrap: anywhere; }
+.checkpoint-workflow { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-4); overflow-wrap: anywhere; }
 .checkpoint-workflow h2, .checkpoint-workflow h3, .checkpoint-workflow .field { margin: 0; }
 .checkpoint-workflow > button { justify-self: start; }
 .checkpoint-plan-list, .checkpoint-findings { display: grid; gap: var(--space-3); }
@@ -243,6 +243,8 @@
 .review-workflow, .review-work-card { display: grid; gap: 12px; }
 .review-work-card { padding: 15px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface); }
 .review-work-card h3 { margin: 0; }
+.offline-migration-review { min-width: 0; overflow-wrap: anywhere; }
+.offline-migration-review .review-work-card { min-width: 0; grid-template-columns: minmax(0, 1fr); }
 .review-queues { display: flex; gap: 6px; overflow-x: auto; border-bottom: 1px solid var(--line-divider); }
 .review-queues button { display: inline-flex; align-items: center; gap: 8px; flex: 0 0 auto; padding: 9px 11px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--text-muted); font: inherit; }
 .review-queues button[aria-selected='true'] { border-bottom-color: var(--color-primary); color: var(--text-heading); font-weight: 700; }
@@ -489,6 +491,7 @@ body:has(.finding-inspector[open]) { overflow: hidden; }
 .review-prerequisite { display: block; margin: 6px 0; }
 .migration-review-tabs {
   display: flex;
+  flex-wrap: wrap;
   gap: .5rem;
   border-bottom: 1px solid var(--border-color, #cbd5e1);
   margin: 1rem 0;

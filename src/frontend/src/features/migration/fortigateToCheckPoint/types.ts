@@ -52,6 +52,7 @@ export type CheckPointReport = {
 }
 
 export type CheckPointReview = {
+  source_vdoms?: string[]
   options?: CheckPointOptions
   draft: Record<string, unknown>
   requirements: CheckPointRequirement[]
@@ -77,6 +78,7 @@ export type CheckPointFilePreview = {
 export type CheckPointWorkspace = {
   pairId: 'fortigate_to_checkpoint'
   sourceKey: string
+  stage?: 'load' | 'place' | 'review' | 'export'
   destination?: DestinationEvidence | null
   options: CheckPointOptions
   requirements: CheckPointRequirement[]

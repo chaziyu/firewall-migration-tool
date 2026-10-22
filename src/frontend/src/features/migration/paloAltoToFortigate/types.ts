@@ -11,6 +11,7 @@ export type EffectiveValue = { identity: Array<string | number | null>; field: s
 export type ConfigurationRow = {
   key: string; family: string; source_scope: string; source_name: string; target_name: string; target_vdom: string
   settings: Array<[string, string[]]>; dependencies: string[]; render_disposition: string; blocking_reasons: string[]
+  approved?: boolean
 }
 export type FortiGateDraft = {
   digest: string; signature: string; context: Record<string, unknown>; configuration: ConfigurationRow[]

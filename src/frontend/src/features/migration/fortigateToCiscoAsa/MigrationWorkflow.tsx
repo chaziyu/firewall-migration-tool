@@ -1,3 +1,5 @@
+import { OfflineMigrationReview } from '../components/OfflineMigrationReview'
+import { OfflineMigrationExport } from '../components/OfflineMigrationExport'
 import { MigrationCoverage } from '../components/MigrationCoverage'
 import { DestinationSnapshot } from '../components/DestinationSnapshot'
 import type { DestinationEvidence } from '../components/DestinationSnapshot'
@@ -75,25 +77,36 @@ export function CiscoAsaMigrationWorkflow({ source, sourceKey, stage, onStageCha
   const [targetLoading, setTargetLoading] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [preparing, setPreparing] = useState(false)
+  const [reviewTab, setReviewTab] = useState<'changes' | 'decisions' | 'manual'>('changes')
   const [selected, setSelected] = useState<string[]>([])
   const [approvalPreview, setApprovalPreview] = useState<string[] | null>(null)
   const requests = useRef(0)
   const pending = useRef(false)
-  const initialOptions = useRef(payloadOptions(state.options))
   const { options, requirements, review, approval, artifact } = state
 
-  useEffect(() => { void saveWorkspace({ panosMigration: state }) }, [state])
+  useEffect(() => { void saveWorkspace({ panosMigration: { ...state, stage } }) }, [state, stage])
   useEffect(() => () => { requests.current++ }, [])
   useEffect(() => {
     let active = true
-    api.requirements(source, { ...initialOptions.current, source_vdom: options.source_vdom }).then((result) => {
-      if (active) {
-        setState((current) => ({ ...current, requirements: result.requirements }))
-        setHasSchedules(Boolean(result.report.items.some((item) => item.family === 'schedule')))
+    const request = ++requests.current
+
+    const timer = setTimeout(() => { setPreparing(true); void api.prepare(source, payloadOptions(options), state.destination).then((result) => {
+      if (!active || request !== requests.current) return
+      const nextOptions = { ...options, ...result.options, interfaces: { ...options.interfaces } }
+      for (const proposal of result.report.proposals ?? []) {
+        const scope = proposal.source_vdom
+        nextOptions.interfaces[scope] = { ...nextOptions.interfaces[scope],
+          [proposal.source_name]: { ...proposal.value, ...options.interfaces[scope]?.[proposal.source_name] } }
       }
-    }).catch((cause) => { if (active) setError(cause instanceof Error ? cause.message : 'Could not load ASA placement requirements') })
-    return () => { active = false }
-  }, [source, sourceKey, options.source_vdom])
+      setState((current) => ({ ...current, requirements: result.requirements, review: JSON.stringify(nextOptions) === JSON.stringify(options) ? result : null,
+        options: JSON.stringify(nextOptions) === JSON.stringify(options) ? options : nextOptions,
+        ...(JSON.stringify(nextOptions) === JSON.stringify(options) ? {} : { approval: null, artifact: null }) }))
+      setHasSchedules(result.report.items.some((item) => item.family === 'schedule'))
+    }).catch((cause) => { if (active && request === requests.current) setError(cause instanceof Error ? cause.message : 'Could not prepare conversion') })
+      .finally(() => { if (active) setPreparing(false) }) }, 250)
+    return () => { active = false; clearTimeout(timer) }
+  }, [source, options, state.destination])
 
   function changeOptions(next: AsaOptions) {
     requests.current++
@@ -175,17 +188,12 @@ export function CiscoAsaMigrationWorkflow({ source, sourceKey, stage, onStageCha
     changeOptions({ ...options, [field]: value })
   }
 
-  function openApprovalPreview(keys: string[]) {
-    if (review) setApprovalPreview(expandSelection(review.report.items, keys))
-  }
-
   const sourceScope = requirements.find((item) => item.target_field === 'source_vdom')
   const scoped = requirements.filter((item) => item.source_vdom === options.source_vdom)
   const interfaceRequirements = scoped.filter((item) => item.target_field === 'asa_interface')
   const targetChoice = (field: string) => requirements.find((item) => item.target_field === field)
-  const ready = review?.report.items.filter((item) => ['CREATE', 'REUSE'].includes(item.render_disposition) && !item.blockers.length) ?? []
-  const approvalItems = review?.report.items.filter((item) => approvalPreview?.includes(item.key)) ?? []
 
+  const unresolvedInputs = requirements.filter((item) => (item.value == null || item.value === '' || item.value === false))
   return <section className="panel" aria-labelledby="cisco-asa-migration-title">
     <h2 id="cisco-asa-migration-title">FortiGate → Cisco ASA</h2>
     <p>Review and export a Cisco ASA 9.20 routed configuration. Export is offline; device execution is unavailable.</p>
@@ -194,7 +202,7 @@ export function CiscoAsaMigrationWorkflow({ source, sourceKey, stage, onStageCha
       <p>The source stays unchanged. Unsupported and unmapped items remain visible as manual work.</p>
       <Button disabled={busy} onClick={() => onStageChange('place')}>Set up ASA target</Button>
     </>}
-    {stage === 'place' && <>
+    {(stage === 'place' || stage === 'review') && <details open={stage === 'place'}><summary>Target setup and choices</summary>
       <DestinationSnapshot vendor="cisco_asa" families={['interfaces', 'objects', 'schedules', 'routes', 'access_rules', 'acl_bindings', 'nat']} value={state.destination ?? null} disabled={busy} onChange={changeDestination} onPendingChange={setTargetLoading} />
       <h3>Target context</h3>
       <label className="field">Target VLAN platform<select disabled={busy} value={options.target_platform ?? ''} onChange={(event) => changeOptions({ ...options, target_platform: event.target.value })}><option value="">VLAN export unavailable</option><option value="asav">ASAv 9.20</option></select></label>
@@ -239,44 +247,42 @@ export function CiscoAsaMigrationWorkflow({ source, sourceKey, stage, onStageCha
         }} /></label>
       </details>
       <Button disabled={busy || targetLoading} onClick={() => void run(prepareReview)}>Prepare migration review</Button>
+    </details>}
+    {(stage === 'review' || stage === 'place') && review && <>
+      <MigrationCoverage coverage={review.report.coverage} />
+      <OfflineMigrationReview id="fg-asa" title="Cisco ASA" rows={review.report.items.map((item) => ({
+        key: item.key, family: item.family, sourceScope: item.source_vdom, sourceName: item.source_name,
+        target: item.target_name, operation: item.render_disposition, settings: item.settings,
+        dependencies: item.dependencies, reasons: item.blockers, ready: ['CREATE', 'REUSE'].includes(item.render_disposition) && !item.blockers.length,
+      }))} busy={busy || preparing || targetLoading} tab={reviewTab} onTabChange={setReviewTab}
+        inputCount={unresolvedInputs.length}
+        manualCount={review.report.items.filter((item) => item.blockers.length).length}
+        issueContent={reviewTab === 'decisions' ? <><p>Complete these target choices in the setup details above.</p>
+          <ul>{unresolvedInputs.map((item) => <li key={item.key}>{item.label} {item.source_name}</li>)}</ul></>
+          : <><p>Blocked configuration and separate work retain their source reasons. Target choices may resolve some blockers; unsupported semantics remain manual.</p>
+          <ul>{[...new Set(review.report.items.flatMap((item) => item.blockers))].map((reason) => <li key={reason}>{reason.replaceAll('_', ' ')}</li>)}</ul></>}
+
+        selected={selected} onSelect={(keys) => { setSelected(keys); setApprovalPreview(null); setState((current) => ({ ...current, approval: null, artifact: null })) }}
+        approvalKeys={approvalPreview} onPreview={(keys) => { try { setApprovalPreview(expandSelection(review.report.items, keys)) } catch (cause) { setError(String(cause)) } }}
+        onApprove={() => void run(confirmApproval)} onCancel={() => setApprovalPreview(null)}
+        approvalContext={<><p>Proposed offline placement; hardware availability is unverified. Approval binds these target choices and exact configuration.</p><pre className="set-command-preview">{JSON.stringify(options, null, 2)}</pre></>}
+        onSetup={() => onStageChange('place')} findings={review.report.findings} approveLabel="Approve and generate" />
     </>}
-    {stage === 'review' && <>
-      {!review ? <><p>Prepare the current target choices before review.</p><Button disabled={busy || targetLoading} onClick={() => void run(prepareReview)}>Prepare migration review</Button></> : <>
-        <MigrationCoverage coverage={review.report.coverage} />
-        <p>{ready.length} items ready for review · {review.report.items.length - ready.length} blocked or manual.</p>
-        {review.report.findings.map((finding, index) => <p role="status" key={`${String(finding.code)}-${index}`}>{String(finding.message ?? finding.code)}</p>)}
-        <Button disabled={busy || !ready.length} onClick={() => openApprovalPreview(ready.map((item) => item.key))}>Review all ready changes</Button>
-        <Button disabled={busy || !selected.length} onClick={() => void run(async () => openApprovalPreview(selected))}>Review selected changes</Button>
-        <div className="report-table-wrap"><table className="report-table"><caption>Planned Cisco ASA configuration</caption><thead><tr><th>Select</th><th>Source</th><th>Target</th><th>Operation</th><th>Blockers</th><th>Review details</th></tr></thead><tbody>{review.report.items.map((item) => <tr key={item.key}>
-          <td><input aria-label={`Select ${item.source_vdom} ${item.source_name}`} type="checkbox" disabled={busy || !['CREATE', 'REUSE'].includes(item.render_disposition) || Boolean(item.blockers.length)} checked={selected.includes(item.key)} onChange={(event) => setSelected(event.target.checked ? [...selected, item.key] : selected.filter((key) => key !== item.key))} /></td>
-          <td>{item.source_vdom} / {item.source_name}<small>{item.family}</small></td><td>{item.target_name}</td><td>{item.render_disposition}</td><td>{item.blockers.join(', ')}</td>
-          <td><details><summary>Settings and dependencies</summary><pre>{JSON.stringify({ settings: item.settings, dependencies: item.dependencies }, null, 2)}</pre></details></td>
-        </tr>)}</tbody></table></div>
-        {approvalPreview && <section className="review-work-card" aria-label="ASA approval preview">
-          <h3>Approve these exact changes</h3><p>{approvalItems.length} items, including required dependencies.</p>
-          {approvalItems.map((item) => <details key={item.key}><summary>{item.render_disposition}: {item.source_vdom} / {item.source_name} → {item.target_name}</summary><pre>{JSON.stringify({ settings: item.settings, dependencies: item.dependencies }, null, 2)}</pre></details>)}
-          <Button disabled={busy || !approvalPreview.length} onClick={() => void run(confirmApproval)}>Approve these changes and build export</Button>
-          <Button disabled={busy} onClick={() => setApprovalPreview(null)}>Cancel approval preview</Button>
-        </section>}
-        <Button disabled={busy} onClick={() => onStageChange('place')}>Change target choices</Button>
-      </>}
-    </>}
+    {preparing && <p role="status">Preparing conversion review…</p>}
+
     {stage === 'export' && <>
       {approval && !artifact && <Button disabled={busy} onClick={() => void run(() => generate())}>Retry with current approval</Button>}
       {!approval && <p>Review and approve the current plan before exporting.</p>}
-      {artifact && <>
-        <h3>{artifact.report.plan_status === 'READY_WITH_MANUAL_WORK' ? 'Partial offline export' : artifact.report.plan_status === 'BLOCKED' ? 'No approved commands' : 'Offline export ready'}</h3>
-        <p>{artifact.command_count} ASA commands · SHA-256: {artifact.command_sha256}</p>
-        <p>Only signed, approved configuration is included. Destination compatibility and device acceptance are unverified.</p>
-        {artifact.report.plan_status === 'READY_WITH_MANUAL_WORK' && <p role="status">Blocked, unsupported and unapproved work is excluded from this export.</p>}
-        {!state.previewText ? <Button disabled={busy} onClick={() => void run(async () => {
-          const result = await api.commandPreview(artifact)
-          if (result.command_sha256 !== artifact.command_sha256 || (artifact.command_text !== undefined && result.text !== artifact.command_text)) throw new Error('Command preview integrity check failed')
-          setState((current) => ({ ...current, previewText: result.text }))
-        })}>Load command preview</Button> : <details open><summary>Command preview</summary><textarea aria-label="Cisco ASA command preview" readOnly value={state.previewText} rows={14} /></details>}
-        <Button disabled={busy || !artifact.command_count} onClick={() => void run(async () => downloadFile(await api.download(source, artifact, 'commands'), 'asa_config.cfg'))}>Download ASA configuration</Button>
-        <Button disabled={busy} onClick={() => void run(async () => downloadFile(await api.download(source, artifact, 'bundle'), 'migration_fortigate_to_cisco_asa.zip'))}>Download reviewed migration bundle</Button>
-      </>}
+      {artifact && <OfflineMigrationExport dispositions={artifact.report.items.map((row) => row.render_disposition)} artifactId={artifact.artifact_id}
+        partial={Object.entries(artifact.report.coverage?.status_counts ?? {}).some(([status, count]) => count > 0 && !['RENDERED', 'REUSED'].includes(status)) || artifact.report.items.some((item) => !['CREATE', 'REUSE'].includes(item.render_disposition))}
+        noChanges={!artifact.command_count && artifact.report.items.length > 0 && artifact.report.items.every((item) => item.render_disposition === 'REUSE')}
+        verification={String(artifact.report.verification ?? 'Offline export; device acceptance remains unverified.')}
+        busy={busy || targetLoading} files={[{ key: 'commands', label: 'ASA CLI configuration', previewLabel: 'Cisco ASA command preview', text: artifact.command_text ?? '',
+          sha256: artifact.command_sha256, count: `${artifact.command_count} commands`, downloadLabel: 'Download ASA', downloadable: true }]}
+        onDownload={() => void run(async () => { const request = requests.current; const blob = await api.download(source, artifact, 'commands'); if (request === requests.current) downloadFile(blob, 'asa_config.cfg') })}
+        onBundle={() => void run(async () => { const request = requests.current; const blob = await api.download(source, artifact, 'bundle'); if (request === requests.current) downloadFile(blob, 'migration_fortigate_to_cisco_asa.zip') })}>
+        <MigrationCoverage coverage={artifact.report.coverage} />
+      </OfflineMigrationExport>}
     </>}
     {busy && <LoadingState label="Preparing reviewed ASA migration…" />}
     {error && <ErrorBanner message={error} />}

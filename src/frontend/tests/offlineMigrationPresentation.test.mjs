@@ -11,7 +11,7 @@ function load(name, react = React) {
   const code = ts.transpileModule(readFileSync(new URL(`../src/features/migration/components/${name}.tsx`, import.meta.url), 'utf8'), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022 },
   }).outputText
-  const modules = { react, 'react/jsx-runtime': jsxRuntime, '../../../components/common/Button': { Button: 'button' }, '../../../components/common/tabKeyboard': { tabKeyboard() {} } }
+  const modules = { react: { ...React, ...react }, 'react/jsx-runtime': jsxRuntime, '../../../components/common/Button': { Button: 'button' }, '../../../components/common/tabKeyboard': { tabKeyboard() {} } }
   const exports = {}
   new Function('require', 'exports', code)((name) => { assert.ok(name in modules, name); return modules[name] }, exports)
   return exports[name]
@@ -44,7 +44,7 @@ test('pair display adapter never makes unapproved or unknown dispositions select
 
 test('shared review filters identical names by native source scope without clearing selection', () => {
   const slots = []; let cursor = 0
-  const Component = load('OfflineMigrationReview', { useCallback: (fn) => fn, useState: (initial) => {
+  const Component = load('OfflineMigrationReview', { useEffect() {}, useRef: (value) => ({ current: value }), useCallback: (fn) => fn, useState: (initial) => {
     const index = cursor++; slots[index] ??= initial
     return [slots[index], (value) => { slots[index] = value }]
   } })

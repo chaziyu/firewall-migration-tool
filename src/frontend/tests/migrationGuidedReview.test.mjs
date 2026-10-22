@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { draftReviewRows, draftStatusCounts, groupPlanBlockers, planFamilySummary, taskCategory, mappingReviewGroups } from '../src/features/migration/reviewPresentation.ts'
-import { orderInterfaceMappings } from '../src/features/migration/reviewDrafts.ts'
+import { orderInterfaceMappings, readyConfigurationKeys, draftDependencies } from '../src/features/migration/reviewDrafts.ts'
 
 test('actionable view hides parent-dependent noise while full and manual views preserve evidence', () => {
   const rows = [{ decision_key: 'parent', source_vdom: 'root', source_name: 'port1', source_kind: 'interface', status: 'NEEDS_INPUT' },
@@ -77,4 +77,22 @@ test('offline queues follow draft readiness without confirming pending decisions
   assert.ok(groups.every((group) => group.queue === 'NEEDS_INPUT'))
   assert.equal(mappingReviewGroups(groups, rows, false), groups)
   assert.equal(mappingReviewGroups(groups, rows, true, ['ownership'])[0].queue, 'COMPLETE')
+})
+
+
+test('default selection excludes blocked transitive prerequisites and missing references', () => {
+  const rows = [
+    { decision_key: 'missing-choice', status: 'NEEDS_INPUT', dependencies: [] },
+    { decision_key: 'parent', status: 'READY', dependencies: ['missing-choice'] },
+    { group_key: 'blocked', status: 'READY', dependencies: ['parent'] },
+    { group_key: 'unknown', status: 'READY', dependencies: ['absent'] },
+    { decision_key: 'ready-choice', status: 'READY', dependencies: [] },
+    { group_key: 'ready', item_key: 'ready', status: 'READY', dependencies: ['ready-choice'] },
+    { group_key: 'manual', status: 'UNSUPPORTED', dependencies: [] },
+  ]
+  const keys = readyConfigurationKeys(rows)
+  assert.deepEqual(keys, ['ready'])
+  assert.deepEqual(draftDependencies(rows, keys), ['ready', 'ready-choice'])
+  assert.deepEqual(readyConfigurationKeys(rows.map((row) => ({ ...row, status: row.decision_key === 'missing-choice' ? 'READY' : row.status }))), ['blocked', 'ready'])
+  assert.deepEqual(readyConfigurationKeys(rows, ['ready']), [])
 })

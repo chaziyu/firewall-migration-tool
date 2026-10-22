@@ -1,6 +1,6 @@
 # Migration support matrix
 
-Updated 2026-10-21. These are partial, directional migration workflows. A successful export is not a complete replacement firewall configuration.
+Updated 2026-10-22. These are partial, directional migration workflows. A successful export is not a complete replacement firewall configuration.
 
 ## Version and execution boundaries
 
@@ -20,7 +20,20 @@ The browser accepts optional destination snapshots for every listed pair. Snapsh
 
 Destination text, selected scope, version, mode, completeness declarations, mappings, operations and dependencies are bound to the design. Changes require a new review and approval. Proposal imports do not restore approval. Unsupported directions fail closed.
 
-FortiGate to PAN-OS and PAN-OS to FortiGate have assisted mapping and guided review. The reverse pair prepares deterministic target proposals, derives a bounded documented PAN-OS 11.1 source-behavior subset, and groups remaining policy choices. PAN-OS to SRX supports an offline set export and optional family-complete Junos snapshot comparison; policy, NAT and routing ambiguity stays blocked. Check Point proposes a new package without destination evidence; existing-policy insertion still requires target choices. FortiGate to SRX proposes new-device placement for review. ASA requires manual target mappings and choices. Discovery retains its existing availability flags and adds descriptive mapping, comparison, execution and activation limits. These descriptions do not authorize execution or enable unsupported capabilities.
+FortiGate to PAN-OS and PAN-OS to FortiGate have assisted mapping and guided review. The reverse pair prepares deterministic target proposals, derives a bounded documented PAN-OS 11.1 source-behavior subset, and groups remaining policy choices. PAN-OS to SRX supports an offline set export and optional family-complete Junos snapshot comparison; policy, NAT and routing ambiguity stays blocked. Check Point proposes a new package without destination evidence; existing-policy insertion still requires target choices. FortiGate to SRX proposes new-device placement for review. ASA proposes recognized numbered ports and safe nameif values; security levels and traffic attestations remain explicit choices. Discovery retains its existing availability flags and adds descriptive mapping, comparison, execution and activation limits. These descriptions do not authorize execution or enable unsupported capabilities.
+
+## Offline browser workflow
+
+All nine pairs offer Source → Review conversion → Download for offline conversion. FortiGate to PAN-OS also retains its advanced destination and live candidate workflow. The other eight pairs have no deployment path.
+
+- Source analysis opens the conversion review. No physical device selection or connection is required.
+- Target software baselines remain visible. Editable target setup sits inside review details.
+- Pair-owned proposals preserve engineer overrides. FortiGate SRX numbered ports use stable port-number placement; PAN-OS SRX proposes physical ports, logical units, source tags and zone names. These are offline conventions, not verified hardware allocation.
+- ASA port/name proposals leave security levels unresolved. Empty-target, routing-completeness, capacity and return-routing attestations are never auto-confirmed.
+- Eligible configuration appears in a paginated approval preview by default. Custom exclusions and dependency expansion remain visible. Approve and generate is the explicit action that signs the selection and builds the native files.
+- Included, reused, excluded and blocked/manual counts remain visible after generation. An unselected item is not a completed conversion. Reuse-only output is distinct from excluded or blocked output.
+- Check Point retains Management JSON, command shell, UID bindings and Gaia files. FTD retains FMC request specifications, curl script, ID bindings and application instructions.
+- Source, scope, options, target evidence and selection changes revoke affected approval/artifacts. Superseded responses cannot restore them. A current approval survives generation failure for retry; expiry still requires approval again.
 
 ## Source accounting
 

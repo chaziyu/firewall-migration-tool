@@ -116,7 +116,8 @@ def plan_objects(source, derived, vdom):
         name = target_name("service_group", vdom, group.name)
         service_names[group.name] = name
         commands = (f"object-group service {name}", *(f" {'group-object' if m in service_groups else 'service-object object'} {service_names[m]}" for m in members)) if not blockers else ()
-        deps = tuple(item_key(vdom, "service_group" if m in service_groups else "service", m) for m in members)
+        deps = tuple(item_key(vdom, "service_group" if m in service_groups else "service", m)
+                     for m in members if m in service_names)
         items.append(ASAPlanItem(item_key(vdom, "service_group", group.name), "service_group", vdom, group.name,
                                  name, (("commands", tuple(commands)),), deps, tuple(blockers)))
     return items, address_names, service_names

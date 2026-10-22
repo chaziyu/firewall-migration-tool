@@ -37,6 +37,7 @@ export type AsaPlanItem = {
   render_disposition: string
 }
 export type AsaReport = {
+  proposals?: Array<{ source_vdom: string; source_name: string; value: AsaInterfaceMapping }>
   coverage?: MigrationCoverageReport
   plan_status: string
   items: AsaPlanItem[]
@@ -46,6 +47,7 @@ export type AsaReport = {
   [key: string]: unknown
 }
 export type AsaReview = {
+  options?: AsaOptions
   draft: Record<string, unknown>
   requirements: AsaRequirement[]
   report: AsaReport
@@ -63,6 +65,7 @@ export type AsaArtifact = {
 export type CiscoAsaWorkspace = {
   pairId: 'fortigate_to_cisco_asa'
   sourceKey: string
+  stage?: 'load' | 'place' | 'review' | 'export'
   destination?: DestinationEvidence | null
   options: AsaOptions
   requirements: AsaRequirement[]

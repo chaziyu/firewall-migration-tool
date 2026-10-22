@@ -17,7 +17,7 @@ const emptyOptions = (): FortiGateOptions => ({ source_scope: '', vdom: '', inte
 export function FortiGateMigrationWorkflow({ source, sourceKey, stage: controlledStage, onStageChange, onReviewSource }: { source: SourceEvidence; sourceKey: string; stage?: FortiGateWorkspace['stage']; onStageChange?: (stage: FortiGateWorkspace['stage']) => void; onReviewSource?: () => void }) {
   const [state, setState] = useState<FortiGateWorkspace>(() => {
     const saved = workspace().panosMigration
-    return saved?.pairId === 'palo_alto_to_fortigate' && saved.sourceKey === sourceKey ? saved : { pairId: 'palo_alto_to_fortigate', sourceKey, options: emptyOptions(), targetSource: null, review: null, approval: null, artifact: null, stage: 'load' }
+    return saved?.pairId === 'palo_alto_to_fortigate' && saved.sourceKey === sourceKey ? saved : { pairId: 'palo_alto_to_fortigate', sourceKey, options: emptyOptions(), targetSource: null, review: null, approval: null, artifact: null, stage: 'review' }
   })
   const [proposal, setProposal] = useState<FortiGateReview | null>(state.review)
   const [busy, setBusy] = useState(false)
@@ -64,7 +64,6 @@ export function FortiGateMigrationWorkflow({ source, sourceKey, stage: controlle
       if (!active || request !== requests.current) return
       setProposal(result)
       setState((current) => ({ ...current, review: result }))
-      if (stage === 'load' && result.resolved_options?.source_scope) changeStage('place')
     }).catch((cause) => { if (active && request === requests.current) setError(cause instanceof Error ? cause.message : 'Could not prepare migration proposal') })
     return () => { active = false }
   }, [source, options, state.targetSource])
@@ -82,17 +81,6 @@ export function FortiGateMigrationWorkflow({ source, sourceKey, stage: controlle
     try { await action() }
     catch (cause) { setError(cause instanceof Error ? cause.message : 'Migration request failed') }
     finally { pending.current = false; setBusy(false) }
-  }
-
-  async function prepareReview() {
-    const request = ++requests.current
-    setState((current) => ({ ...current, approval: null, artifact: null }))
-    const result = await api.prepare(source, options, state.targetSource)
-    if (request !== requests.current) return
-    setProposal(result)
-    setState((current) => ({ ...current, review: result }))
-    changeStage('review')
-    setSelected([]); setApprovalPreview(null); setReviewTabChoice(null)
   }
 
   async function generate(currentApproval = approval) {
@@ -154,6 +142,7 @@ export function FortiGateMigrationWorkflow({ source, sourceKey, stage: controlle
 
   const configuration = review?.draft.configuration ?? []
   const ready = configuration.filter(isReady)
+  const readyKeys = new Set(ready.map((row) => row.key))
   const placementRequirements = requirements?.decisions.filter((row) => row.key.startsWith(`${requirementKind}:`)) ?? []
   const orderedRequirements = requirementKind === 'interfaces' ? orderPlacementRequirements(placementRequirements, configuration)
     : [...placementRequirements].sort((a, b) => Number(!!requirementValue(a)) - Number(!!requirementValue(b)))
@@ -197,7 +186,7 @@ export function FortiGateMigrationWorkflow({ source, sourceKey, stage: controlle
     <h2 id="fortigate-migration-title">PAN-OS → FortiGate</h2>
     <p>Review a FortiOS 7.4.6 CLI export. Live FortiGate deployment is unavailable. Unsupported work stays visible.</p>
     {!controlledStage && <nav className="migration-view-nav" aria-label="FortiGate migration workspace">
-      {([['load', 'Source'], ['place', 'Target setup'], ['review', 'Review migration'], ['export', 'Download']] as const).map(([value, label], index) =>
+      {([['load', 'Source'], ['review', 'Review conversion'], ['export', 'Download']] as const).map(([value, label], index) =>
         <button key={value} type="button" disabled={working} aria-current={stage === value ? 'step' : undefined} onClick={() => changeStage(value)}>{index + 1}. {label}</button>)}
     </nav>}
     {stage === 'load' && <>
@@ -211,7 +200,7 @@ export function FortiGateMigrationWorkflow({ source, sourceKey, stage: controlle
       {findings.map((finding) => <div key={finding}><p role="status">{finding}</p><small>{configuration.filter((row) => row.blocking_reasons.includes(finding)).length} affected configuration items</small></div>)}
       {onReviewSource && <Button className="secondary-button" onClick={onReviewSource}>Review source report</Button>}
     </section>}
-    {stage === 'place' && <div className="target-setup">
+    {(stage === 'place' || stage === 'review') && <details className="target-setup" open={stage === 'place'}><summary>Target setup and choices</summary>
       <h3>Target setup</h3>
       <p>Source: {resolved.source_scope || 'Choose a source scope'}. Review proposed placement before approving changes.</p>
       <section aria-label="Target placement">
@@ -275,19 +264,19 @@ export function FortiGateMigrationWorkflow({ source, sourceKey, stage: controlle
           event.target.value = ''
         }} /></label>
       </details>
-      <div className="target-setup-actions"><Button disabled={working || !(options.source_scope || resolved.source_scope)} onClick={() => void run(prepareReview)}>Review migration</Button></div>
-    </div>}
-    {stage === 'review' && <>
-      {!review ? <><p>Prepare the current target choices before review.</p><Button disabled={working} onClick={() => void run(prepareReview)}>Prepare migration review</Button></> : <>
+      <div className="target-setup-actions"><Button disabled={working || !(options.source_scope || resolved.source_scope)} onClick={() => changeStage('review')}>Review migration</Button></div>
+    </details>}
+    {(stage === 'review' || stage === 'place') && <>
+      {!review ? <><p>Prepare the current target choices before review.</p><Button disabled={working} onClick={() => changeStage('review')}>Prepare migration review</Button></> : <>
         <h3>Review migration</h3>
         <p>Source: {resolved.source_scope} → target VDOM: {resolved.vdom || 'Unresolved'}.</p>
         <OfflineMigrationReview id="fortigate" title="FortiGate" rows={configuration.map(offlineReviewRow)} busy={working}
           tab={reviewTab} onTabChange={(tab) => { setReviewTabChoice(tab); setIssuePage(1); setSelectedIssue(''); setMemberPage(1) }}
           inputCount={inputGroups.length + findings.length} manualCount={manualGroups.length}
-          selected={selected} onSelect={(keys) => { setSelected(keys); setApprovalPreview(null) }} approvalKeys={approvalPreview}
+          selected={selected} onSelect={(keys) => { setSelected(keys); setApprovalPreview(null); setState((current) => ({ ...current, approval: null, artifact: null })) }} approvalKeys={approvalPreview}
           onPreview={(keys) => { try { setApprovalPreview(api.approvalSelection(configuration, keys)) } catch (cause) { setError(String(cause)) } }}
           onApprove={() => void run(confirmApproval)} onCancel={() => setApprovalPreview(null)} onSetup={() => changeStage('place')}
-          approveLabel="Approve these changes and generate commands"
+          approveLabel="Approve and generate"
           approvalContext={<>
             <p>Confirm device modes, ownership, and physical cabling.</p>
             <dl><dt>Target VDOM</dt><dd>{resolved.vdom}</dd>{Object.entries(resolved.profile).map(([field, value]) => <div key={field}><dt>{field.replaceAll('_', ' ')}</dt><dd>{Array.isArray(value) ? value.join(', ') : value}</dd></div>)}</dl>
@@ -328,7 +317,7 @@ export function FortiGateMigrationWorkflow({ source, sourceKey, stage: controlle
       {approval && !artifact && <Button disabled={working} onClick={() => void run(() => generate())}>Retry generation with current approval</Button>}
       {!approval && <p>Review and approve current configuration before generating commands.</p>}
       {artifact && <>
-        <OfflineMigrationExport artifactId={artifact.artifact_id} partial={artifact.report.plan_status === 'PARTIAL'}
+        <OfflineMigrationExport dispositions={artifact.report.items.map((row) => row.approved === false && readyKeys.has(row.key) ? 'NOT_APPROVED' : row.render_disposition)} artifactId={artifact.artifact_id} partial={artifact.report.plan_status === 'PARTIAL'}
           noChanges={artifact.report.plan_status === 'READY_NO_CHANGES'} verification={artifact.report.verification} busy={working}
           files={[{ key: 'commands', label: 'Approved FortiOS commands', previewLabel: 'FortiGate command preview', text: artifact.commands.join('\n'),
             sha256: artifact.command_sha256, count: `${artifact.command_count} CLI lines`, downloadLabel: 'Download FortiGate .conf', downloadable: artifact.command_count > 0 }]}

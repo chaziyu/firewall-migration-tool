@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Button } from '../../../components/common/Button'
 import { tabKeyboard } from '../../../components/common/tabKeyboard'
@@ -11,12 +11,13 @@ export type OfflineReviewRow = {
 export type OfflineReviewTab = 'changes' | 'decisions' | 'manual'
 
 export function OfflineMigrationReview({ id, title, rows, busy, tab, onTabChange, inputCount, manualCount, issueContent,
-  selected, onSelect, approvalKeys, onPreview, onApprove, onCancel, approvalContext, onSetup, approveLabel }: {
+  selected, onSelect, approvalKeys, onPreview, onApprove, onCancel, approvalContext, onSetup, approveLabel, findings = [] }: {
   id: string; title: string; rows: readonly OfflineReviewRow[]; busy: boolean
   tab: OfflineReviewTab; onTabChange: (tab: OfflineReviewTab) => void; inputCount: number; manualCount: number; issueContent: ReactNode
   selected: string[]; onSelect: (keys: string[]) => void; approvalKeys: string[] | null
   onPreview: (keys: string[]) => void; onApprove: () => void; onCancel: () => void; approvalContext: ReactNode
   onSetup: () => void; approveLabel: string
+  findings?: readonly unknown[]
 }) {
   const [status, setStatus] = useState('all')
   const [family, setFamily] = useState('all')
@@ -24,9 +25,20 @@ export function OfflineMigrationReview({ id, title, rows, busy, tab, onTabChange
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
   const [previewPage, setPreviewPage] = useState(1)
-  const focusPreview = useCallback((node: HTMLElement | null) => node?.focus(), [])
+  const [findingPage, setFindingPage] = useState(1)
+  const [focusRequested, setFocusRequested] = useState(false)
+  const focusPreview = useCallback((node: HTMLElement | null) => { if (focusRequested) node?.focus() }, [focusRequested])
   const byKey = new Map(rows.map((row) => [row.key, row]))
   const ready = rows.filter((row) => row.ready)
+  const defaults = useRef('')
+  const readyKeys = JSON.stringify(ready.map((row) => row.key))
+  useEffect(() => {
+    if (busy || defaults.current === readyKeys) return
+    defaults.current = readyKeys
+    const keys: string[] = JSON.parse(readyKeys)
+    onSelect(keys)
+    if (keys.length) onPreview(keys)
+  }, [busy, readyKeys, onSelect, onPreview])
   const selectedSet = new Set(selected)
   const previewSet = new Set(approvalKeys ?? [])
   const preview = (approvalKeys ?? []).flatMap((key) => byKey.get(key) ? [byKey.get(key)!] : [])
@@ -43,14 +55,18 @@ export function OfflineMigrationReview({ id, title, rows, busy, tab, onTabChange
   const visible = filtered.slice((currentPage - 1) * 25, currentPage * 25)
   const previewPages = Math.max(1, Math.ceil(preview.length / 25))
   const currentPreviewPage = Math.min(previewPage, previewPages)
-  const showPreview = (keys: string[]) => { setPreviewPage(1); onPreview(keys) }
-  return <section aria-label={`${title} design review`}>
-    <p>{ready.length} items ready for review · {rows.length - ready.length} blocked or manual.</p>
+  const showPreview = (keys: string[], focus = true) => { setPreviewPage(1); setFocusRequested(focus); if (keys.length) onPreview(keys); else onCancel() }
+  return <section className="offline-migration-review" aria-label={`${title} design review`}>
+    <p>{preview.filter((row) => row.operation !== 'REUSE').length} included · {preview.filter((row) => row.operation === 'REUSE').length} reused · {ready.filter((row) => !previewSet.has(row.key)).length} excluded · {rows.length - ready.length} blocked or manual.</p>
     {!ready.length && <p role="status">No changes are ready to approve. Review shared blockers and the issue groups below.</p>}
     <Button className="secondary-button" disabled={busy} onClick={onSetup}>Edit target setup</Button>
+    {!!findings.length && <details><summary>Technical findings ({findings.length})</summary>
+      {findings.slice((findingPage - 1) * 25, findingPage * 25).map((finding, index) => <pre className="set-command-preview" key={index}>{JSON.stringify(finding, null, 2)}</pre>)}
+      <div className="action-row"><Button disabled={findingPage <= 1} onClick={() => setFindingPage(findingPage - 1)}>Previous findings</Button><span>Page {findingPage} of {Math.ceil(findings.length / 25)}</span><Button disabled={findingPage * 25 >= findings.length} onClick={() => setFindingPage(findingPage + 1)}>Next findings</Button></div>
+    </details>}
     <div role="tablist" aria-label={`${title} migration review`} className="migration-review-tabs" onKeyDown={tabKeyboard}>
       {([['changes', 'Changes', rows.length], ['decisions', 'Needs your input', inputCount], ['manual', 'Work outside this tool', manualCount]] as const).map(([value, label, count]) =>
-        <button key={value} id={`${id}-tab-${value}`} role="tab" type="button" aria-selected={tab === value} aria-controls={`${id}-panel-${value}`} tabIndex={tab === value ? 0 : -1} onClick={() => onTabChange(value)}>{label} <span>{count} {value === 'changes' ? 'items' : 'issue groups'}</span></button>)}
+        <button key={value} id={`${id}-tab-${value}`} role="tab" type="button" aria-selected={tab === value} aria-controls={`${id}-panel-${value}`} tabIndex={tab === value ? 0 : -1} onClick={() => onTabChange(value)}>{label} <span>{count}</span></button>)}
     </div>
     {tab !== 'changes' ? <section id={`${id}-panel-${tab}`} role="tabpanel" aria-labelledby={`${id}-tab-${tab}`}>{issueContent}</section> :
       <section id={`${id}-panel-changes`} role="tabpanel" aria-labelledby={`${id}-tab-changes`}>
@@ -61,7 +77,7 @@ export function OfflineMigrationReview({ id, title, rows, busy, tab, onTabChange
           <label className="field">Source scope<select value={scope} onChange={(event) => { setScope(event.target.value); setPage(1) }}><option value="">All scopes</option>{scopes.map((name) => <option key={name} value={name}>{name}</option>)}</select></label>
         </div>
         <div className="action-row">
-          <label><input type="checkbox" aria-label="Select all ready changes" disabled={busy || !ready.length} checked={ready.length > 0 && ready.every((row) => selectedSet.has(row.key))} onChange={(event) => onSelect(event.target.checked ? ready.map((row) => row.key) : [])} /> Select all ready changes ({ready.length})</label>
+          <label><input type="checkbox" aria-label="Select all ready changes" disabled={busy || !ready.length} checked={ready.length > 0 && ready.every((row) => selectedSet.has(row.key))} onChange={(event) => { const keys = event.target.checked ? ready.map((row) => row.key) : []; onSelect(keys); showPreview(keys, false) }} /> Select all ready changes ({ready.length})</label>
           <Button disabled={busy || !ready.length} onClick={() => { onSelect(ready.map((row) => row.key)); showPreview(ready.map((row) => row.key)) }}>Review all ready changes</Button>
           <Button disabled={busy || !selected.length} onClick={() => showPreview(selected)}>Review selected changes</Button>
         </div>
@@ -82,7 +98,7 @@ export function OfflineMigrationReview({ id, title, rows, busy, tab, onTabChange
         </section>}
         {!filtered.length && <p>No configuration items match these filters.</p>}
         <div className="report-table-wrap"><table className="report-table"><caption>Planned {title} configuration</caption><thead><tr><th>Select</th><th>Source scope / name</th><th>Target</th><th>Operation</th><th>Reason</th></tr></thead><tbody>{visible.map((row) => <tr key={row.key}>
-          <td><input aria-label={`Select ${row.sourceScope} ${row.sourceName}`} type="checkbox" disabled={busy || !row.ready} checked={selectedSet.has(row.key)} onChange={(event) => onSelect(event.target.checked ? [...selected, row.key] : selected.filter((key) => key !== row.key))} /></td>
+          <td><input aria-label={`Select ${row.sourceScope} ${row.sourceName}`} type="checkbox" disabled={busy || !row.ready} checked={selectedSet.has(row.key)} onChange={(event) => { const keys = event.target.checked ? [...selected, row.key] : selected.filter((key) => key !== row.key); onSelect(keys); showPreview(keys, false) }} /></td>
           <td>{row.sourceScope} / {row.sourceName}<small>{row.family}</small><details><summary>Settings</summary><pre className="set-command-preview">{JSON.stringify(row.settings, null, 2)}</pre></details></td>
           <td>{row.target}</td><td>{row.operation}</td><td>{row.ready ? 'Ready for review' : <details><summary>{row.reasons.length} blocking reasons</summary><ul>{row.reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul></details>}</td>
         </tr>)}</tbody></table></div>

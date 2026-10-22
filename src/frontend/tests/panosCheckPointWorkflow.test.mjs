@@ -40,7 +40,7 @@ function harness(overrides = {}, savedOptions = options) {
   }
   const activity = load('../src/features/migration/hooks/useMigrationReviewActivity.ts', { '../../../api/client': { RequestError: class extends Error {} } })
   const saved = { pairId: 'palo_alto_to_checkpoint', sourceKey: 'source', options: savedOptions, review, stage: 'export', approval: {},
-    artifact: { artifact_id: 'id', files: { 'checkpoint_management_operations.json': { content: 'exact\n', sha256: 'hash', byte_count: 6 } }, report: { verification: 'Offline', management_operation_count: 1 } } }
+    artifact: { artifact_id: 'id', files: { 'checkpoint_management_operations.json': { content: 'exact\n', sha256: 'hash', byte_count: 6 } }, report: { items: [], verification: 'Offline', management_operation_count: 1 } } }
   const Component = load('../src/features/migration/paloAltoToCheckPoint/MigrationWorkflow.tsx', {
     '../../../components/common/Button': { Button: 'Button' }, '../../../components/common/ErrorBanner': { ErrorBanner: 'ErrorBanner' },
     '../../../storage/workspaceStore': { workspace: () => ({ panosMigration: saved }), saveWorkspace: async () => {} },

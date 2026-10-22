@@ -107,6 +107,7 @@ def register_fortigate_to_checkpoint_routes(app, signing_key):
             if action == "design/prepare":
                 return jsonify({"success": True, "source_digest": entry.source_digest,
                                 "options": client_options(review),
+                                "source_vdoms": source_vdoms(entry.analysis.extracted.config),
                                 "draft": sign_envelope(review["draft"], signing_key),
                                 "requirements": review["requirements"], "report": review["report"]})
             if action == "design/approve":

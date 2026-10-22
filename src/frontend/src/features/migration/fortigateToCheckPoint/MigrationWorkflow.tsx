@@ -1,20 +1,20 @@
+import { OfflineMigrationExport } from '../components/OfflineMigrationExport'
+import { OfflineMigrationReview } from '../components/OfflineMigrationReview'
 import { MigrationCoverage } from '../components/MigrationCoverage'
 import { DestinationSnapshot } from '../components/DestinationSnapshot'
 import { Button } from '../../../components/common/Button'
 import type { DestinationEvidence } from '../components/DestinationSnapshot'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { saveWorkspace, workspace } from '../../../storage/workspaceStore'
 import type { SourceEvidence } from '../../../storage/workspaceTypes'
 import type { MigrationStage } from '../types'
 import * as api from './migrationApi'
 import type { CheckPointOptions, CheckPointPlanItem, CheckPointWorkspace } from './types'
 
-const PAGE_SIZE = 25
 const MANAGEMENT_FILE = 'checkpoint_management_operations.json'
 const GAIA_FILE = 'gaia_config.clish'
 const BINDINGS_FILE = 'checkpoint_bindings.json'
 const COMMANDS_FILE = 'checkpoint_management.sh'
-const EMPTY_ITEMS: CheckPointPlanItem[] = []
 
 const emptyCheckPointOptions = (): CheckPointOptions => ({
   target_mode: 'new',
@@ -25,7 +25,6 @@ const emptyCheckPointOptions = (): CheckPointOptions => ({
 
 function eligible(item: CheckPointPlanItem) { return ['CREATE', 'REUSE'].includes(item.render_disposition) }
 
-const readableLabel = (value: string) => value.replaceAll('_', ' ').toLowerCase()
 
 function expandSelection(items: CheckPointPlanItem[], keys: string[]) {
   const byKey = new Map(items.map((item) => [item.key, item]))
@@ -65,39 +64,35 @@ export function CheckPointMigrationWorkflow({ source, sourceKey, stage, onStageC
   const [targetLoading, setTargetLoading] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [preparing, setPreparing] = useState(false)
+  const [reviewTab, setReviewTab] = useState<'changes' | 'decisions' | 'manual'>('changes')
   const [selected, setSelected] = useState<string[]>([])
   const [approvalPreview, setApprovalPreview] = useState<string[] | null>(null)
-  const [search, setSearch] = useState('')
-  const [page, setPage] = useState(1)
-  const [findingPage, setFindingPage] = useState(1)
-  const [memberPages, setMemberPages] = useState<Record<string, number>>({})
-  const [approvalPage, setApprovalPage] = useState(1)
-  const [previewFile, setPreviewFile] = useState(MANAGEMENT_FILE)
   const [sourceVdoms, setSourceVdoms] = useState<string[]>([])
   const requests = useRef(0)
   const pending = useRef(false)
-  const { options, review, approval, artifact, preview } = state
-  const initialOptions = useRef(options)
+  const { options, review, approval, artifact } = state
   const newTarget = options.target_mode === 'new'
 
-  useEffect(() => { void saveWorkspace({ panosMigration: state }) }, [state])
+  useEffect(() => { void saveWorkspace({ panosMigration: { ...state, stage } }) }, [state, stage])
   useEffect(() => () => { requests.current++ }, [])
   useEffect(() => {
     let active = true
-    const requestedOptions = initialOptions.current
-    api.requirements(source, requestedOptions).then((result) => {
-      if (active) {
-        setState((current) => ({ ...current, requirements: result.requirements,
-          options: current.options === requestedOptions && !current.review && result.options
-            ? result.options : current.options }))
-        setSourceVdoms(result.source_vdoms ?? result.requirements.find((item) => item.key === 'checkpoint:source_vdom')?.choices ?? [])
-      }
-    }).catch((cause) => { if (active) setError(cause instanceof Error ? cause.message : 'Could not load Check Point requirements') })
-    return () => { active = false }
-  }, [source, sourceKey, options.target_mode, options.source_vdom])
+    const request = ++requests.current
+
+    const timer = setTimeout(() => { setPreparing(true); void api.prepare(source, options, state.destination).then((result) => {
+      if (!active || request !== requests.current) return
+      const nextOptions = result.options ?? options
+      setSourceVdoms(result.source_vdoms ?? result.requirements.find((item) => item.key === 'checkpoint:source_vdom')?.choices ?? [])
+      setState((current) => ({ ...current, requirements: result.requirements, review: JSON.stringify(nextOptions) === JSON.stringify(options) ? result : null,
+        options: JSON.stringify(nextOptions) === JSON.stringify(options) ? options : nextOptions,
+        ...(JSON.stringify(nextOptions) === JSON.stringify(options) ? {} : { approval: null, artifact: null }) }))
+    }).catch((cause) => { if (active && request === requests.current) setError(cause instanceof Error ? cause.message : 'Could not prepare conversion') })
+      .finally(() => { if (active) setPreparing(false) }) }, 250)
+    return () => { active = false; clearTimeout(timer) }
+  }, [source, options, state.destination])
 
   function changeOptions(next: CheckPointOptions) {
-    initialOptions.current = next
     requests.current++
     setState((current) => ({ ...current, options: next, review: null, approval: null, artifact: null, preview: null }))
     setSelected([])
@@ -129,9 +124,6 @@ export function CheckPointMigrationWorkflow({ source, sourceKey, stage, onStageC
     const result = await api.prepare(source, options, state.destination)
     if (request !== requests.current) return
     setState((current) => ({ ...current, options: result.options ?? current.options, requirements: result.requirements, review: result }))
-    setPage(1)
-    setFindingPage(1)
-    setMemberPages({})
     onStageChange('review')
   }
 
@@ -155,7 +147,6 @@ export function CheckPointMigrationWorkflow({ source, sourceKey, stage, onStageC
     const built = await api.build(source, options, currentApproval, state.destination)
     if (request !== requests.current) return
     setState((current) => ({ ...current, artifact: built.artifact, preview: null }))
-    setPreviewFile(built.artifact.files[COMMANDS_FILE] ? COMMANDS_FILE : MANAGEMENT_FILE)
     onStageChange('export')
     await refreshPreview(built.artifact)
   }
@@ -176,16 +167,11 @@ export function CheckPointMigrationWorkflow({ source, sourceKey, stage, onStageC
     await generate(result.approval)
   }
 
-  function openApprovalPreview() {
-    if (review) {
-      setApprovalPreview(expandSelection(review.report.items, selected))
-      setApprovalPage(1)
-    }
-  }
-
   async function download(kind: 'management-operations' | 'management-commands' | 'gaia-config' | 'bindings' | 'bundle') {
     if (!artifact) return
+    const request = requests.current
     const blob = await api.download(source, artifact, kind)
+    if (request !== requests.current) return
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
@@ -213,42 +199,16 @@ export function CheckPointMigrationWorkflow({ source, sourceKey, stage, onStageC
     setError(null)
   }
 
-  function toggleItem(key: string) {
-    setApprovalPreview(null)
-    setSelected((current) => current.includes(key) ? current.filter((item) => item !== key) : [...current, key])
-  }
-
-  const items = review?.report.items ?? EMPTY_ITEMS
-  const itemsByKey = new Map(items.map((item) => [item.key, item]))
-  const filteredItems = useMemo(() => items.filter((item) =>
-    `${item.family} ${item.source_vdom} ${item.source_name} ${item.target_name} ${item.blockers.join(' ')}`.toLowerCase().includes(search.trim().toLowerCase())), [items, search])
-  const pages = Math.max(1, Math.ceil(filteredItems.length / PAGE_SIZE))
-  const currentPage = Math.min(page, pages)
-  const visibleItems = filteredItems.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
-  const eligibleCount = items.filter(eligible).length
-  const findingGroups = useMemo(() => {
-    const groups = new Map<string, { key: string; message: string; findings: Record<string, unknown>[] }>()
-    for (const finding of review?.report.findings ?? []) {
-      const key = JSON.stringify([finding.code, finding.message, finding.blocking])
-      const group = groups.get(key)
-      if (group) group.findings.push(finding)
-      else groups.set(key, { key, message: String(finding.message), findings: [finding] })
-    }
-    return [...groups.values()]
-  }, [review])
-  const findingPages = Math.max(1, Math.ceil(findingGroups.length / PAGE_SIZE))
-  const currentFindingPage = Math.min(findingPage, findingPages)
-  const approvalPages = Math.max(1, Math.ceil((approvalPreview?.length ?? 0) / PAGE_SIZE))
-  const currentApprovalPage = Math.min(approvalPage, approvalPages)
   function textField(field: 'management_target' | 'management_domain' | 'policy_package' | 'access_layer' | 'insertion_anchor' | 'gaia_target', label: string, value: string) {
     return <label className="field" key={field}><span>{label}</span><input disabled={busy} value={value}
       onChange={(event) => changeOptions({ ...options, [field]: event.target.value })} /></label>
   }
 
+  const unresolvedInputs = state.requirements.filter((item) => (item.value == null || item.value === '' || item.value === false))
   return <section className="panel checkpoint-workflow" aria-labelledby="checkpoint-migration-title">
     <h2 id="checkpoint-migration-title">FortiGate to Check Point</h2>
     <p>Convert the source into reviewed Check Point R81 API 1.8.1 operations and Gaia Clish commands for manual application.</p>
-    {stage === 'place' && <>
+    {(stage === 'place' || stage === 'review') && <details open={stage === 'place'}><summary>Target setup and choices</summary>
       <label className="field"><span>Target setup</span><select disabled={busy} value={newTarget ? 'new' : 'existing'} onChange={(event) => {
         changeDestination(null)
         changeOptions({ ...emptyCheckPointOptions(), source_vdom: options.source_vdom,
@@ -295,85 +255,49 @@ export function CheckPointMigrationWorkflow({ source, sourceKey, stage, onStageC
       </div>
       </details>
       <Button variant="primary" type="button" disabled={busy || targetLoading || !options.source_vdom} onClick={() => void run(prepareReview)}>Prepare review</Button>
-    </>}
+    </details>}
 
     {error && <div className="error-banner" role="alert">{error}</div>}
 
-    {stage === 'review' && review && <>
-      <h3>Review generated operations</h3>
-      <Button variant="secondary" type="button" disabled={busy} onClick={() => onStageChange('place')}>Edit target setup</Button>
+    {(stage === 'review' || stage === 'place') && review && <>
       <MigrationCoverage coverage={review.report.coverage} />
-      <p>{readableLabel(review.report.plan_status)}. {eligibleCount} items can be included; {items.length - eligibleCount} remain blocked or manual. Selecting a rule also approves its prior rule and object dependencies.</p>
-      <label className="field"><span>Search plan items</span><input value={search} onChange={(event) => { setSearch(event.target.value); setPage(1) }} /></label>
-      <div className="checkpoint-plan-list" aria-label="Check Point plan items">
-        {visibleItems.map((item) => <div className="checkpoint-plan-item" key={item.key}>
-          <label className="checkpoint-item-heading"><input type="checkbox" disabled={busy || !eligible(item)} checked={selected.includes(item.key)} onChange={() => toggleItem(item.key)} />
-            <strong>{readableLabel(item.family)}: {item.source_name}</strong></label>
-          <p>Source VDOM: {item.source_vdom || 'Unspecified'}</p>
-          <p>{readableLabel(item.render_disposition)} · Target: {item.target_name}</p>
-          {item.blockers.length > 0 && <details><summary>{item.blockers.length} blocking reasons</summary>
-            <ul>{item.blockers.map((reason, index) => <li key={index}>{readableLabel(reason)}</li>)}</ul>
-            <details><summary>Technical blocker codes</summary><pre className="set-command-preview">{item.blockers.join('\n')}</pre></details>
-          </details>}
-        </div>)}
-      </div>
-      {!filteredItems.length && <p>No plan items match your search.</p>}
-      <div className="action-row"><Button variant="secondary" type="button" disabled={busy || currentPage <= 1} onClick={() => setPage(currentPage - 1)}>Previous</Button><span>Page {currentPage} of {pages}</span><Button variant="secondary" type="button" disabled={busy || currentPage >= pages} onClick={() => setPage(currentPage + 1)}>Next</Button></div>
-      {findingGroups.length > 0 && <section className="checkpoint-findings" aria-label="Check Point findings">
-        <h3>Findings ({review.report.findings.length})</h3>
-        <p>{findingGroups.length} groups. Expand a group to review its source items and exact evidence.</p>
-        {findingGroups.slice((currentFindingPage - 1) * PAGE_SIZE, currentFindingPage * PAGE_SIZE).map((group) => {
-          const pages = Math.max(1, Math.ceil(group.findings.length / PAGE_SIZE))
-          const current = Math.min(memberPages[group.key] ?? 1, pages)
-          return <details className="checkpoint-plan-item" key={group.key}>
-            <summary>{group.message} ({group.findings.length} {group.findings.length === 1 ? 'finding' : 'findings'})</summary>
-            <ul>{group.findings.slice((current - 1) * PAGE_SIZE, current * PAGE_SIZE).map((finding, index) => <li key={(current - 1) * PAGE_SIZE + index}>
-              {[finding.source_vdom, finding.source_kind, finding.source_name].filter((value) => value != null && value !== '').map(String).join(' / ') || 'Plan-wide finding'}
-              <details><summary>Exact finding evidence</summary><pre className="set-command-preview">{JSON.stringify(finding, null, 2)}</pre></details>
-            </li>)}</ul>
-            {pages > 1 && <div className="action-row"><Button variant="secondary" disabled={busy || current === 1} onClick={() => setMemberPages((previous) => ({ ...previous, [group.key]: current - 1 }))}>Previous affected items</Button><span>Page {current} of {pages}</span><Button variant="secondary" disabled={busy || current === pages} onClick={() => setMemberPages((previous) => ({ ...previous, [group.key]: current + 1 }))}>Next affected items</Button></div>}
-          </details>
-        })}
-        {findingPages > 1 && <div className="action-row"><Button variant="secondary" disabled={busy || currentFindingPage === 1} onClick={() => setFindingPage(currentFindingPage - 1)}>Previous finding groups</Button><span>Page {currentFindingPage} of {findingPages}</span><Button variant="secondary" disabled={busy || currentFindingPage === findingPages} onClick={() => setFindingPage(currentFindingPage + 1)}>Next finding groups</Button></div>}
-      </section>}
-      <div className="action-row"><Button variant="secondary" type="button" disabled={busy || eligibleCount === 0} onClick={() => { setSelected(items.filter(eligible).map((item) => item.key)); setApprovalPreview(null) }}>Select all supported operations</Button>
-      <Button variant="primary" type="button" disabled={busy || selected.length === 0} onClick={() => void run(async () => openApprovalPreview())}>Review selected operations</Button></div>
-      {approvalPreview && <section className="migration-approval-preview" aria-label="Check Point approval preview">
-        <h3>Confirm operations and dependencies</h3>
-        <p>{approvalPreview.length} operations, including {approvalPreview.filter((key) => !selected.includes(key)).length} required dependencies. Approval includes all pages.</p>
-        {newTarget ? <p>Create package: {options.policy_package}. Create its access layer and Drop cleanup rule. Domain and gateways are selected during manual application. No existing policy is changed.</p>
-          : <p>Management target: {options.management_target}. Domain: {options.management_domain}. Package: {options.policy_package}. Layer: {options.access_layer}. Install-on: {options.install_on.join(', ')}. Placement: {options.insertion_relation} {options.insertion_anchor}. Gaia target: {options.gaia_target}.</p>}
-        {approvalPreview.slice((currentApprovalPage - 1) * PAGE_SIZE, currentApprovalPage * PAGE_SIZE).map((key) => {
-          const item = itemsByKey.get(key)!
-          return <details className="checkpoint-plan-item" key={key}><summary>{readableLabel(item.family)}: {item.source_name} ({selected.includes(key) ? 'Selected' : 'Required dependency'})</summary>
-            <p>{readableLabel(item.render_disposition)} · Target: {item.target_name}</p>
-            <p>Source VDOM: {item.source_vdom || 'Unspecified'}. Dependencies: {item.dependencies.length}.</p>
-            <details><summary>Exact settings and dependency keys</summary><pre className="set-command-preview">{JSON.stringify({ settings: item.settings, dependencies: item.dependencies }, null, 2)}</pre></details>
-          </details>
-        })}
-        {approvalPages > 1 && <div className="action-row"><Button variant="secondary" disabled={busy || currentApprovalPage === 1} onClick={() => setApprovalPage(currentApprovalPage - 1)}>Previous approval details</Button><span>Page {currentApprovalPage} of {approvalPages}</span><Button variant="secondary" disabled={busy || currentApprovalPage === approvalPages} onClick={() => setApprovalPage(currentApprovalPage + 1)}>Next approval details</Button></div>}
-        <div className="action-row"><Button variant="primary" type="button" disabled={busy} onClick={() => void run(confirmApproval)}>Approve these operations and generate files</Button>
-        <Button variant="secondary" type="button" disabled={busy} onClick={() => setApprovalPreview(null)}>Cancel approval preview</Button></div>
-      </section>}
+      <OfflineMigrationReview id="fg-cp" title="Check Point" rows={review.report.items.map((item) => ({
+        key: item.key, family: item.family, sourceScope: item.source_vdom, sourceName: item.source_name,
+        target: item.target_name, operation: item.render_disposition, settings: item.settings,
+        dependencies: item.dependencies, reasons: item.blockers, ready: ['CREATE', 'REUSE'].includes(item.render_disposition) && !item.blockers.length,
+      }))} busy={busy || preparing || targetLoading} tab={reviewTab} onTabChange={setReviewTab}
+        inputCount={unresolvedInputs.length}
+        manualCount={review.report.items.filter((item) => item.blockers.length).length}
+        issueContent={reviewTab === 'decisions' ? <><p>Complete these target choices in the setup details above.</p>
+          <ul>{unresolvedInputs.map((item) => <li key={item.key}>{item.label} {item.source_name}</li>)}</ul></>
+          : <><p>Blocked configuration and separate work retain their source reasons. Target choices may resolve some blockers; unsupported semantics remain manual.</p>
+          <ul>{[...new Set(review.report.items.flatMap((item) => item.blockers))].map((reason) => <li key={reason}>{reason.replaceAll('_', ' ')}</li>)}</ul></>}
+
+        selected={selected} onSelect={(keys) => { setSelected(keys); setApprovalPreview(null); setState((current) => ({ ...current, approval: null, artifact: null })) }}
+        approvalKeys={approvalPreview} onPreview={(keys) => { try { setApprovalPreview(expandSelection(review.report.items, keys)) } catch (cause) { setError(String(cause)) } }}
+        onApprove={() => void run(confirmApproval)} onCancel={() => setApprovalPreview(null)}
+        approvalContext={<><p>Proposed offline placement; hardware availability is unverified. Approval binds these target choices and exact configuration.</p><pre className="set-command-preview">{JSON.stringify(options, null, 2)}</pre></>}
+        onSetup={() => onStageChange('place')} findings={review.report.findings} approveLabel="Approve and generate" />
     </>}
+    {preparing && <p role="status">Preparing conversion review…</p>}
 
     {stage === 'export' && approval && !artifact && <Button variant="secondary" type="button" disabled={busy} onClick={() => void run(() => generate())}>Retry with current approval</Button>}
-    {stage === 'export' && artifact && <>
-      <h3>Reviewed offline files</h3>
-      <p>Approval expires {new Date(artifact.expires_at * 1000).toLocaleString()}. Live device acceptance, policy publish, installation, and Gaia save remain manual.</p>
-      <div className="migration-view-nav" aria-label="Reviewed Check Point files">
-        {Object.keys(artifact.files).map((name) => <Button variant="secondary" type="button" key={name} aria-pressed={previewFile === name} onClick={() => setPreviewFile(name)}>{name}</Button>)}
-      </div>
-      <p>SHA-256: {artifact.file_sha256[previewFile]}</p>
-      <pre className="set-command-preview">{preview?.[previewFile]?.text ?? 'Loading approved bytes…'}</pre>
-      <div className="action-row">
-        {artifact.files[COMMANDS_FILE] && <Button variant="secondary" type="button" disabled={busy} onClick={() => void run(() => download('management-commands'))}>Download Management commands</Button>}
-        <Button variant="secondary" type="button" disabled={busy} onClick={() => void run(() => download('management-operations'))}>Download Management requests</Button>
-        <Button variant="secondary" type="button" disabled={busy} onClick={() => void run(() => download('gaia-config'))}>Download Gaia config</Button>
-        <Button variant="secondary" type="button" disabled={busy} onClick={() => void run(() => download('bindings'))}>Download UID manifest</Button>
-        <Button variant="secondary" type="button" disabled={busy} onClick={() => void run(() => download('bundle'))}>Download reviewed bundle</Button>
-      </div>
-      {!preview && <Button variant="secondary" type="button" disabled={busy} onClick={() => void run(() => refreshPreview())}>Reload exact approved preview</Button>}
-    </>}
+    {stage === 'export' && artifact && <OfflineMigrationExport dispositions={artifact.report.items.map((row) => row.render_disposition)} artifactId={artifact.artifact_id}
+      partial={Object.entries(artifact.report.coverage?.status_counts ?? {}).some(([status, count]) => count > 0 && !['RENDERED', 'REUSED'].includes(status)) || artifact.report.items.some((item) => !['CREATE', 'REUSE'].includes(item.render_disposition))}
+      noChanges={artifact.report.items.length > 0 && artifact.report.items.every((item) => item.render_disposition === 'REUSE')}
+      verification="Offline files only. Publish, policy installation, Gaia save and device acceptance remain manual."
+      busy={busy || targetLoading} files={[
+        { key: 'management-operations', name: MANAGEMENT_FILE, label: 'Management requests' },
+        { key: 'management-commands', name: COMMANDS_FILE, label: 'Management commands' },
+        { key: 'gaia-config', name: GAIA_FILE, label: 'Gaia config' },
+        { key: 'bindings', name: BINDINGS_FILE, label: 'UID manifest' },
+      ].filter((spec) => artifact.files[spec.name]).map((spec) => ({ key: spec.key, label: spec.label, previewLabel: spec.label,
+        text: artifact.files[spec.name].content, sha256: artifact.files[spec.name].sha256,
+        count: `${artifact.files[spec.name].byte_count} bytes`, downloadLabel: `Download ${spec.label}`, downloadable: true }))}
+      onDownload={(kind) => void run(() => download(kind as 'management-operations' | 'management-commands' | 'gaia-config' | 'bindings'))}
+      onBundle={() => void run(() => download('bundle'))}>
+      <MigrationCoverage coverage={artifact.report.coverage} />
+    </OfflineMigrationExport>}
+
   </section>
 }

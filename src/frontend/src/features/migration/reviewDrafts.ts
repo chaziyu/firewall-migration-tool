@@ -14,6 +14,27 @@ export function draftDependencies(rows: DraftRow[] | Map<string, DraftRow>, keys
   return [...result]
 }
 
+export function readyConfigurationKeys(rows: DraftRow[], approvedItems: string[] = []): string[] {
+  const approved = new Set(approvedItems)
+  const byKey = new Map(rows.map((row) => [draftRowKey(row), row]))
+  const blocked = new Set<string>()
+  const children = new Map<string, string[]>()
+  for (const row of rows) {
+    const key = draftRowKey(row)
+    if (row.approved || approved.has(row.item_key || row.decision_key || '')) continue
+    if (row.status !== 'READY') blocked.add(key)
+    for (const parent of row.dependencies) {
+      if (!byKey.has(parent)) blocked.add(key)
+      const dependents = children.get(parent) ?? []
+      dependents.push(key)
+      children.set(parent, dependents)
+    }
+  }
+  for (const key of blocked) for (const child of children.get(key) ?? []) blocked.add(child)
+  return rows.filter((row) => !row.decision_key && !blocked.has(draftRowKey(row))
+    && !row.approved && !approved.has(row.item_key || '')).map(draftRowKey)
+}
+
 export function portExceptionGroups(rows: DraftRow[]): Map<string, DraftRow[]> {
   const ports = rows.filter((row) => row.target_field === 'target_interface' && ['NEEDS_INPUT', 'CONFLICT'].includes(row.status))
   const byKey = new Map(rows.map((row) => [draftRowKey(row), row]))

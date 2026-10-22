@@ -7,6 +7,7 @@ import uuid
 
 from ..design.deterministic import PAIR, approve_draft, build_draft, export_decisions as export_mapping, import_decisions as import_mapping, validate_approval
 from ..options import SRXMigrationOptions
+from ..design.proposals import build_target_proposals
 from ..planner import PaloAltoToJuniperSRXPlanner
 from ..rendering.renderer import JunosSetRenderer
 from ..requirements import build_mapping_requirements
@@ -32,6 +33,8 @@ def _options(value):
 
 def _plan(analysis, options, *, target=None, target_source_text=None, target_metadata=None):
     parsed = _options(options)
+    if target is None:
+        parsed, _ = build_target_proposals(analysis.config, analysis.derived, parsed)
     plan = PaloAltoToJuniperSRXPlanner().plan(analysis.config, analysis.derived, parsed)
     evidence = None
     if target is not None:
