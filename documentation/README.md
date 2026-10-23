@@ -50,6 +50,7 @@ Deep-dive architecture specifications into the core engines that power source an
 | Record | Purpose |
 | :--- | :--- |
 | [Code Quality Review and Refinement](code-quality-review-2026-10-23.md) | Code, import boundaries, stale policy and organization findings, implementation plan and validation. |
+| [Node Runtime and Bug Review](node-runtime-and-bug-review-2026-10-23.md) | Node security baseline, dependency updates, launcher synchronization and proxy error handling. |
 | [FortiGate to PAN-OS Scheduled Review](fortigate-to-panos-scheduled-review.md) | Resumable migration audit checkpoint, completed fixes and remaining engineer decisions. |
 | [Offline Workflow Parity Progress](offline-workflow-parity-progress.md) | Cross-pair workflow verification and remaining limitations. |
 | [Render Deployment Recovery](render-deployment-recovery-2026-10-23.md) | Failed-start investigation, cache recovery and deployment verification evidence. |

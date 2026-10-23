@@ -11,7 +11,7 @@ This repository uses **vendor-native extraction/reporting** plus **pair-specific
 - `Start Local.bat` runs Flask on `127.0.0.1:5000` and Vite on `127.0.0.1:5173`. Vite proxies API requests to Flask.
 - Hosted web execution uses Gunicorn. Collection and deployment run on the backend machine and need network access from that machine.
 - Tauri desktop packaging and Docker deployment files have been removed. Do not assume Rust/Cargo, desktop sidecars, container builds, or desktop installers are available.
-- Frontend CI uses Node.js 24. Python compatibility CI covers 3.11–3.14. The constrained dependency job uses Python 3.12 and `requirements/constraints-python312.txt`.
+- Frontend CI and Render use the Node.js 24 security baseline in `.node-version`. The frontend package enforces its supported Node range during installation. Python compatibility CI covers 3.11–3.14. The constrained dependency job uses Python 3.12 and `requirements/constraints-python312.txt`.
 
 ## Pipelines
 

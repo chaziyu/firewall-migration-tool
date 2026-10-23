@@ -34,11 +34,9 @@ if errorlevel 1 (
     goto :failed
 )
 
-if not exist "src\frontend\node_modules\.bin\vite.cmd" (
-    echo Installing frontend dependencies...
-    call npm --prefix src\frontend ci
-    if errorlevel 1 goto :failed
-)
+echo Synchronizing frontend dependencies from the lockfile...
+call npm --prefix src\frontend ci --prefer-offline
+if errorlevel 1 goto :failed
 
 echo Backend:  http://127.0.0.1:5000
 echo Frontend: http://127.0.0.1:5173
