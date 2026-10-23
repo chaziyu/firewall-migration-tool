@@ -13,6 +13,7 @@ from fwmigrate.vendors.fortigate.model.interface import FGInterface
 from fwmigrate.vendors.fortigate.model.zone import FGZone
 from fwmigrate.vendors.fortigate.model.policy import FGPolicy
 from fwmigrate.vendors.fortigate.derived import build_derived_views
+from fwmigrate.conversion.fortigate_to_palo_alto.coverage import build_migration_coverage
 from fwmigrate.conversion.fortigate_to_palo_alto.requirements import build_mapping_requirements
 
 
@@ -45,6 +46,8 @@ def test_zone_consolidation_retains_members_decisions_and_blockers(named_second,
         assert zone.interfaces == ('ethernet1/1', 'ethernet1/2')
         assert any('intra-zone' in warning for warning in zone.warnings)
     assert source.model_dump() == original
+    coverage = build_migration_coverage(source, plan=plan, options=options)
+    assert not any(row['source_kind'] == 'zone' for row in coverage['unplanned'])
 
 
 def test_additive_zone_requires_every_contributor_approval():

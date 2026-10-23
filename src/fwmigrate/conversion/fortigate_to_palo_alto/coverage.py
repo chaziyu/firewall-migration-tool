@@ -58,6 +58,7 @@ def build_migration_coverage(source, recommendations=(), *, planned_vpn_sources=
     unplanned = []
     if plan is not None:
         unplanned.extend(_unplanned_interfaces(source, plan, options))
+        unplanned.extend(_unplanned_zones(source, plan, options))
     unplanned.extend(_unplanned_ip_pools(source, plan))
     unplanned.extend(_unmodeled_source_records(source, source_inventory))
 
@@ -166,6 +167,26 @@ def _unplanned_ip_pools(source, plan):
                'readiness': 'UNSUPPORTED',
                'reason': 'IPv4 IP-pool definition has no corresponding translated-address NAT plan. '
                          'Review its consumers or explicitly retire the definition; no standalone pool commands are emitted.'}
+
+
+def _unplanned_zones(source, plan, options):
+    represented = {(item.source_vdom or 'root', item.source_name) for item in plan.zones
+                   if item.source_kind == 'zone'}
+    represented.update((ref.source_vdom or 'root', ref.source_name) for item in plan.zones
+                       for ref in item.source_contributors if ref.source_kind == 'zone')
+    for zone in getattr(source, 'zones', ()):
+        vdom = zone.vdom or 'root'
+        if (vdom, zone.name) in represented:
+            continue
+        zone_mappings = getattr(options, 'zones', None)
+        mappings = zone_mappings if zone_mappings is not None else getattr(options, 'interfaces', {})
+        mapping = mappings.get(vdom, {}).get(zone.name)
+        pending = not getattr(mapping, 'target_zone', None)
+        yield {'status': 'SOURCE_ONLY', 'source_vdom': vdom, 'source_kind': 'zone',
+               'source_name': zone.name, 'family': 'zone', 'target_object_type': None,
+               'readiness': 'PENDING' if pending else 'UNSUPPORTED',
+               'reason': 'Source zone is not represented by the current plan. Review its target zone '
+                         'mapping and member interfaces; no zone commands are emitted for this record.'}
 
 
 def _unplanned_interfaces(source, plan, options):
