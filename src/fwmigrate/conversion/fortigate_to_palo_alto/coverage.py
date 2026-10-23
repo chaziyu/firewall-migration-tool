@@ -101,6 +101,10 @@ def build_migration_coverage(source, recommendations=(), *, planned_vpn_sources=
             vdom, name = _identity(item, index, attribute)
             if attribute == 'vip_groups' and (vdom, name) in planned_vip_groups:
                 continue
+            reason = "Source configuration is preserved but this migration pair has no executable planner coverage for it."
+            if attribute == 'session_helpers' and item.name is not None:
+                reason = (f"FortiGate system session-helper entry {name!r} (helper type {item.name!r}) is preserved "
+                          "but requires manual target application/helper review; no target commands are emitted.")
             unplanned.append({
                 "status": "SOURCE_ONLY",
                 "source_vdom": vdom,
@@ -109,7 +113,7 @@ def build_migration_coverage(source, recommendations=(), *, planned_vpn_sources=
                 "family": attribute,
                 "target_object_type": None,
                 "readiness": "UNSUPPORTED",
-                "reason": "Source configuration is preserved but this migration pair has no executable planner coverage for it.",
+                "reason": reason,
             })
 
     unplanned.sort(key=lambda item: (
