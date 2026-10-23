@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field as dataclass_field
 from typing import Any
 
 from .model import CiscoFTDConfig
@@ -14,18 +14,18 @@ from .transform.routes import NormalizedFTDRoute, normalize_ftd_routes
 @dataclass(frozen=True)
 class FTDDerivedViews:
     resolved_references: tuple[dict[str, str | None], ...] = ()
-    zone_interfaces: dict[str, tuple[str, ...]] = field(default_factory=dict)
+    zone_interfaces: dict[str, tuple[str, ...]] = dataclass_field(default_factory=dict)
     acp_relationships: tuple[dict[str, Any], ...] = ()
     policy_relationships: tuple[dict[str, Any], ...] = ()
     nat_relationships: tuple[dict[str, Any], ...] = ()
     unresolved_references: tuple[FTDReferenceIssue, ...] = ()
-    source_plane_completeness: dict[str, str] = field(default_factory=dict)
+    source_plane_completeness: dict[str, str] = dataclass_field(default_factory=dict)
     identity_relationships: tuple[dict[str, Any], ...] = ()
     vpn_relationships: tuple[dict[str, Any], ...] = ()
     ra_vpn_relationships: tuple[dict[str, Any], ...] = ()
     intrusion_relationships: tuple[dict[str, Any], ...] = ()
     inspection_relationships: tuple[dict[str, Any], ...] = ()
-    interface_topology: FTDInterfaceTopology = field(default_factory=FTDInterfaceTopology)
+    interface_topology: FTDInterfaceTopology = dataclass_field(default_factory=FTDInterfaceTopology)
     normalized_routes: tuple[NormalizedFTDRoute, ...] = ()
 
 

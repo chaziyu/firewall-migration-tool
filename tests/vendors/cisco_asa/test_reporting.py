@@ -23,7 +23,6 @@ from fwmigrate.web import create_app
 from fwmigrate.vendors.cisco_asa import CiscoASASourceReporter, ASASourceResult
 
 
-from fwmigrate.vendors.cisco_asa import extract_cisco_asa_source
 
 
 @pytest.mark.parametrize("profile", ["fast", "full"])
@@ -226,33 +225,8 @@ def test_remote_access_presentation_exposes_preview_and_excel_rows():
     assert workbook["Remote Access VPN"].max_row == 2
 
 
-def test_nat_presentation_exposes_derived_rows():
-    result = extract_cisco_asa_source(
-        "object network WEB\n host 10.0.0.2\n nat (inside,outside) static 192.0.2.2\n"
-    )
-
-    preview = build_asa_preview(result)["derived"]["nat"]
-    assert len(preview["vips"]) == 1
-    output = BytesIO()
-    export_asa_excel(result, output)
-    workbook = load_workbook(BytesIO(output.getvalue()), read_only=True)
-    assert "Source NAT Pools" in workbook.sheetnames
-    assert "Published Services - VIPs" in workbook.sheetnames
-    assert workbook["Published Services - VIPs"].max_row == 2
 
 
-def test_remote_access_presentation_exposes_preview_and_excel_rows():
-    result = extract_cisco_asa_source(
-        "tunnel-group RA type remote-access\n"
-        "tunnel-group RA general-attributes\n"
-    )
-
-    preview = build_asa_preview(result)["derived"]["vpn"]
-    assert len(preview["remote_access"]) == 1
-    output = BytesIO()
-    export_asa_excel(result, output)
-    workbook = load_workbook(BytesIO(output.getvalue()), read_only=True)
-    assert workbook["Remote Access VPN"].max_row == 2
 
 SOURCE = """hostname asa
 interface GigabitEthernet0/1

@@ -5,7 +5,6 @@ from .design.proposals import propose_new_target
 from .options import CPMigrationOptions
 from .planning.access_policy import plan_access_rules
 from .planning.gaia import plan_gaia_routes
-from .planning.naming import item_key
 from .planning.objects import plan_addresses, plan_ipv6_addresses, plan_services
 from .planning.package import plan_new_package
 from .requirements import build_mapping_requirements, source_vdoms

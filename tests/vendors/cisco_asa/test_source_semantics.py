@@ -11,7 +11,6 @@ from fwmigrate.vendors.cisco_asa.parser import CiscoASAParser
 
 from pathlib import Path
 
-from fwmigrate.vendors.cisco_asa import extract_cisco_asa_source
 
 from fwmigrate.vendors.cisco_asa.model import CiscoNATRule
 

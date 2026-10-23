@@ -2,7 +2,7 @@
 
 from collections import defaultdict
 
-from .naming import decision_key, item_key, target_name
+from .naming import item_key, target_name
 from ..models import ASAPlanItem
 
 

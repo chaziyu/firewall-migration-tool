@@ -1,12 +1,20 @@
 """Validate dependencies and propagate blocked Junos plan items."""
 
+from collections import Counter, defaultdict, deque
 from dataclasses import replace
+from graphlib import CycleError, TopologicalSorter
+
+from .models import SRXMigrationPlan
 
 
-def validate_plan(plan):
+RENDER_FAMILY_ORDER = {"address": 0, "address_group": 1, "service": 2, "service_group": 3,
+                       "interface": 4, "zone": 5, "static_route": 6, "policy": 7}
+
+
+def validate_plan(plan: SRXMigrationPlan) -> SRXMigrationPlan:
     rows = list(plan.items)
-    keys = [row.key for row in rows]
-    duplicate_keys = {key for key in keys if keys.count(key) > 1}
+    keys = Counter(row.key for row in rows)
+    duplicate_keys = {key for key, count in keys.items() if count > 1}
     duplicate_names = {}
     for row in rows:
         if row.family == "policy":
@@ -17,6 +25,22 @@ def validate_plan(plan):
             duplicate_names.setdefault((row.family, row.target_name.casefold()), []).append(row.key)
     duplicate_names = {key for owners in duplicate_names.values() if len(owners) > 1 for key in owners}
     known = set(keys)
+    graph = TopologicalSorter({row.key: set(row.dependencies) & known for row in rows})
+    try:
+        graph.prepare()
+    except CycleError:
+        # graphlib still permits draining nodes independent of the cycle.
+        pass
+    ordered = set()
+    while graph.is_active():
+        ready = graph.get_ready()
+        if not ready:
+            break
+        ordered.update(ready)
+        graph.done(*ready)
+    # Includes consumers whose prerequisites cannot be ordered because of a cycle.
+    cyclic = known - ordered
+    dependents = defaultdict(set)
     updated = []
     for row in rows:
         blockers = list(row.blockers)
@@ -26,34 +50,27 @@ def validate_plan(plan):
             blockers.append("DUPLICATE_TARGET_OBJECT_NAME")
         if any(dep not in known for dep in row.dependencies):
             blockers.append("PLAN_DEPENDENCY_UNRESOLVED")
+        if row.key in cyclic:
+            blockers.append("PLAN_DEPENDENCY_CYCLE")
+        if row.family not in RENDER_FAMILY_ORDER:
+            blockers.append("RENDER_FAMILY_UNSUPPORTED")
+        if row.target_disposition == "BLOCK":
+            blockers.append("TARGET_DISPOSITION_BLOCKED")
+        elif row.target_disposition not in {None, "CREATE", "REUSE"}:
+            blockers.append("TARGET_DISPOSITION_UNSUPPORTED")
+        for dependency in row.dependencies:
+            dependents[dependency].add(row.key)
         updated.append(replace(row, blockers=tuple(dict.fromkeys(blockers))))
-    by_key = {row.key: row for row in updated}
-    changed = True
-    while changed:
-        changed = False
-        for index, row in enumerate(updated):
-            if not row.blockers and any(by_key.get(dep) and by_key[dep].blockers for dep in row.dependencies):
-                updated[index] = replace(row, blockers=("PLAN_DEPENDENCY_BLOCKED",))
-                by_key[row.key] = updated[index]
-                changed = True
-    return replace(plan, items=tuple(updated))
-
-
-def ordered_items(plan):
-    plan = validate_plan(plan)
-    by_key = {row.key: row for row in plan.items}
-    out, done = [], set()
-    remaining = [row for row in plan.items if not row.blockers]
-    while remaining:
-        ready = [row for row in remaining if set(row.dependencies) <= done]
-        if not ready:
-            break
-        ready.sort(key=lambda row: (row.source_order, row.key))
-        for row in ready:
-            out.append(row)
-            done.add(row.key)
-            remaining.remove(row)
-    return tuple(out)
+    blocked = {row.key for row in updated if row.blockers}
+    pending = deque(blocked)
+    while pending:
+        for key in dependents[pending.popleft()] - blocked:
+            blocked.add(key)
+            pending.append(key)
+    return replace(plan, items=tuple(
+        replace(row, blockers=("PLAN_DEPENDENCY_BLOCKED",)) if row.key in blocked and not row.blockers else row
+        for row in updated
+    ))
 
 
 def assess_render_disposition(plan):

@@ -22,7 +22,7 @@ The source-reporting fixes from the prior 13-finding review have been applied. T
 | F12: oversized cells | Retain latest main's Text Overflow mechanism. | End-to-end vendor FAST/FULL readback reconstructs long text, including a formula-like continuation and Unicode, without formula cells. |
 | F13: non-entry coverage | Inventory registered non-entry typed nodes before extraction, including failure cases. Calculate coverage in vendor source analysis and reuse it in preview/Excel. Avoid duplicate appendix traversal. | Present/explicit-empty imports agree across model, inventory, preview and coverage; failed extraction retains evidence and reports UNSUPPORTED. |
 
-The main regression file is [test_excel_pipeline_review_regressions.py](../tests/test_excel_pipeline_review_regressions.py). It contains 40 parameterized cases and checks that reporting does not mutate source configurations. Existing tests were updated where the previous expected result encoded a reviewed defect or assumed that a growing workbook schema had a fixed last column.
+The main regression file is [test_excel_pipeline_review_regressions.py](../../tests/test_excel_pipeline_review_regressions.py). It contains 40 parameterized cases and checks that reporting does not mutate source configurations. Existing tests were updated where the previous expected result encoded a reviewed defect or assumed that a growing workbook schema had a fixed last column.
 
 ## Latest-main startup repairs
 

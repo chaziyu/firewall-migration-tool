@@ -7,8 +7,6 @@ from fwmigrate.vendors.fortigate.export import export_excel
 from fwmigrate.vendors.fortigate.extraction.extractor import extract_fortigate_config
 from fwmigrate.vendors.fortigate.parser import parse_fortigate_config
 from fwmigrate.vendors.fortigate.validation.validator import validate_config
-import io
-from openpyxl import load_workbook
 from fwmigrate.source_reporting import source_reporters
 from fwmigrate.vendors.fortigate.source_report import (
     FortiGateSourceReporter,

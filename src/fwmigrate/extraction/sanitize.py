@@ -146,8 +146,8 @@ def sanitize_raw_text(text: str) -> str:
     # Cisco-style credentials may place an encryption type between the key
     # and the secret (for example, ``password 0 value``).
     sanitized = re.sub(
-        rf"((?:password|secret|pre-?shared-key|preshared-key))(\s+)(?:0|7)(\s+)(?:\"[^\"]*\"|'[^']*'|[^\s\r\n]+)",
-        rf"\1\2[REDACTED]",
+        r"((?:password|secret|pre-?shared-key|preshared-key))(\s+)(?:0|7)(\s+)(?:\"[^\"]*\"|'[^']*'|[^\s\r\n]+)",
+        r"\1\2[REDACTED]",
         text,
         flags=re.IGNORECASE,
     )

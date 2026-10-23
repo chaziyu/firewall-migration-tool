@@ -116,7 +116,7 @@ See [reverse migration usage and limits](guides/PAN-OS-to-FortiGate-migration.md
 - Explicitly disabled NAT rules remain visible as nonexecutable `inactive_nat` evidence. They do not participate in active overlap proofs or traffic dependencies. Disabled security policies do not sever the active predecessor chain.
 - UUID attributes, organizational group tags and explicitly unrestricted HIP selectors do not block supported matching. Only exact inactive service-timeout overrides are accepted; active, incomplete and unknown overrides remain blocked.
 - Verified standalone PAN-OS 11.1 predefined HTTP/HTTPS references generate explicit target services with version/reference provenance and normal approval dependencies. Custom objects and ambiguous references retain their source resolution.
-- Nested IPv6 interface controls and unknown service containers remain preserved source evidence. Self-referential route gateways are blocked. See the [automation review and implementation plan](palo-alto-to-fortigate-automation-review.md).
+- Nested IPv6 interface controls and unknown service containers remain preserved source evidence. Self-referential route gateways are blocked. See the [automation review and implementation plan](history/panos-expansion/palo-alto-to-fortigate-automation-review.md).
 - Existing isolated DNAT restrictions remain unchanged.
 
 ### PAN-OS to Check Point
