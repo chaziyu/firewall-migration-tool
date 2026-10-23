@@ -99,10 +99,17 @@ def build_migration_coverage(source, recommendations=(), *, planned_vpn_sources=
     for attribute, source_kind in _SOURCE_ONLY_FAMILIES:
         for index, item in enumerate(getattr(source, attribute, ()) or ()):
             vdom, name = _identity(item, index, attribute)
-            if attribute == 'vip_groups' and (vdom, name) in planned_vip_groups:
+            represented_group = attribute == 'vip_groups' and (vdom, name) in planned_vip_groups
+            group_comment = attribute == 'vip_groups' and item.comments is not None
+            if represented_group and not group_comment:
                 continue
             reason = "Source configuration is preserved but this migration pair has no executable planner coverage for it."
-            if attribute == 'session_helpers' and item.name is not None:
+            if group_comment:
+                reason = ("VIP-group comment requires manual metadata review; flattened VIP membership and traffic "
+                          "commands do not preserve the source group's comment.")
+                if not represented_group:
+                    reason += " Group membership and consumer coverage also remain unresolved."
+            elif attribute == 'session_helpers' and item.name is not None:
                 reason = (f"FortiGate system session-helper entry {name!r} (helper type {item.name!r}) is preserved "
                           "but requires manual target application/helper review; no target commands are emitted.")
             unplanned.append({
@@ -251,7 +258,7 @@ __all__ = ["build_migration_coverage"]
 
 
 def represented_vip_groups(source, plan, satisfied_keys):
-    """Only complete flattened groups with satisfied consumer rules count as handled."""
+    """Return satisfied membership/consumer groups; metadata coverage is separate."""
     from .planning.addresses import vip_group_addresses
     from .plan_dependencies import item_key
     result = set()

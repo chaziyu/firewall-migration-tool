@@ -357,3 +357,60 @@ The full-file browser inspection used counters at the client's JSON parse
 boundary because Chromium's inspector cache evicted the large response body;
 no product change was made for that tooling limitation. No live device was
 contacted. The uploaded file checksum is unchanged.
+
+Pushed cycle 13 to `origin/main`: **`d6ff2836`** (`Preserve VIP comments and require
+explicit VIP address scope`).
+
+## Cycle 14 — flattened VIP-group metadata coverage
+
+Finding: a native VIP group with an explicit comment can flatten into supported
+VIP address/NAT/security commands and disappear from manual coverage. A
+synthetic reproduction emitted seven security and seven NAT commands and
+reported the group represented with zero coverage gaps, although no target
+object carries its comment. The uploaded example has seven VIP groups with
+no comments, so this is a verified source variant rather than new source
+metadata in the example.
+
+Authority: selected FortiOS 7.4.6 `config firewall vipgrp` defines `set comments`
+separately from membership and interface. The current implementation flattens
+membership; it does not create a PAN-OS address-group object for this native VIP
+group. Do not invent a metadata destination or copy group text onto arbitrary
+member or policy objects.
+
+Plan: keep the verified flattened membership and traffic commands eligible,
+but retain a scoped native source-group coverage record whenever its comment
+is explicit, including empty values. Explain that group metadata still needs
+manual review, separately from unresolved membership/consumer coverage when
+that also remains. Omitted/unset comments must not create a new requirement.
+Never copy arbitrary comment text into issue messages. Verify source
+immutability, native scope identities, unchanged verified commands, partial
+artifact/coverage reporting, CLI and browser manual-work visibility. Then run
+the real uploaded input and required applicable validation before pushing.
+
+Cycle 14 completed: six of eight new regressions failed before the fix; all
+eight now pass, alongside **56 focused VIP/description/coverage checks**. A
+fully mapped native fixture still emits the same 25 commands with identical
+traffic conversion, while a source-group comment changes its artifact from
+`READY` to `PARTIAL` with one scoped metadata coverage record. Explicit empty
+comments remain reviewable; omitted/unset values do not invent work. Native
+VDOM identities and source immutability remain intact. Issue text does not copy
+the source comment and does not hide unresolved membership/consumer coverage.
+
+Full validation: **3,137 Python tests passed, two skipped, 16 subtests passed**,
+122.20 seconds. Ruff with all Pyflakes rules, compileall and whitespace checks
+passed. Chromium displayed one native VIP-group manual metadata task with zero
+page errors. No frontend code changed; the earlier 249 frontend tests,
+lint/build and cycle 13 signed-browser walkthrough remain applicable.
+
+The actual uploaded-file CLI repeat remains `NEEDS_MAPPING`, 111 decisions,
+4,476 unplanned records, 36,883 findings, zero commands/renderable/satisfied
+items. Coverage and validation summaries exactly match cycle 13, all item
+consistency assertions pass, and the command-file SHA-256 matches the report.
+Latest private report:
+`/workspace/migration-review-private/continue3/cycle14/migration_report.json`.
+No customer data was committed and no firewall operations occurred.
+
+Cycle 13 remote verification also completed: GitHub CI run **39904026678** and
+OSV-Scanner run **39904027049** succeeded. Render automatically deployed
+`d6ff28361d3807f249bd6077250cda3e871f7f76` as **`dep-dbden5dbedkc73ctlfg0`** and
+reported it live; no manual deploy or cache clear was needed.
