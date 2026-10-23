@@ -45,11 +45,13 @@ class PlannedAddress(PlannedPANItem):
     address_type: str | None = None
     value: str | None = None
     source_interface: str | None = None
+    description: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class PlannedAddressGroup(PlannedPANItem):
     members: tuple[str, ...] = ()
+    description: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,6 +59,7 @@ class PlannedService(PlannedPANItem):
     protocol: str | None = None
     destination_port: str | None = None
     source_port: str | None = None
+    description: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

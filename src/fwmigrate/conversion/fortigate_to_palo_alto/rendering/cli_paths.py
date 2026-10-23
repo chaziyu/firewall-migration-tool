@@ -11,7 +11,9 @@ def management_profile(item):
 
 
 def address(item):
-    return [("vsys", "address", item.target_name or item.source_name, item.address_type, item.value)]
+    base = ("vsys", "address", item.target_name or item.source_name)
+    return [(*base, item.address_type, item.value)] + ([(*base, "description", item.description)]
+                                                    if item.description is not None else [])
 
 
 def ike_crypto_profile(item):
@@ -30,9 +32,13 @@ def ipsec_crypto_profile(item):
 
 
 def address_group(item):
+    base = ("vsys", "address-group", item.target_name or item.source_name)
+    commands = []
     if item.members:
-        return [("vsys", "address-group", item.target_name or item.source_name, "static", "[", *item.members, "]")]
-    return []
+        commands.append((*base, "static", "[", *item.members, "]"))
+    if item.description is not None:
+        commands.append((*base, "description", item.description))
+    return commands
 
 
 def service(item):
@@ -42,6 +48,8 @@ def service(item):
         commands.append((*base, "port", item.destination_port))
     if item.source_port:
         commands.append((*base, "source-port", item.source_port))
+    if item.description is not None:
+        commands.append(("vsys", "service", item.target_name or item.source_name, "description", item.description))
     return commands
 
 
