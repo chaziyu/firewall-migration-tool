@@ -15,7 +15,7 @@ This directory is organized into distinct categories by operational role and lif
 
 | Document | Purpose |
 | :--- | :--- |
-| **[Migration Support Matrix](migration-support-matrix.md)** | Authoritative source of truth for all directional pairs: target versions, execution limits, supported feature subsets, and offline boundaries. Bound directly at runtime to workflow discovery (`builtin.py`). |
+| **[Migration Support Matrix](migration-support-matrix.md)** | Current directional capabilities: target versions, execution limits, supported feature subsets, and offline boundaries. Workflow metadata in `builtin.py` links to this document; code and tests implement the contracts. |
 
 ---
 
@@ -45,6 +45,15 @@ Deep-dive architecture specifications into the core engines that power source an
 | **[Migration Automation Engine](architecture/migration-automation.md)** | Dependency DAG, topological sorting, render disposition (`CREATE`, `CONFIGURE`, `REUSE`, `BLOCK`), and fail-closed candidate review contracts. |
 | **[Excel Export & Review Pipeline](architecture/excel-export-review.md)** | Source workbook generation architecture, fast Excel styling, and preview data transforms. |
 
+### Active reviews and operational checkpoints
+
+| Record | Purpose |
+| :--- | :--- |
+| [Code Quality Review and Refinement](code-quality-review-2026-10-23.md) | Code, import boundaries, stale policy and organization findings, implementation plan and validation. |
+| [FortiGate to PAN-OS Scheduled Review](fortigate-to-panos-scheduled-review.md) | Resumable migration audit checkpoint, completed fixes and remaining engineer decisions. |
+| [Offline Workflow Parity Progress](offline-workflow-parity-progress.md) | Cross-pair workflow verification and remaining limitations. |
+| [Render Deployment Recovery](render-deployment-recovery-2026-10-23.md) | Failed-start investigation, cache recovery and deployment verification evidence. |
+
 ---
 
 ## 4. Official Vendor References (`official-cli-references-selected version/`)
@@ -62,7 +71,7 @@ Official vendor syntax references and command standards used as semantic authori
 
 ## 5. Engineering History & Project Logs (`history/`)
 
-Archived roadmaps, phase progress tracking, and verification evidence from previous development sprints.
+Archived roadmaps, phase progress tracking, and verification evidence from previous development sprints. These records describe their implementation baselines; they are not current capability or security policy. Use the support matrix, operational guides and current code for those decisions. Keep active scheduled checkpoint paths stable for subsequent runs.
 
 ### PAN-OS Expansion (`history/panos-expansion/`)
 - **[PAN-OS to All Vendors Implementation Plan](history/panos-expansion/PAN-OS-to-all-vendors-implementation-plan.md)**: 10-phase roadmap for PAN-OS multi-target conversion.

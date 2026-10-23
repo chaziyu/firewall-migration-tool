@@ -21,10 +21,6 @@ from copy import deepcopy
 from fwmigrate.vendors.cisco_asa.derived import build_asa_derived_views
 
 
-from fwmigrate.vendors.cisco_asa.relationships.references import (
-    ASAReferenceKind,
-    build_asa_reference_index,
-)
 
 from fwmigrate.vendors.cisco_asa.source_report import extract_cisco_asa_source
 

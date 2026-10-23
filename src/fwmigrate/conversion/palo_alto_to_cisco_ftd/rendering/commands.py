@@ -2,7 +2,6 @@
 
 import json
 import re
-import shlex
 
 
 def render_fmc_curl_commands(operations):

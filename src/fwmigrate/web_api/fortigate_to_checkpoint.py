@@ -4,7 +4,6 @@ import io
 import json
 import zipfile
 
-import yaml
 from flask import Response, jsonify, request, send_file
 
 from fwmigrate.conversion.fortigate_to_checkpoint.application import (
@@ -12,7 +11,6 @@ from fwmigrate.conversion.fortigate_to_checkpoint.application import (
     build_review, export_decisions, import_decisions, verify_export_artifact, source_vdoms,
 )
 from fwmigrate.collection.snapshot import parse_snapshot
-from fwmigrate.source_reporting import source_reporters
 from fwmigrate.web_support.artifact_signing import sign_envelope, verify_envelope
 from fwmigrate.web_support.request_source import analyze_request_source, _require_complete_collection
 

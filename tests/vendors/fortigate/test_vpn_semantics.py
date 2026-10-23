@@ -5,7 +5,6 @@ from fwmigrate.vendors.fortigate.model.address import FGAddress, FGAddressGroup
 from fwmigrate.vendors.fortigate.model.source import FGConfig
 from fwmigrate.vendors.fortigate.model.vpn import FGIPsecPhase2
 from fwmigrate.vendors.fortigate.transform.vpn import normalize_vpn_phase2
-from fwmigrate.vendors.fortigate.source_report import FortiGateSourceReporter
 
 
 class Phase2SemanticTest(unittest.TestCase):

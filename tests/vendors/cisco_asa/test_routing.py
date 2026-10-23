@@ -23,7 +23,6 @@ from fwmigrate.vendors.cisco_asa.relationships.routing import build_routing_rela
 from fwmigrate.vendors.cisco_asa.relationships.references import build_asa_reference_index
 
 
-from fwmigrate.vendors.cisco_asa import extract_cisco_asa_source
 
 def test_null0_route_keeps_gateway_absent():
     route = extract_cisco_asa_source("route null0 192.168.2.0 255.255.255.0\n").config.static_routes[0]

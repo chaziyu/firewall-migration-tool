@@ -17,7 +17,6 @@ from fwmigrate.vendors.cisco_asa.derived import build_asa_derived_views
 from fwmigrate.vendors.cisco_asa.parser import CiscoASAParser
 
 from fwmigrate.vendors.cisco_asa.validation import validate_asa_config
-from fwmigrate.vendors.cisco_asa.parser import CiscoASAParser
 
 
 def parse(text):
@@ -29,7 +28,6 @@ from fwmigrate.vendors.cisco_asa import CiscoASASourceReporter
 
 from .helpers import assert_source_unchanged, snapshot_source, snapshot_value
 
-from fwmigrate.vendors.cisco_asa import extract_cisco_asa_source
 
 from fwmigrate.vendors.cisco_asa.model import CiscoInterface, CiscoNATRule, CiscoStaticRoute
 

@@ -1,4 +1,3 @@
-from dataclasses import replace
 import hashlib
 import json
 from pathlib import Path
@@ -202,7 +201,7 @@ def test_existing_fmc_snapshot_object_reuse():
         domain_name="Global",
         domain_id="e276abec-e0f2-11e3-8169-6d9ed49b625f",
     )
-    initial = build_review(analysis, options, "source")
+    build_review(analysis, options, "source")
     target = target_destination()
     review, _, built = artifact(analysis, options, **target)
 

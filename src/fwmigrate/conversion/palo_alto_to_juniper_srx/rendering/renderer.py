@@ -5,10 +5,7 @@ import hashlib
 import heapq
 
 from ..models import SRXRenderedMigration
-
-
-_ORDER = {"address": 0, "address_group": 1, "service": 2, "service_group": 3,
-          "interface": 4, "zone": 5, "static_route": 6, "policy": 7}
+from ..plan_dependencies import RENDER_FAMILY_ORDER, validate_plan
 
 
 def _settings(item):
@@ -79,31 +76,9 @@ def _commands(item, by_key):
 
 class JunosSetRenderer:
     def render(self, plan):
+        plan = validate_plan(plan)
         by_key = {item.key: item for item in plan.items}
-        blockers = {key: list(item.blockers) for key, item in by_key.items()}
-        target_owners = defaultdict(list)
-        for item in plan.items:
-            if item.family in _ORDER:
-                policy_scope = (_settings(item).get("from_zone"), _settings(item).get("to_zone")) if item.family == "policy" else ()
-                target_owners[(item.family, item.target_name.casefold(), *policy_scope)].append(item.key)
-        for owners in target_owners.values():
-            if len(owners) > 1:
-                for key in owners:
-                    blockers[key].append("DUPLICATE_TARGET_OBJECT_NAME")
-        for item in plan.items:
-            if item.family not in _ORDER and item.family not in {"inactive_nat", "inactive_policy"}:
-                blockers[item.key].append("RENDER_FAMILY_UNSUPPORTED")
-            if any(dependency not in by_key for dependency in item.dependencies):
-                blockers[item.key].append("PLAN_DEPENDENCY_UNRESOLVED")
-        changed = True
-        while changed:
-            changed = False
-            for item in plan.items:
-                if not blockers[item.key] and any(blockers.get(dependency) for dependency in item.dependencies):
-                    blockers[item.key].append("PLAN_DEPENDENCY_BLOCKED")
-                    changed = True
-        eligible = [item for item in plan.items if item.family in _ORDER and not blockers[item.key]
-                    and item.target_disposition not in {"BLOCK", "REUSE"}]
+        eligible = [item for item in plan.items if item.disposition == "CREATE"]
         dependents = defaultdict(list)
         remaining = {item.key: set(item.dependencies) for item in eligible}
         ready = []
@@ -114,7 +89,7 @@ class JunosSetRenderer:
                 else:
                     remaining[item.key].discard(dependency)
             if not remaining[item.key]:
-                heapq.heappush(ready, (_ORDER[item.family], item.source_order, item.key))
+                heapq.heappush(ready, (RENDER_FAMILY_ORDER[item.family], item.source_order, item.key))
         ordered = []
         while ready:
             _, _, key = heapq.heappop(ready)
@@ -123,18 +98,14 @@ class JunosSetRenderer:
                 remaining[dependent].discard(key)
                 if not remaining[dependent]:
                     child = by_key[dependent]
-                    heapq.heappush(ready, (_ORDER[child.family], child.source_order, child.key))
+                    heapq.heappush(ready, (RENDER_FAMILY_ORDER[child.family], child.source_order, child.key))
         if len(ordered) != len(eligible):
-            for item in eligible:
-                if item.key not in {row.key for row in ordered}:
-                    blockers[item.key].append("PLAN_DEPENDENCY_CYCLE")
+            raise ValueError("Validated Junos plan dependencies could not be ordered")
         commands = []
         for item in ordered:
-            if not blockers[item.key]:
-                commands.extend(_commands(item, by_key))
+            commands.extend(_commands(item, by_key))
         command_tuple = tuple(commands)
         command_text = "\n".join(command_tuple) + ("\n" if command_tuple else "")
         digest = hashlib.sha256(command_text.encode("utf-8")).hexdigest()
-        blocked = tuple((item.key, tuple(dict.fromkeys(blockers[item.key])))
-                        for item in plan.items if blockers[item.key])
+        blocked = tuple((item.key, item.blockers) for item in plan.items if item.blockers)
         return SRXRenderedMigration(command_tuple, digest, blocked)

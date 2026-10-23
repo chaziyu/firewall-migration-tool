@@ -9,6 +9,7 @@ from ..design.deterministic import PAIR, approve_draft, build_draft, export_deci
 from ..options import SRXMigrationOptions
 from ..design.proposals import build_target_proposals
 from ..planner import PaloAltoToJuniperSRXPlanner
+from ..plan_dependencies import validate_plan
 from ..rendering.renderer import JunosSetRenderer
 from ..requirements import build_mapping_requirements
 from ..review.coverage import build_coverage
@@ -48,7 +49,7 @@ def _plan(analysis, options, *, target=None, target_source_text=None, target_met
         plan = replace(plan, items=tuple(replace(row, blockers=tuple(dict.fromkeys((*row.blockers, "SOURCE_VALIDATION_ERRORS"))))
                                          for row in plan.items),
                        findings=(*plan.findings, "PAN-OS source validation errors block approval."))
-    return plan, parsed, evidence
+    return validate_plan(plan), parsed, evidence
 
 
 def build_review(analysis, options, source_digest, *, target=None, target_source_text=None, target_metadata=None):

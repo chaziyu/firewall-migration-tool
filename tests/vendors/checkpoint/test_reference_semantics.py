@@ -14,7 +14,7 @@ from fwmigrate.vendors.checkpoint.model.vpn import CPVPNCommunity
 from fwmigrate.vendors.checkpoint.model.gateway import CPGateway
 from fwmigrate.vendors.checkpoint.model.address import CPGroup, CPHost
 from fwmigrate.vendors.checkpoint.model.common import CheckPointObjectReference
-from fwmigrate.vendors.checkpoint.model.service import CPService, CPServiceGroup
+from fwmigrate.vendors.checkpoint.model.service import CPServiceGroup
 from fwmigrate.vendors.checkpoint.relationships.references import CPReferenceKind, build_memberships, build_reference_index
 
 

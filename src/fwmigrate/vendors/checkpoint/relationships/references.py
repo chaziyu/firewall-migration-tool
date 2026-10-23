@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field as dataclass_field
 from enum import Enum
 from typing import Any, Iterable
 
@@ -77,12 +77,12 @@ _FIELDS = {
 
 @dataclass(slots=True)
 class CPReferenceIndex:
-    objects: dict[CPReferenceKind, tuple[CheckPointSourceObject, ...]] = field(default_factory=dict)
-    by_uid: dict[str, CheckPointSourceObject] = field(default_factory=dict)
-    by_scoped_uid: dict[tuple[str | None, str], tuple[CheckPointSourceObject, ...]] = field(default_factory=dict)
-    by_name: dict[tuple[str | None, str], tuple[CheckPointSourceObject, ...]] = field(default_factory=dict)
-    kinds_by_object: dict[int, CPReferenceKind] = field(default_factory=dict)
-    duplicates: list[CPDuplicateObject] = field(default_factory=list)
+    objects: dict[CPReferenceKind, tuple[CheckPointSourceObject, ...]] = dataclass_field(default_factory=dict)
+    by_uid: dict[str, CheckPointSourceObject] = dataclass_field(default_factory=dict)
+    by_scoped_uid: dict[tuple[str | None, str], tuple[CheckPointSourceObject, ...]] = dataclass_field(default_factory=dict)
+    by_name: dict[tuple[str | None, str], tuple[CheckPointSourceObject, ...]] = dataclass_field(default_factory=dict)
+    kinds_by_object: dict[int, CPReferenceKind] = dataclass_field(default_factory=dict)
+    duplicates: list[CPDuplicateObject] = dataclass_field(default_factory=list)
     memberships: tuple[CPMembership, ...] = ()
 
     def kind_of(self, target: Any) -> CPReferenceKind | None: return self.kinds_by_object.get(id(target))

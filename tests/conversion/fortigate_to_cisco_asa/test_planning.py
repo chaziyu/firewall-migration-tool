@@ -4,7 +4,6 @@ import pytest
 
 from fwmigrate.conversion.fortigate_to_cisco_asa.planner import FortiGateToCiscoASAPlanner
 from fwmigrate.conversion.fortigate_to_cisco_asa.rendering.renderer import ASACLIRenderer
-from fwmigrate.conversion.fortigate_to_cisco_asa.planning.naming import item_key
 
 
 def test_missing_references_keep_blockers_without_dangling_edges(asa_source_text, asa_options):

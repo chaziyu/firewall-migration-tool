@@ -1,7 +1,6 @@
 import copy
 from pathlib import Path
 import time
-import pytest
 
 from fwmigrate.web import create_app
 

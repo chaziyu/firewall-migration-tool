@@ -1,3 +1,41 @@
 """FortiGate to PAN-OS recommendations."""
 
-from .recommendations import *
+from .recommendations import (
+    PANMigrationDecisionSet,
+    PANMigrationRecommendation,
+    PANRecommendationConfidence,
+    PANRecommendationMethod,
+    PANRecommendationReadiness,
+    PANTargetCandidate,
+    build_target_candidates,
+    candidate_names,
+    decision_key_if_present,
+    decision_value,
+    make_decision_key,
+    recommendation_key,
+    scoped_target_candidates,
+    source_facts,
+    source_value,
+    target_vsys_value,
+    unique,
+)
+
+__all__ = [
+    "PANMigrationDecisionSet",
+    "PANMigrationRecommendation",
+    "PANRecommendationConfidence",
+    "PANRecommendationMethod",
+    "PANRecommendationReadiness",
+    "PANTargetCandidate",
+    "build_target_candidates",
+    "candidate_names",
+    "decision_key_if_present",
+    "decision_value",
+    "make_decision_key",
+    "recommendation_key",
+    "scoped_target_candidates",
+    "source_facts",
+    "source_value",
+    "target_vsys_value",
+    "unique",
+]

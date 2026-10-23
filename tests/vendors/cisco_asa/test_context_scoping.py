@@ -58,16 +58,10 @@ from copy import deepcopy
 
 from fwmigrate.vendors.cisco_asa.derived import build_asa_derived_views
 
-from fwmigrate.vendors.cisco_asa.parser import CiscoASAParser
 
 
 from fwmigrate.vendors.cisco_asa.model import CiscoASAConfig, CiscoInterface, CiscoNetworkObject
 
-from fwmigrate.vendors.cisco_asa.relationships.references import (
-    ASAReferenceKind,
-    ASAReferenceStatus,
-    build_asa_reference_index,
-)
 
 def test_duplicate_names_and_nat_references_stay_inside_their_context():
     result = extract_cisco_asa_source(

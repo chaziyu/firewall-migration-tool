@@ -1,4 +1,3 @@
-from copy import deepcopy
 from hashlib import sha256
 from io import BytesIO
 from pathlib import Path
