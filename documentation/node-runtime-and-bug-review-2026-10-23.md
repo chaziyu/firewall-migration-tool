@@ -37,7 +37,8 @@ Baseline: clean `1a0b8a732daf21d16e1d8cf345b328ec2686f6f7`, equal to fetched
 Node is used for building and development; the hosted application serves the
 compiled frontend through Flask/Gunicorn. The Node security advisory does not
 by itself establish an exploitable live Flask endpoint. The separate GitHub
-Dependabot alert 6 remains untriaged because its details are unavailable through
+Dependabot [alert 6](https://github.com/chaziyu/firewall-migration-tool/security/dependabot/6)
+remains untriaged because its details are unavailable through
 the connected API; do not infer it is fixed by this runtime update.
 
 ## Execution checkpoint
@@ -84,5 +85,39 @@ GitHub Dependabot alert 6 still requires access to its actual advisory details.
 The Node requirement changes the supported project runtime; developers with an
 older installed Node must update it before installation or launcher use.
 
-Next: push the validated change, verify CI and Render's selected Node version
-and deployment status, then record their exact results here.
+## Publication verification
+
+Implementation commit `5839bcddead113fbbf19235073c33ad4a8d06824` is pushed
+to `origin/main`. Render automatically deployed it as
+`dep-dbdfq9rm8hqs73e8rpa0`, live at **2026-10-23 06:23:55 UTC**. Its build
+log explicitly reports:
+
+```text
+Using Node.js version 24.22.1 via /opt/render/project/src/.node-version
+```
+
+The hosted build succeeded. This confirms the runtime pin is honored rather
+than relying on the host default. No additional manual deployment was triggered.
+Render's startup request log records `GET / HTTP/1.1` returning **200** at
+06:23:55 UTC; this is hosting health evidence, not a production migration run.
+
+GitHub verification for the implementation SHA:
+
+- [CI 39911090758](https://github.com/chaziyu/firewall-migration-tool/actions/runs/39911090758):
+  all seven jobs passed: frontend, lint, full Python test matrix (3.11, 3.12,
+  3.13, 3.14) and release-dependencies.
+- [CodeQL 39911090717](https://github.com/chaziyu/firewall-migration-tool/actions/runs/39911090717):
+  Actions, JavaScript/TypeScript and Python analysis all passed.
+- [OSV 39911091185](https://github.com/chaziyu/firewall-migration-tool/actions/runs/39911091185)
+  and Pages deployment 39911090429 passed. Optional Snyk was skipped by its
+  existing policy; it was not executed or enabled in this review.
+
+Checkpoint: all four planned items are implemented, validated and pushed. No
+unfinished code changes remain. The final documentation checkpoint uses
+`[skip render]` to avoid a second deployment for verification notes alone.
+Follow-up: run the Windows launcher on native Windows with Node 24.22.1+;
+obtain the actual package/advisory details for Dependabot alert 6 before
+selecting a remediation. Any later runtime baseline update should change the
+version file and minimum engine together, then repeat install/tests/build and
+verify the host's selected runtime. The existing large-chunk warning remains a
+separate performance improvement, without a demonstrated failure in this audit.
