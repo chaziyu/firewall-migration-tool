@@ -152,3 +152,16 @@ Nine focused regressions passed after reproducing seven failures: retained disab
 The uploaded example has zero central/NGFW mode controls and zero modeled central-SNAT entries. Its CLI repeat remains **4,476** unplanned records, **111** unresolved mappings and zero executable commands. This additional fix addresses a verified source variant, not a newly discovered central-NAT setting in the uploaded file.
 
 Validation completed: **3,024 Python tests passed, two skipped, 16 subtests passed**. Ruff, compileall and whitespace checks passed. Chromium showed the central-mode verification reason in manual work with zero JavaScript errors. The full uploaded-config CLI repeat retained the counts above.
+
+Pushed to `origin/main`: **`2f0d22d2`** (`Keep central NAT manual and block unverified policy NAT conversion`).
+
+## Cycle 7 — native zone retention and unsupported settings
+
+Reproduced another CLI/pipeline omission: one interface in a source zone, with explicit VSYS/VR/port/native-zone mappings, reported `READY` with zero coverage gaps but planned zero zones because no policy referenced it. Omitting the native-zone mapping also lost the source zone from coverage. Separately, arbitrary preserved zone settings and typed zone tagging were silently dropped while a zone and its dependent security policy remained executable.
+
+Plan and implementation: honor explicit native-zone mappings even without policy references; add coverage for source zones absent from the plan; preserve every source contributor when checking consolidated zones, preventing duplicate gap rows. Pending zone gaps use zone/target-zone decision identity rather than interface identity. Unknown zone settings and source tagging now require manual target/metadata review; normal dependency validation blocks their zone and consumer rule commands. Source state is not repaired or mutated. The selected FortiOS 7.4.6 `config system zone` reference documents zone membership, intra-zone control and tagging; no target semantics are invented for unclassified settings.
+
+Three cases failed before the fix; four new regression cases now cover explicit versus missing mappings, unknown-setting dependency blocking and tagging review. Existing consolidation regressions now also verify contributor-aware coverage. Focused zone tests: **11 passed**; Ruff and whitespace checks passed. The uploaded example's two source zones were already represented and had no raw extra settings; final full-input counts and full-suite results are recorded below after validation.
+
+
+Cycle 7 validation: **3,028 Python tests passed, two skipped, 16 subtests passed**; Ruff, compileall and whitespace checks passed. Chromium showed zone tagging's manual metadata review reason with zero JavaScript errors. The full uploaded-config CLI repeat remains `NEEDS_MAPPING`, 111 unresolved mappings, 4,476 review records (723 recommendation-only and 3,753 source-only) and zero commands. Consistency assertions confirm every report item is unrendered, unsatisfied and not command-renderable. Frontend validation results are recorded in the final checkpoint below.

@@ -398,6 +398,9 @@ Use `--zone-map mapping.yaml` when target VSYS, virtual-router, interface, or zo
 Explicit interface-to-zone mappings also plan the corresponding target zones,
 so policies and NAT rules can reference them. Missing mappings remain unresolved;
 the CLI does not invent target placements.
+Explicit native-zone mappings are retained even without policy references.
+Skipped zones remain visible as unfinished work. Unknown zone settings and
+zone tagging require manual review and block dependent rule commands.
 
 For destination evidence and intent, the CLI also accepts:
 
