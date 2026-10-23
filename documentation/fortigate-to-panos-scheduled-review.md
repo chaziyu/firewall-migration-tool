@@ -217,3 +217,21 @@ Cycle 10 focused validation: **25 schedule checks passed**, including the five n
 Chromium prepared the full input in **22.22 seconds**, showed all three explicit expiration-notification schedules in manual work, observed five HTTP 200 API responses and zero page errors. The synthetic notification check and signed approval/export/2,000-object walkthrough also passed without JavaScript errors. Ruff, compileall and whitespace checks passed. Full-suite completion is recorded below.
 
 Cycle 10 full validation: **3,047 Python tests passed, two skipped, 16 subtests passed**. The frontend's 249 tests, lint and build also passed during this continuation; no frontend source changed. No live firewall was contacted and no candidate or device commit was performed.
+
+Pushed cycle 10 to `origin/main`: **`9f3677fb`** (`Expose unsupported one-time schedule expiration notifications`).
+
+## Latest checkpoint — continuation after the 07:40 run
+
+Three additional coherent cycles are complete and pushed: `382623e7` (address/group tagging review and dependency blocking), `bfee92d4` (native coverage identities and preserved unknown/global scope), and `9f3677fb` (explicit one-time expiration notifications). No implementation is half-finished. The upload remains outside Git and its original SHA-256 still matches. Private full-input artifacts now live at `/workspace/migration-review-private/continue/cycle10/`; use `migration_report.json` while this workspace exists.
+
+Validation at this checkpoint: **3,047 Python tests passed**, two skipped, 16 subtests passed; **249 frontend tests passed**, frontend lint/build passed; Python Ruff/compileall and whitespace checks passed. The existing frontend bundle-size warning remains. Synthetic and full-input browser reviews, signed approval/export integrity and large-object search passed with no JavaScript errors. The report has **111 required decisions**, **4,476 unplanned records** (723 recommendation-only + 3,753 source-only) and **zero executable commands/renderable/satisfied items**. Three explicit schedule notification requirements are now visible on planned schedule rows; they do not increase the unplanned-record count. All 19 native session-helper identities are distinguishable. These totals include overlapping source evidence and blocked objects, not independent software defect counts.
+
+Manual requirements remain: engineer-selected VSYS/virtual routers/interfaces/zones and target evidence; unsupported source sections and feature designs such as SD-WAN, SSL-VPN, identity/admin settings and retained certificates; secure target VPN authentication and tunnel design; central/NGFW controls, tagged objects and schedule notifications when present. The uploaded file has no central mode controls or address/group tagging. Models without native VDOM evidence remain unscoped; this continuation does not invent their placement. No live device operations were performed.
+
+Exact next actions:
+
+1. Fetch `origin/main`, read this checkpoint, check branch/status and active local processes, and verify the uploaded config hash before running the CLI into a new private directory. Resume any newer checkpoint first.
+2. Compare the real CLI report with this baseline and inspect browser manual work. Do not add target mappings merely to make commands appear.
+3. Audit remaining typed attributes and nested hierarchy against planning/coverage. Candidate areas for investigation include object comments/descriptions and Security Fabric ownership controls; determine which are represented, safely automated, explicitly retired, or still require manual review using selected official references. No implementation plan for these candidates has yet been adopted.
+4. Check native inventory versus typed records without VDOM fields before extending scope-sensitive automation. Preserve unknown scope and retained evidence; do not repair source models in conversion or infer defaults from absent/unset controls.
+5. For each verified issue, record evidence and impact, propose and execute a bounded plan, validate real CLI/browser paths plus required checks, then commit/push safely to main. Keep artifact approval, dependency blocking, ordering and secret redaction intact. Stop with a concrete checkpoint when the run ends; remaining usage quota is not exposed.
