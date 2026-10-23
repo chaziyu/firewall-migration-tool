@@ -78,12 +78,15 @@ def plan_addresses(source: Any, options: Any, derived=None) -> tuple[tuple[Plann
         ext, _, warnings = vip_translation(vip, derived)
         status, scope_warnings, issue = _scope(vip, options)
         warnings = [*scope_warnings, *warnings]
+        if description_issue := object_description_issue(vip.comment):
+            warnings.append(description_issue)
         if warnings:
             status = PANMigrationStatus.MANUAL_REVIEW
         addresses.append(PlannedAddress(
             source_vdom=vip.vdom, source_kind="vip", source_object_type="address", source_name=vip.name,
             target_vsys=_target_vsys(vip, options), target_name=vip.name, status=status,
-            warnings=tuple(warnings), address_type="ip-netmask", value=f"{ext}/32" if ext else None))
+            warnings=tuple(warnings), address_type="ip-netmask", value=f"{ext}/32" if ext else None,
+            description=vip.comment))
         if issue:
             issues.append(issue)
     return tuple(addresses), tuple(groups), tuple(issues)
