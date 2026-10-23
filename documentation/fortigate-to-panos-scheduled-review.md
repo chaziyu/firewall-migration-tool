@@ -165,3 +165,15 @@ Three cases failed before the fix; four new regression cases now cover explicit 
 
 
 Cycle 7 validation: **3,028 Python tests passed, two skipped, 16 subtests passed**; Ruff, compileall and whitespace checks passed. Chromium showed zone tagging's manual metadata review reason with zero JavaScript errors. The full uploaded-config CLI repeat remains `NEEDS_MAPPING`, 111 unresolved mappings, 4,476 review records (723 recommendation-only and 3,753 source-only) and zero commands. Consistency assertions confirm every report item is unrendered, unsatisfied and not command-renderable. Frontend validation results are recorded in the final checkpoint below.
+
+Pushed to `origin/main`: **`0e28a2e2`** (`Retain explicitly mapped zones and expose unsupported zone settings`).
+
+## Latest checkpoint — after the 07:40 run
+
+Three additional implementation cycles are finished, validated and pushed: `bca0f47e` (native inventory), `2f0d22d2` (central NAT) and `0e28a2e2` (zone retention/review). No code cycle is left half-finished. The raw uploaded configuration remains outside Git and its original SHA-256 still matches.
+
+Final checks: **3,028 Python tests passed**, two skipped, 16 subtests passed; **249 frontend tests passed**, frontend lint/build passed, Python Ruff/compileall and diff checks passed. The frontend build retains its existing large-bundle warning. Offline browser approval/export, full-input native-certificate search, central-mode manual-review and zone-tagging manual-review checks passed without JavaScript errors. No target firewall was contacted or committed.
+
+Use `/workspace/migration-review-private/run0740/cycle7/migration_report.json` as the latest private full-input report while this workspace exists. Its baseline is now **4,476 review records and 111 required mapping decisions**, with zero executable commands. The 3,514 newly visible records are retained source evidence, not 3,514 newly introduced conversion errors; some require target implementation and others require an explicit retirement decision. Counts can overlap with blocked planned objects and are not a count of independent software bugs.
+
+Next scheduled run should fetch current `main` and verify the upload again, then start a fresh audit using these updated counts. Prioritize typed source attributes and hierarchy that may still be silently ignored, scoped identities in manual-work reporting, and dependency/order correctness. Verified positive translation for central/NGFW mode and zone tagging remains unimplemented; the new guards intentionally require review, including explicit disabled/unset mode controls. Add automation only with version-specific semantic evidence and preserve required target decisions. Record each finding and plan, implement/test/push coherent fixes, and update this checkpoint before stopping. Usage quota remains unavailable; no exhaustion claim is made.
