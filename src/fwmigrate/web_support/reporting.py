@@ -10,6 +10,10 @@ class ConfigurationDecodeError(ValueError):
     """Raised when an uploaded configuration cannot be decoded losslessly."""
 
 
+class SourceSizeError(ValueError):
+    """Source evidence exceeds its bounded transport size."""
+
+
 def _decode_configuration(raw: bytes) -> str:
     try:
         return raw.decode("utf-8")

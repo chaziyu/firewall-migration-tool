@@ -1,6 +1,6 @@
 import { restoreWorkspace, saveWorkspace } from '../../storage/workspaceStore'
 import type { SourceEvidence } from '../../storage/workspaceTypes'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Button } from '../../components/common/Button'
 import { ErrorBanner } from '../../components/common/ErrorBanner'
 import { LoadingState } from '../../components/common/LoadingState'
@@ -37,7 +37,7 @@ export function SourceConfiguration({ view, onViewChange, liveDeviceAccess }: {
   const [file, setFile] = useState<File | null>(null)
   const [preview, setPreview] = useState<SourcePreviewData | null>(null)
   const [sourceExpanded, setSourceExpanded] = useState(true)
-  const previewId = preview?.source_digest || (preview?.source_evidence ? JSON.stringify(preview.source_evidence) : '')
+  const previewId = useMemo(() => preview?.source_digest || (preview?.source_evidence ? JSON.stringify(preview.source_evidence) : ''), [preview])
   const [decisionDocument, setDecisionDocument] = useState<MigrationDecisionDocument | null>(null)
   const [targetSource, setTargetSource] = useState<SourceEvidence | null>(null)
   const [workspaceReady, setWorkspaceReady] = useState(false)
@@ -46,7 +46,10 @@ export function SourceConfiguration({ view, onViewChange, liveDeviceAccess }: {
   const [exporting, setExporting] = useState(false)
   const [exportStatus, setExportStatus] = useState('')
   const [exportError, setExportError] = useState<string | null>(null)
-  const [excelProfile, setExcelProfile] = useState<'fast' | 'full'>('fast')
+  // All ingestion paths use the vendor default, retaining deliberate choices per vendor.
+  const [excelProfiles, setExcelProfiles] = useState<Record<string, 'fast' | 'full'>>({})
+  const excelProfile = excelProfiles[vendor] ?? (vendor === 'palo_alto' ? 'full' : 'fast')
+  const setExcelProfile = (profile: 'fast' | 'full') => setExcelProfiles((current) => ({ ...current, [vendor]: profile }))
   const [ingestMode, setIngestMode] = useState<'config' | 'snapshot'>('config')
   const [error, setError] = useState<string | null>(null)
   const [migrationVisited, setMigrationVisited] = useState(false)
@@ -58,7 +61,7 @@ export function SourceConfiguration({ view, onViewChange, liveDeviceAccess }: {
     ?? availableMigrationPairs[0]
   const activeMigrationPairId = selectedMigrationPair?.pair_id ?? ''
   const isPanosOfflinePair = vendor === 'palo_alto' && Boolean(selectedMigrationPair?.export_available)
-  const reviewContextKey = JSON.stringify([previewId, activeMigrationPairId, targetSource, targetDevice])
+  const reviewContextKey = useMemo(() => JSON.stringify([previewId, activeMigrationPairId, targetSource, targetDevice]), [previewId, activeMigrationPairId, targetSource, targetDevice])
   const [reviewTabState, setReviewTabState] = useState({ contextKey: reviewContextKey, tab: 'changes' as MigrationReviewTab })
   const migrationReviewTab = reviewTabState.contextKey === reviewContextKey ? reviewTabState.tab : 'changes'
   const setMigrationReviewTab = (tab: MigrationReviewTab) => setReviewTabState({ contextKey: reviewContextKey, tab })
@@ -68,10 +71,11 @@ export function SourceConfiguration({ view, onViewChange, liveDeviceAccess }: {
   const [requestedDecision, setRequestedDecision] = useState<{ key: string; request: number } | null>(null)
   const analysisRequest = useRef(0)
   const exportRequest = useRef(0)
+  const exportController = useRef<AbortController | null>(null)
 
   if ((view === 'migration' || view === 'live') && !migrationVisited) setMigrationVisited(true)
 
-  useEffect(() => () => { analysisRequest.current++; exportRequest.current++ }, [])
+  useEffect(() => () => { analysisRequest.current++; exportRequest.current++; exportController.current?.abort() }, [])
 
   useEffect(() => {
     loadSourceVendors()
@@ -94,7 +98,7 @@ export function SourceConfiguration({ view, onViewChange, liveDeviceAccess }: {
     let active = true
     restoreWorkspace().then((saved) => {
       if (!active) return
-      if (saved.preview) { setPreview(saved.preview); setSourceExpanded(false); setVendor(saved.preview.vendor || ''); setExcelProfile(saved.preview.vendor === 'palo_alto' ? 'full' : 'fast'); setDecisionDocument(saved.decisionDocument); setTargetSource(saved.targetSource); setTargetDevice(saved.targetDevice); setMigrationPairId(saved.migrationPairId || ''); setWorkflowMode(saved.workflowMode ?? 'offline'); setMigrationView(saved.panosMigration?.stage ?? (saved.workflowMode === 'destination' && (!saved.migrationPairId || saved.migrationPairId === 'fortigate_to_palo_alto') ? 'load' : 'review')) }
+      if (saved.preview) { setPreview(saved.preview); setSourceExpanded(false); setVendor(saved.preview.vendor || ''); setDecisionDocument(saved.decisionDocument); setTargetSource(saved.targetSource); setTargetDevice(saved.targetDevice); setMigrationPairId(saved.migrationPairId || ''); setWorkflowMode(saved.workflowMode ?? 'offline'); setMigrationView(saved.panosMigration?.stage ?? (saved.workflowMode === 'destination' && (!saved.migrationPairId || saved.migrationPairId === 'fortigate_to_palo_alto') ? 'load' : 'review')) }
     }).catch((cause) => { if (active) setError(`Workspace restore failed: ${String(cause)}`) })
       .finally(() => { if (active) setWorkspaceReady(true) })
     return () => { active = false }
@@ -127,6 +131,8 @@ export function SourceConfiguration({ view, onViewChange, liveDeviceAccess }: {
   }
 
   function clearAnalysis() {
+    exportController.current?.abort()
+    exportController.current = null
     setSourceExpanded(true)
     setExportStatus('')
     setExportError(null)
@@ -155,7 +161,6 @@ export function SourceConfiguration({ view, onViewChange, liveDeviceAccess }: {
     if (nextVendor === vendor) return
     setVendor(nextVendor)
     setMigrationPairId('')
-    setExcelProfile(nextVendor === 'palo_alto' ? 'full' : 'fast')
     setFile(null)
     clearAnalysis()
     setError(null)
@@ -186,24 +191,37 @@ export function SourceConfiguration({ view, onViewChange, liveDeviceAccess }: {
     if (!previewId || !preview?.source_evidence) return
     const request = analysisRequest.current
     const exportId = ++exportRequest.current
+    exportController.current?.abort()
+    const controller = new AbortController()
+    exportController.current = controller
     const current = () => request === analysisRequest.current && exportId === exportRequest.current
     setExporting(true)
     setExportStatus('')
     setExportError(null)
     try {
-      const blob = await downloadSourceWorkbook(vendor, preview.source_evidence, excelProfile)
+      const blob = await downloadSourceWorkbook(vendor, preview.source_evidence, excelProfile, controller.signal)
       if (!current()) return
       const url = URL.createObjectURL(blob)
       const link = document.createElement('a')
       link.href = url
       link.download = `${vendor}-source-report.xlsx`
-      try { link.click() } finally { URL.revokeObjectURL(url) }
-      setExportStatus(`Excel workbook ready. Download started: ${link.download}.`)
+      document.body.append(link)
+      try { link.click() } finally { link.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000) }
+      setExportStatus(`${vendor} ${excelProfile.toUpperCase()} workbook ready. Download started: ${link.download}.`)
     } catch (cause) {
-      if (current()) setExportError(cause instanceof Error ? cause.message : 'Workbook export failed')
+      if (current() && !controller.signal.aborted) setExportError(cause instanceof Error ? cause.message : 'Workbook export failed')
     } finally {
-      if (current()) setExporting(false)
+      if (current()) { setExporting(false); exportController.current = null }
     }
+  }
+
+  function cancelExport() {
+    exportRequest.current++
+    exportController.current?.abort()
+    exportController.current = null
+    setExporting(false)
+    setExportError(null)
+    setExportStatus('Export cancelled.')
   }
 
   async function importSnapshot(file: File | undefined) {
@@ -253,9 +271,9 @@ export function SourceConfiguration({ view, onViewChange, liveDeviceAccess }: {
           <button className={`ingest-tab-btn${ingestMode === 'config' ? ' active' : ''}`} role="tab" aria-selected={ingestMode === 'config'} type="button" onClick={() => setIngestMode('config')}>↑ Upload Config</button>
           <button className={`ingest-tab-btn${ingestMode === 'snapshot' ? ' active' : ''}`} role="tab" aria-selected={ingestMode === 'snapshot'} type="button" onClick={() => setIngestMode('snapshot')}>▤ Upload Snapshot</button>
         </div></>}
-        {ingestMode === 'config' ? selectedVendor && <FileUpload key={vendor} file={file} onChange={updateFile} description={selectedVendor.display_name} accept={selectedVendor.file_extensions.join(',')}>
+        {ingestMode === 'config' ? selectedVendor && <FileUpload key={vendor} maxBytes={selectedVendor.max_source_bytes} file={file} onChange={updateFile} description={selectedVendor.display_name} accept={selectedVendor.file_extensions.join(',')}>
           {loading ? <LoadingState label="Reading configuration and preparing the inventory…" /> : preview ? <span className="selected-file-success" role="status"><span aria-hidden="true">✓ </span>Configuration loaded</span> : error && <><ErrorBanner message={error} /><Button type="button" className="text-button" onClick={() => void analyse()}>Retry</Button></>}
-        </FileUpload> : (!preview || (view === 'report' && sourceExpanded)) && <FileUpload key="snapshot" file={null} onChange={(snapshot) => { if (snapshot) void importSnapshot(snapshot) }} accept=".json,application/json" disabled={loading} title="Drop your collection snapshot here" helpText="Import a previously collected, sanitized snapshot (.json)" />}
+        </FileUpload> : (!preview || (view === 'report' && sourceExpanded)) && <FileUpload key="snapshot" maxBytes={selectedVendor?.max_snapshot_bytes} file={null} onChange={(snapshot) => { if (snapshot) void importSnapshot(snapshot) }} accept=".json,application/json" disabled={loading} title="Drop your collection snapshot here" helpText="Import a previously collected, sanitized snapshot (.json)" />}
         {preview && !file && <SourceOverview vendor={vendor} vendorName={selectedVendor?.display_name ?? ''} file={file} preview={preview} />}
         {loading && (ingestMode !== 'config' || !file) && <LoadingState label="Reading configuration and preparing the inventory…" />}
       </>}
@@ -269,12 +287,13 @@ export function SourceConfiguration({ view, onViewChange, liveDeviceAccess }: {
         exporting={exporting}
         exportStatus={exportStatus}
         exportError={exportError}
+        onCancelExport={cancelExport}
         onExport={() => void exportWorkbook()} />}
     </div>
 
     <div className="workflow-panel" hidden={view !== 'collect'}>
       <p className="preview-status" role="status" aria-live="polite">{exportStatus}</p>
-      {preview && <div className="report-actions"><p className="report-source-context">{selectedVendor?.display_name ?? vendor} · Live collection</p><ExcelExportControls vendor={vendor} profile={excelProfile} onProfileChange={setExcelProfile} exporting={exporting} onExport={() => void exportWorkbook()} /></div>}
+      {preview && <div className="report-actions"><p className="report-source-context">{selectedVendor?.display_name ?? vendor} · Live collection</p><ExcelExportControls vendor={vendor} profile={excelProfile} onProfileChange={setExcelProfile} exporting={exporting} onExport={() => void exportWorkbook()} onCancel={cancelExport} /></div>}
       {exportError && <ErrorBanner message={exportError} />}
     </div>
 

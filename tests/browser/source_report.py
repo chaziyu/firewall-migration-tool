@@ -245,6 +245,43 @@ def stale_exports(browser, url, workbook_bytes):
     return checks
 
 
+def export_guards(browser, url):
+    page = browser.new_page(accept_downloads=True)
+    page.goto(url)
+    upload(page, 'fortigate', payload('fortigate'))
+    downloads = []
+    page.on('download', lambda download: downloads.append(download))
+    for content_type, body, message in (
+        ('text/html', '<html>PRIVATE-UPSTREAM-BODY</html>', 'unexpected download format'),
+        ('application/json', '{"success": false}', 'unexpected download format'),
+        ('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', '', 'empty download'),
+    ):
+        page.route('**/api/extract/excel', lambda route: route.fulfill(status=200, content_type=content_type, body=body))
+        page.get_by_role('button', name='Export Excel', exact=True).click()
+        expect(page.locator('.report-sticky-header').get_by_role('alert')).to_contain_text(message)
+        page.unroute('**/api/extract/excel')
+        assert not downloads
+    held = []
+    page.route('**/api/extract/excel', lambda route: held.append(route))
+    page.get_by_role('button', name='Export Excel', exact=True).click()
+    expect(page.get_by_role('button', name='Cancel export', exact=True)).to_be_visible()
+    page.get_by_role('button', name='Cancel export', exact=True).click()
+    expect(page.locator('.source-report .preview-status')).to_have_text('Export cancelled.')
+    expect(page.get_by_role('button', name='Export Excel', exact=True)).to_be_enabled()
+    assert not downloads
+    assert held
+    held[0].abort()
+    page.unroute('**/api/extract/excel')
+    page.get_by_role('button', name='Change source', exact=True).click()
+    page.get_by_role('tab', name=re.compile('Upload Snapshot')).click()
+    snapshot = make_snapshot(CollectedSource('palo_alto', PANOS.decode(), 'snapshot.xml', 'test', CollectionStatus.SUCCESS))
+    page.get_by_label('Drop your collection snapshot here').set_input_files(
+        {'name': 'snapshot.json', 'mimeType': 'application/json', 'buffer': json.dumps(snapshot).encode()})
+    expect(page.locator('select[aria-label="Excel export profile"]:visible')).to_have_value('full')
+    page.close()
+    return 5
+
+
 def run(url, chromium, fortigate, palo_alto, output_dir):
     with sync_playwright() as playwright, tempfile.TemporaryDirectory() as temporary:
         directory = Path(output_dir or temporary)
@@ -258,9 +295,11 @@ def run(url, chromium, fortigate, palo_alto, output_dir):
             print(json.dumps({vendor: result[vendor]}), flush=True)
             page.close()
         result["stale_export_checks"] = stale_exports(browser, url, (directory / "fortigate-fast.xlsx").read_bytes())
+        result['export_guard_checks'] = export_guards(browser, url)
         browser.close()
         (directory / "browser-results.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
-        print(json.dumps({"flow": "PASS", "stale_export_checks": result["stale_export_checks"]}), flush=True)
+        print(json.dumps({"flow": "PASS", "stale_export_checks": result["stale_export_checks"],
+                          "export_guard_checks": result['export_guard_checks']}), flush=True)
 
 
 if __name__ == "__main__":

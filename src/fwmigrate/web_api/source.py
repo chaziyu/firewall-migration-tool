@@ -8,6 +8,7 @@ from dataclasses import asdict
 from time import perf_counter
 
 from flask import jsonify, request, send_file
+from werkzeug.exceptions import HTTPException, RequestEntityTooLarge
 
 from fwmigrate.collection import CollectionStatus, source_collectors
 from fwmigrate.collection.snapshot import MAX_BYTES, make_snapshot, parse_snapshot
@@ -20,10 +21,12 @@ from fwmigrate.source_reporting import (
     source_reporters,
 )
 from fwmigrate.source_reporting.web_report import normalize_web_report
+from fwmigrate.source_reporting.options import ExcelReportLimitError
 from fwmigrate.web_support.request_source import analyze_request_source
-from fwmigrate.web_support.request_controls import live_device_access_allowed
+from fwmigrate.web_support.request_controls import limit_export_response, live_device_access_allowed
 from fwmigrate.web_support.reporting import (
     ConfigurationDecodeError,
+    SourceSizeError,
     _parse_bool,
     _safe_vendor_filename,
     _timed,
@@ -33,6 +36,14 @@ _LOGGER = logging.getLogger(__name__)
 
 
 def register_source_routes(app) -> None:
+    @app.errorhandler(RequestEntityTooLarge)
+    def oversized_request(_error):
+        return jsonify({'success': False, 'error': 'Source or snapshot exceeds the upload size limit.'}), 413
+
+    @app.errorhandler(SourceSizeError)
+    def oversized_source(_error):
+        return oversized_request(_error)
+
     def live_collection_allowed() -> bool:
         return live_device_access_allowed(app)
 
@@ -48,6 +59,8 @@ def register_source_routes(app) -> None:
                 'vendor_id': reporter.vendor_id,
                 'display_name': getattr(reporter, 'display_name', reporter.vendor_id),
                 'file_extensions': list(reporter.supported_extensions),
+                'max_source_bytes': MAX_BYTES,
+                'max_snapshot_bytes': MAX_BYTES,
                 'web_report': True,
                 'live_collection': (
                     live_collection_allowed()
@@ -76,7 +89,7 @@ def register_source_routes(app) -> None:
             started = perf_counter()
             reporter = source_reporters.get(source_vendor)
             source_vendor = reporter.vendor_id
-            entry = analyze_request_source({}, source_vendor)
+            entry = analyze_request_source({}, source_vendor, metrics=metrics)
             analysis = entry.analysis
             report = _timed(metrics, 'web_preview_construction', lambda: normalize_web_report(reporter.build_preview(analysis), source_vendor, copy=False))
             response = {
@@ -93,8 +106,12 @@ def register_source_routes(app) -> None:
             return jsonify({'success': False, 'error': 'Configuration file is not valid UTF-8.', 'stage': 'decode'}), 400
         except KeyError:
             return jsonify({'success': False, 'error': 'Unsupported source vendor'}), 400
+        except SourceSizeError:
+            raise
         except ValueError:
             return jsonify({'success': False, 'error': 'Invalid source configuration'}), 400
+        except HTTPException:
+            raise
         except Exception:
             return jsonify({'success': False, 'error': 'Source preview failed'}), 500
 
@@ -114,12 +131,16 @@ def register_source_routes(app) -> None:
         except PermissionError:
             _LOGGER.warning('Collection test denied by policy.')
             return jsonify({'success': False, 'error': 'Remote live collection is disabled on this server.'}), 403
+        except SourceSizeError:
+            raise
         except ValueError:
             _LOGGER.info('Invalid collection test request.')
             return jsonify({'success': False, 'error': 'Invalid collection request.'}), 400
         try:
             collector.test_connection(options)
             return jsonify({'success': True, 'status': 'CONNECTED'})
+        except HTTPException:
+            raise
         except Exception:
             return jsonify({'success': False, 'error': 'Connection failed. Check the device and credentials.'}), 502
 
@@ -130,6 +151,8 @@ def register_source_routes(app) -> None:
         except PermissionError:
             _LOGGER.warning('Collection request denied by policy')
             return jsonify({'success': False, 'error': 'Remote live collection is disabled on this server.'}), 403
+        except SourceSizeError:
+            raise
         except ValueError:
             return jsonify({'success': False, 'error': 'Invalid collection request.'}), 400
         try:
@@ -146,6 +169,8 @@ def register_source_routes(app) -> None:
                 'preview': normalize_web_report(reporter.build_preview(analysis), source.vendor_id, copy=False),
                 'snapshot': snapshot,
             })
+        except HTTPException:
+            raise
         except Exception:
             return jsonify({'success': False, 'error': 'Collection or extraction failed. Check the device configuration and connection.'}), 502
 
@@ -154,6 +179,8 @@ def register_source_routes(app) -> None:
         try:
             uploaded = request.files.get('file')
             raw = uploaded.read(MAX_BYTES + 1) if uploaded else request.stream.read(MAX_BYTES + 1)
+            if len(raw) > MAX_BYTES:
+                raise SourceSizeError("Snapshot exceeds the size limit")
             source = parse_snapshot(raw)
             reporter = source_reporters.get(source.vendor_id)
             snapshot = make_snapshot(source)
@@ -161,16 +188,23 @@ def register_source_routes(app) -> None:
             return jsonify({'success': True, 'vendor_id': source.vendor_id, 'snapshot': snapshot,
                             'collection': {'status': source.status.value, 'parts': [asdict(part) for part in source.parts],
                                            'warnings': source.warnings}, 'preview': normalize_web_report(reporter.build_preview(analysis), source.vendor_id, copy=False)})
+        except SourceSizeError:
+            raise
         except ValueError:
             return jsonify({'success': False, 'error': 'Invalid or unsupported collection snapshot.'}), 400
+        except HTTPException:
+            raise
         except Exception:
             return jsonify({'success': False, 'error': 'Snapshot import failed.'}), 400
 
     @app.route('/api/extract/excel', methods=['POST'])
+    @limit_export_response
     def extract_excel():
         """Parse a source configuration and download its vendor-native report."""
         try:
-            payload = request.get_json(silent=True) or request.form.to_dict()
+            payload = request.get_json(silent=True, cache=False) if request.is_json else request.form.to_dict()
+            if not isinstance(payload, dict):
+                return jsonify({'error': 'Source request must be an object'}), 400
             source_vendor = request.form.get('source_vendor') or payload.get('source_vendor') or 'fortigate'
             metrics = (
                 SourceReportMetrics()
@@ -185,10 +219,11 @@ def register_source_routes(app) -> None:
                 profile = ExcelExportProfile(profile_value)
             except (TypeError, ValueError):
                 return jsonify({'error': 'excel_profile must be one of: fast, full'}), 400
+            if not isinstance(source_vendor, str):
+                return jsonify({'error': 'source_vendor must be a string'}), 400
             reporter = source_reporters.get(source_vendor)
             source_vendor = reporter.vendor_id
-
-            entry = analyze_request_source(payload, source_vendor)
+            entry = analyze_request_source(payload, source_vendor, metrics=metrics)
             analysis = entry.analysis
             workbook = io.BytesIO()
             export_started = perf_counter()
@@ -206,7 +241,11 @@ def register_source_routes(app) -> None:
                     export_options['collection_warnings'] = entry.evidence.get('warnings', ())
             if export_metrics is not None:
                 export_options['metrics'] = export_metrics
-            reporter.export_excel(analysis, workbook, **export_options)
+            try:
+                reporter.export_excel(analysis, workbook, **export_options)
+            except BaseException:
+                workbook.close()
+                raise
             export_elapsed = perf_counter() - export_started
             if metrics is not None:
                 metrics.add('excel export call', export_elapsed * 1000)
@@ -229,14 +268,20 @@ def register_source_routes(app) -> None:
                     metrics.as_dict(),
                 )
             return response
+        except ExcelReportLimitError:
+            return jsonify({'error': 'Report exceeds Excel worksheet limits. Reduce the source scope and retry.'}), 422
         except ExcelExportUnavailableError:
             return jsonify({'error': 'Excel export is unavailable for this source.'}), 503
         except ConfigurationDecodeError:
             return jsonify({'error': 'Configuration file is not valid UTF-8.', 'stage': 'decode'}), 400
         except KeyError:
             return jsonify({'error': 'Vendor-native Excel is not available'}), 422
+        except SourceSizeError:
+            raise
         except ValueError:
             return jsonify({'success': False, 'error': 'Invalid source configuration'}), 400
+        except HTTPException:
+            raise
         except Exception:
             return jsonify({'error': 'Source Excel export failed'}), 500
 

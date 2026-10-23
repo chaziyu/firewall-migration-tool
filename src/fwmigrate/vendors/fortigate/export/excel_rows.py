@@ -791,6 +791,9 @@ def _nat_rows(
 
 
 def _policy_orders(context: _ExcelContext) -> dict[tuple[str, int], int | str]:
+    cached = getattr(context, "_policy_orders_cache", None)
+    if cached is not None:
+        return cached
     counts: dict[tuple[str, int], int] = defaultdict(int)
     orders: dict[tuple[str, int], int] = {}
     vdom_positions: dict[str, int] = defaultdict(int)
@@ -799,10 +802,12 @@ def _policy_orders(context: _ExcelContext) -> dict[tuple[str, int], int | str]:
         counts[identity] += 1
         vdom_positions[policy.vdom] += 1
         orders[identity] = vdom_positions[policy.vdom]
-    return {
+    result = {
         identity: order if identity[1] is not None and counts[identity] == 1 else "Ambiguous identity"
         for identity, order in orders.items()
     }
+    context._policy_orders_cache = result
+    return result
 
 
 def _route_rows(
@@ -1013,9 +1018,8 @@ def _vpn_phase2_rows(
         yield row
 
 
-def _policy_vpn_phase2_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str, Any]]:
+def _policy_vpn_phase2_rows(context: _ExcelContext, headers: Sequence[str]) -> Iterator[dict[str, Any]]:
     normalized = {(item.vpn_type, item.vdom, item.name): item for item in context.derived.vpn.phase2}
-    rows = []
     for item in context.config.ipsec_policy_phase2:
         norm = normalized.get(("policy-based", item.vdom, item.name))
         row = {
@@ -1032,8 +1036,8 @@ def _policy_vpn_phase2_rows(context: _ExcelContext, headers: Sequence[str]) -> l
         }
         _add_analysis_status(row, context, vdom=item.vdom, names=(item.name,), domains=("ipsec_policy_phase2",))
         _overlay_safe_raw(row, row["Additional Settings"], headers)
-        rows.append(row)
-    return rows
+        yield row
+    return
 
 
 def _dhcp_server_rows(
@@ -1573,11 +1577,9 @@ def _external_resource_rows(context: _ExcelContext, headers: Sequence[str]) -> l
     )
 
 
-def _unresolved_reference_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str, Any]]:
-    rows = []
+def _unresolved_reference_rows(context: _ExcelContext, headers: Sequence[str]) -> Iterator[dict[str, Any]]:
     for item in context.derived.broken_references:
-        rows.append(
-            {
+        yield {
                 "Source VDOM": item.source_vdom,
                 "Source Type": item.source_kind,
                 "Source Object": item.source_name,
@@ -1586,8 +1588,7 @@ def _unresolved_reference_rows(context: _ExcelContext, headers: Sequence[str]) -
                 "Expected Type": [kind.value for kind in item.expected_kinds],
                 "Reason": "Reference could not be resolved in the same VDOM.",
             }
-        )
-    return rows
+    return
 
 
 def _unsupported_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str, Any]]:

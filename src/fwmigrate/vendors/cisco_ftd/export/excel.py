@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 from collections import Counter
+from itertools import chain
 
 from pathlib import Path
 import json
-from typing import Any
+from typing import Any, Iterator
 from fwmigrate.extraction.sanitize import sanitize_source_attributes
 
+from ....source_reporting.excel_lifecycle import report_workbook, save_report_workbook
 from ....source_reporting.options import ExcelExportProfile
 from ....source_reporting.excel_style import append_report_row, excel_safe_value, finish_report_workbook, write_report_summary
 from ....source_reporting.collection_excel import collection_summary, write_collection_evidence
@@ -86,8 +88,7 @@ def _nat_row(policy: Any, rule: Any, section: str | None, kind: str) -> tuple[An
         getattr(rule, "source_translation_mode", None), getattr(rule, "destination_translation_mode", None))
 
 
-def _inspection_rows(config: Any, completeness: dict[str, str] | None = None) -> list[tuple[Any, ...]]:
-    rows = []
+def _inspection_rows(config: Any, completeness: dict[str, str] | None = None) -> Iterator[tuple[Any, ...]]:
     groups = (("File", "filepolicies", config.file_policies, ()),
               ("Decryption", "decryptionpolicies", config.decryption_policies,
                ("default_action", "undecryptable_action", "advanced_settings")),
@@ -127,15 +128,15 @@ def _inspection_rows(config: Any, completeness: dict[str, str] | None = None) ->
                     "position", "collection_order", "enabled", "action"})
                 behavior = {field: getattr(policy, field) for field in behavior_fields
                             if getattr(policy, field) is not None}
-                rows.append((kind, _source_name(policy), policy.source_id, _source_name(rule) if rule else None,
+                yield (kind, _source_name(policy), policy.source_id, _source_name(rule) if rule else None,
                     rule.source_id if rule else None, status,
                     rule.position if rule else None, rule.collection_order if rule else None,
                     rule.enabled if rule else None, rule.action if rule else None,
                     json.dumps(condition_fields, default=str), json.dumps(behavior, default=str),
                     json.dumps({"policy": policy.raw_extra, "rule": rule.raw_extra if rule else {}}, default=str),
                     policy.source_plane, policy.source_context,
-                    rule.source_attributes.get("rule_family") if rule else None))
-    return rows
+                    rule.source_attributes.get("rule_family") if rule else None)
+    return
 
 
 def export_ftd_excel(
@@ -146,237 +147,232 @@ def export_ftd_excel(
     from openpyxl import Workbook
 
     profile = ExcelExportProfile(profile)
-    workbook = Workbook(write_only=profile is ExcelExportProfile.FAST)
-    if not workbook.write_only:
-        workbook.remove(workbook.active)
-    config = result.config
-    derived = getattr(result, "derived", None)
-    inventory_items = getattr(result, "inventory_items", None)
-    if inventory_items is None:
-        from ..source_inventory import build_ftd_source_inventory
-        inventory_items = build_ftd_source_inventory(config)
-    topologies = {(item.device_id or "", item.name): item for item in getattr(getattr(derived, "interface_topology", None), "interfaces", ())}
-    normalized_routes = {}
-    for item in getattr(derived, "normalized_routes", ()):
-        key = (item.device_id or "", item.source_id or item.source_name, item.virtual_router or "")
-        normalized_routes.setdefault(key, []).append(item.normalized_destination)
-    def ref_text(value):
-        return (value.name or value.source_id or str(value.value)) if value is not None else None
-    rows = {
-        "Managed Objects": [(_source_name(x), x.source_id, x.address_type, x.value, x.description, x.address_family,
-            x.fqdn_lookup_type, x.override_metadata, x.source_plane) for x in config.network_addresses],
-        "Object Groups": [(_source_name(x), _refs(x.members), _refs(x.literal_members), x.description,
-            x.override_metadata, x.source_plane) for x in config.network_groups],
-        "Services": ([(_source_name(x), x.protocol, x.port if x.port is not None else x.ports, x.end_port, x.icmp_type, x.icmp_code,
-            x.description, x.override_metadata, None, x.source_plane) for x in config.protocol_port_objects]
-                     + [(_source_name(x), None, None, None, None, None, x.description, x.override_metadata,
-                         _refs(x.members), x.source_plane) for x in config.port_object_groups]),
-        "Zones": [(_source_name(x), _refs(x.interfaces), x.source_plane) for x in config.security_zones],
-        "Interfaces": [(_source_name(x), x.device_id, x.interface_type, x.address, x.zone.name if x.zone else None, x.source_plane,
-                         (topologies.get((x.device_id or "", x.name)).kind if topologies.get((x.device_id or "", x.name)) else None),
-                         (topologies.get((x.device_id or "", x.name)).parent if topologies.get((x.device_id or "", x.name)) else None), None)
-                        for x in config.device_interfaces]
-                      + [(_source_name(x), x.device_id, x.interface_type, x.address, x.zone, x.source_plane,
-                          (topologies.get((x.device_id or "", x.name)).kind if topologies.get((x.device_id or "", x.name)) else None),
-                          (topologies.get((x.device_id or "", x.name)).parent if topologies.get((x.device_id or "", x.name)) else None), None)
-                         for x in config.source_interfaces]
-                      + [(item.name, None, None, item.ip, None, config.source_plane,
-                          topology.kind if topology else None, topology.parent if topology else None, item.vlan_id)
-                         for item in config.interfaces
-                         for topology in (topologies.get((item.source_attributes.get("device_id") or "", item.name)),)],
-        "Routes": [(_source_name(x), x.source_attributes.get("device_name") or x.device_id, x.virtual_router or (x.virtual_router_ref.name if x.virtual_router_ref else None),
-             ref_text(x.interface),
-             ", ".join(filter(None, (ref_text(ref) for ref in x.selected_networks))) if x.selected_networks else ref_text(x.destination),
-             ref_text(x.gateway), ref_text(x.sla_monitor), x.route_tracking, x.tunneled, x.source_plane,
-             x.address_family or x.source_attributes.get("collection_address_family"), None,
-             ", ".join(filter(None, normalized_routes.get((x.device_id or "", x.source_id or x.name,
-                 x.virtual_router or ""), [])))) for x in config.routes]
-            + [(route.name, None, None, route.interface, route.destination, route.gateway, None, None, None,
-                config.source_plane, route.address_family, route.mask,
-                ", ".join(filter(None, normalized_routes.get(("", route.name, ""), [])))) for route in config.static_routes],
-        "ACP Policies": [(_source_name(policy), policy.source_id, policy.description, policy.inherit,
-            ref_text(policy.base_policy), ref_text(policy.default_action), ref_text(policy.prefilter_policy),
-            ref_text(policy.network_analysis_policy), ref_text(policy.decryption_policy), ref_text(policy.dns_policy),
-            ref_text(policy.identity_policy), json.dumps(policy.logging_settings, sort_keys=True) if policy.logging_settings is not None else None,
-            policy.source_plane) for policy in config.access_control_policies],
-        "ACP Rules": [(rule.policy_name, _source_name(rule), rule.source_id, rule.enabled, rule.position,
-            rule.section, rule.category, rule.action, _refs(rule.source_zones), _refs(rule.destination_zones),
-            _refs(rule.source_networks), _refs(rule.destination_networks), _refs(rule.source_ports),
-            _refs(rule.destination_ports), _refs(rule.realm_users), _refs(rule.users), _refs(rule.user_groups),
-            _refs(rule.applications), _refs(rule.application_filters), _refs(rule.inline_application_filters),
-            _text(rule.urls), _refs(rule.url_categories), _refs([rule.time_range] if rule.time_range else None),
-            _refs([rule.intrusion_policy] if rule.intrusion_policy else None),
-            _refs([rule.variable_set] if rule.variable_set else None), _refs([rule.file_policy] if rule.file_policy else None),
-            rule.log_begin, rule.log_end, rule.comments, rule.source_plane, rule.source_context,
-            json.dumps(_refs(rule.source_dynamic_objects), default=str) if rule.source_dynamic_objects is not None else None,
-            json.dumps(_refs(rule.destination_dynamic_objects), default=str) if rule.destination_dynamic_objects is not None else None,
-            json.dumps(_refs(rule.vlan_tags), default=str) if rule.vlan_tags is not None else None,
-            json.dumps(_refs(rule.source_security_group_tags), default=str) if rule.source_security_group_tags is not None else None,
-            json.dumps(_refs(rule.destination_security_group_tags), default=str) if rule.destination_security_group_tags is not None else None,
-            json.dumps(_ra_ref(rule.realm), default=str) if rule.realm is not None else None,
-            json.dumps(rule.logging, default=str) if rule.logging is not None else None,
-            rule.collection_order, rule.policy_id, rule.domain_id, rule.device_id,
-            json.dumps(rule.raw_extra, default=str))
-            for policy in config.access_control_policies for rule in (policy.rules or [])],
-        "Object Overrides": [(_source_name(item), item.source_id, ref_text(item.parent), ref_text(item.target),
-            item.address_type, item.value, item.domain_id, item.source_plane, item.raw_extra)
-            for item in config.network_address_overrides],
-        "DHCP": [("Server", _source_name(item), item.source_id, item.device_id or item.source_attributes.get("device_name"),
-            ref_text(item.interface), json.dumps(item.raw_extra, default=str), None, item.source_plane)
-            for item in config.dhcp_servers]
-            + [("Relay", _source_name(item), item.source_id, item.device_id or item.source_attributes.get("device_name"),
-                None, None, json.dumps(item.model_dump(exclude_none=True, exclude={"name", "source_id", "source_plane",
-                    "source_context", "domain_id", "device_id", "explicit_fields", "source_attributes", "raw_extra"}), default=str),
-                item.source_plane) for item in config.dhcp_relay_settings],
-        "NAT Rules": [_nat_row(policy, rule, section, kind)
-            for policy in config.nat_policies
-            for section, kind, rules in (("BEFORE_AUTO", "manual", policy.manual_rules_before_auto),
-                ("AUTO", "auto", policy.auto_rules), ("AFTER_AUTO", "manual", policy.manual_rules_after_auto),
-                (None, "manual", policy.unclassified_manual_rules), (None, "manual", policy.rules))
-            for rule in (rules or [])],
-        "Inspection Policies": _inspection_rows(config, getattr(derived, "source_plane_completeness", None)),
-        "RA VPN Policies": [(_source_name(x), x.source_id, _refs(x.target_devices), _refs(x.access_interfaces),
-            _refs(x.certificates), _refs(x.certificate_maps), x.certificate_map_settings, _refs(x.connection_profiles),
-            _refs(x.group_policies), _refs(x.address_pools), _refs(x.realms), x.ssl_tls_settings,
-            x.dtls_settings, x.session_settings, x.raw_extra) for x in config.ra_vpn_policies],
-        "RA Connection Profiles": [(x.parent_policy_name, _source_name(x), x.source_id, x.alias, x.group_url,
-            x.enabled, x.authentication_method, _ra_ref(x.realm), _ra_ref(x.authentication_server),
-            _ra_ref(x.authorization), _ra_ref(x.accounting_server), _ra_ref(x.default_group_policy),
-            _refs(x.address_pools), x.address_assignment, _refs(x.certificates), _refs(x.certificate_maps),
-            x.connection_settings, x.raw_extra) for x in config.ra_vpn_connection_profiles],
-        "RA Group Policies": [(_source_name(x), x.source_id, x.vpn_access, x.protocols, x.connection_settings,
-            x.dns_servers, x.wins_servers, x.domain_name, _ra_ref(x.realm), _ra_ref(x.aaa_server_group),
-            _refs(x.address_pools), x.split_tunnel_policy, _refs(x.split_tunnel_networks), _ra_ref(x.split_tunnel_acl), x.split_dns,
-            _refs(x.secure_client), x.session_settings, x.simultaneous_logins, x.raw_extra)
-            for x in config.group_policies],
-        "RA Address Pools": [(_source_name(x), x.source_id, x.address_family, x.start_address, x.end_address,
-            x.source_representation, x.address_reuse_delay, x.override_metadata, x.raw_extra)
-            for x in config.address_pools],
-        "RA Certificates": [(_source_name(x), x.source_id, x.certificate_type, x.issuer, x.subject,
-            x.validity, x.certificate_metadata, x.private_key_present, x.raw_extra) for x in config.certificates],
-        "RA Certificate Maps": [(_source_name(x), x.source_id, x.conditions, _ra_ref(x.connection_profile),
-            _ra_ref(x.group_policy), x.raw_extra) for x in config.certificate_maps],
-        "RA Secure Client": [(_source_name(x), x.source_id, _refs(x.packages), _refs(x.profiles), x.raw_extra)
-            for x in config.secure_client_settings],
-        "RA IPsec Settings": [(x.source_attributes.get("parent_policy_id"),
-            x.source_attributes.get("parent_policy_name"), _source_name(x), x.ikev2_settings, x.ipsec_settings,
-            x.nat_keepalive, x.raw_extra) for x in config.ra_vpn_ipsec_settings],
-        "RA Address Assignment": [(x.source_attributes.get("parent_policy_id"),
-            x.source_attributes.get("parent_policy_name"), _source_name(x), _refs(x.address_pools),
-            x.assignment_method, x.reuse_delay, x.use_dhcp, x.use_authorization_server_for_ipv4,
-            x.use_authorization_server_for_ipv6, x.use_internal_address_pool_for_ipv4,
-            x.use_internal_address_pool_for_ipv6, x.raw_extra)
-            for x in config.ra_vpn_address_assignment_settings],
-    }
-    native_collections = ("network_addresses", "network_groups", "protocol_port_objects", "port_object_groups",
-        "security_zones", "device_interfaces", "source_interfaces", "routes", "access_control_policies",
-        "applications", "network_address_overrides", "access_control_default_actions",
-        "access_control_logging_settings", "security_intelligence_policies", "identity_policies", "access_policy_inheritance_settings",
-        "policy_assignments", "variable_sets", "url_categories", "vlan_objects", "time_ranges",
-        "intrusion_policies", "intrusion_rule_groups", "intrusion_rule_behaviors", "intrusion_rule_overrides",
-        "fmc_user_roles", "fmc_users", "dhcp_servers", "dhcp_relay_settings", "realms",
-        "realm_user_groups", "realm_users", "local_realm_users", "s2s_vpn_topologies", "s2s_vpn_endpoints",
-        "ike_policies", "ipsec_proposals", "ra_vpn_policies", "ra_vpn_connection_profiles",
-        "virtual_routers", "sla_monitors", "ecmp_zones", "policy_based_routes", "certificates",
-        "certificate_maps", "certificate_enrollments", "address_pools", "group_policies",
-        "s2s_ike_settings", "s2s_ipsec_settings", "s2s_advanced_settings", "ra_vpn_ipsec_settings",
-        "ldap_attribute_maps", "ra_vpn_load_balance_settings", "ra_vpn_address_assignment_settings",
-        "secure_client_settings", "ra_vpn_ipsec_crypto_maps", "prefilter_policies", "prefilter_rules",
-        "prefilter_default_actions", "network_analysis_policies", "inspector_configs",
-        "inspector_override_configs", "native_resources")
-    for name in SHEET_ORDER:
-        sheet = workbook.create_sheet(name)
-        if name == "Summary":
-            continue
-        if name == "Source Inventory":
-            append_report_row(sheet, SHEET_HEADERS[name])
-            for item in inventory_items:
-                attrs = item.source_attributes
-                append_report_row(sheet, tuple(_text(value) for value in (
-                    item.source_path, item.name, item.source_id, item.source_record_id, item.source_type,
-                    item.source_context, attrs.get("domain_id"), attrs.get("device_id"),
-                    attrs.get("device_name"), attrs.get("virtual_router_id"), attrs.get("virtual_router_name"),
-                    attrs.get("parent_policy_id") or attrs.get("policy_id"),
-                    attrs.get("parent_policy_name") or attrs.get("policy_name"),
-                    item.status.value, item.requires_manual_review, attrs.get("explicit_fields"),
-                )))
-        elif name == "Collection Completeness":
-            append_report_row(sheet, SHEET_HEADERS[name])
-            if not config.collection_metadata.provided:
-                append_report_row(sheet, ("Collection metadata", "NOT_PROVIDED", None, None, None))
-            for part in config.collection_metadata.parts:
-                append_report_row(sheet, (part.name, part.status, part.complete, part.count, part.failure_reason))
-        elif name == "Semantic Completeness":
-            append_report_row(sheet, SHEET_HEADERS[name])
-            completeness = getattr(derived, "source_plane_completeness", {})
-            for family, status in completeness.items():
-                if not family.startswith("collection:"):
-                    append_report_row(sheet, (family, status))
-        elif name == "Source Evidence":
-            append_report_row(sheet, SHEET_HEADERS[name])
-            for item in config.unsupported_evidence:
-                safe = sanitize_source_attributes(item)
-                append_report_row(sheet, tuple(_text(value) for value in (
-                    safe.get("source_path"), safe.get("reason"), safe.get("source_name"), safe.get("source_id"),
-                    safe.get("source_plane", config.source_plane), safe.get("source_context"),
-                    safe.get("domain_id"), safe.get("device_id"), safe.get("line_start"), safe.get("line_end"),
-                    safe.get("raw", safe),
-                )))
-        elif name == "CLI Source Evidence":
-            append_report_row(sheet, SHEET_HEADERS[name])
-            for row in _cli_source_rows(config):
-                append_report_row(sheet, tuple(_text(value) for value in row))
-        elif name == "Validation":
-            append_report_row(sheet, SHEET_HEADERS[name])
-            for item in result.validation.issues:
-                append_report_row(sheet, (item.severity, item.category, item.message, item.source_plane,
-                    item.source_object, item.source_id, item.source_context, item.domain_id, item.device_id))
-        elif name == "Native Sources":
-            append_report_row(sheet, SHEET_HEADERS[name])
-            for collection in native_collections:
-                for item in getattr(config, collection):
+    with report_workbook(Workbook(write_only=profile is ExcelExportProfile.FAST)) as workbook:
+        if not workbook.write_only:
+            workbook.remove(workbook.active)
+        config = result.config
+        derived = getattr(result, "derived", None)
+        inventory_items = getattr(result, "inventory_items", None)
+        if inventory_items is None:
+            from ..source_inventory import build_ftd_source_inventory
+            inventory_items = build_ftd_source_inventory(config)
+        topologies = {(item.device_id or "", item.name): item for item in getattr(getattr(derived, "interface_topology", None), "interfaces", ())}
+        normalized_routes = {}
+        for item in getattr(derived, "normalized_routes", ()):
+            key = (item.device_id or "", item.source_id or item.source_name, item.virtual_router or "")
+            normalized_routes.setdefault(key, []).append(item.normalized_destination)
+        def ref_text(value):
+            return (value.name or value.source_id or str(value.value)) if value is not None else None
+        rows = {
+            "Managed Objects": ((_source_name(x), x.source_id, x.address_type, x.value, x.description, x.address_family,
+                x.fqdn_lookup_type, x.override_metadata, x.source_plane) for x in config.network_addresses),
+            "Object Groups": ((_source_name(x), _refs(x.members), _refs(x.literal_members), x.description,
+                x.override_metadata, x.source_plane) for x in config.network_groups),
+            "Services": (chain(((_source_name(x), x.protocol, x.port if x.port is not None else x.ports, x.end_port, x.icmp_type, x.icmp_code,
+                x.description, x.override_metadata, None, x.source_plane) for x in config.protocol_port_objects), ((_source_name(x), None, None, None, None, None, x.description, x.override_metadata,
+                             _refs(x.members), x.source_plane) for x in config.port_object_groups))),
+            "Zones": ((_source_name(x), _refs(x.interfaces), x.source_plane) for x in config.security_zones),
+            "Interfaces": chain(chain(((_source_name(x), x.device_id, x.interface_type, x.address, x.zone.name if x.zone else None, x.source_plane,
+                             (topologies.get((x.device_id or "", x.name)).kind if topologies.get((x.device_id or "", x.name)) else None),
+                             (topologies.get((x.device_id or "", x.name)).parent if topologies.get((x.device_id or "", x.name)) else None), None)
+                            for x in config.device_interfaces), ((_source_name(x), x.device_id, x.interface_type, x.address, x.zone, x.source_plane,
+                              (topologies.get((x.device_id or "", x.name)).kind if topologies.get((x.device_id or "", x.name)) else None),
+                              (topologies.get((x.device_id or "", x.name)).parent if topologies.get((x.device_id or "", x.name)) else None), None)
+                             for x in config.source_interfaces)), ((item.name, None, None, item.ip, None, config.source_plane,
+                              topology.kind if topology else None, topology.parent if topology else None, item.vlan_id)
+                             for item in config.interfaces
+                             for topology in (topologies.get((item.source_attributes.get("device_id") or "", item.name)),))),
+            "Routes": chain(((_source_name(x), x.source_attributes.get("device_name") or x.device_id, x.virtual_router or (x.virtual_router_ref.name if x.virtual_router_ref else None),
+                 ref_text(x.interface),
+                 ", ".join(filter(None, (ref_text(ref) for ref in x.selected_networks))) if x.selected_networks else ref_text(x.destination),
+                 ref_text(x.gateway), ref_text(x.sla_monitor), x.route_tracking, x.tunneled, x.source_plane,
+                 x.address_family or x.source_attributes.get("collection_address_family"), None,
+                 ", ".join(filter(None, normalized_routes.get((x.device_id or "", x.source_id or x.name,
+                     x.virtual_router or ""), [])))) for x in config.routes), ((route.name, None, None, route.interface, route.destination, route.gateway, None, None, None,
+                    config.source_plane, route.address_family, route.mask,
+                    ", ".join(filter(None, normalized_routes.get(("", route.name, ""), [])))) for route in config.static_routes)),
+            "ACP Policies": ((_source_name(policy), policy.source_id, policy.description, policy.inherit,
+                ref_text(policy.base_policy), ref_text(policy.default_action), ref_text(policy.prefilter_policy),
+                ref_text(policy.network_analysis_policy), ref_text(policy.decryption_policy), ref_text(policy.dns_policy),
+                ref_text(policy.identity_policy), json.dumps(policy.logging_settings, sort_keys=True) if policy.logging_settings is not None else None,
+                policy.source_plane) for policy in config.access_control_policies),
+            "ACP Rules": ((rule.policy_name, _source_name(rule), rule.source_id, rule.enabled, rule.position,
+                rule.section, rule.category, rule.action, _refs(rule.source_zones), _refs(rule.destination_zones),
+                _refs(rule.source_networks), _refs(rule.destination_networks), _refs(rule.source_ports),
+                _refs(rule.destination_ports), _refs(rule.realm_users), _refs(rule.users), _refs(rule.user_groups),
+                _refs(rule.applications), _refs(rule.application_filters), _refs(rule.inline_application_filters),
+                _text(rule.urls), _refs(rule.url_categories), _refs([rule.time_range] if rule.time_range else None),
+                _refs([rule.intrusion_policy] if rule.intrusion_policy else None),
+                _refs([rule.variable_set] if rule.variable_set else None), _refs([rule.file_policy] if rule.file_policy else None),
+                rule.log_begin, rule.log_end, rule.comments, rule.source_plane, rule.source_context,
+                json.dumps(_refs(rule.source_dynamic_objects), default=str) if rule.source_dynamic_objects is not None else None,
+                json.dumps(_refs(rule.destination_dynamic_objects), default=str) if rule.destination_dynamic_objects is not None else None,
+                json.dumps(_refs(rule.vlan_tags), default=str) if rule.vlan_tags is not None else None,
+                json.dumps(_refs(rule.source_security_group_tags), default=str) if rule.source_security_group_tags is not None else None,
+                json.dumps(_refs(rule.destination_security_group_tags), default=str) if rule.destination_security_group_tags is not None else None,
+                json.dumps(_ra_ref(rule.realm), default=str) if rule.realm is not None else None,
+                json.dumps(rule.logging, default=str) if rule.logging is not None else None,
+                rule.collection_order, rule.policy_id, rule.domain_id, rule.device_id,
+                json.dumps(rule.raw_extra, default=str))
+                for policy in config.access_control_policies for rule in (policy.rules or [])),
+            "Object Overrides": ((_source_name(item), item.source_id, ref_text(item.parent), ref_text(item.target),
+                item.address_type, item.value, item.domain_id, item.source_plane, item.raw_extra)
+                for item in config.network_address_overrides),
+            "DHCP": chain((("Server", _source_name(item), item.source_id, item.device_id or item.source_attributes.get("device_name"),
+                ref_text(item.interface), json.dumps(item.raw_extra, default=str), None, item.source_plane)
+                for item in config.dhcp_servers), (("Relay", _source_name(item), item.source_id, item.device_id or item.source_attributes.get("device_name"),
+                    None, None, json.dumps(item.model_dump(exclude_none=True, exclude={"name", "source_id", "source_plane",
+                        "source_context", "domain_id", "device_id", "explicit_fields", "source_attributes", "raw_extra"}), default=str),
+                    item.source_plane) for item in config.dhcp_relay_settings)),
+            "NAT Rules": (_nat_row(policy, rule, section, kind)
+                for policy in config.nat_policies
+                for section, kind, rules in (("BEFORE_AUTO", "manual", policy.manual_rules_before_auto),
+                    ("AUTO", "auto", policy.auto_rules), ("AFTER_AUTO", "manual", policy.manual_rules_after_auto),
+                    (None, "manual", policy.unclassified_manual_rules), (None, "manual", policy.rules))
+                for rule in (rules or [])),
+            "Inspection Policies": _inspection_rows(config, getattr(derived, "source_plane_completeness", None)),
+            "RA VPN Policies": ((_source_name(x), x.source_id, _refs(x.target_devices), _refs(x.access_interfaces),
+                _refs(x.certificates), _refs(x.certificate_maps), x.certificate_map_settings, _refs(x.connection_profiles),
+                _refs(x.group_policies), _refs(x.address_pools), _refs(x.realms), x.ssl_tls_settings,
+                x.dtls_settings, x.session_settings, x.raw_extra) for x in config.ra_vpn_policies),
+            "RA Connection Profiles": ((x.parent_policy_name, _source_name(x), x.source_id, x.alias, x.group_url,
+                x.enabled, x.authentication_method, _ra_ref(x.realm), _ra_ref(x.authentication_server),
+                _ra_ref(x.authorization), _ra_ref(x.accounting_server), _ra_ref(x.default_group_policy),
+                _refs(x.address_pools), x.address_assignment, _refs(x.certificates), _refs(x.certificate_maps),
+                x.connection_settings, x.raw_extra) for x in config.ra_vpn_connection_profiles),
+            "RA Group Policies": ((_source_name(x), x.source_id, x.vpn_access, x.protocols, x.connection_settings,
+                x.dns_servers, x.wins_servers, x.domain_name, _ra_ref(x.realm), _ra_ref(x.aaa_server_group),
+                _refs(x.address_pools), x.split_tunnel_policy, _refs(x.split_tunnel_networks), _ra_ref(x.split_tunnel_acl), x.split_dns,
+                _refs(x.secure_client), x.session_settings, x.simultaneous_logins, x.raw_extra)
+                for x in config.group_policies),
+            "RA Address Pools": ((_source_name(x), x.source_id, x.address_family, x.start_address, x.end_address,
+                x.source_representation, x.address_reuse_delay, x.override_metadata, x.raw_extra)
+                for x in config.address_pools),
+            "RA Certificates": ((_source_name(x), x.source_id, x.certificate_type, x.issuer, x.subject,
+                x.validity, x.certificate_metadata, x.private_key_present, x.raw_extra) for x in config.certificates),
+            "RA Certificate Maps": ((_source_name(x), x.source_id, x.conditions, _ra_ref(x.connection_profile),
+                _ra_ref(x.group_policy), x.raw_extra) for x in config.certificate_maps),
+            "RA Secure Client": ((_source_name(x), x.source_id, _refs(x.packages), _refs(x.profiles), x.raw_extra)
+                for x in config.secure_client_settings),
+            "RA IPsec Settings": ((x.source_attributes.get("parent_policy_id"),
+                x.source_attributes.get("parent_policy_name"), _source_name(x), x.ikev2_settings, x.ipsec_settings,
+                x.nat_keepalive, x.raw_extra) for x in config.ra_vpn_ipsec_settings),
+            "RA Address Assignment": ((x.source_attributes.get("parent_policy_id"),
+                x.source_attributes.get("parent_policy_name"), _source_name(x), _refs(x.address_pools),
+                x.assignment_method, x.reuse_delay, x.use_dhcp, x.use_authorization_server_for_ipv4,
+                x.use_authorization_server_for_ipv6, x.use_internal_address_pool_for_ipv4,
+                x.use_internal_address_pool_for_ipv6, x.raw_extra)
+                for x in config.ra_vpn_address_assignment_settings),
+        }
+        native_collections = ("network_addresses", "network_groups", "protocol_port_objects", "port_object_groups",
+            "security_zones", "device_interfaces", "source_interfaces", "routes", "access_control_policies",
+            "applications", "network_address_overrides", "access_control_default_actions",
+            "access_control_logging_settings", "security_intelligence_policies", "identity_policies", "access_policy_inheritance_settings",
+            "policy_assignments", "variable_sets", "url_categories", "vlan_objects", "time_ranges",
+            "intrusion_policies", "intrusion_rule_groups", "intrusion_rule_behaviors", "intrusion_rule_overrides",
+            "fmc_user_roles", "fmc_users", "dhcp_servers", "dhcp_relay_settings", "realms",
+            "realm_user_groups", "realm_users", "local_realm_users", "s2s_vpn_topologies", "s2s_vpn_endpoints",
+            "ike_policies", "ipsec_proposals", "ra_vpn_policies", "ra_vpn_connection_profiles",
+            "virtual_routers", "sla_monitors", "ecmp_zones", "policy_based_routes", "certificates",
+            "certificate_maps", "certificate_enrollments", "address_pools", "group_policies",
+            "s2s_ike_settings", "s2s_ipsec_settings", "s2s_advanced_settings", "ra_vpn_ipsec_settings",
+            "ldap_attribute_maps", "ra_vpn_load_balance_settings", "ra_vpn_address_assignment_settings",
+            "secure_client_settings", "ra_vpn_ipsec_crypto_maps", "prefilter_policies", "prefilter_rules",
+            "prefilter_default_actions", "network_analysis_policies", "inspector_configs",
+            "inspector_override_configs", "native_resources")
+        for name in SHEET_ORDER:
+            sheet = workbook.create_sheet(name)
+            if name == "Summary":
+                continue
+            if name == "Source Inventory":
+                append_report_row(sheet, SHEET_HEADERS[name])
+                for item in inventory_items:
+                    attrs = item.source_attributes
                     append_report_row(sheet, tuple(_text(value) for value in (
-                        collection, _source_name(item), item.source_id, item.source_context,
-                        sanitize_source_attributes(item.source_attributes), sanitize_source_attributes(item.raw_extra))))
-        else:
-            append_report_row(sheet, SHEET_HEADERS[name])
-            for row in rows[name]:
-                append_report_row(sheet, tuple(_text(value) for value in row))
-    write_collection_evidence(workbook, collection_status, collection_parts or (), collection_warnings or ())
-    collection_provided = config.collection_metadata.provided
-    scopes = sorted({f"{key}: {item.source_attributes[key]}" for item in inventory_items
-                     for key in ("domain_id", "device_id", "parent_policy_id", "policy_id")
-                     if item.source_attributes.get(key) is not None})
-    write_report_summary(
-        workbook["Summary"], title="Cisco FTD Configuration Report", profile=profile.value.upper(),
-        metadata=(("Hostname", None), ("FTD Version", config.version),
-                  ("Scopes", "\n".join(scopes) or None), ("Source File", source_name),
-                  ("Input Source", config.input_source_type), ("Source Plane", config.source_plane)),
-        validation=(("Errors", sum(issue.severity == "error" for issue in result.validation.issues)),
-                    ("Warnings", sum(issue.severity == "warning" for issue in result.validation.issues)),
-                    ("Unresolved References", len(derived.unresolved_references) if derived is not None else None),
-                    ("Validation Issues", len(result.validation.issues))),
-        inventory=((name, workbook[name]._report_row_count - 1, name) for name in SHEET_ORDER
-                   if name in rows or name in {"CLI Source Evidence", "Native Sources", "Source Evidence"}),
-        coverage=(*collection_summary(collection_status),
-                  ("Native Collection Status" if collection_status is not None else "Collection Status",
-                   config.collection_metadata.status if collection_provided else "NOT_PROVIDED"),
-                  ("Collection Parts", len(config.collection_metadata.parts) if collection_provided else None),
-                  ("Incomplete Collection Parts", sum(not part.complete for part in config.collection_metadata.parts)
-                   if collection_provided else None),
-                  ("Unsupported Source Evidence", len(config.unsupported_evidence)),
-                  *((f"Coverage: {status}", count, "Semantic Completeness") for status, count in Counter(
-                      status for family, status in getattr(derived, "source_plane_completeness", {}).items()
-                      if not family.startswith("collection:")).items()),
-                  ("Export Limitations", "FAST and FULL retain source evidence and collection completeness.")),
-    )
-    finish_report_workbook(workbook)
-    if hasattr(output, "write"):
-        workbook.save(output)
-        return output
-    path = Path(output)
-    workbook.save(path)
-    return path
+                        item.source_path, item.name, item.source_id, item.source_record_id, item.source_type,
+                        item.source_context, attrs.get("domain_id"), attrs.get("device_id"),
+                        attrs.get("device_name"), attrs.get("virtual_router_id"), attrs.get("virtual_router_name"),
+                        attrs.get("parent_policy_id") or attrs.get("policy_id"),
+                        attrs.get("parent_policy_name") or attrs.get("policy_name"),
+                        item.status.value, item.requires_manual_review, attrs.get("explicit_fields"),
+                    )))
+            elif name == "Collection Completeness":
+                append_report_row(sheet, SHEET_HEADERS[name])
+                if not config.collection_metadata.provided:
+                    append_report_row(sheet, ("Collection metadata", "NOT_PROVIDED", None, None, None))
+                for part in config.collection_metadata.parts:
+                    append_report_row(sheet, (part.name, part.status, part.complete, part.count, part.failure_reason))
+            elif name == "Semantic Completeness":
+                append_report_row(sheet, SHEET_HEADERS[name])
+                completeness = getattr(derived, "source_plane_completeness", {})
+                for family, status in completeness.items():
+                    if not family.startswith("collection:"):
+                        append_report_row(sheet, (family, status))
+            elif name == "Source Evidence":
+                append_report_row(sheet, SHEET_HEADERS[name])
+                for item in config.unsupported_evidence:
+                    safe = sanitize_source_attributes(item)
+                    append_report_row(sheet, tuple(_text(value) for value in (
+                        safe.get("source_path"), safe.get("reason"), safe.get("source_name"), safe.get("source_id"),
+                        safe.get("source_plane", config.source_plane), safe.get("source_context"),
+                        safe.get("domain_id"), safe.get("device_id"), safe.get("line_start"), safe.get("line_end"),
+                        safe.get("raw", safe),
+                    )))
+            elif name == "CLI Source Evidence":
+                append_report_row(sheet, SHEET_HEADERS[name])
+                for row in _cli_source_rows(config):
+                    append_report_row(sheet, tuple(_text(value) for value in row))
+            elif name == "Validation":
+                append_report_row(sheet, SHEET_HEADERS[name])
+                for item in result.validation.issues:
+                    append_report_row(sheet, (item.severity, item.category, item.message, item.source_plane,
+                        item.source_object, item.source_id, item.source_context, item.domain_id, item.device_id))
+            elif name == "Native Sources":
+                append_report_row(sheet, SHEET_HEADERS[name])
+                for collection in native_collections:
+                    for item in getattr(config, collection):
+                        append_report_row(sheet, tuple(_text(value) for value in (
+                            collection, _source_name(item), item.source_id, item.source_context,
+                            sanitize_source_attributes(item.source_attributes), sanitize_source_attributes(item.raw_extra))))
+            else:
+                append_report_row(sheet, SHEET_HEADERS[name])
+                for row in rows[name]:
+                    append_report_row(sheet, tuple(_text(value) for value in row))
+        write_collection_evidence(workbook, collection_status, collection_parts or (), collection_warnings or ())
+        collection_provided = config.collection_metadata.provided
+        scopes = sorted({f"{key}: {item.source_attributes[key]}" for item in inventory_items
+                         for key in ("domain_id", "device_id", "parent_policy_id", "policy_id")
+                         if item.source_attributes.get(key) is not None})
+        write_report_summary(
+            workbook["Summary"], title="Cisco FTD Configuration Report", profile=profile.value.upper(),
+            metadata=(("Hostname", None), ("FTD Version", config.version),
+                      ("Scopes", "\n".join(scopes) or None), ("Source File", source_name),
+                      ("Input Source", config.input_source_type), ("Source Plane", config.source_plane)),
+            validation=(("Errors", sum(issue.severity == "error" for issue in result.validation.issues)),
+                        ("Warnings", sum(issue.severity == "warning" for issue in result.validation.issues)),
+                        ("Unresolved References", len(derived.unresolved_references) if derived is not None else None),
+                        ("Validation Issues", len(result.validation.issues))),
+            inventory=((name, workbook[name]._report_row_count - 1, name) for name in SHEET_ORDER
+                       if name in rows or name in {"CLI Source Evidence", "Native Sources", "Source Evidence"}),
+            coverage=(*collection_summary(collection_status),
+                      ("Native Collection Status" if collection_status is not None else "Collection Status",
+                       config.collection_metadata.status if collection_provided else "NOT_PROVIDED"),
+                      ("Collection Parts", len(config.collection_metadata.parts) if collection_provided else None),
+                      ("Incomplete Collection Parts", sum(not part.complete for part in config.collection_metadata.parts)
+                       if collection_provided else None),
+                      ("Unsupported Source Evidence", len(config.unsupported_evidence)),
+                      *((f"Coverage: {status}", count, "Semantic Completeness") for status, count in Counter(
+                          status for family, status in getattr(derived, "source_plane_completeness", {}).items()
+                          if not family.startswith("collection:")).items()),
+                      ("Export Limitations", "FAST and FULL retain source evidence and collection completeness.")),
+        )
+        finish_report_workbook(workbook)
+        if hasattr(output, "write"):
+            save_report_workbook(workbook, output)
+            return output
+        path = Path(output)
+        save_report_workbook(workbook, path)
+        return path
 
 
 __all__ = ["export_ftd_excel"]

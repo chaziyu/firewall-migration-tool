@@ -93,6 +93,7 @@ def create_app(test_config=None):
             app.config['ALLOWED_HOSTS'].append(render_host.strip().lower())
     app.config.setdefault('API_RATE_LIMIT_PER_MINUTE', int(os.environ.get('FWMIGRATE_API_RATE_LIMIT_PER_MINUTE', '30')))
     app.config.setdefault('MAX_CONCURRENT_REQUESTS', int(os.environ.get('FWMIGRATE_MAX_CONCURRENT_REQUESTS', '2')))
+    app.config.setdefault('MAX_CONCURRENT_EXPORTS', int(os.environ.get('FWMIGRATE_MAX_CONCURRENT_EXPORTS', '2')))
     app.config.setdefault('MAX_CONTENT_LENGTH', 2 * MAX_BYTES + 5_000_000)
     register_request_controls(app)
 

@@ -50,6 +50,7 @@ Deep-dive architecture specifications into the core engines that power source an
 | Record | Purpose |
 | :--- | :--- |
 | [Code Quality Review and Refinement](code-quality-review-2026-10-23.md) | Code, import boundaries, stale policy and organization findings, implementation plan and validation. |
+| [Excel Export Reliability and Efficiency](excel-export-improvements-2026-10-23.md) | Frontend cancellation and profile defaults, workbook resource cleanup, FAST memory/speed improvements and verification. |
 | [PAN-OS Migration Safety Corrections](migration-safety-fixes-2026-10-23.md) | SRX policy dependencies, schedules and route preference; FMC matching, target identity and structured application. |
 | [Node Runtime and Bug Review](node-runtime-and-bug-review-2026-10-23.md) | Node security baseline, dependency updates, launcher synchronization and proxy error handling. |
 | [FortiGate to PAN-OS Scheduled Review](fortigate-to-panos-scheduled-review.md) | Resumable migration audit checkpoint, completed fixes and remaining engineer decisions. |

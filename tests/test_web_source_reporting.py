@@ -128,10 +128,10 @@ def test_ftd_supported_formats_reach_preview_and_excel_through_all_transports(pr
     evidence = preview.get_json()["source_evidence"]
     assert "WEB_FTD_SECRET" not in str(preview.get_json())
     snapshot = make_snapshot(CollectedSource("cisco_ftd", source, "ftd-source.txt", "offline"))
-    exports = [client.post("/api/extract/excel", data={"source_vendor": "cisco_ftd", "excel_profile": profile,
+    exports = [client.post("/api/extract/excel", buffered=True, data={"source_vendor": "cisco_ftd", "excel_profile": profile,
         "file": (io.BytesIO(source.encode()), "ftd-source.txt")})]
     for item in (evidence, {"vendor": "cisco_ftd", "source_text": source}, snapshot):
-        exports.append(client.post("/api/extract/excel", json={"source_vendor": "cisco_ftd",
+        exports.append(client.post("/api/extract/excel", buffered=True, json={"source_vendor": "cisco_ftd",
             "excel_profile": profile, "source": item}))
     for response in exports:
         assert response.status_code == 200, response.get_json()
@@ -313,14 +313,14 @@ def test_panos_fast_does_not_build_source_appendix(monkeypatch):
 
 def test_panos_excel_defaults_to_full_and_explicit_fast_is_preserved():
     client = create_app({"TESTING": True}).test_client()
-    full = client.post("/api/extract/excel", data={
+    full = client.post("/api/extract/excel", buffered=True, data={
         "source_vendor": "palo_alto", "file": (io.BytesIO(PALO_SOURCE.encode()), "pan.xml"),
     })
-    fast = client.post("/api/extract/excel", data={
+    fast = client.post("/api/extract/excel", buffered=True, data={
         "source_vendor": "palo_alto", "excel_profile": "fast",
         "file": (io.BytesIO(PALO_SOURCE.encode()), "pan.xml"),
     })
-    other = client.post("/api/extract/excel", data={
+    other = client.post("/api/extract/excel", buffered=True, data={
         "source_vendor": "cisco_asa", "file": (io.BytesIO(ASA_SOURCE.encode()), "asa.cfg"),
     })
     assert full.status_code == fast.status_code == other.status_code == 200
@@ -686,7 +686,7 @@ def test_source_reporting_rejects_oversized_upload_and_inline_evidence(monkeypat
             },
             content_type="multipart/form-data",
         )
-        assert response.status_code == 400
+        assert response.status_code == 413
 
     inline = client.post(
         "/api/extract/excel",
@@ -698,7 +698,7 @@ def test_source_reporting_rejects_oversized_upload_and_inline_evidence(monkeypat
             },
         },
     )
-    assert inline.status_code == 400
+    assert inline.status_code == 413
 
 
 @pytest.mark.parametrize('route', ['/api/preview', '/api/extract/excel'])

@@ -9,6 +9,7 @@ from typing import Any, get_args
 from openpyxl.utils import get_column_letter
 
 from fwmigrate.extraction.sanitize import sanitize_source_attributes
+from ....source_reporting.excel_lifecycle import report_workbook, save_report_workbook
 from ....source_reporting.options import ExcelExportProfile
 from ....source_reporting.excel_style import append_report_row, excel_safe_value, finish_report_workbook, write_report_summary
 from ....source_reporting.collection_excel import collection_summary, write_collection_evidence
@@ -152,88 +153,88 @@ def export_checkpoint_excel(
     from openpyxl import Workbook
 
     profile = ExcelExportProfile(profile)
-    workbook = Workbook(write_only=profile is ExcelExportProfile.FAST)
-    if not workbook.write_only:
-        workbook.remove(workbook.active)
-    validation = CheckPointValidationIndex(result.validation.issues)
-    for name in SHEET_ORDER:
-        sheet = workbook.create_sheet(name)
-        if name == "Summary":
-            continue
-        if name in SOURCE_SHEETS:
-            field = SOURCE_SHEETS[name]
-            headers = _source_headers(result, field)
-            for col, header in enumerate(headers, 1):
-                if header in {"raw_extra", "explicit_fields", "Source Explicit Fields", "Additional Settings"}:
-                    sheet.column_dimensions[get_column_letter(col)].hidden = True
-            append_report_row(sheet, headers)
-            for row in _source_rows(getattr(result.config, field), headers, validation, name): append_report_row(sheet, row)
-        elif name == "Derived Completeness":
-            append_report_row(sheet, SHEET_HEADERS[name])
-            for row in _derived_completeness_rows(result):
-                append_report_row(sheet, tuple(_excel_safe(v) for v in row))
-        elif name in DERIVED_SHEETS:
-            append_report_row(sheet, SHEET_HEADERS[name])
-            for row in _derived_rows(result, name): append_report_row(sheet, tuple(_excel_safe(v) for v in row))
-        elif name == "Collection":
-            append_report_row(sheet, SHEET_HEADERS[name])
-            for i in result.collection: append_report_row(sheet, tuple(_excel_safe(v) for v in (i.command, i.source_plane, i.domain, i.package, i.layer, i.status, i.complete, i.error)))
-        elif name == "Scope":
-            append_report_row(sheet, SHEET_HEADERS[name])
-            scope = getattr(result.scope, "model_dump", lambda: vars(result.scope))()
-            for key, value in scope.items(): append_report_row(sheet, (_excel_safe(key), _excel_safe(value)))
-        elif name == "Review Required":
-            append_report_row(sheet, SHEET_HEADERS[name])
-            for row in _issue_rows(result): append_report_row(sheet, row)
-        elif name == "Check Point Source Inventory":
-            append_report_row(sheet, SHEET_HEADERS[name])
-            for item in result.source_inventory:
-                d = item.model_dump(mode="python", by_alias=False)
-                append_report_row(sheet, tuple(_excel_safe(v) for v in (d.get("source_plane"), d.get("domain"), d.get("domain_uid"), d.get("command"), d.get("object_type"), d.get("uid"), d.get("name"), d.get("package"), d.get("layer"), d.get("gateway"), d.get("order"), d.get("explicit_fields"), d.get("values"), _additional_settings(item))))
-        elif name == "Unsupported":
-            append_report_row(sheet, SHEET_HEADERS[name])
-            groups = {}
-            for item in _unsupported_inventory(result):
-                key = (item.command, item.domain, "UNSUPPORTED_SOURCE", item.object_type or "Unmodeled source object")
-                groups[key] = groups.get(key, 0) + 1
-            for item in result.collection:
-                if not item.complete or str(item.status).lower().endswith("unsupported"):
-                    key = (item.command, item.source_plane, str(item.status), item.error)
+    with report_workbook(Workbook(write_only=profile is ExcelExportProfile.FAST)) as workbook:
+        if not workbook.write_only:
+            workbook.remove(workbook.active)
+        validation = CheckPointValidationIndex(result.validation.issues)
+        for name in SHEET_ORDER:
+            sheet = workbook.create_sheet(name)
+            if name == "Summary":
+                continue
+            if name in SOURCE_SHEETS:
+                field = SOURCE_SHEETS[name]
+                headers = _source_headers(result, field)
+                for col, header in enumerate(headers, 1):
+                    if header in {"raw_extra", "explicit_fields", "Source Explicit Fields", "Additional Settings"}:
+                        sheet.column_dimensions[get_column_letter(col)].hidden = True
+                append_report_row(sheet, headers)
+                for row in _source_rows(getattr(result.config, field), headers, validation, name): append_report_row(sheet, row)
+            elif name == "Derived Completeness":
+                append_report_row(sheet, SHEET_HEADERS[name])
+                for row in _derived_completeness_rows(result):
+                    append_report_row(sheet, tuple(_excel_safe(v) for v in row))
+            elif name in DERIVED_SHEETS:
+                append_report_row(sheet, SHEET_HEADERS[name])
+                for row in _derived_rows(result, name): append_report_row(sheet, tuple(_excel_safe(v) for v in row))
+            elif name == "Collection":
+                append_report_row(sheet, SHEET_HEADERS[name])
+                for i in result.collection: append_report_row(sheet, tuple(_excel_safe(v) for v in (i.command, i.source_plane, i.domain, i.package, i.layer, i.status, i.complete, i.error)))
+            elif name == "Scope":
+                append_report_row(sheet, SHEET_HEADERS[name])
+                scope = getattr(result.scope, "model_dump", lambda: vars(result.scope))()
+                for key, value in scope.items(): append_report_row(sheet, (_excel_safe(key), _excel_safe(value)))
+            elif name == "Review Required":
+                append_report_row(sheet, SHEET_HEADERS[name])
+                for row in _issue_rows(result): append_report_row(sheet, row)
+            elif name == "Check Point Source Inventory":
+                append_report_row(sheet, SHEET_HEADERS[name])
+                for item in result.source_inventory:
+                    d = item.model_dump(mode="python", by_alias=False)
+                    append_report_row(sheet, tuple(_excel_safe(v) for v in (d.get("source_plane"), d.get("domain"), d.get("domain_uid"), d.get("command"), d.get("object_type"), d.get("uid"), d.get("name"), d.get("package"), d.get("layer"), d.get("gateway"), d.get("order"), d.get("explicit_fields"), d.get("values"), _additional_settings(item))))
+            elif name == "Unsupported":
+                append_report_row(sheet, SHEET_HEADERS[name])
+                groups = {}
+                for item in _unsupported_inventory(result):
+                    key = (item.command, item.domain, "UNSUPPORTED_SOURCE", item.object_type or "Unmodeled source object")
                     groups[key] = groups.get(key, 0) + 1
-            for (command, scope, status, reason), count in groups.items(): append_report_row(sheet, tuple(_excel_safe(v) for v in (command, scope, count, reason or status, command)))
-        else: append_report_row(sheet, SHEET_HEADERS[name])
-    write_collection_evidence(workbook, collection_status, collection_parts or (), collection_warnings or ())
-    write_report_summary(
-        workbook["Summary"], title="Check Point Configuration Report", profile=profile.value.upper(),
-        metadata=(("Management Server", result.source_metadata.management_server),
-                  ("API Version", result.source_metadata.api_version),
-                  ("Domain", result.scope.selected_domain), ("Package", result.scope.selected_package),
-                  ("Access Layer", result.scope.selected_access_layer), ("Gateway", result.scope.selected_gateway),
-                  ("Source File", source_name)),
-        validation=(("Errors", len(result.validation.errors)), ("Warnings", len(result.validation.warnings)),
-                    ("Unresolved References", len(result.derived.broken_references)),
-                    ("Validation Findings", len(result.validation.issues))),
-        inventory=((name, len(getattr(result.config, field)), name) for name, field in SOURCE_SHEETS.items()),
-        coverage=(*collection_summary(collection_status),
-                  ("Source Objects", sum(len(getattr(result.config, f)) for f in SOURCE_SHEETS.values())),
-                  ("Derived Views", sum(len(_derived_rows(result, s)) for s in DERIVED_SHEETS)),
-                  ("Incomplete Collections", len(result.derived.collection_incomplete)),
-                  ("Source Inventory Evidence", len(result.source_inventory)),
-                  ("Unsupported Source Inventory", len(_unsupported_inventory(result))),
-                  ("Scope Ambiguous", "Yes" if getattr(result.scope, "ambiguous", False) else "No"),
-                  ("SD-WAN", "No direct R81.00 equivalent"),
-                  ("Collector Version", result.source_metadata.collector_version),
-                  ("Collection Timestamp", result.source_metadata.collection_timestamp),
-                  ("Successful Collection Operations", result.source_metadata.successful_command_count),
-                  ("Failed Collection Operations", result.source_metadata.failed_command_count),
-                  ("Unsupported Collection Operations", result.source_metadata.unsupported_command_count),
-                  ("Permission-Denied Collection Operations", result.source_metadata.permission_denied_count),
-                  ("Export Limitations", "FAST and FULL retain Management API and Gaia source worksheets.")),
-    )
-    finish_report_workbook(workbook)
-    if hasattr(output, "write"):
-        workbook.save(output); return output
-    path = Path(output); workbook.save(path); return path
+                for item in result.collection:
+                    if not item.complete or str(item.status).lower().endswith("unsupported"):
+                        key = (item.command, item.source_plane, str(item.status), item.error)
+                        groups[key] = groups.get(key, 0) + 1
+                for (command, scope, status, reason), count in groups.items(): append_report_row(sheet, tuple(_excel_safe(v) for v in (command, scope, count, reason or status, command)))
+            else: append_report_row(sheet, SHEET_HEADERS[name])
+        write_collection_evidence(workbook, collection_status, collection_parts or (), collection_warnings or ())
+        write_report_summary(
+            workbook["Summary"], title="Check Point Configuration Report", profile=profile.value.upper(),
+            metadata=(("Management Server", result.source_metadata.management_server),
+                      ("API Version", result.source_metadata.api_version),
+                      ("Domain", result.scope.selected_domain), ("Package", result.scope.selected_package),
+                      ("Access Layer", result.scope.selected_access_layer), ("Gateway", result.scope.selected_gateway),
+                      ("Source File", source_name)),
+            validation=(("Errors", len(result.validation.errors)), ("Warnings", len(result.validation.warnings)),
+                        ("Unresolved References", len(result.derived.broken_references)),
+                        ("Validation Findings", len(result.validation.issues))),
+            inventory=((name, len(getattr(result.config, field)), name) for name, field in SOURCE_SHEETS.items()),
+            coverage=(*collection_summary(collection_status),
+                      ("Source Objects", sum(len(getattr(result.config, f)) for f in SOURCE_SHEETS.values())),
+                      ("Derived Views", sum(len(_derived_rows(result, s)) for s in DERIVED_SHEETS)),
+                      ("Incomplete Collections", len(result.derived.collection_incomplete)),
+                      ("Source Inventory Evidence", len(result.source_inventory)),
+                      ("Unsupported Source Inventory", len(_unsupported_inventory(result))),
+                      ("Scope Ambiguous", "Yes" if getattr(result.scope, "ambiguous", False) else "No"),
+                      ("SD-WAN", "No direct R81.00 equivalent"),
+                      ("Collector Version", result.source_metadata.collector_version),
+                      ("Collection Timestamp", result.source_metadata.collection_timestamp),
+                      ("Successful Collection Operations", result.source_metadata.successful_command_count),
+                      ("Failed Collection Operations", result.source_metadata.failed_command_count),
+                      ("Unsupported Collection Operations", result.source_metadata.unsupported_command_count),
+                      ("Permission-Denied Collection Operations", result.source_metadata.permission_denied_count),
+                      ("Export Limitations", "FAST and FULL retain Management API and Gaia source worksheets.")),
+        )
+        finish_report_workbook(workbook)
+        if hasattr(output, "write"):
+            save_report_workbook(workbook, output); return output
+        path = Path(output); save_report_workbook(workbook, path); return path
 
 
 __all__ = ["export_checkpoint_excel"]

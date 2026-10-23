@@ -6,9 +6,11 @@ import math
 import threading
 import time
 from collections import OrderedDict
+from functools import wraps
 from urllib.parse import urlsplit
 
-from flask import g, jsonify, request
+from flask import current_app, g, jsonify, make_response, request
+from werkzeug.wsgi import ClosingIterator
 from werkzeug.wsgi import get_host
 
 
@@ -63,6 +65,10 @@ def register_request_controls(app):
         raise ValueError('Request control limits must be positive')
     semaphore = threading.BoundedSemaphore(maximum)
     app.extensions['request_controls'] = {'rate_limiter': limiter, 'semaphore': semaphore}
+    export_maximum = app.config['MAX_CONCURRENT_EXPORTS']
+    if export_maximum < 1:
+        raise ValueError('Export concurrency must be positive')
+    app.extensions['request_controls']['exports'] = threading.BoundedSemaphore(export_maximum)
 
     @app.before_request
     def protect_browser_requests():
@@ -104,3 +110,55 @@ def register_request_controls(app):
     def release_api_processing(_error):
         if g.pop('api_processing_permit', False):
             semaphore.release()
+
+
+def limit_export_response(view):
+    """Bound workbook generation AND retained response buffers until WSGI close."""
+    @wraps(view)
+    def limited(*args, **kwargs):
+        semaphore = current_app.extensions['request_controls']['exports']
+        if not semaphore.acquire(blocking=False):
+            response = jsonify({'success': False, 'error': 'Workbook export is busy; retry later',
+                                'error_code': 'export_busy'})
+            response.status_code = 429
+            response.headers['Retry-After'] = '1'
+            return response
+        released = False
+        lock = threading.Lock()
+
+        def release():
+            nonlocal released
+            with lock:
+                if not released:
+                    released = True
+                    semaphore.release()
+
+        try:
+            response = make_response(view(*args, **kwargs))
+            if response.status_code >= 400:
+                release()
+            else:
+                # send_file uses direct_passthrough, bypassing Response.call_on_close.
+                original = response.response
+
+                def finish():
+                    try:
+                        close = getattr(original, 'close', None)
+                        if close is not None:
+                            close()
+                    finally:
+                        release()
+
+                def stream():
+                    try:
+                        yield from original
+                    finally:
+                        finish()
+
+                # Also handle close before the generator is first advanced.
+                response.response = ClosingIterator(stream(), finish)
+            return response
+        except BaseException:
+            release()
+            raise
+    return limited

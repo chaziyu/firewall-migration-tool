@@ -499,10 +499,15 @@ def _safe_command_value(
 
 
 def _excel_safe(value: Any) -> Any:
+    return excel_safe_value(_excel_value(value))
+
+
+def _excel_value(value: Any) -> Any:
+    """Normalize vendor values; final-cell writers apply XML/formula safety."""
     if value is None:
         return None
     if type(value) is str:
-        return excel_safe_value(value)
+        return value
     if type(value) is bool:
         return "Yes" if value else "No"
     if type(value) is int or type(value) is float:
@@ -510,7 +515,7 @@ def _excel_safe(value: Any) -> Any:
 
     value = _plain_value(value)
 
-    return excel_safe_value(value)
+    return value
 
 
 def _plain_value(value: Any) -> Any:

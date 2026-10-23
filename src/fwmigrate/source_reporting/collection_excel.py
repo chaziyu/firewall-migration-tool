@@ -24,7 +24,7 @@ def write_collection_evidence(workbook, status, parts, warnings):
     for part in parts:
         append_report_row(sheet, (
             sanitize_raw_text(part.get("name")), sanitize_raw_text(part.get("status")),
-            part.get("complete"), part.get("count"), None,
+            part.get("complete"), part.get("count"), sanitize_raw_text(part.get("failure_reason")),
         ))
     for warning in warnings:
         append_report_row(sheet, (None, None, None, None, sanitize_raw_text(warning)))

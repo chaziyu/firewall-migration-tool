@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from ....source_reporting.excel_lifecycle import report_workbook, save_report_workbook
 from ....source_reporting.options import ExcelExportProfile
 from ....source_reporting.excel_style import append_report_row, finish_report_workbook, write_report_summary
 from .excel_schema import SHEET_HEADERS, SHEET_ORDER
@@ -84,230 +85,230 @@ def export_asa_excel(
     from fwmigrate.source_reporting.collection_excel import collection_summary, write_collection_evidence
 
     profile = ExcelExportProfile(profile)
-    workbook = Workbook(write_only=profile is ExcelExportProfile.FAST)
-    if not workbook.write_only:
-        workbook.remove(workbook.active)
-    config = result.config
-    for name in SHEET_ORDER:
-        if profile is ExcelExportProfile.FAST and name in {"Source Inventory", "Extraction Coverage"}:
-            continue
-        sheet = workbook.create_sheet(name)
-        if name == "Summary":
-            continue
-        if name == "Source Inventory":
-            append_report_row(sheet, SHEET_HEADERS[name])
-            for item in result.inventory_items:
-                append_report_row(sheet, (item.domain, item.source_context, item.source_path,
-                              item.source_id, item.status.value, item.requires_manual_review,
-                              "; ".join(item.notes), excel_value(item.source_attributes.get("raw"))))
-            continue
-        if name == "Review Required":
-            append_report_row(sheet, SHEET_HEADERS[name])
-            for item in result.inventory_items:
-                if item.requires_manual_review:
-                    append_report_row(sheet, (item.domain, item.source_context, item.source_id,
-                                  item.status.value, "; ".join(item.notes),
-                                  item.source_path or item.source_id))
-            for issue in result.validation.issues:
-                append_report_row(sheet, ("Validation", issue.source_context, issue.source_object, issue.severity,
-                              issue.message, issue.source_object))
-            for issue in result.derived.relationship_issues + result.derived.transform_issues:
-                append_report_row(sheet, ("Derived", getattr(issue, "source_context", None),
-                              getattr(issue, "source_object", None), "REVIEW_REQUIRED",
-                              getattr(issue, "message", str(issue)), getattr(issue, "source_object", None)))
-            continue
-        if name == "Validation":
-            append_report_row(sheet, SHEET_HEADERS[name])
-            for issue in result.validation.issues:
-                append_report_row(sheet, (issue.severity, issue.category, issue.message, issue.source_context, issue.source_object))
-            continue
-        if name == "Unsupported":
-            append_report_row(sheet, SHEET_HEADERS[name])
-            for item in result.unsupported_items:
-                raw = getattr(item, "raw_capture", None)
-                item_source_name = getattr(item, "source_name", "") or ""
-                line = getattr(item, "line_number", None)
-                if line is None and item_source_name.startswith("line ") and item_source_name[5:].isdigit():
-                    line = int(item_source_name[5:])
-                append_report_row(sheet, (line, getattr(item, "source_context", None),
-                              getattr(item, "source_path", None), item.reason, raw))
-            continue
-        if name == "Extraction Coverage":
-            append_report_row(sheet, SHEET_HEADERS[name])
-            from collections import Counter
-            counts = Counter((item.source_path, item.status.value, item.requires_manual_review)
-                             for item in result.inventory_items)
-            areas = {
-                "Address Objects": ("object network", "object-group network"),
-                "Address Groups": ("object-group network",), "Source NAT": ("nat object", "nat manual"),
-                "Firewall Policy": ("access-list", "access-group"), "MPF / Security Stack": ("class-map", "policy-map", "service-policy"),
-                "Schedules": ("time-range",), "Services": ("object service", "object-group service"),
-                "Destination NAT": ("nat object", "nat manual"), "VIP-group equivalent source": ("nat manual",),
-                "IPS / AIP": ("ips", "policy-map"), "Static Routes": ("route", "ipv6 route"),
-                "Command Authorization": ("privilege", "aaa authorization command"), "Administrators": ("username",),
-                "DHCP": ("dhcpd", "dhcprelay"), "Policy Routing / SLA": ("policy-route", "sla-monitor", "track"),
-                "Zones": ("interface",), "User Groups": ("object-group user",), "Local Users": ("username",),
-                "IPsec VPN": ("crypto ikev1 policy", "crypto ikev2 policy", "crypto ipsec", "crypto map", "tunnel-group"),
-                "Remote Access VPN": ("webvpn", "group-policy", "vpn-addr-assign", "tunnel-group"),
-            }
-            for label, families in areas.items():
-                matching = [(path, status, review, count) for (path, status, review), count in counts.items()
-                            if any(path.startswith(family) for family in families)]
-                append_report_row(sheet, (label, ", ".join(families), sum(c for _, _, _, c in matching),
-                              sum(c for _, s, _, c in matching if s == "EXTRACTED"),
-                              sum(c for _, s, _, c in matching if s == "PARTIAL"),
-                sum(c for _, s, _, c in matching if s == "SOURCE_ONLY"),
-                              sum(c for _, s, _, c in matching if s == "UNSUPPORTED"),
-                              sum(c for _, s, _, c in matching if s == "UNKNOWN"),
-                              sum(c for _, s, _, c in matching if s == "PARSE_ERROR"),
-                              sum(c for _, _, r, c in matching if r)))
-            continue
-        if name == "NAT Rules":
-            append_report_row(sheet, SHEET_HEADERS[name])
-            for item in result.derived.nat.rules:
-                rule = item.source_rule
-                values = (rule.name, item.source_order, item.effective_order, item.ordering_status,
-                item.section, rule.source_context, rule.syntax_family, rule.source_order_within_section,
-                          rule.source_sequence, item.translation_semantics, rule.source_interface,
-                          rule.destination_interface, rule.real_source, rule.mapped_source, rule.source_mode,
-                          rule.mapped_source_mode, rule.real_destination, rule.mapped_destination,
-                          rule.destination_mode, rule.original_service, rule.translated_service,
-                          rule.service_protocol, rule.service_operand_1, rule.service_operand_2,
-                          rule.owning_object, rule.access_list, rule.pat_pool,
-                          rule.pat_pool_options, source_value(rule, "identity_nat"),
-                          source_value(rule, "nat_exemption"), source_value(rule, "dns"),
-                          source_value(rule, "no_proxy_arp"), source_value(rule, "route_lookup"),
-                          source_value(rule, "unidirectional"), source_value(rule, "inactive"),
-                          rule.options, item.issues, rule.raw_line)
-                append_report_row(sheet, tuple(excel_value(value) for value in values))
-            continue
-        if name == "Routes":
-            append_report_row(sheet, SHEET_HEADERS[name])
-            for item in result.derived.routes.routes:
-                append_report_row(sheet, tuple(excel_value(value) for value in _row(name, item)))
-            continue
-        if name == "Interfaces":
-            append_report_row(sheet, SHEET_HEADERS[name])
-            topology = {(item.source_context, item.name.casefold()): item
-                        for item in result.derived.interface_topology.interfaces}
-            fields = SOURCE_SECTIONS[name][1].split()
-            for item in config.interfaces:
-                view = topology.get((item.source_context, item.name.casefold()))
-                source_values = []
-                for field in fields:
-                    source_values.append(source_value(item, field))
-                    if field == "source_context":
-                        source_values.append(source_explicit_fields(item))
-                values = (*source_values, getattr(view, "kind", None),
-                          _name(getattr(view, "parent", None)), _name(getattr(view, "aggregate", None)),
-                          tuple(_name(value) for value in getattr(view, "physical_interfaces", ())),
-                          getattr(view, "issues", ()))
-                append_report_row(sheet, tuple(excel_value(value) for value in values))
-            continue
-        if name == "Zones":
-            append_report_row(sheet, SHEET_HEADERS[name])
-            resolved = {}
-            for entry in result.derived.interface_topology.interfaces:
-                for zone in entry.zones:
-                    resolved.setdefault((entry.source_context, _name(zone)), set()).add(entry.name)
-            issues = {(getattr(issue, "source_context", None), getattr(issue, "source_object", None))
-                      for issue in result.derived.relationship_issues}
-            for zone in config.traffic_zones:
-                explicit = list(zone.members)
-                explicit.extend(interface.name for interface in config.interfaces
-                                if interface.source_context == zone.source_context
-                                and zone.name in interface.traffic_zone_members)
-                explicit = tuple(dict.fromkeys(explicit))
-                members = resolved.get((zone.source_context, zone.name), set())
-                unresolved = tuple(member for member in explicit if member not in members)
-                has_issue = (zone.source_context, zone.name) in issues
-                append_report_row(sheet, (zone.name, zone.source_context, excel_value(explicit),
-                              excel_value(tuple(sorted(members))), excel_value(unresolved),
-                              excel_value(zone.raw_extra), zone.requires_manual_review or has_issue))
-            continue
-        if name == "IPS Actions":
-            append_report_row(sheet, SHEET_HEADERS[name])
-            activations = {}
-            for relationship in result.derived.mpf_relationships.service_policies:
-                policy_map = getattr(relationship.policy_map, "name", None)
-                if policy_map:
-                    activations.setdefault(policy_map, []).append(
-                        getattr(relationship.service_policy, "name", None))
-            for policy_map, class_map, action in result.derived.mpf_relationships.external_ips_actions:
-                append_report_row(sheet, (policy_map.name, class_map.class_name, action.mode, action.failure_mode,
-                              action.sensor, policy_map.source_context,
-                              excel_value(tuple(activations.get(policy_map.name, ()))), None))
-            continue
-        if name == "Failover":
-            append_report_row(sheet, ("Record Type", "Context", "Source Values"))
-            if has_source_evidence(result.config.failover_config):
-                append_report_row(sheet, ("Failover Configuration", None, excel_value(result.config.failover_config)))
-            for item in config.failover_settings:
-                append_report_row(sheet, ("Failover Setting", item.source_context,
-                              excel_value({"setting": item.setting})))
-            continue
-        if name == "DHCP Reservations":
-            append_report_row(sheet, SHEET_HEADERS[name])
-            for server in config.dhcp_servers:
-                for item in server.reservations:
-                    append_report_row(sheet, tuple(excel_value(value) for value in (
-                        item.ip, item.mac, item.interface, server.source_context, item.source_order,
-                    )))
-            continue
-        if name in SOURCE_SECTIONS:
-            append_report_row(sheet, SHEET_HEADERS[name])
-            spec = SOURCE_SECTIONS[name]
-            values = getattr(config, spec[0], ()) or ()
-            singleton = bool(getattr(type(values), "model_fields", None))
-            if singleton:
-                values = (values,)
-            if name in {"DNS Settings", "System Settings", "HTTP Server"}:
-                values = management_records(config, spec[0])
-            if len(spec) == 3:
-                values = (child for parent in values for child in (getattr(parent, spec[1], ()) or ()))
-                fields = spec[2].split()
-            else:
-                fields = spec[1].split()
-            if name == "Policy Routing":
-                values = (item for item in values if any(getattr(item, key, None)
-                          for key in ("policy_route_maps", "policy_route_cost", "policy_route_path_monitors")))
-            for item in values:
-                append_report_row(sheet, tuple(excel_value(source_value(item, field)) for field in fields))
-            continue
-        if name in DERIVED_SECTIONS:
-            append_report_row(sheet, SHEET_HEADERS[name])
-            path = DERIVED_SECTIONS[name].split(".")
-            values = result.derived
-            for part in path:
-                values = getattr(values, part)
-            for item in values:
-                append_report_row(sheet, tuple(excel_value(value) for value in _derived_row(name, item)))
-            continue
-    write_collection_evidence(workbook, collection_status, collection_parts or (), collection_warnings or ())
-    write_report_summary(
-        workbook["Summary"], title="Cisco ASA Configuration Report", profile=profile.value.upper(),
-        metadata=(("Hostname", config.hostname), ("Version", None),
-                  ("Contexts", "\n".join(item.name for item in config.contexts) or None),
-                  ("Source File", source_name)),
-        validation=(("Errors", len(result.validation.errors)), ("Warnings", len(result.validation.warnings)),
-                    ("Unresolved References", sum(item.status == "UNRESOLVED" for item in result.derived.relationship_issues)), ("Validation Issues", len(result.validation.issues))),
-        inventory=((name, workbook[name]._report_row_count - 1, name) for name in SHEET_ORDER
-                   if name in workbook.sheetnames and name not in {
-                       "Summary", "Review Required", "Validation", "Source Inventory",
-                       "Extraction Coverage", "Unsupported", "Additional Settings",
-                   }),
-        coverage=(("Unsupported Commands", len(result.unsupported_items)),
-                  *collection_summary(collection_status),
-                  ("Export Limitations", "FAST omits Source Inventory and Extraction Coverage. Use FULL for traceability."
-                   if profile is ExcelExportProfile.FAST else "FULL includes Source Inventory and Extraction Coverage.")),
-    )
-    finish_report_workbook(workbook)
-    if hasattr(output, "write"):
-        workbook.save(output)
-        return output
-    path = Path(output)
-    workbook.save(path)
-    return path
+    with report_workbook(Workbook(write_only=profile is ExcelExportProfile.FAST)) as workbook:
+        if not workbook.write_only:
+            workbook.remove(workbook.active)
+        config = result.config
+        for name in SHEET_ORDER:
+            if profile is ExcelExportProfile.FAST and name in {"Source Inventory", "Extraction Coverage"}:
+                continue
+            sheet = workbook.create_sheet(name)
+            if name == "Summary":
+                continue
+            if name == "Source Inventory":
+                append_report_row(sheet, SHEET_HEADERS[name])
+                for item in result.inventory_items:
+                    append_report_row(sheet, (item.domain, item.source_context, item.source_path,
+                                  item.source_id, item.status.value, item.requires_manual_review,
+                                  "; ".join(item.notes), excel_value(item.source_attributes.get("raw"))))
+                continue
+            if name == "Review Required":
+                append_report_row(sheet, SHEET_HEADERS[name])
+                for item in result.inventory_items:
+                    if item.requires_manual_review:
+                        append_report_row(sheet, (item.domain, item.source_context, item.source_id,
+                                      item.status.value, "; ".join(item.notes),
+                                      item.source_path or item.source_id))
+                for issue in result.validation.issues:
+                    append_report_row(sheet, ("Validation", issue.source_context, issue.source_object, issue.severity,
+                                  issue.message, issue.source_object))
+                for issue in result.derived.relationship_issues + result.derived.transform_issues:
+                    append_report_row(sheet, ("Derived", getattr(issue, "source_context", None),
+                                  getattr(issue, "source_object", None), "REVIEW_REQUIRED",
+                                  getattr(issue, "message", str(issue)), getattr(issue, "source_object", None)))
+                continue
+            if name == "Validation":
+                append_report_row(sheet, SHEET_HEADERS[name])
+                for issue in result.validation.issues:
+                    append_report_row(sheet, (issue.severity, issue.category, issue.message, issue.source_context, issue.source_object))
+                continue
+            if name == "Unsupported":
+                append_report_row(sheet, SHEET_HEADERS[name])
+                for item in result.unsupported_items:
+                    raw = getattr(item, "raw_capture", None)
+                    item_source_name = getattr(item, "source_name", "") or ""
+                    line = getattr(item, "line_number", None)
+                    if line is None and item_source_name.startswith("line ") and item_source_name[5:].isdigit():
+                        line = int(item_source_name[5:])
+                    append_report_row(sheet, (line, getattr(item, "source_context", None),
+                                  getattr(item, "source_path", None), item.reason, raw))
+                continue
+            if name == "Extraction Coverage":
+                append_report_row(sheet, SHEET_HEADERS[name])
+                from collections import Counter
+                counts = Counter((item.source_path, item.status.value, item.requires_manual_review)
+                                 for item in result.inventory_items)
+                areas = {
+                    "Address Objects": ("object network", "object-group network"),
+                    "Address Groups": ("object-group network",), "Source NAT": ("nat object", "nat manual"),
+                    "Firewall Policy": ("access-list", "access-group"), "MPF / Security Stack": ("class-map", "policy-map", "service-policy"),
+                    "Schedules": ("time-range",), "Services": ("object service", "object-group service"),
+                    "Destination NAT": ("nat object", "nat manual"), "VIP-group equivalent source": ("nat manual",),
+                    "IPS / AIP": ("ips", "policy-map"), "Static Routes": ("route", "ipv6 route"),
+                    "Command Authorization": ("privilege", "aaa authorization command"), "Administrators": ("username",),
+                    "DHCP": ("dhcpd", "dhcprelay"), "Policy Routing / SLA": ("policy-route", "sla-monitor", "track"),
+                    "Zones": ("interface",), "User Groups": ("object-group user",), "Local Users": ("username",),
+                    "IPsec VPN": ("crypto ikev1 policy", "crypto ikev2 policy", "crypto ipsec", "crypto map", "tunnel-group"),
+                    "Remote Access VPN": ("webvpn", "group-policy", "vpn-addr-assign", "tunnel-group"),
+                }
+                for label, families in areas.items():
+                    matching = [(path, status, review, count) for (path, status, review), count in counts.items()
+                                if any(path.startswith(family) for family in families)]
+                    append_report_row(sheet, (label, ", ".join(families), sum(c for _, _, _, c in matching),
+                                  sum(c for _, s, _, c in matching if s == "EXTRACTED"),
+                                  sum(c for _, s, _, c in matching if s == "PARTIAL"),
+                    sum(c for _, s, _, c in matching if s == "SOURCE_ONLY"),
+                                  sum(c for _, s, _, c in matching if s == "UNSUPPORTED"),
+                                  sum(c for _, s, _, c in matching if s == "UNKNOWN"),
+                                  sum(c for _, s, _, c in matching if s == "PARSE_ERROR"),
+                                  sum(c for _, _, r, c in matching if r)))
+                continue
+            if name == "NAT Rules":
+                append_report_row(sheet, SHEET_HEADERS[name])
+                for item in result.derived.nat.rules:
+                    rule = item.source_rule
+                    values = (rule.name, item.source_order, item.effective_order, item.ordering_status,
+                    item.section, rule.source_context, rule.syntax_family, rule.source_order_within_section,
+                              rule.source_sequence, item.translation_semantics, rule.source_interface,
+                              rule.destination_interface, rule.real_source, rule.mapped_source, rule.source_mode,
+                              rule.mapped_source_mode, rule.real_destination, rule.mapped_destination,
+                              rule.destination_mode, rule.original_service, rule.translated_service,
+                              rule.service_protocol, rule.service_operand_1, rule.service_operand_2,
+                              rule.owning_object, rule.access_list, rule.pat_pool,
+                              rule.pat_pool_options, source_value(rule, "identity_nat"),
+                              source_value(rule, "nat_exemption"), source_value(rule, "dns"),
+                              source_value(rule, "no_proxy_arp"), source_value(rule, "route_lookup"),
+                              source_value(rule, "unidirectional"), source_value(rule, "inactive"),
+                              rule.options, item.issues, rule.raw_line)
+                    append_report_row(sheet, tuple(excel_value(value) for value in values))
+                continue
+            if name == "Routes":
+                append_report_row(sheet, SHEET_HEADERS[name])
+                for item in result.derived.routes.routes:
+                    append_report_row(sheet, tuple(excel_value(value) for value in _row(name, item)))
+                continue
+            if name == "Interfaces":
+                append_report_row(sheet, SHEET_HEADERS[name])
+                topology = {(item.source_context, item.name.casefold()): item
+                            for item in result.derived.interface_topology.interfaces}
+                fields = SOURCE_SECTIONS[name][1].split()
+                for item in config.interfaces:
+                    view = topology.get((item.source_context, item.name.casefold()))
+                    source_values = []
+                    for field in fields:
+                        source_values.append(source_value(item, field))
+                        if field == "source_context":
+                            source_values.append(source_explicit_fields(item))
+                    values = (*source_values, getattr(view, "kind", None),
+                              _name(getattr(view, "parent", None)), _name(getattr(view, "aggregate", None)),
+                              tuple(_name(value) for value in getattr(view, "physical_interfaces", ())),
+                              getattr(view, "issues", ()))
+                    append_report_row(sheet, tuple(excel_value(value) for value in values))
+                continue
+            if name == "Zones":
+                append_report_row(sheet, SHEET_HEADERS[name])
+                resolved = {}
+                for entry in result.derived.interface_topology.interfaces:
+                    for zone in entry.zones:
+                        resolved.setdefault((entry.source_context, _name(zone)), set()).add(entry.name)
+                issues = {(getattr(issue, "source_context", None), getattr(issue, "source_object", None))
+                          for issue in result.derived.relationship_issues}
+                for zone in config.traffic_zones:
+                    explicit = list(zone.members)
+                    explicit.extend(interface.name for interface in config.interfaces
+                                    if interface.source_context == zone.source_context
+                                    and zone.name in interface.traffic_zone_members)
+                    explicit = tuple(dict.fromkeys(explicit))
+                    members = resolved.get((zone.source_context, zone.name), set())
+                    unresolved = tuple(member for member in explicit if member not in members)
+                    has_issue = (zone.source_context, zone.name) in issues
+                    append_report_row(sheet, (zone.name, zone.source_context, excel_value(explicit),
+                                  excel_value(tuple(sorted(members))), excel_value(unresolved),
+                                  excel_value(zone.raw_extra), zone.requires_manual_review or has_issue))
+                continue
+            if name == "IPS Actions":
+                append_report_row(sheet, SHEET_HEADERS[name])
+                activations = {}
+                for relationship in result.derived.mpf_relationships.service_policies:
+                    policy_map = getattr(relationship.policy_map, "name", None)
+                    if policy_map:
+                        activations.setdefault(policy_map, []).append(
+                            getattr(relationship.service_policy, "name", None))
+                for policy_map, class_map, action in result.derived.mpf_relationships.external_ips_actions:
+                    append_report_row(sheet, (policy_map.name, class_map.class_name, action.mode, action.failure_mode,
+                                  action.sensor, policy_map.source_context,
+                                  excel_value(tuple(activations.get(policy_map.name, ()))), None))
+                continue
+            if name == "Failover":
+                append_report_row(sheet, ("Record Type", "Context", "Source Values"))
+                if has_source_evidence(result.config.failover_config):
+                    append_report_row(sheet, ("Failover Configuration", None, excel_value(result.config.failover_config)))
+                for item in config.failover_settings:
+                    append_report_row(sheet, ("Failover Setting", item.source_context,
+                                  excel_value({"setting": item.setting})))
+                continue
+            if name == "DHCP Reservations":
+                append_report_row(sheet, SHEET_HEADERS[name])
+                for server in config.dhcp_servers:
+                    for item in server.reservations:
+                        append_report_row(sheet, tuple(excel_value(value) for value in (
+                            item.ip, item.mac, item.interface, server.source_context, item.source_order,
+                        )))
+                continue
+            if name in SOURCE_SECTIONS:
+                append_report_row(sheet, SHEET_HEADERS[name])
+                spec = SOURCE_SECTIONS[name]
+                values = getattr(config, spec[0], ()) or ()
+                singleton = bool(getattr(type(values), "model_fields", None))
+                if singleton:
+                    values = (values,)
+                if name in {"DNS Settings", "System Settings", "HTTP Server"}:
+                    values = management_records(config, spec[0])
+                if len(spec) == 3:
+                    values = (child for parent in values for child in (getattr(parent, spec[1], ()) or ()))
+                    fields = spec[2].split()
+                else:
+                    fields = spec[1].split()
+                if name == "Policy Routing":
+                    values = (item for item in values if any(getattr(item, key, None)
+                              for key in ("policy_route_maps", "policy_route_cost", "policy_route_path_monitors")))
+                for item in values:
+                    append_report_row(sheet, tuple(excel_value(source_value(item, field)) for field in fields))
+                continue
+            if name in DERIVED_SECTIONS:
+                append_report_row(sheet, SHEET_HEADERS[name])
+                path = DERIVED_SECTIONS[name].split(".")
+                values = result.derived
+                for part in path:
+                    values = getattr(values, part)
+                for item in values:
+                    append_report_row(sheet, tuple(excel_value(value) for value in _derived_row(name, item)))
+                continue
+        write_collection_evidence(workbook, collection_status, collection_parts or (), collection_warnings or ())
+        write_report_summary(
+            workbook["Summary"], title="Cisco ASA Configuration Report", profile=profile.value.upper(),
+            metadata=(("Hostname", config.hostname), ("Version", None),
+                      ("Contexts", "\n".join(item.name for item in config.contexts) or None),
+                      ("Source File", source_name)),
+            validation=(("Errors", len(result.validation.errors)), ("Warnings", len(result.validation.warnings)),
+                        ("Unresolved References", sum(item.status == "UNRESOLVED" for item in result.derived.relationship_issues)), ("Validation Issues", len(result.validation.issues))),
+            inventory=((name, workbook[name]._report_row_count - 1, name) for name in SHEET_ORDER
+                       if name in workbook.sheetnames and name not in {
+                           "Summary", "Review Required", "Validation", "Source Inventory",
+                           "Extraction Coverage", "Unsupported", "Additional Settings",
+                       }),
+            coverage=(("Unsupported Commands", len(result.unsupported_items)),
+                      *collection_summary(collection_status),
+                      ("Export Limitations", "FAST omits Source Inventory and Extraction Coverage. Use FULL for traceability."
+                       if profile is ExcelExportProfile.FAST else "FULL includes Source Inventory and Extraction Coverage.")),
+        )
+        finish_report_workbook(workbook)
+        if hasattr(output, "write"):
+            save_report_workbook(workbook, output)
+            return output
+        path = Path(output)
+        save_report_workbook(workbook, path)
+        return path
 
 
 def _derived_row(sheet: str, item: Any) -> tuple[Any, ...]:
