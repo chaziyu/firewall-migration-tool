@@ -414,3 +414,81 @@ Cycle 13 remote verification also completed: GitHub CI run **39904026678** and
 OSV-Scanner run **39904027049** succeeded. Render automatically deployed
 `d6ff28361d3807f249bd6077250cda3e871f7f76` as **`dep-dbden5dbedkc73ctlfg0`** and
 reported it live; no manual deploy or cache clear was needed.
+
+Pushed cycle 14 to `origin/main`: **`fd0759ea6da34be5b757c0d02eeec1b18e923bc3`**
+(`Report residual VIP group metadata without blocking verified traffic`).
+
+## Latest checkpoint — VIP metadata and repository quality refinement
+
+Completed and pushed:
+
+- **`fcd78270`**: repository quality plan executed — consistent SRX dependency
+  validation, all Pyflakes rules, explicit recommendation exports, stale code
+  cleanup, architectural import guards, refreshed policies and documentation
+  links. **`ba0f59cd`** records successful CI/Render verification and the
+  remaining quality follow-up in `code-quality-review-2026-10-23.md`.
+- **`d6ff2836`**: cycle 13 preserves 13 real-file VIP comments as address
+  descriptions and requests explicit VSYS placement for unreferenced VIPs.
+- **`fd0759ea`**: cycle 14 exposes residual native VIP-group comments as manual
+  metadata work while preserving verified membership/traffic commands.
+
+No adopted plan or code implementation is unfinished. The checkout contains
+no raw customer configuration. Its original SHA-256 remains
+`8ab528b1f9627c96f9321cade26ef3c25c79d9a1e1169561fbfb6893d1557881`.
+Task-started browser servers were stopped after verification.
+
+Latest validation: **3,137 Python tests passed, two skipped, 16 subtests
+passed**; all-Pyflakes Ruff, compileall and whitespace checks passed. The
+frontend's **249 tests**, lint and production build passed earlier in this
+continuation; no frontend code changed. Real-file Chromium review and signed
+synthetic VIP preview/download/bundle checks passed, including source reset,
+failed-generation retry and 2,000-object search. The separate small browser
+check confirmed the VIP-group manual metadata task without copying its comment
+into issue text. All browser checks finished without page errors.
+
+Final remote verification for **`fd0759ea`**: [CI run
+39904624363](https://github.com/chaziyu/firewall-migration-tool/actions/runs/39904624363)
+passed all seven jobs — Python 3.11/3.12/3.13/3.14, constrained release
+dependencies, frontend and lint. OSV-Scanner run 39904624719 succeeded. Render
+automatically deployed the same code as **`dep-dbdeq795efls73ap4r0g`**, reported
+live at **13:15:32 Asia/Kuala_Lumpur on 23 October 2026**, and logged a platform
+GET `/` HTTP 200. No service settings, secrets, manual deployment trigger or
+cache-clear operation changed in either migration cycle.
+
+Latest private report:
+`/workspace/migration-review-private/continue3/cycle14/migration_report.json`.
+It remains `NEEDS_MAPPING`: **111 decisions**, **4,476 unplanned records**
+(723 recommendation-only + 3,753 source-only), **36,883 findings** and **zero
+commands/renderable/satisfied items**. All report items remain unrendered and
+unsatisfied. The 3,514 native source-section records dominate the remaining
+coverage; these are retained evidence, not independent software-defect counts.
+
+Manual migration requirements remain explicit VSYS/VR/interface/zone/ownership
+and target-evidence choices; unsupported source sections; SD-WAN, SSL-VPN,
+identity/admin/certificate and secure VPN design; three schedule expiration
+notifications and the example's native service-group metadata. A native
+VIP-group comment also requires manual metadata review when present; this
+example has none. No firewall was contacted, prepared, validated or committed.
+
+Exact next actions:
+
+1. Fetch `origin/main`, inspect instructions/status and any newer checkpoint,
+   coordinate with active work, and verify the uploaded input checksum. Do not
+   overwrite another run's changes or force-push.
+2. Repeat the actual CLI into a fresh private directory and compare the counts
+   above before adopting a new issue. Reuse browser checks where relevant.
+3. Continue the typed-attribute audit with verified source/target semantics.
+   Schedule distribution controls and VIP/NAT source-translation interactions
+   are candidates, not established defects or unfinished implementation plans.
+   Check existing overlap/unsupported-flow guards before adding restrictions;
+   do not manufacture a fix or infer absent controls/defaults/target placement.
+4. Keep description-aware exact reuse and signed command identity intact.
+   Native group metadata must remain distinguishable from successfully
+   converted traffic. Preserve explicit empty versus absent/unset state and
+   scoped native identities.
+5. The separate quality review retains the measured frontend bundle/loading
+   follow-up and GitHub critical Dependabot alert 6. Its advisory details are
+   blocked by available API access; do not infer resolution from successful
+   OSV/npm checks or dismiss it. Triage through authorized Security-tab access.
+
+Usage quota is not exposed; no exhaustion or complete-migration claim is made.
