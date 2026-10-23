@@ -49,6 +49,8 @@ def plan_schedules(source: Any, options: Any = None):
             warnings.append('one-time schedule requires an ordered FortiGate HH:MM YYYY/MM/DD range')
         if item.raw_extra or item.start_utc is not None or item.end_utc is not None:
             warnings.append('schedule contains preserved unsupported source settings or UTC controls')
+        if item.expiration_days is not None:
+            warnings.append('one-time schedule expiration-days event-log notification requires manual monitoring review')
         result.append(PlannedSchedule(
             source_vdom=item.vdom, source_kind="one_time_schedule", source_object_type="schedule",
             source_name=item.name, target_vsys=getattr(getattr(options, "vdoms", {}).get(item.vdom), "vsys", None) if options else None, target_name=item.name,
