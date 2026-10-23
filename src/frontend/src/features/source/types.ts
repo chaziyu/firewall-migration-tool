@@ -4,6 +4,8 @@ export type SourceVendorOption = {
   vendor_id: SourceVendor
   display_name: string
   file_extensions: string[]
+  max_source_bytes?: number
+  max_snapshot_bytes?: number
   live_collection?: boolean
   collection?: { method: string; connection_fields: CollectionField[] } | null
 }

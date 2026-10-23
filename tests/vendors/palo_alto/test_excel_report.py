@@ -216,7 +216,7 @@ def test_full_streaming_export_preserves_all_rows_layout_and_collection_evidence
         sheet = workbook[name]
         assert tuple(cell.value for cell in sheet[3]) == headers
         assert list(sheet.iter_rows(min_row=4, max_col=len(headers), values_only=True)) == expected
-        assert sheet["A2"].value.startswith(f"{len(expected)} row(s).")
+        assert sheet["A2"].value.startswith("FULL report. Row counts are listed in Summary.")
         assert f"A1:{get_column_letter(len(headers))}1" in sheet.merged_cells
         assert sheet.cell(2, len(headers)).hyperlink.target == "#'Summary'!A1"
         assert sheet.auto_filter.ref == (f"A3:{get_column_letter(len(headers))}{len(expected) + 3}" if expected else None)

@@ -8,7 +8,7 @@ from flask import request
 from fwmigrate.collection import CollectionStatus
 from fwmigrate.collection.snapshot import FORMAT, MAX_BYTES, parse_snapshot, sanitize_source, make_snapshot
 from fwmigrate.source_reporting import source_reporters
-from .reporting import _decode_configuration
+from .reporting import SourceSizeError, _decode_configuration, _timed
 
 
 @dataclass(frozen=True)
@@ -23,18 +23,20 @@ class RequestSource:
 
 def _ensure_source_size(text: str) -> str:
     if len(text) > MAX_BYTES or len(text.encode("utf-8")) > MAX_BYTES:
-        raise ValueError("Source configuration exceeds the size limit.")
+        raise SourceSizeError("Source configuration exceeds the size limit.")
     return text
 
 
 def _read_uploaded_source(uploaded) -> str:
     raw = uploaded.read(MAX_BYTES + 1)
     if len(raw) > MAX_BYTES:
-        raise ValueError("Source configuration exceeds the size limit.")
+        raise SourceSizeError("Source configuration exceeds the size limit.")
     return _decode_configuration(raw)
 
 
-def analyze_request_source(payload, vendor, *, target=False):
+def analyze_request_source(payload, vendor, *, target=False, metrics=None):
+    if not isinstance(payload, dict):
+        raise ValueError('Source request must be an object')
     evidence = payload.get('target_source' if target else 'source')
     uploaded = request.files.get('target_file' if target else 'file')
     if isinstance(evidence, str):
@@ -46,7 +48,11 @@ def analyze_request_source(payload, vendor, *, target=False):
         if not isinstance(evidence, dict):
             raise ValueError('Source evidence must be an object')
         if evidence.get('format'):
-            collected = parse_snapshot(json.dumps(evidence).encode('utf-8'))
+            raw_snapshot = json.dumps(evidence).encode('utf-8')
+            if len(raw_snapshot) > MAX_BYTES:
+                raise SourceSizeError('Snapshot exceeds the size limit')
+            collected = _timed(metrics, 'snapshot validation and sanitization', lambda: parse_snapshot(raw_snapshot))
+            del raw_snapshot
             if collected.vendor_id != vendor:
                 raise ValueError('Snapshot vendor does not match the requested vendor')
             text, name, status = collected.source_text, collected.source_name, collected.status
@@ -54,17 +60,24 @@ def analyze_request_source(payload, vendor, *, target=False):
         else:
             if evidence.get('vendor') != vendor or not isinstance(evidence.get('source_text'), str):
                 raise ValueError('Vendor-native source evidence is required')
-            text = sanitize_source(vendor, _ensure_source_size(evidence['source_text']))
             name = evidence.get('source_name')
+            if name is not None and (not isinstance(name, str) or len(name) > 255):
+                raise ValueError('Source name must be a string of at most 255 characters')
+            text = _timed(metrics, 'source sanitization', lambda: sanitize_source(vendor, _ensure_source_size(evidence['source_text'])))
             evidence = {'vendor': vendor, 'source_text': text, 'source_name': name}
     elif uploaded and uploaded.filename:
-        text = sanitize_source(vendor, _read_uploaded_source(uploaded))
+        text = _timed(metrics, 'source decode and sanitization', lambda: sanitize_source(vendor, _read_uploaded_source(uploaded)))
         name = os.path.basename(uploaded.filename)
         evidence = {'vendor': vendor, 'source_text': text, 'source_name': name}
     else:
         raise ValueError('A vendor-native source file or snapshot is required')
-    digest = hashlib.sha256(text.encode('utf-8') + b'\0' + vendor.encode('utf-8')).hexdigest()
-    analysis = source_reporters.get(vendor).analyze_source(text)
+    hasher = hashlib.sha256()
+    hasher.update(text.encode('utf-8'))
+    hasher.update(b'\0')
+    hasher.update(vendor.encode('utf-8'))
+    digest = hasher.hexdigest()
+    options = {'metrics': metrics} if metrics is not None else {}
+    analysis = _timed(metrics, 'source analysis', lambda: source_reporters.get(vendor).analyze_source(text, **options))
     return RequestSource(vendor, digest, analysis, name, status, evidence)
 
 

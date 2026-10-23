@@ -35,7 +35,7 @@ def test_additional_settings_preserves_keys_and_secrets_in_both_profiles():
     settings = {"raw_extra": {"native-setting": {"settings": {"safe-value": "retained",
                                                            "private-key": "hidden-material"}}},
                 "source_attributes": {"Case-Key": {"api-token": "hidden-token"}}}
-    rows = _additional_settings(settings, "root")
+    rows = list(_additional_settings(settings, "root"))
     assert {row[3] for row in rows} == {"native-setting", "Case-Key"}
     assert "retained" in repr(rows)
     assert "hidden-material" not in repr(rows) and "hidden-token" not in repr(rows)

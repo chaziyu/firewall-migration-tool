@@ -67,6 +67,7 @@ test('selected pair shows capability limits and missing metadata grants no execu
     const hooks = {
       useState(value) { const i = cursor++; if (!(i in slots)) slots[i] = typeof value === 'function' ? value() : value; return [slots[i], (next) => { slots[i] = typeof next === 'function' ? next(slots[i]) : next; dirty = true }] },
       useRef(value) { return slots[cursor++] ??= { current: value } },
+      useMemo(fn, deps) { const i = cursor++; const old = slots[i]; if (!old || deps.some((d, j) => d !== old.deps[j])) slots[i] = { deps, value: fn() }; return slots[i].value },
       useEffect(fn, deps) { const i = cursor++; if (!slots[i] || deps.some((d, j) => d !== slots[i][j])) { slots[i] = deps; effects.push(fn) } },
     }
     const exports = {}
