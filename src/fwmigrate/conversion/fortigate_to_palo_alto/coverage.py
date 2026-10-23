@@ -39,13 +39,33 @@ _SOURCE_ONLY_FAMILIES = (
 )
 
 
-def _identity(item, index):
-    vdom = getattr(item, "vdom", None) or "root"
-    for field in ("name", "policy_id", "id", "seq_num"):
-        value = getattr(item, field, None)
-        if value not in (None, ""):
-            return vdom, str(value)
-    return vdom, str(index)
+# Native edit keys differ from descriptive labels. Keep these aligned with the
+# FortiGate typed source inventory; singleton sections have no edit key.
+_SOURCE_IDENTITY_FIELDS = {
+    "central_snat": "policy_id",
+    "security_policies": "policy_id",
+    "session_helpers": "id",
+    "affinity_interrupts": "id",
+    "firewall_regions": "id",
+    "vendor_macs": "id",
+    "ssl_vpn_realms": "url_path",
+    "ssl_vpn_user_bookmarks": "owner_name",
+    "ssl_vpn_user_group_bookmarks": "owner_name",
+    "ips_settings": None,
+    "router_settings": None,
+}
+
+
+def _identity(item, index, family):
+    # None may mean global or unavailable scope; neither establishes root.
+    vdom = getattr(item, "vdom", None)
+    field = _SOURCE_IDENTITY_FIELDS.get(family, "name")
+    if field is None:
+        return vdom, family
+    value = getattr(item, field, None)
+    if value in (None, ""):
+        value = getattr(item, "raw_extra", {}).get(f"unparsed_{field}")
+    return vdom, str(value) if value not in (None, "") else f"<unidentified:{index}>"
 
 
 def build_migration_coverage(source, recommendations=(), *, planned_vpn_sources=(), planned_vip_groups=(),
@@ -78,7 +98,7 @@ def build_migration_coverage(source, recommendations=(), *, planned_vpn_sources=
 
     for attribute, source_kind in _SOURCE_ONLY_FAMILIES:
         for index, item in enumerate(getattr(source, attribute, ()) or ()):
-            vdom, name = _identity(item, index)
+            vdom, name = _identity(item, index, attribute)
             if attribute == 'vip_groups' and (vdom, name) in planned_vip_groups:
                 continue
             unplanned.append({
