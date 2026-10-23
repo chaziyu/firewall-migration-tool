@@ -4,6 +4,8 @@ from itertools import chain
 from pathlib import Path
 from typing import Any, BinaryIO, Iterable, Mapping
 
+from ....source_reporting.excel_lifecycle import report_workbook, save_report_workbook
+
 from openpyxl import Workbook
 from openpyxl.cell import WriteOnlyCell
 from openpyxl.styles import Alignment, Font, PatternFill
@@ -11,7 +13,7 @@ from openpyxl.utils import get_column_letter
 
 from ....source_reporting.options import ExcelExportProfile
 from ....source_reporting.collection_excel import collection_summary, write_collection_evidence
-from ....source_reporting.excel_style import REPORT_BODY_NOTE, excel_safe_value, report_cell_value, readable_report_row, report_column_width, style_report_header, write_report_summary
+from ....source_reporting.excel_style import check_report_dimensions, REPORT_BODY_NOTE, excel_safe_value, report_cell_value, append_readable_report_row, report_column_width, style_report_header, write_report_summary
 
 from .excel_rows import ROW_BUILDERS, _PANExcelContext
 from .excel_schema import SHEET_ORDER, HIDDEN_COLUMNS_BY_DEFAULT, SHEET_HEADERS, OWNER_COLUMNS
@@ -62,7 +64,7 @@ def _write_summary(
 
 
 def _write_table(
-    workbook: Workbook, name: str, rows: Iterable[Mapping[str, Any]], *, row_count: int | None = None,
+    workbook: Workbook, name: str, rows: Iterable[Mapping[str, Any]], *, full: bool = False,
 ) -> int:
     headers = SHEET_HEADERS[name]
     sheet = workbook.create_sheet(name)
@@ -76,7 +78,7 @@ def _write_table(
         dimension = sheet.column_dimensions[get_column_letter(column)]
         dimension.width = report_column_width(header)
         dimension.hidden = header in HIDDEN_COLUMNS_BY_DEFAULT.get(name, ())
-    if row_count is not None:
+    if full:
         sheet.merged_cells.add(f"A1:{get_column_letter(len(headers))}1")
         if len(headers) > 2:
             sheet.merged_cells.add(f"A2:{get_column_letter(len(headers) - 1)}2")
@@ -86,12 +88,12 @@ def _write_table(
     title.alignment = _TITLE_ALIGNMENT
     sheet.append([title])
     note = WriteOnlyCell(sheet, (
-        "FAST lightweight export. " if row_count is None else f"{row_count} row(s). "
+        "FULL report. Row counts are listed in Summary. " if full else "FAST lightweight export. "
     ) + "Analysis Status reports validation only; NO_VALIDATION_ISSUES does not imply complete extraction. "
-        "Source Inventory reports extraction coverage." + (" Source Inventory is available in FULL." if row_count is None else "") + " " + REPORT_BODY_NOTE)
+        "Source Inventory reports extraction coverage." + (" Source Inventory is available in FULL." if not full else "") + " " + REPORT_BODY_NOTE)
     note.font = _MUTED_FONT
     values = [note]
-    if row_count is not None and len(headers) > 1:
+    if full and len(headers) > 1:
         link = WriteOnlyCell(sheet, "Back to Summary")
         link.hyperlink, link.font, link.alignment = "#'Summary'!A1", _LINK_FONT, _LINK_ALIGNMENT
         values = [note, *([None] * (len(headers) - 2)), link]
@@ -104,18 +106,20 @@ def _write_table(
     sheet.append(cells)
     row_count = 0
     for row_count, row in enumerate(rows, 1):
-        values = [report_cell_value(sheet, row_count + 3, column, _excel_safe(row.get(header)))
+        check_report_dimensions(row_count + 3, len(headers))
+        values = [report_cell_value(sheet, row_count + 3, column, row.get(header))
                   for column, header in enumerate(headers, 1)]
         if name not in {"PAN-OS Source Inventory", "Extraction Coverage", "PAN-OS Source Appendix"}:
-            values = readable_report_row(sheet, row_count + 3, values)
-        sheet.append(values)
+            append_readable_report_row(sheet, row_count + 3, values)
+        else:
+            sheet.append(values)
     if row_count:
         sheet.auto_filter.ref = f"A3:{get_column_letter(len(headers))}{row_count + 3}"
     return row_count
 
 
-def _build_workbook(context: _PANExcelContext, profile: ExcelExportProfile) -> Workbook:
-    workbook = Workbook(write_only=True)
+def _build_workbook(context: _PANExcelContext, profile: ExcelExportProfile, workbook: Workbook | None = None) -> Workbook:
+    workbook = workbook if workbook is not None else Workbook(write_only=True)
     workbook.create_sheet("Summary")
     counts = {}
     no_rows = object()
@@ -123,9 +127,7 @@ def _build_workbook(context: _PANExcelContext, profile: ExcelExportProfile) -> W
         if name == "Summary":
             continue
         if profile is ExcelExportProfile.FULL:
-            # Count before streaming because the row-count note precedes the data.
-            count = sum(1 for _ in ROW_BUILDERS[name](context))
-            counts[name] = _write_table(workbook, name, ROW_BUILDERS[name](context), row_count=count)
+            counts[name] = _write_table(workbook, name, ROW_BUILDERS[name](context), full=True)
             continue
         if name in {"PAN-OS Source Inventory", "Extraction Coverage", "PAN-OS Source Appendix"}:
             continue
@@ -146,8 +148,9 @@ def export_panos_excel(
 ) -> None:
     profile = ExcelExportProfile(profile)
     context = _PANExcelContext(analysis, source_name, collection_status=collection_status)
-    workbook = _build_workbook(context, profile)
-    write_collection_evidence(workbook, collection_status, collection_parts, collection_warnings)
-    if isinstance(output, (str, Path)):
-        Path(output).parent.mkdir(parents=True, exist_ok=True)
-    workbook.save(output)
+    with report_workbook(Workbook(write_only=True)) as workbook:
+        _build_workbook(context, profile, workbook=workbook)
+        write_collection_evidence(workbook, collection_status, collection_parts, collection_warnings)
+        if isinstance(output, (str, Path)):
+            Path(output).parent.mkdir(parents=True, exist_ok=True)
+        save_report_workbook(workbook, output)

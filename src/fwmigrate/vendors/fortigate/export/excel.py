@@ -6,7 +6,9 @@ from pathlib import Path
 from time import perf_counter
 from typing import Any, BinaryIO, Iterable, Mapping, Sequence
 
-from ....source_reporting.excel_style import REPORT_BODY_NOTE, report_cell_value, readable_report_row, style_report_header, write_report_summary
+from ....source_reporting.excel_style import check_report_dimensions, REPORT_BODY_NOTE, report_cell_value, append_readable_report_row, style_report_header, write_report_summary
+
+from ....source_reporting.excel_lifecycle import report_workbook, save_report_workbook
 
 from openpyxl import Workbook
 from openpyxl.cell import WriteOnlyCell
@@ -39,7 +41,8 @@ from .excel_common import (
     _additional_source_settings as _additional_source_settings,
     _additional_settings as _additional_settings,
     _build_additional_settings as _build_additional_settings,
-    _excel_safe,
+    _excel_safe as _excel_safe,
+    _excel_value,
     _interface_source_values as _interface_source_values,
     _lookup_source_header as _lookup_source_header,
     _model_rows as _model_rows,
@@ -138,26 +141,28 @@ def export_excel(
     if metrics is not None and profile is ExcelExportProfile.FAST:
         metrics.add_stage("excel_context", (perf_counter() - context_started) * 1000)
 
-    build_started = perf_counter()
-    workbook = _build_workbook(
-        context,
-        metrics=metrics if profile is ExcelExportProfile.FAST else None,
-    )
-    if metrics is not None and profile is ExcelExportProfile.FAST:
-        metrics.add_stage("workbook_build", (perf_counter() - build_started) * 1000)
-    write_collection_evidence(workbook, collection_status, collection_parts, collection_warnings)
-    if isinstance(output, (str, Path)):
-        path = Path(output)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        save_target = path
-    else:
-        save_target = output
+    with report_workbook(Workbook(write_only=profile is ExcelExportProfile.FAST)) as workbook:
+        build_started = perf_counter()
+        workbook = _build_workbook(
+            context,
+            workbook=workbook,
+            metrics=metrics if profile is ExcelExportProfile.FAST else None,
+        )
+        if metrics is not None and profile is ExcelExportProfile.FAST:
+            metrics.add_stage("workbook_build", (perf_counter() - build_started) * 1000)
+        write_collection_evidence(workbook, collection_status, collection_parts, collection_warnings)
+        if isinstance(output, (str, Path)):
+            path = Path(output)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            save_target = path
+        else:
+            save_target = output
 
-    save_started = perf_counter()
-    workbook.save(save_target)
-    if metrics is not None and profile is ExcelExportProfile.FAST:
-        metrics.add_stage("workbook_save", (perf_counter() - save_started) * 1000)
-        metrics.add_stage("excel_total", (perf_counter() - excel_started) * 1000)
+        save_started = perf_counter()
+        save_report_workbook(workbook, save_target)
+        if metrics is not None and profile is ExcelExportProfile.FAST:
+            metrics.add_stage("workbook_save", (perf_counter() - save_started) * 1000)
+            metrics.add_stage("excel_total", (perf_counter() - excel_started) * 1000)
 
 
 class _ExcelContext:
@@ -272,7 +277,8 @@ class _ExcelContext:
             found.append(issue)
 
         result = tuple(found)
-        self._issues_cache[cache_key] = result
+        if result:
+            self._issues_cache[cache_key] = result
         return result
 
 
@@ -280,11 +286,12 @@ def _build_workbook(
     context: _ExcelContext,
     *,
     metrics: ExcelExportMetrics | None = None,
+    workbook: Workbook | None = None,
 ) -> Workbook:
     if context.profile is ExcelExportProfile.FAST:
-        return _build_fast_workbook(context, metrics=metrics)
+        return _build_fast_workbook(context, metrics=metrics, workbook=workbook)
 
-    workbook = Workbook()
+    workbook = workbook if workbook is not None else Workbook()
     workbook.remove(workbook.active)
 
     order = list(SHEET_ORDER)
@@ -312,8 +319,9 @@ def _build_fast_workbook(
     context: _ExcelContext,
     *,
     metrics: ExcelExportMetrics | None = None,
+    workbook: Workbook | None = None,
 ) -> Workbook:
-    workbook = Workbook(write_only=True)
+    workbook = workbook if workbook is not None else Workbook(write_only=True)
     workbook.create_sheet("Summary")
     no_rows = object()
     other_sheet_total = 0.0
@@ -471,9 +479,10 @@ def _write_table_sheet(
     row_count = 0
     for row in rows:
         row_count += 1
-        values = [report_cell_value(sheet, row_count + 3, column, _excel_safe(row.get(header)))
+        check_report_dimensions(row_count + 3, len(headers))
+        values = [report_cell_value(sheet, row_count + 3, column, _excel_value(row.get(header)))
                   for column, header in enumerate(headers, 1)]
-        sheet.append(readable_report_row(sheet, row_count + 3, values))
+        append_readable_report_row(sheet, row_count + 3, values)
         if sheet_name == "Review Summary" and row.get("First Detail"):
             column = headers.index("First Detail") + 1
             cell = sheet.cell(row_count + 3, column)
@@ -549,7 +558,8 @@ def _write_table_sheet_fast(
     row_count = 0
     for row in rows:
         row_count += 1
-        values = [report_cell_value(sheet, row_count + 3, column, _excel_safe(row.get(header)))
+        check_report_dimensions(row_count + 3, len(headers))
+        values = [report_cell_value(sheet, row_count + 3, column, _excel_value(row.get(header)))
                   for column, header in enumerate(headers, 1)]
         if sheet_name == "Review Summary" and row.get("First Detail"):
             column = headers.index("First Detail")
@@ -557,7 +567,7 @@ def _write_table_sheet_fast(
             cell = _fast_cell(sheet, "Open detail")
             cell.hyperlink = f"#'{target_sheet}'!{target_cell}"
             values[column] = cell
-        sheet.append(readable_report_row(sheet, row_count + 3, values))
+        append_readable_report_row(sheet, row_count + 3, values)
 
     if row_count:
         sheet.auto_filter.ref = f"A3:{get_column_letter(max_col)}{row_count + 3}"
@@ -602,6 +612,7 @@ def _write_source_inventory_sheet(
     row_count = 0
     source_rows = rows if rows is not None else _iter_fortigate_source_inventory_rows(context)
     for values in source_rows:
+        check_report_dimensions(row_count + 4, len(headers))
         sheet.append([report_cell_value(sheet, row_count + 4, column, value)
                       for column, value in enumerate(values, 1)])
         row_count += 1

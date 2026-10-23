@@ -165,7 +165,7 @@ def test_plain_writer_preserves_values_and_layout_after_reload():
         {"Effective Order": "derived"},
         {},
     ))
-    assert _write_table(workbook, "Security Policies", rows, row_count=5) == 5
+    assert _write_table(workbook, "Security Policies", rows, full=True) == 5
     output = BytesIO()
     workbook.save(output)
     sheet = load_workbook(BytesIO(output.getvalue()))["Security Policies"]
@@ -180,7 +180,7 @@ def test_plain_writer_preserves_values_and_layout_after_reload():
     assert sheet["A3"].font.sz == 10
     assert sheet["A3"].alignment.wrap_text
     assert sheet.row_dimensions[3].height == 30
-    assert sheet["A2"].value.startswith("5 row(s)")
+    assert sheet["A2"].value.startswith("FULL report. Row counts are listed in Summary.")
     assert sheet.auto_filter.ref == f"A3:{get_column_letter(len(SHEET_HEADERS['Security Policies']))}8"
     assert sheet.freeze_panes == "D4"
     hidden = HIDDEN_COLUMNS_BY_DEFAULT.get("Security Policies", ())

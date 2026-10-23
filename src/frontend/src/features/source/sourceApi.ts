@@ -30,12 +30,12 @@ export function previewSource(file: File, vendor: SourceVendor) {
   return postForm<SourcePreviewData>('/api/preview', formData)
 }
 
-export function downloadSourceWorkbook(vendor: SourceVendor, source: import('../../storage/workspaceTypes').SourceEvidence, profile: 'fast' | 'full') {
+export function downloadSourceWorkbook(vendor: SourceVendor, source: import('../../storage/workspaceTypes').SourceEvidence, profile: 'fast' | 'full', signal?: AbortSignal) {
   return postBlob('/api/extract/excel', {
     source_vendor: vendor,
     source,
     excel_profile: profile,
-  })
+  }, { signal, contentTypes: ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/octet-stream'], requireNonEmpty: true })
 }
 
 export function importCollectionSnapshot(file: File) {

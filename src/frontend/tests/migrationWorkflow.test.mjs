@@ -71,6 +71,7 @@ function component(file, name, modules, { strictEffectReplay = false } = {}) {
   let cursor = 0
   let pending = false
   let effects = []
+  const cleanups = new Set()
   const hooks = {
     useState(initial) {
       const index = cursor++
@@ -89,6 +90,7 @@ function component(file, name, modules, { strictEffectReplay = false } = {}) {
       return slots[index].value
     },
     useRef(value) { return hooks.useMemo(() => ({ current: value }), []) },
+    useId() { return hooks.useMemo(() => 'test-id', []) },
     useCallback(callback, dependencies) { return hooks.useMemo(() => callback, dependencies) },
     useEffect(callback, dependencies) {
       const cleanup = hooks.useRef()
@@ -141,6 +143,7 @@ function component(file, name, modules, { strictEffectReplay = false } = {}) {
   new Function('require', 'exports', 'setTimeout', 'clearTimeout', compiled)(requireModule, exports,
     offlinePair ? immediateTimer : setTimeout, offlinePair ? (token) => { if (token) token.cancelled = true } : clearTimeout)
   return {
+    unmount() { cleanups.forEach((cleanup) => cleanup()); cleanups.clear() },
     async render(props) {
       if (name === 'MigrationReview') props = { stage: 'place', onStageChange: () => {}, ...props }
       let tree
@@ -152,6 +155,7 @@ function component(file, name, modules, { strictEffectReplay = false } = {}) {
         effects = []
         currentEffects.forEach((effect) => {
           const cleanup = effect()
+          if (typeof cleanup === 'function') cleanups.add(cleanup)
           if (strictEffectReplay && attempt === 0 && typeof cleanup === 'function') { cleanup(); effect() }
         })
         await new Promise((resolve) => setImmediate(resolve))
@@ -2206,4 +2210,98 @@ test('offline review proposes all ready configuration immediately and keeps sear
   tree = await harness.render({ ...props, draft: { ...props.draft, decisions: [{ ...mapping, status: 'NEEDS_INPUT' }] } })
   assert.equal(approve(tree).props.disabled, true)
   assert.equal(calls.length, 2)
+})
+
+function sourceExportComponent(api = {}, vendor = 'fortigate') {
+  const vendors = ['fortigate', 'palo_alto'].map((vendor_id) => ({ vendor_id, display_name: vendor_id, file_extensions: ['.conf'], live_collection: true }))
+  return component('../src/features/source/SourceConfiguration.tsx', 'SourceConfiguration', {
+    '../../storage/workspaceStore': { restoreWorkspace: async () => ({ preview: { vendor, source_digest: 'saved', source_evidence: { vendor, source_text: 'saved' } } }), saveWorkspace: async () => {} },
+    './sourceApi': { loadSourceVendors: async () => vendors, ...api },
+    '../migration/pairApi': { loadMigrationPairs: async () => [] },
+    './FileUpload': { FileUpload: 'FileUpload' }, './SourceOverview': { SourceOverview: 'SourceOverview' },
+    './VendorSelect': { VendorSelect: 'VendorSelect' }, './LiveCollection': { LiveCollection: 'LiveCollection' },
+    '../report/SourceReport': { SourceReport: 'SourceReport' }, '../report/ExcelExportControls': { ExcelExportControls: 'ExcelExportControls' },
+    '../migration/MigrationWorkflow': { MigrationWorkflow: 'MigrationWorkflow' }, '../migration/MigrationReview': { MigrationReview: 'MigrationReview' },
+    '../migration/MigrationPairWorkflow': { MigrationPairWorkflow: 'MigrationPairWorkflow' },
+  })
+}
+const sourceProps = { view: 'report', onViewChange() {}, liveDeviceAccess: true }
+const report = (tree) => elements(tree).find((node) => node.type === 'SourceReport').props
+
+async function importSourceSnapshot(harness) {
+  let tree = await harness.render(sourceProps)
+  const toggle = elements(tree).find((node) => node.props['aria-controls'] === 'source-configuration-controls')
+  if (toggle.props['aria-expanded'] === false) toggle.props.onClick()
+  tree = await harness.render(sourceProps)
+  elements(tree).find((node) => node.props.role === 'tab' && String(node.props.children).includes('Upload Snapshot')).props.onClick()
+  tree = await harness.render(sourceProps)
+  elements(tree).find((node) => node.type === 'FileUpload' && node.props.title?.includes('snapshot')).props.onChange({ name: 'snapshot.json' })
+  return harness.render(sourceProps)
+}
+
+test('snapshot and live source acceptance use vendor defaults and retain deliberate per-vendor profiles', async () => {
+  let nextVendor = 'palo_alto'
+  const harness = sourceExportComponent({ importCollectionSnapshot: async () => ({ vendor_id: nextVendor, snapshot: { vendor_id: nextVendor, source_text: nextVendor }, preview: { source_digest: nextVendor } }) })
+  assert.equal(report(await harness.render(sourceProps)).excelProfile, 'fast')
+  let tree = await importSourceSnapshot(harness)
+  assert.equal(report(tree).data.vendor, 'palo_alto')
+  assert.equal(report(tree).excelProfile, 'full')
+  report(tree).onExcelProfileChange('fast')
+  nextVendor = 'fortigate'
+  tree = await importSourceSnapshot(harness)
+  assert.equal(report(tree).excelProfile, 'fast')
+  report(tree).onExcelProfileChange('full')
+  nextVendor = 'palo_alto'
+  tree = await importSourceSnapshot(harness)
+  assert.equal(report(tree).excelProfile, 'fast', 'Explicit PAN-OS selection persists within this session')
+  nextVendor = 'fortigate'
+  tree = await importSourceSnapshot(harness)
+  assert.equal(report(tree).excelProfile, 'full', 'Explicit FortiGate selection is independent')
+  const live = sourceExportComponent()
+  tree = await live.render({ ...sourceProps, view: 'collect' })
+  elements(tree).find((node) => node.type === 'LiveCollection').props.onCollected({ vendor_id: 'palo_alto', snapshot: { vendor_id: 'palo_alto', source_text: 'live' }, collection: {}, preview: { source_digest: 'live' } })
+  assert.equal(report(await live.render(sourceProps)).excelProfile, 'full')
+})
+
+test('cancellation, replacement and unmount abort exports and ignore stale completion', async () => {
+  const pending = []
+  const harness = sourceExportComponent({ downloadSourceWorkbook: (_vendor, _source, _profile, signal) => new Promise((resolve, reject) => pending.push({ signal, resolve, reject })),
+    importCollectionSnapshot: async () => ({ vendor_id: 'palo_alto', snapshot: { vendor_id: 'palo_alto', source_text: 'new' }, preview: { source_digest: 'new' } }) })
+  let tree = await harness.render(sourceProps)
+  report(tree).onExport()
+  tree = await harness.render(sourceProps)
+  assert.equal(report(tree).exporting, true)
+  report(tree).onCancelExport()
+  assert.equal(pending[0].signal.aborted, true)
+  pending[0].resolve(new Blob(['stale workbook']))
+  tree = await harness.render(sourceProps)
+  assert.equal(report(tree).exportStatus, 'Export cancelled.')
+  assert.equal(report(tree).exportError, null)
+  report(tree).onExport()
+  tree = await importSourceSnapshot(harness)
+  assert.equal(pending[1].signal.aborted, true)
+  pending[1].reject(new DOMException('Aborted', 'AbortError'))
+  tree = await harness.render(sourceProps)
+  assert.equal(report(tree).exporting, false)
+  assert.equal(report(tree).exportError, null)
+  report(tree).onExport()
+  await harness.render(sourceProps)
+  harness.unmount()
+  assert.equal(pending[2].signal.aborted, true)
+  pending[2].resolve(new Blob(['unmounted workbook']))
+  await new Promise((resolve) => setImmediate(resolve))
+})
+
+test('source upload size rejection preserves the current file and accepts a valid replacement', async () => {
+  let changed
+  const harness = component('../src/features/source/FileUpload.tsx', 'FileUpload', {})
+  const props = { file: { name: 'current.conf' }, maxBytes: 100, onChange(value) { changed = value } }
+  let tree = await harness.render(props)
+  elements(tree).find((node) => node.props.type === 'file').props.onChange({ currentTarget: { files: [{ name: 'large.conf', size: 101 }], value: 'large' } })
+  tree = await harness.render(props)
+  assert.equal(changed, undefined)
+  assert.match(elements(tree).find((node) => node.props.role === 'alert').props.children, /upload limit/)
+  const replacement = { name: 'valid.conf', size: 100 }
+  elements(tree).find((node) => node.props.type === 'file').props.onChange({ currentTarget: { files: [replacement], value: 'valid' } })
+  assert.equal(changed, replacement)
 })

@@ -143,8 +143,7 @@ def _object_rows(context: _PANExcelContext, items: Iterable[Any], object_type: s
         yield row
 
 
-def _child_rows(context: _PANExcelContext, parents: Iterable[Any], child_attr: str, object_type: str, fields: dict[str, str], parent_header: str = "Profile", parent_attribute: str = "name") -> list[dict[str, Any]]:
-    rows = []
+def _child_rows(context: _PANExcelContext, parents: Iterable[Any], child_attr: str, object_type: str, fields: dict[str, str], parent_header: str = "Profile", parent_attribute: str = "name") -> Iterator[dict[str, Any]]:
     for parent in parents:
         for child in getattr(parent, child_attr, None) or ():
             row = _base(context, parent, object_type)
@@ -153,24 +152,22 @@ def _child_rows(context: _PANExcelContext, parents: Iterable[Any], child_attr: s
                 row[header] = _text(getattr(child, attribute, None))
             if hasattr(child, "raw_extra"):
                 row["Additional Settings"] = _text(child.raw_extra)
-            rows.append(row)
-    return rows
+            yield row
+    return
 
 
-def _portal_gateway_rows(context: _PANExcelContext) -> list[dict[str, Any]]:
-    rows = []
+def _portal_gateway_rows(context: _PANExcelContext) -> Iterator[dict[str, Any]]:
     for portal in context.config.globalprotect_portals:
         for client_config in portal.client_configs or ():
             for gateway in client_config.gateways or ():
                 row = _base(context, portal, "globalprotect-portal-gateway")
                 row.update({"Portal": portal.name, "Client Config": client_config.name, "Gateway Type": gateway.gateway_type,
                             "Gateway": gateway.gateway, "Priority": gateway.priority, "Additional Settings": _text(gateway.raw_extra)})
-                rows.append(row)
-    return rows
+                yield row
+    return
 
 
-def _clientless_vpn_rows(context: _PANExcelContext) -> list[dict[str, Any]]:
-    rows = []
+def _clientless_vpn_rows(context: _PANExcelContext) -> Iterator[dict[str, Any]]:
     for portal in context.config.globalprotect_portals:
         vpn = portal.clientless_vpn
         if vpn is None:
@@ -179,12 +176,11 @@ def _clientless_vpn_rows(context: _PANExcelContext) -> list[dict[str, Any]]:
         row.update({"Portal": portal.name, "Hostname": vpn.hostname, "Security Zone": vpn.security_zone, "Login Lifetime": vpn.login_lifetime,
                     "Inactivity Logout": vpn.inactivity_logout, "Maximum Users": vpn.maximum_users, "DNS Proxy": vpn.dns_proxy,
                     "Additional Settings": _text(vpn.raw_extra)})
-        rows.append(row)
-    return rows
+        yield row
+    return
 
 
-def _sdwan_interface_binding_rows(context: _PANExcelContext) -> list[dict[str, Any]]:
-    rows = []
+def _sdwan_interface_binding_rows(context: _PANExcelContext) -> Iterator[dict[str, Any]]:
     fields = ("sdwan_enabled", "ipv6_sdwan_enabled", "sdwan_interface_profile", "upstream_nat")
     for item in (*context.config.interfaces, *context.config.interface_units):
         if not any(getattr(item, field) is not None for field in fields):
@@ -192,21 +188,19 @@ def _sdwan_interface_binding_rows(context: _PANExcelContext) -> list[dict[str, A
         row = _base(context, item, "sdwan-interface-binding")
         row.update({"Interface": item.name, "Parent Interface": getattr(item, "parent", None), "SD-WAN Enabled": item.sdwan_enabled,
                     "IPv6 Enabled": item.ipv6_sdwan_enabled, "Interface Profile": item.sdwan_interface_profile, "Upstream NAT": item.upstream_nat})
-        rows.append(row)
-    return rows
+        yield row
+    return
 
 
-def _vulnerability_profile_rows(context: _PANExcelContext) -> list[dict[str, Any]]:
-    rows = []
+def _vulnerability_profile_rows(context: _PANExcelContext) -> Iterator[dict[str, Any]]:
     for item in context.config.vulnerability_profiles:
         row = _base(context, item, "vulnerability-profile")
         row.update({"Rule Count": len(item.rules or ()), "Exception Count": len(item.exceptions or ())})
-        rows.append(row)
-    return rows
+        yield row
+    return
 
 
-def _vulnerability_child_rows(context: _PANExcelContext, child_attr: str) -> list[dict[str, Any]]:
-    rows = []
+def _vulnerability_child_rows(context: _PANExcelContext, child_attr: str) -> Iterator[dict[str, Any]]:
     is_exception = child_attr == "exceptions"
     for profile in context.config.vulnerability_profiles:
         for child in getattr(profile, child_attr, None) or ():
@@ -224,8 +218,8 @@ def _vulnerability_child_rows(context: _PANExcelContext, child_attr: str) -> lis
                         "Time Track By": getattr(child, "time_track_by", None),
                         "Exempt IP Configuration": _text(getattr(child, "exempt_ips", None)),
                         "Additional Settings": _text(child.raw_extra)})
-            rows.append(row)
-    return rows
+            yield row
+    return
 
 
 def _address_rows(context: _PANExcelContext) -> Iterator[dict[str, Any]]:
@@ -262,16 +256,15 @@ def _service_rows(context: _PANExcelContext) -> Iterator[dict[str, Any]]:
             yield row
 
 
-def _schedule_rows(context: _PANExcelContext) -> list[dict[str, Any]]:
-    rows = []
+def _schedule_rows(context: _PANExcelContext) -> Iterator[dict[str, Any]]:
     for item in context.config.schedules:
         recurring = item.recurring
         row = _base(context, item, "schedule")
         row.update({"Schedule Type": "recurring" if recurring is not None else "non-recurring" if item.non_recurring is not None else None,
                     "Daily Entries": _text(recurring.daily if recurring else None), "Weekly Entries": _text(recurring.weekly if recurring else None),
                     "Non-Recurring Entries": _text(item.non_recurring)})
-        rows.append(row)
-    return rows
+        yield row
+    return
 
 
 def _reference_text(context: _PANExcelContext, item: Any, fields: set[str]) -> str:
@@ -350,9 +343,12 @@ def _nat_rows(context: _PANExcelContext) -> Iterator[dict[str, Any]]:
         yield row
 
 
-def _interface_rows(context: _PANExcelContext) -> list[dict[str, Any]]:
+def _interface_rows(context: _PANExcelContext) -> Iterator[dict[str, Any]]:
     topology = {(item.scope, item.interface): item for item in context.derived.interface_topology}
-    rows = []
+    units_by_parent = defaultdict(list)
+    parents = {(_scope_key(item.scope), item.name) for item in context.config.interfaces}
+    for unit in context.config.interface_units:
+        units_by_parent[(_scope_key(unit.scope), unit.parent)].append(unit)
     for item in context.config.interfaces:
         view = topology.get((_scope_id(item.scope), item.name or ""))
         row = _base(context, item, "interface")
@@ -369,9 +365,9 @@ def _interface_rows(context: _PANExcelContext) -> list[dict[str, Any]]:
                     "Topology Issues": _text(view.issues if view else ()), "Description": item.comment,
                     "SD-WAN Enabled": item.sdwan_enabled, "IPv6 SD-WAN Enabled": item.ipv6_sdwan_enabled,
                     "SD-WAN Interface Profile": item.sdwan_interface_profile, "Upstream NAT": item.upstream_nat})
-        rows.append(row)
-        for unit in context.config.interface_units:
-            if unit.parent == item.name and _scope_key(unit.scope) == _scope_key(item.scope):
+        yield row
+        for unit in units_by_parent.get((_scope_key(item.scope), item.name), ()):
+            if unit.parent == item.name:
                 unit_view = topology.get((_scope_id(unit.scope), unit.name or ""))
                 unit_row = _base(context, unit, "interface")
                 unit_row.update({"Device": unit.scope.device_name if unit.scope else None,
@@ -386,9 +382,9 @@ def _interface_rows(context: _PANExcelContext) -> list[dict[str, Any]]:
                                  "Virtual Router": _text(unit_view.virtual_routers if unit_view else ()), "Topology Issues": _text(unit_view.issues if unit_view else ())})
                 unit_row.update({"SD-WAN Enabled": unit.sdwan_enabled, "IPv6 SD-WAN Enabled": unit.ipv6_sdwan_enabled,
                                  "SD-WAN Interface Profile": unit.sdwan_interface_profile, "Upstream NAT": unit.upstream_nat})
-                rows.append(unit_row)
+                yield unit_row
     for unit in context.config.interface_units:
-        if unit.parent and any(item.name == unit.parent and _scope_key(item.scope) == _scope_key(unit.scope) for item in context.config.interfaces):
+        if unit.parent and (_scope_key(unit.scope), unit.parent) in parents:
             continue
         unit_view = topology.get((_scope_id(unit.scope), unit.name or ""))
         row = _base(context, unit, "interface")
@@ -404,8 +400,8 @@ def _interface_rows(context: _PANExcelContext) -> list[dict[str, Any]]:
                     "Virtual Router": _text(unit_view.virtual_routers if unit_view else ()), "Topology Issues": _text(unit_view.issues if unit_view else ())})
         row.update({"SD-WAN Enabled": unit.sdwan_enabled, "IPv6 SD-WAN Enabled": unit.ipv6_sdwan_enabled,
                     "SD-WAN Interface Profile": unit.sdwan_interface_profile, "Upstream NAT": unit.upstream_nat})
-        rows.append(row)
-    return rows
+        yield row
+    return
 
 
 def _route_rows(context: _PANExcelContext, logical: bool) -> Iterator[dict[str, Any]]:
@@ -441,31 +437,29 @@ def _route_path_monitor_rows(context: _PANExcelContext) -> Iterator[dict[str, An
                         yield row
 
 
-def _unresolved_rows(context: _PANExcelContext) -> list[dict[str, Any]]:
-    rows = []
+def _unresolved_rows(context: _PANExcelContext) -> Iterator[dict[str, Any]]:
     for item in context.derived.reference_resolutions:
         if item.status not in {"UNRESOLVED", "AMBIGUOUS"}: continue
         source_type, source_name = _scope(item.source_scope)
         resolved_type, resolved_name = _scope(item.resolved_target_scope)
-        rows.append({**_owner_columns(item, scope=item.source_scope), "Source Scope Type": source_type, "Source Scope Name": source_name, "Source Object Type": item.owner_family,
+        yield {**_owner_columns(item, scope=item.source_scope), "Source Scope Type": source_type, "Source Scope Name": source_name, "Source Object Type": item.owner_family,
                      "Source Object": item.owner_name, "Field": item.owner_field, "Reference": item.reference_name, "Expected Type": item.expected_family,
                      "Status": item.status, "Resolved Scope": _text(value for value in (resolved_type, resolved_name) if value),
-                     "Resolved Object": item.target_source_path, "Reason": item.resolution_reason, "__review__": True, "__error__": item.status == "UNRESOLVED"})
-    return rows
+                     "Resolved Object": item.target_source_path, "Reason": item.resolution_reason, "__review__": True, "__error__": item.status == "UNRESOLVED"}
+    return
 
 
 _SOURCE_SHEET = {"address": "Addresses", "address-group": "Address Groups", "service": "Services", "service-group": "Service Groups",
                  "schedule": "Schedules", "policy": "Security Policies", "nat": "NAT Rules", "interface": "Interfaces", "route": "Virtual Router Routes", "reference": "Unresolved References", "security-profile-group": "Security Profile Groups", "ike-gateway": "IKE Gateways"}
 
 
-def _validation_rows(context: _PANExcelContext) -> list[dict[str, Any]]:
-    rows = []
+def _validation_rows(context: _PANExcelContext) -> Iterator[dict[str, Any]]:
     for issue in context.validation.issues:
         scope_type, scope_name = _scope(getattr(issue, "source_scope", None))
-        rows.append({**_owner_columns(issue, scope=issue.source_scope), "Severity": issue.severity, "Domain": issue.domain, "Category": issue.domain, "Object": issue.source_name,
+        yield {**_owner_columns(issue, scope=issue.source_scope), "Severity": issue.severity, "Domain": issue.domain, "Category": issue.domain, "Object": issue.source_name,
                      "Scope Type": scope_type, "Scope Name": scope_name, "Field": issue.field, "Issue / Review Reason": issue.message,
-                     "Source Sheet": _SOURCE_SHEET.get(getattr(issue, "object_type", None) or issue.domain), "__review__": True, "__error__": issue.severity == "error"})
-    return rows
+                     "Source Sheet": _SOURCE_SHEET.get(getattr(issue, "object_type", None) or issue.domain), "__review__": True, "__error__": issue.severity == "error"}
+    return
 
 
 def _inventory_rows(context: _PANExcelContext) -> Iterator[dict[str, Any]]:

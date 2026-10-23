@@ -81,6 +81,35 @@ test('successful binary downloads do not require JSON parsing', async (context) 
   assert.deepEqual(new Uint8Array(await blob.arrayBuffer()), bytes)
 })
 
+test('Excel downloads reject successful HTML/JSON, missing types, and empty bodies', async (context) => {
+  const options = { contentTypes: ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/octet-stream'], requireNonEmpty: true }
+  const fetch = context.mock.method(globalThis, 'fetch', async () => {})
+  for (const type of ['text/html', 'application/json', '']) {
+    fetch.mock.mockImplementation(async () => new Response('PRIVATE-UPSTREAM-BODY', { headers: { 'Content-Type': type } }))
+    await assert.rejects(postBlob('/api/extract/excel', {}, options), (error) => {
+      assert.match(error.message, /unexpected download format/)
+      assert.ok(!error.message.includes('PRIVATE-UPSTREAM-BODY'))
+      return true
+    })
+  }
+  fetch.mock.mockImplementation(async () => new Response('', { headers: { 'Content-Type': options.contentTypes[0] } }))
+  await assert.rejects(postBlob('/api/extract/excel', {}, options), /empty download/)
+  fetch.mock.mockImplementation(async () => new Response('PK workbook', { headers: { 'Content-Type': 'application/octet-stream' } }))
+  assert.equal(await (await postBlob('/api/extract/excel', {}, options)).text(), 'PK workbook')
+})
+
+test('download abort signals reach fetch and a pre-aborted request never serializes or sends', async (context) => {
+  const controller = new AbortController()
+  const fetch = context.mock.method(globalThis, 'fetch', async (_path, init) => {
+    assert.equal(init.signal, controller.signal)
+    return new Response('workbook')
+  })
+  await postBlob('/api/extract/excel', {}, { signal: controller.signal })
+  controller.abort()
+  await assert.rejects(postBlob('/api/extract/excel', { toJSON() { assert.fail('Must not serialize') } }, { signal: controller.signal }), { name: 'AbortError' })
+  assert.equal(fetch.mock.callCount(), 1)
+})
+
 
 test('compact plan client derives aliases from one signed artifact and preserves downloads', async (context) => {
   const { readFile } = await import('node:fs/promises')

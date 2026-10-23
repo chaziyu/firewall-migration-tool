@@ -8,6 +8,15 @@ from re import compile as compile_regex
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
+from .options import ExcelReportLimitError
+
+MAX_REPORT_ROWS = 1_048_576
+MAX_REPORT_COLUMNS = 16_384
+
+
+def check_report_dimensions(row, columns):
+    if row > MAX_REPORT_ROWS or columns > MAX_REPORT_COLUMNS:
+        raise ExcelReportLimitError("Report exceeds Excel worksheet row or column limits")
 
 _HEADER_FILL = PatternFill("solid", fgColor="0F766E")
 _HEADER_FONT = Font(color="FFFFFF", bold=True, size=10)
@@ -30,20 +39,45 @@ def readable_report_row(sheet, row_number, values):
     """Wrap long visible business values; keep short and hidden evidence cells plain."""
     result = []
     lines = 1
-    for column, value in enumerate(values, 1):
-        dimension = sheet.column_dimensions[get_column_letter(column)]
-        width = max(1, int(dimension.width or 28) - 2)
-        if isinstance(value, str) and not dimension.hidden and ("\n" in value or len(value) > width):
+    columns = getattr(sheet, "_report_readability_columns", ()) if sheet.parent.write_only else ()
+    if len(columns) != len(values):
+        columns = tuple((max(1, int(dimension.width or 28) - 2), dimension.hidden)
+                        for dimension in (sheet.column_dimensions[get_column_letter(column)]
+                                          for column in range(1, len(values) + 1)))
+        if sheet.parent.write_only:
+            sheet._report_readability_columns = columns
+    for value, (width, hidden) in zip(values, columns):
+        if isinstance(value, str) and not hidden and ("\n" in value or len(value) > width):
             cell = WriteOnlyCell(sheet, value)
             cell.alignment = _BODY_ALIGNMENT
             result.append(cell)
-            lines = max(lines, sum(max(1, len(wrap(line, width=width))) for line in value.split("\n")))
+            if lines < 27:
+                lines = max(lines, _bounded_wrap_lines(value, width))
         else:
             result.append(value)
     if lines > 1:
         # Excel caps row heights; full values remain available in the cell/overflow sheet.
         sheet.row_dimensions[row_number].height = min(409, lines * 15 + 4)
     return result
+
+
+def _bounded_wrap_lines(value, width):
+    """Estimate only enough lines to reach Excel's row-height cap."""
+    lines = 0
+    for line in value.split("\n", 27):
+        if len(line) > width * 27:
+            return 27
+        lines += max(1, len(wrap(line, width=width)))
+        if lines >= 27:
+            return 27
+    return lines
+
+
+def append_readable_report_row(sheet, row_number, values):
+    """Release dimensions after a streaming row has consumed its formatting."""
+    sheet.append(readable_report_row(sheet, row_number, values))
+    if sheet.parent.write_only:
+        sheet.row_dimensions.pop(row_number, None)
 
 
 def report_column_width(header) -> int:
@@ -201,6 +235,8 @@ def append_report_row(sheet, values) -> None:
     """Append vendor-owned values to either a normal or streaming worksheet."""
     count = getattr(sheet, "_report_row_count", 0)
     row = count + 1 if sheet.parent.write_only else sheet._current_row + 1
+    values = tuple(values)
+    check_report_dimensions(row, len(values))
     values = tuple(report_cell_value(sheet, row, column, value) for column, value in enumerate(values, 1))
     if not sheet.parent.write_only:
         sheet.append(values)

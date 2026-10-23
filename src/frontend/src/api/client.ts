@@ -53,17 +53,35 @@ export async function postJson<T>(path: string, payload: unknown): Promise<T> {
   return data as T
 }
 
-export async function postBlob(path: string, payload: unknown): Promise<Blob> {
+export async function postBlob(path: string, payload: unknown, options: {
+  signal?: AbortSignal
+  contentTypes?: readonly string[]
+  requireNonEmpty?: boolean
+} = {}): Promise<Blob> {
+  options.signal?.throwIfAborted()
   const response = await apiFetch(path, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
+    signal: options.signal,
   })
   if (!response.ok) {
     const data = await readJsonResponse(response)
     throw new RequestError(data, response.status)
   }
-  return response.blob()
+  if (options.contentTypes) {
+    const type = response.headers.get('Content-Type')?.split(';', 1)[0].trim().toLowerCase()
+    if (!type || !options.contentTypes.includes(type)) {
+      await response.body?.cancel()
+      throw new RequestError({ error: 'Server returned an unexpected download format. Please retry.' }, response.status)
+    }
+  }
+  const blob = await response.blob()
+  options.signal?.throwIfAborted()
+  if (options.requireNonEmpty && blob.size === 0) {
+    throw new RequestError({ error: 'Server returned an empty download. Please retry.' }, response.status)
+  }
+  return blob
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

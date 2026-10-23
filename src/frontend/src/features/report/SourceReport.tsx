@@ -204,7 +204,7 @@ function SourceRowsTable({ rows, columns, selected, hasSource, topology, loadMor
   </div>
 }
 
-export function SourceReport({ data, excelProfile, onExcelProfileChange, exporting, exportStatus, exportError, onExport }: {
+export function SourceReport({ data, excelProfile, onExcelProfileChange, exporting, exportStatus, exportError, onExport, onCancelExport }: {
   data: SourcePreviewData
   excelProfile: 'fast' | 'full'
   onExcelProfileChange: (value: 'fast' | 'full') => void
@@ -212,6 +212,7 @@ export function SourceReport({ data, excelProfile, onExcelProfileChange, exporti
   exportStatus: string
   exportError?: string | null
   onExport: () => void
+  onCancelExport?: () => void
 }) {
   const sectionsData = asRecord(data.sections)
   const sections = useMemo(() => reportSections(asRecord(data.sections)), [data.sections])
@@ -296,7 +297,7 @@ export function SourceReport({ data, excelProfile, onExcelProfileChange, exporti
       <div className="report-workspace-header">
         <div><h2 id="report-title">Source inventory</h2>{Array.isArray(summary.scopes) && summary.scopes.length > 0 && <p className="report-scope-summary">Scopes: {summary.scopes.join(', ')}</p>}</div>
         <div className="report-header-actions">
-          <ExcelExportControls vendor={data.vendor ?? ''} profile={excelProfile} onProfileChange={onExcelProfileChange} exporting={exporting} onExport={onExport} />
+          <ExcelExportControls vendor={data.vendor ?? ''} profile={excelProfile} onProfileChange={onExcelProfileChange} exporting={exporting} onExport={onExport} onCancel={onCancelExport} />
         </div>
       </div>
       {data.collection != null && <div className="report-count-note"><p>Collection: {String(asRecord(data.collection).status ?? 'Unknown')} · Method: {String(asRecord(data.collection).method ?? 'Not reported')}</p>{Array.isArray(asRecord(data.collection).warnings) && <ul>{(asRecord(data.collection).warnings as unknown[]).map((warning, index) => <li key={index}>{String(safeValue(warning))}</li>)}</ul>}</div>}
