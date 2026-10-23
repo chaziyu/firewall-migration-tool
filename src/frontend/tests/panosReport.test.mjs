@@ -94,7 +94,7 @@ test('report preserves safe authentication metadata while hiding credential valu
   assert.ok(!JSON.stringify(nested).includes('SENTINEL'))
 })
 
-test('PAN-OS report exposes coverage and full inventory instead of implying complete extraction', async () => {
+test('PAN-OS overview links to extraction without repeating its coverage banner', async () => {
   const server = await createServer({ server: { middlewareMode: true }, appType: 'custom' })
   try {
     const { SourceReport } = await server.ssrLoadModule('/src/features/report/SourceReport.tsx')
@@ -106,10 +106,8 @@ test('PAN-OS report exposes coverage and full inventory instead of implying comp
       excelProfile: 'full', onExcelProfileChange() {}, exporting: false, exportStatus: '', onExport() {},
     }))
     const text = html.replace(/<!-- -->/g, '')
-    assert.match(text, /2 source-only records/)
-    assert.match(text, /3 partial records/)
-    assert.match(text, /all 205 source inventory records/)
-    assert.match(text, /FULL Excel includes the sanitized source appendix/)
+    assert.doesNotMatch(text, /2 source-only records|3 partial records|Review Extraction for/)
+    assert.match(text, /PAN-OS Source Appendix/)
     assert.match(text, /<option[^>]*>Extraction<\/option>/)
     assert.match(text, /Unsupported \/ source-only/)
   } finally { await server.close() }
