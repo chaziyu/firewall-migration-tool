@@ -291,3 +291,69 @@ Exact next actions for the next repeat:
 3. Audit remaining typed attributes/hierarchy against plans and manual coverage. Candidate areas include VIP/NAT metadata and scope/distribution controls on schedules; verify source/target version semantics before adopting an implementation plan. This continuation adopted no unfinished plan for these candidates.
 4. Preserve native IDs, global/VDOM/parent scope, explicit empty versus absent/unset state, references, ordering, dependencies, secret redaction and signed artifact identity. Reuse must not silently lose explicit source metadata or overwrite destination metadata.
 5. Record findings and a bounded plan before implementation; run affected real paths and required checks, commit and push validated changes without force, then leave another concrete checkpoint. Usage quota is not exposed; no exhaustion claim is made.
+
+## Cycle 13 — VIP comment preservation
+
+Resumed clean `ba0f59cd` after the separate repository quality refinement
+(`fcd78270`, CI Python 3.11–3.14/release/frontend/lint all passed; automatic Render
+deployment succeeded). Fetched `origin/main` matches this checkout and the
+uploaded input checksum still matches. No prior implementation is unfinished.
+The actual uploaded-file CLI baseline remains `NEEDS_MAPPING`, 111 required
+decisions, 4,476 unplanned records and zero commands/renderable/satisfied items.
+
+Finding: extraction retains **13 explicit comments among 279 VIPs**, but
+`planning/addresses.py` omits every VIP comment when building its PAN-OS address
+representation. The existing address metadata rendering and exact-reuse checks
+therefore receive no description. A source comment can disappear even when the
+address value is converted/reused correctly. The example's seven VIP groups
+have no comments; their existing native manual coverage is separate.
+
+Authority: selected FortiOS 7.4.6 reference `config firewall vip` explicitly
+defines `set comment`. The selected PAN-OS 11.1 reference section 3.1 defines
+`set address <name> description <value>`. The prior address-description limit
+and CLI text constraints remain applicable. No NAT-rule metadata path or VIP
+behavior is inferred from an address description.
+
+Plan: retain the VIP comment on the existing pair-owned generated address,
+including explicit empty versus absent/unset values. Apply the existing shared
+description constraint during planning so invalid metadata is manual even
+before placement; preserve its original sanitized value as evidence. Reuse
+must require matching explicit target descriptions and must not overwrite
+target metadata. Verify source immutability, VDOM separation, secret redaction,
+consumer dependency blocking, CLI hashes and signed preview/download/bundle
+bytes. Repeat the actual uploaded-file CLI and required applicable validation,
+then commit/push and record the exact checkpoint.
+
+Regression evidence: 13 of the initial 18 cases failed before implementation.
+The signed-web case also exposed a prerequisite omission: a source containing
+only unreferenced VIPs receives no VSYS decision, although address planning
+already produces VSYS-scoped objects for those VIPs. Amend the bounded plan to
+require an explicit VSYS for every planned VIP address, including an
+unreferenced VIP; do not infer VSYS, interfaces or VRs. Add a scoped requirement
+regression and verify the signed workflow can approve that address while its
+unresolved NAT remains excluded.
+
+Cycle 13 completed: **20 new regressions pass**. Full validation: **3,129 Python
+tests passed, two skipped, 16 subtests passed**, 137.77 seconds; Ruff with all
+Pyflakes rules, compileall and whitespace checks passed. The frontend's 249
+tests, lint and build passed earlier in this continuation; no frontend source
+changed. The existing bundle-size warning remains documented in the quality
+review.
+
+The real input's 279 VIP address representations now retain all **13** native
+VIP comments. The actual CLI remains `NEEDS_MAPPING`, **111 decisions**, **4,476
+unplanned records**, **36,883 findings**, zero commands/renderable/satisfied
+items, unchanged validation summaries and a matching empty-command SHA-256.
+All report item consistency assertions passed. Output is private at
+`/workspace/migration-review-private/continue3/cycle13/migration_report.json`.
+
+Chromium prepared the full uploaded input in **19.76 seconds**, confirmed 279
+VIP address review rows with 13 descriptions, retained all 19 helper search
+identities, observed five HTTP 200 API responses and zero page errors. A
+synthetic signed VIP-description walkthrough passed explicit approval,
+failed-generation retry without reapproval, command preview, set download and
+bundle digest equality, source reload invalidation and 2,000-object search.
+The full-file browser inspection used counters at the client's JSON parse
+boundary because Chromium's inspector cache evicted the large response body;
+no product change was made for that tooling limitation. No live device was
+contacted. The uploaded file checksum is unchanged.

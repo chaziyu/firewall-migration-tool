@@ -116,8 +116,8 @@ def build_mapping_requirements(config, derived, *, include_configuration=False):
     for vip in getattr(config, "vips", ()):
         vdom = vip.vdom or "root"
         consumers = [policy for policy, _ in vip_consumers.get((vdom, vip.name), ())]
-        if consumers:
-            need_vdom(vdom, "vsys")
+        # Address planning represents every VIP, including an unreferenced VIP.
+        need_vdom(vdom, "vsys")
         for policy in consumers:
             consumer = ("vip", vdom, vip.name)
             for name in policy.srcintf or ():
