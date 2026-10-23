@@ -121,3 +121,29 @@ selecting a remediation. Any later runtime baseline update should change the
 version file and minimum engine together, then repeat install/tests/build and
 verify the host's selected runtime. The existing large-chunk warning remains a
 separate performance improvement, without a demonstrated failure in this audit.
+
+## Apply-fix follow-up
+
+On the user's subsequent request to apply the fix, fetched `origin/main` and
+confirmed a clean checkout at `0a3073a1`, with all application fixes already
+published. The remaining local runtime mismatch was real: ordinary commands
+still selected the managed environment's Node 24.19.0.
+
+Reverified the official 24.22.1 archive against the SHA-256 above, installed it
+under the workspace user's `.local/share/nodejs`, and activated `node`, `npm`
+and `npx` through new links in the already-preferred `.local/bin`. No existing
+user entries were replaced and the provider-managed runtime files were preserved.
+Fresh ordinary shell commands now report **Node 24.22.1 / npm 11.19.1** without
+a per-command PATH override. This changes this cloud workspace user's default;
+it does not install Node on the user's separate Windows computer.
+
+With that default runtime, repeated clean `npm ci`, all **255 frontend tests**,
+ESLint, TypeScript/Vite production build and `npm audit`: all passed, with zero
+reported npm vulnerabilities. The existing large-chunk warning remains.
+Render still reports implementation deploy `dep-dbdfq9rm8hqs73e8rpa0` as live.
+No new application deployment is required for local runtime activation.
+
+Dependabot alert 6 remains unresolved: an attempted read of its exact GitHub
+page was rejected by the connected tool as an unsupported endpoint. Package
+and advisory details are still required before selecting its fix. Native
+Windows verification remains unavailable in this Linux workspace.
