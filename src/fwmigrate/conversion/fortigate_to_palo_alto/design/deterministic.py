@@ -458,7 +458,9 @@ def build_deterministic_draft(config, derived, decisions, *, source_digest, targ
         planned_vip_groups=represented_vip_groups(config, plan, {row['item_key'] for row in configuration if row['status'] == 'READY'}))
     for number, gap in enumerate(coverage["unplanned"]):
         pending = gap['readiness'] == 'PENDING'
-        mapping_key = make_decision_key(gap['source_vdom'], 'interface', gap['source_name'], 'target_interface')
+        zone_gap = gap['source_kind'] == 'zone'
+        mapping_key = make_decision_key(gap['source_vdom'], 'zone' if zone_gap else 'interface', gap['source_name'],
+                                        'target_zone' if zone_gap else 'target_interface')
         configuration.append({"group_key": f"coverage:{number}",
             "source_vdom": gap["source_vdom"], "source_kind": gap["source_kind"],
             "source_name": gap["source_name"], "family": gap["family"],

@@ -14,14 +14,17 @@ def plan_topology(source: Any, derived: Any, options: Any, required_zone_keys=No
     required_zone_keys = set(required_zone_keys) if required_zone_keys is not None else None
     for zone in getattr(source, "zones", ()):
         vdom = zone.vdom or "root"
-        if required_zone_keys is not None and (vdom, zone.name) not in required_zone_keys:
-            continue
         mappings = getattr(options, "interfaces", {}).get(vdom, {})
         zone_mappings = getattr(options, "zones", None)
         zone_mapping = ((zone_mappings or {}).get(vdom, {}).get(zone.name) if zone_mappings is not None
                         else mappings.get(zone.name))
+        if (required_zone_keys is not None and (vdom, zone.name) not in required_zone_keys
+                and not getattr(zone_mapping, 'target_zone', None)):
+            continue
         target_interfaces = []
-        warnings = []
+        warnings = [f"unclassified zone setting {key!r} requires manual target review" for key in sorted(zone.raw_extra)]
+        if zone.tagging:
+            warnings.append('Zone tagging has no verified target mapping and requires manual metadata review')
         if len(set(zone.members or ())) > 1 and zone.intrazone != 'allow':
             warnings.append('FortiGate intra-zone deny or unknown behavior requires manual target security design')
         if zone_mapping is None or not zone_mapping.target_zone:
