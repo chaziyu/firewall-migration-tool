@@ -2,6 +2,8 @@
 
 from itertools import product
 
+from fwmigrate.vendors.palo_alto.transform.effective_values import effective_value, RULE_REFERENCE
+
 from .source_scope import identity, in_scope
 from ..models import SRXPlanItem
 from ..planning.objects import _safe_name
@@ -15,12 +17,14 @@ def _lookup(rows):
     return result
 
 
-def plan_policies(source, selected, options, objects, zone_names, nat_blocked=False):
+def plan_policies(source, derived, selected, options, objects, zones, zone_names, nat_blocked=False):
     addresses = _lookup([row for row in objects if row.family in {"address", "address_group"}])
     services = _lookup([row for row in objects if row.family in {"service", "service_group"}])
+    planned_zones = _lookup(zones)
     zone_objects = [row for row in source.zones if in_scope(row, selected)]
     available_zone_names = tuple(row.name for row in zone_objects if row.name)
     blocked_contexts = set()
+    previous_by_context = {}
     result = []
     positions = {"pre": 0, "local": 1, "post": 2}
     applicable = sorted((row for row in source.security_rules if in_scope(row, selected)),
@@ -45,7 +49,10 @@ def plan_policies(source, selected, options, objects, zone_names, nat_blocked=Fa
             blockers.append("POLICY_USER_OR_CATEGORY_MATCH_NOT_EXPLICITLY_ANY")
         if rule.negate_source != "no" or rule.negate_destination != "no":
             blockers.append("POLICY_NEGATED_ADDRESS_MATCH_UNSUPPORTED")
-        if rule.schedule != "always":
+        # A configured schedule is an object reference, including the name "always".
+        # Only version-verified omitted schedule behavior is unrestricted.
+        schedule_verified = rule.schedule is None and effective_value(derived, rule, "schedule") == "always"
+        if not schedule_verified:
             blockers.append("POLICY_SCHEDULE_UNSUPPORTED")
         if rule.log_start not in {"no", "yes"} or rule.log_end not in {"no", "yes"}:
             blockers.append("POLICY_LOGGING_MODE_UNSUPPORTED")
@@ -88,6 +95,15 @@ def plan_policies(source, selected, options, objects, zone_names, nat_blocked=Fa
                 continue
             context = (source_zone, destination_zone)
             item_blockers = list(blockers)
+            item_dependencies = list(deps)
+            for name in dict.fromkeys((source_zone, destination_zone)):
+                matches = planned_zones.get(name, ())
+                if len(matches) != 1:
+                    item_blockers.append("POLICY_ZONE_DEPENDENCY_UNRESOLVED")
+                else:
+                    item_dependencies.append(matches[0].key)
+            if context in previous_by_context:
+                item_dependencies.append(previous_by_context[context])
             if context in blocked_contexts:
                 item_blockers.append("EARLIER_POLICY_IN_CONTEXT_UNSUPPORTED")
             settings = {
@@ -97,14 +113,18 @@ def plan_policies(source, selected, options, objects, zone_names, nat_blocked=Fa
                 "applications": tuple(dict.fromkeys(application_values)),
                 "action": action, "log_start": rule.log_start == "yes", "log_end": rule.log_end == "yes",
             }
+            if schedule_verified:
+                settings["schedule_evidence"] = {"value": "always", "origin": "PANOS_DEFAULT",
+                                                 "version": source.source_version, "reference": RULE_REFERENCE}
             result.append(SRXPlanItem(
                 key=identity(rule, "policy") + f":{source_zone}:{destination_zone}",
                 family="policy", source_scope=identity(rule, "scope"), source_kind="policy",
                 source_name=rule.name or "(unnamed)", source_path=rule.source_path,
                 target_name=_safe_name(rule.name) + (f"-{pair_index + 1}" if len(from_zones) * len(to_zones) > 1 else ""),
-                settings=tuple(settings.items()), dependencies=tuple(dict.fromkeys(deps)),
+                settings=tuple(settings.items()), dependencies=tuple(dict.fromkeys(item_dependencies)),
                 blockers=tuple(dict.fromkeys(item_blockers)), source_order=rule.source_order or order,
             ))
+            previous_by_context[context] = result[-1].key
             if item_blockers:
                 blocked_contexts.add(context)
         if not from_zones or not to_zones or any(name not in zone_names for name in (*from_zones, *to_zones)):

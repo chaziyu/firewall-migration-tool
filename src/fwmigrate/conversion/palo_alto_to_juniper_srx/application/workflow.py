@@ -18,7 +18,7 @@ from ..target.evidence import build_target_evidence
 from ..target.comparison import classify_target_reuse
 
 
-ARTIFACT_TYPE = "palo_alto_to_juniper_srx_artifact_v1"
+ARTIFACT_TYPE = "palo_alto_to_juniper_srx_artifact_v2"
 
 
 def _options(value):

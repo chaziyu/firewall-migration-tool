@@ -36,12 +36,15 @@ class PaloAltoToCiscoFTDPlanner:
         context = []
         if options.fmc_api_version != "7.7.0":
             context.append("FMC_API_VERSION_MUST_BE_7_7_0")
-        if options.target_mode == "existing" and not (options.domain_id or options.domain_name):
-            context.append("EXPLICIT_FMC_DOMAIN_REQUIRED")
+        if not options.domain_id:
+            context.append("EXPLICIT_FMC_DOMAIN_UUID_REQUIRED")
+        if not options.manager_target:
+            context.append("EXPLICIT_FMC_MANAGER_REQUIRED")
         if options.target_mode == "new" and not options.policy_name:
             context.append("NEW_POLICY_NAME_REQUIRED")
 
-        domain_id = options.domain_id or "e276abec-e0f2-11e3-8169-6d9ed49b625f"
+        # Unresolved paths are review-only; context blockers prevent export.
+        domain_id = options.domain_id or "UNRESOLVED_DOMAIN_UUID"
         addresses = plan_addresses(source, selected, domain_id)
         services = plan_services(source, selected, domain_id)
         zones = plan_zones(source, selected, domain_id)

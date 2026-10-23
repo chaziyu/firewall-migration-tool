@@ -38,10 +38,10 @@ _BUILTIN_WORKFLOWS = (
         display_name="Palo Alto PAN-OS to Cisco FTD", api_prefix="/api/migration/palo_alto_to_cisco_ftd",
         supported_formats=("json",), supported_target_versions=("FMC REST API 7.7.0",),
         export_available=True, destination_aware_available=True, deployment_available=False,
-        mapping_workflow="Review one PAN-OS VSYS, target FMC domain UUID, and fresh Access Control Policy name; existing mode supports object comparison only.",
+        mapping_workflow="Review one PAN-OS VSYS, explicit FMC host and domain UUID, and fresh Access Control Policy name; existing mode supports object comparison only.",
         destination_comparison="Optional complete FMC REST export bundles support exact address, port, and security zone reuse. Existing policy insertion stays blocked.",
         execution_mode="Offline FMC REST API request specification, response ID bindings, and shell script; no live execution.",
-        activation_steps=("Review exact operations and dependencies", "Approve and download offline request bundle", "Execute API requests via curl or automation", "Assign security zones to FTD device interfaces", "Assign Access Control Policy and deploy via FMC explicitly outside this tool"),
+        activation_steps=("Review exact operations and dependencies", "Approve and download offline request bundle", "Apply target-bound requests manually with Python 3.11+", "Assign security zones to FTD device interfaces", "Assign Access Control Policy and deploy via FMC explicitly outside this tool"),
         coverage_documentation="documentation/migration-support-matrix.md", cli_application=run_panos_ftd_cli,
     ),
     MigrationWorkflowRegistration(

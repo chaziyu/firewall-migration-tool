@@ -1,6 +1,6 @@
 # PAN-OS Multi-Target Migration Guide
 
-Updated: 2026-10-21.
+Updated: 2026-10-23.
 
 This guide documents the directional migration workflows taking Palo Alto PAN-OS (XML source) to five target vendors: FortiGate, Juniper SRX, Cisco ASA, Check Point, and FMC-managed Cisco FTD.
 
@@ -44,6 +44,7 @@ PAN-OS Source XML
 - **Source Scope**: Select one standalone VSYS.
 - **Target Mode**: New device (root context) or Existing target snapshot.
 - **Root Context**: Must be confirmed root context on Junos 25.2R1 standalone.
+- **Policy Safety**: Approval includes active predecessor rules and zone/interface dependencies. Named schedules, including a schedule named `always`, remain manual; only version-verified omitted schedule behavior can be unrestricted. Static-route output preserves the planned preference.
 - **Target Snapshot**: Optional Junos set configuration snapshot. Complete families enable exact `REUSE` classification.
 
 ### 3. Palo Alto PAN-OS → Cisco ASA
@@ -63,9 +64,13 @@ PAN-OS Source XML
 ### 5. Palo Alto PAN-OS → Cisco FTD (FMC-managed)
 - **Source Scope**: Select one standalone VSYS.
 - **Target Mode**: New Access Control Policy or Existing FMC snapshot.
-- **FMC Management Server & Domain**: Hostname/IP, Domain Name, and Domain UUID (`domain_id`).
+- **FMC Management Server & Domain**: Explicit hostname/IP and valid Domain UUID (`domain_id`) are required; Domain Name is optional. These values are not automatically populated. Existing snapshot native domain UUID must match.
 - **Access Control Policy Name**: Name of the container policy to create.
 - **Target Snapshot**: Optional FMC REST export bundle (`fmc-rest-bundle`) for network, port, and security zone ID reuse.
+- **Application Script**: `bash cisco_fmc_curl.sh [TOKEN_FILE]` requires Python 3.11+ and uses the approved host/domain. It prompts privately if no token file is supplied. Do not pass the token itself as an argument. JSON and response IDs are handled structurally, TLS verification stays enabled, redirects are rejected, and failures stop execution without retries. Reconcile partial changes before retrying. No interface/policy assignment or deployment is included.
+- **Application Matching**: `application-default` remains blocked until equivalent enforcement is implemented; it cannot become an unrestricted service.
+
+PAN-OS to SRX/FTD envelopes generated before the 2026-10-23 safety correction require fresh review and approval. Mapping proposals can still be reused. Already downloaded files cannot be revoked.
 
 ---
 

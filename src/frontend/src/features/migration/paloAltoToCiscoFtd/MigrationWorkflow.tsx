@@ -17,9 +17,9 @@ import { approvalSelection } from './reviewSelection'
 const emptyOptions = (): FTDOptions => ({
   source_scope: '',
   target_mode: 'new',
-  manager_target: 'fmc.example.com',
-  domain_id: 'e276abec-e0f2-11e3-8169-6d9ed49b625f',
-  domain_name: 'Global',
+  manager_target: '',
+  domain_id: '',
+  domain_name: '',
   fmc_api_version: '7.7.0',
   policy_name: '',
   target_device_id: '',
@@ -28,7 +28,7 @@ const emptyOptions = (): FTDOptions => ({
 
 const fileSpecs = [
   { key: 'fmc-operations', name: 'cisco_fmc_operations.json', label: 'FMC REST API request specification' },
-  { key: 'fmc-curl', name: 'cisco_fmc_curl.sh', label: 'Fresh-policy FMC curl shell script' },
+  { key: 'fmc-curl', name: 'cisco_fmc_curl.sh', label: 'Fresh-policy FMC application script' },
   { key: 'bindings', name: 'cisco_fmc_bindings.json', label: 'ID bindings and file manifest' },
   { key: 'instructions', name: 'ftd_application_instructions.txt', label: 'FTD application instructions' },
 ]
@@ -174,7 +174,7 @@ export function PaloAltoToCiscoFtdWorkflow({
   }
 
   const manual = rows.filter((row) => row.render_disposition === 'BLOCK')
-  const unresolvedInputs = review?.requirements.filter((row) => row.value == null || row.value === '') ?? []
+  const unresolvedInputs = review?.requirements.filter((row) => row.key !== 'domain_name' && (row.value == null || row.value === '')) ?? []
   const inputCount = unresolvedInputs.length
 
   return (
@@ -220,7 +220,7 @@ export function PaloAltoToCiscoFtdWorkflow({
               </select>
             </label>
             <label>
-              FMC Domain Name:
+              FMC Domain Name (optional):
               <input
                 type="text"
                 value={options.domain_name}

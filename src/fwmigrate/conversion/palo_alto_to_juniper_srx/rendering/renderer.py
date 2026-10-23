@@ -59,7 +59,8 @@ def _commands(item, by_key):
                 for member in value["interfaces"]]
     if item.family == "static_route":
         prefix = f"set routing-options static route {value['destination']}"
-        return [f"{prefix} next-hop {value['gateway']}", f"{prefix} metric {value['metric']}"]
+        return [f"{prefix} next-hop {value['gateway']}", f"{prefix} metric {value['metric']}",
+                f"{prefix} preference {value['preference']}"]
     if item.family == "policy":
         prefix = f"set security policies from-zone {value['from_zone']} to-zone {value['to_zone']} policy {name}"
         rows = [f"{prefix} match source-address {entry}" for entry in value["source_addresses"]]
