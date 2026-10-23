@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { apiFetch, postJson, RequestError } from '../src/api/client.ts'
+import { apiFetch, postBlob, postForm, postJson, RequestError } from '../src/api/client.ts'
 
 for (const [path, result] of [
   ['/api/deploy', { failed_command_index: 2, failure_message: 'command 2 rejected', validation: { status: 'FAILED', response: 'Invalid zone trust' } }],
@@ -38,6 +38,47 @@ test('API transport uses same-origin paths', async (context) => {
   })
 
   await apiFetch('/api/vendors')
+})
+
+for (const [name, request] of [
+  ['JSON', () => postJson('/api/migration/design/prepare', {})],
+  ['form', () => postForm('/api/preview', new FormData())],
+  ['download', () => postBlob('/api/migration/bundle', {})],
+]) {
+  test(`${name} requests report an HTML gateway failure without exposing its body or retrying`, async (context) => {
+    const fetch = context.mock.method(globalThis, 'fetch', async () => new Response(
+      '<html>PRIVATE-UPSTREAM-DIAGNOSTIC</html>', { status: 502, headers: { 'Content-Type': 'text/html' } }))
+    await assert.rejects(request(), (error) => {
+      assert.ok(error instanceof RequestError)
+      assert.equal(error.message, 'Request failed (502)')
+      assert.deepEqual(error.details, {})
+      assert.ok(!error.message.includes('PRIVATE-UPSTREAM-DIAGNOSTIC'))
+      return true
+    })
+    assert.equal(fetch.mock.callCount(), 1)
+  })
+}
+
+test('invalid successful JSON responses are errors rather than successful workflow data', async (context) => {
+  context.mock.method(globalThis, 'fetch', async () => new Response('<html>PRIVATE-UPSTREAM-DIAGNOSTIC</html>', { status: 200 }))
+  await assert.rejects(postJson('/api/migration/design/prepare', {}), (error) => {
+    assert.ok(error instanceof RequestError)
+    assert.equal(error.message, 'Server returned an invalid JSON response (200)')
+    return true
+  })
+})
+
+test('interrupted response reads retain their original abort error', async (context) => {
+  const interrupted = new DOMException('Request was aborted', 'AbortError')
+  context.mock.method(globalThis, 'fetch', async () => ({ ok: true, status: 200, json: async () => { throw interrupted } }))
+  await assert.rejects(postJson('/api/migration/design/prepare', {}), (error) => error === interrupted)
+})
+
+test('successful binary downloads do not require JSON parsing', async (context) => {
+  const bytes = new Uint8Array([80, 75, 3, 4])
+  context.mock.method(globalThis, 'fetch', async () => new Response(bytes, { status: 200, headers: { 'Content-Type': 'application/zip' } }))
+  const blob = await postBlob('/api/migration/bundle', {})
+  assert.deepEqual(new Uint8Array(await blob.arrayBuffer()), bytes)
 })
 
 

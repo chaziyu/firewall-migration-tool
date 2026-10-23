@@ -17,9 +17,21 @@ export function apiFetch(path: string, init: RequestInit = {}): Promise<Response
   return fetch(path, init)
 }
 
+async function readJsonResponse(response: Response): Promise<unknown> {
+  try {
+    return await response.json()
+  } catch (cause) {
+    if (!(cause instanceof SyntaxError)) throw cause
+    // Proxy error pages and truncated JSON are not trusted diagnostic text.
+    throw new RequestError(response.ok
+      ? { error: `Server returned an invalid JSON response (${response.status})` }
+      : null, response.status)
+  }
+}
+
 export async function postForm<T>(path: string, formData: FormData): Promise<T> {
   const response = await apiFetch(path, { method: 'POST', body: formData })
-  const data: unknown = await response.json()
+  const data = await readJsonResponse(response)
 
   if (!response.ok || (isRecord(data) && data.success === false)) {
     throw new RequestError(data, response.status)
@@ -34,7 +46,7 @@ export async function postJson<T>(path: string, payload: unknown): Promise<T> {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   })
-  const data: unknown = await response.json()
+  const data = await readJsonResponse(response)
   if (!response.ok || (isRecord(data) && data.success === false)) {
     throw new RequestError(data, response.status)
   }
@@ -48,7 +60,7 @@ export async function postBlob(path: string, payload: unknown): Promise<Blob> {
     body: JSON.stringify(payload),
   })
   if (!response.ok) {
-    const data: unknown = await response.json()
+    const data = await readJsonResponse(response)
     throw new RequestError(data, response.status)
   }
   return response.blob()

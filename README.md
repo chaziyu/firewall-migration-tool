@@ -261,7 +261,7 @@ python -m fwmigrate.main vendors
 
 ### Start the Web Application
 
-Build the frontend first. Use Node.js 24, matching frontend CI, and npm:
+Build the frontend first. Use Node.js 24.22.1 or a newer 24.x release and npm. The tested version in `.node-version` is used by CI and Render; frontend installation rejects older or different-major runtimes:
 
 ```bash
 cd src/frontend
@@ -293,7 +293,7 @@ Python 3.11 or newer, Node.js, and npm. The script starts the local backend at
 `http://127.0.0.1:5000` and the Vite development frontend at
 `http://127.0.0.1:5173` and opens the frontend in the browser. It creates `.venv`
 and installs collection/deployment dependencies when that environment is absent.
-It also runs `npm ci` when Vite is absent. An existing Python environment must
+It also runs `npm ci --prefer-offline` on each launch so installed frontend dependencies match the lockfile. An existing Python environment must
 already have the application dependencies installed.
 
 For manual frontend development, keep Flask running on port 5000 and run
@@ -303,7 +303,7 @@ URL during development or build the frontend before opening Flask's URL.
 
 ### Hosted Web Deployment
 
-Build the frontend with Node.js 24 and install the Python application using Python 3.12 on the web host:
+Build the frontend with the Node.js version in `.node-version` and install the Python application using Python 3.12 on the web host:
 
 ```bash
 cd src/frontend
