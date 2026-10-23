@@ -182,6 +182,9 @@ def _plan_address(source: Any, options: Any, derived=None, config=None):
     if getattr(source, "address_family", None) == "ipv6" or getattr(source, "ip6", None) is not None:
         status = PANMigrationStatus.UNSUPPORTED
         warnings = (*warnings, "IPv6 address semantics require manual design")
+    if getattr(source, "tagging", ()):
+        status = PANMigrationStatus.MANUAL_REVIEW
+        warnings = (*warnings, "Source address tagging requires manual metadata review")
     return (
         PlannedAddress(
             source_vdom=getattr(source, "vdom", None),
@@ -223,6 +226,9 @@ def _plan_group(source: Any, options: Any):
     if source.members is None:
         status = PANMigrationStatus.MANUAL_REVIEW
         warnings = (*warnings, "address-group membership is not explicit in the source")
+    if getattr(source, "tagging", ()):
+        status = PANMigrationStatus.MANUAL_REVIEW
+        warnings = (*warnings, "Source address-group tagging requires manual metadata review")
     return (
         PlannedAddressGroup(
             source_vdom=getattr(source, "vdom", None),
