@@ -75,7 +75,7 @@ Official semantic references:
 - [PAN-OS 11.1 security rule fields](https://docs.paloaltonetworks.com/ngfw/help/11-1/policies/policies-security/building-blocks-in-a-security-policy-rule).
 - [PAN-OS 11.1 organizational tags](https://docs.paloaltonetworks.com/ngfw/help/11-1/objects/objects-tags).
 - [PAN-OS 11.1 predefined service definitions](https://docs.paloaltonetworks.com/pan-os/11-1/pan-os-admin/policy/policy-objects).
-- [Selected version CLI references](official-cli-references-selected%20version/).
+- [Selected version CLI references](../../official-cli-references-selected%20version/).
 
 ## Execution results
 

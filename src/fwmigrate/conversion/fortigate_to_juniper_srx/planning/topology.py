@@ -8,7 +8,7 @@ from fwmigrate.vendors.fortigate.relationships.references import ReferenceKind
 
 from ..models import SRXPlanItem
 from ..options import SRXMigrationOptions
-from ..requirements import source_vdoms, standalone_interfaces
+from ..requirements import standalone_interfaces
 from .naming import decision_key, item_key, target_name
 from .source_semantics import default_evidence, effective_fields, source_value
 

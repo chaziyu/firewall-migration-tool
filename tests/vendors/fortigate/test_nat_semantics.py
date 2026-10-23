@@ -5,13 +5,8 @@ from fwmigrate.vendors.fortigate.model.sdwan import FGSDWAN, FGSDWANMember, FGSD
 from fwmigrate.vendors.fortigate.model.source import FGConfig
 from fwmigrate.vendors.fortigate.transform.nat import transform_nat
 from fwmigrate.vendors.fortigate.source_report import FortiGateSourceReporter
-import unittest
 
-from fwmigrate.vendors.fortigate.model.interface import FGInterface
 from fwmigrate.vendors.fortigate.model.ippool import FGIPPool
-from fwmigrate.vendors.fortigate.model.policy import FGPolicy
-from fwmigrate.vendors.fortigate.model.source import FGConfig
-from fwmigrate.vendors.fortigate.transform.nat import transform_nat
 
 
 class NatSemanticsTest(unittest.TestCase):

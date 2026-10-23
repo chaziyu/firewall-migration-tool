@@ -261,7 +261,7 @@ Updated: 2026-10-21
 
 - [Check Point API 1.8.1 dynamic apis.json](https://sc1.checkpoint.com/documents/latest/APIs/data/v1.8.1/dynamic/apis.json).
 - [Check Point Management API 1.8.1 reference](https://sc1.checkpoint.com/documents/latest/APIs/index.html#web/~v1.8.1).
-- [Check Point R81 Selected CLI and Management API References](documentation/official-cli-references-selected%20version/Check_Point_R81_Selected_CLI_and_Management_API_References.md).
+- [Check Point R81 Selected CLI and Management API References](../../official-cli-references-selected%20version/Check_Point_R81_Selected_CLI_and_Management_API_References.md).
 
 ## Phase 7: PAN-OS to FMC-managed Cisco FTD — complete
 

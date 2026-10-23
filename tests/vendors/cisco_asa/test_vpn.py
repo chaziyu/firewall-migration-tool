@@ -14,7 +14,6 @@ from fwmigrate.vendors.cisco_asa.relationships.references import ASAReferenceInd
 from fwmigrate.vendors.cisco_asa.relationships.vpn import build_vpn_relationships
 
 
-from fwmigrate.vendors.cisco_asa import extract_cisco_asa_source
 
 from fwmigrate.vendors.cisco_asa.source_report import extract_cisco_asa_source
 
@@ -63,7 +62,6 @@ def test_vti_ipsec_profile_and_selector_acl_resolve():
     assert not graph.issues
 
 def test_parser_extracts_ipsec_profile_and_vti_selector():
-    from fwmigrate.vendors.cisco_asa import extract_cisco_asa_source
     result = extract_cisco_asa_source(
         "crypto ipsec profile VTI-PROFILE\n"
         " set ikev1 transform-set TS1 TS2\n"

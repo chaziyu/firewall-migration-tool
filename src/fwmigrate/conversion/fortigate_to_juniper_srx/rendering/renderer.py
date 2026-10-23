@@ -5,7 +5,7 @@ from dataclasses import dataclass, replace
 import hashlib
 import heapq
 
-from ..models import SRXMigrationPlan, SRXPlanItem
+from ..models import SRXMigrationPlan
 from ..plan_dependencies import assess_render_disposition, validate_plan
 
 

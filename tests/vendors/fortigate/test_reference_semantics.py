@@ -8,19 +8,13 @@ from fwmigrate.vendors.fortigate.model.service import FGService
 from fwmigrate.vendors.fortigate.model.source import FGConfig
 from fwmigrate.vendors.fortigate.model.vip import FGVIP, FGVIPRealServer
 from fwmigrate.vendors.fortigate.validation.validator import validate_config
-import unittest
 
-from fwmigrate.vendors.fortigate.derived import build_derived_views
-from fwmigrate.vendors.fortigate.model.address import FGAddress, FGAddressGroup
 from fwmigrate.vendors.fortigate.model.admin import FGAdministrator, FGAdminProfile
 from fwmigrate.vendors.fortigate.model.dhcp import FGDHCPServer
-from fwmigrate.vendors.fortigate.model.interface import FGInterface
-from fwmigrate.vendors.fortigate.model.policy import FGPolicy
 from fwmigrate.vendors.fortigate.model.route_static import FGStaticRoute
 from fwmigrate.vendors.fortigate.model.sdwan import FGSDWAN, FGSDWANZone
-from fwmigrate.vendors.fortigate.model.service import FGService, FGServiceGroup
-from fwmigrate.vendors.fortigate.model.source import FGConfig
-from fwmigrate.vendors.fortigate.model.vip import FGVIP, FGVIPGroup, FGVIPRealServer
+from fwmigrate.vendors.fortigate.model.service import FGServiceGroup
+from fwmigrate.vendors.fortigate.model.vip import FGVIPGroup
 from fwmigrate.vendors.fortigate.model.user import FGLocalUser, FGUserGroup
 from fwmigrate.vendors.fortigate.model.vpn import FGIPsecPhase1
 from fwmigrate.vendors.fortigate.relationships.references import (
@@ -28,7 +22,6 @@ from fwmigrate.vendors.fortigate.relationships.references import (
     build_reference_index,
     collect_broken_references,
 )
-from fwmigrate.vendors.fortigate.validation.validator import validate_config
 
 
 class ReferenceSemanticsTest(unittest.TestCase):

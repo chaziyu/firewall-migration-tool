@@ -806,7 +806,7 @@ For customer configuration handling, the web application applies a bounded reque
 
 All API POST endpoints share one IP rate bucket and a non-blocking processing semaphore, acquired before body parsing and released during teardown, including failures. Rejected requests return HTTP 429 with `rate_limit_exceeded` or `server_busy` and `Retry-After`; retry manually, especially for deployment operations. Frontend and API GET requests are unaffected. IP tracking expires after 60 seconds and is capped at 4096 entries; while full, new IPs are rejected until an entry expires rather than evicting active limits.
 
-Controls use `request.remote_addr` and ignore forwarded headers. Behind a proxy, clients may share a bucket. Verify Render's trusted proxy chain before adding forwarded-IP handling. Public mode blocks live device operations independently of proxy client addresses. Unexpected errors return fixed messages without exception tracebacks; only explicitly safe validation messages are public. Deployment failure responses retain status, identity, counts, and validation classifications while replacing untrusted transport/device failure text.
+Controls use `request.remote_addr`. Forwarded client addresses are honored only when `FWMIGRATE_TRUSTED_PROXY_FOR` explicitly configures the trusted proxy count in public mode; otherwise forwarded headers are ignored and clients behind a proxy may share a bucket. Configure the actual proxy chain as described in [Hosted Web Deployment](#hosted-web-deployment); never enable trust for a directly reachable backend or use an unverified count. Public mode blocks live device operations independently of proxy client addresses. Unexpected errors return fixed messages without exception tracebacks; only explicitly safe validation messages are public. Deployment failure responses retain status, identity, counts, and validation classifications while replacing untrusted transport/device failure text.
 
 Application upload streams stay in memory, but upstream request buffering, temporary storage, request/proxy logging, and log retention must be verified separately on the host. Before hosted rollout, use synthetic configurations to check 3–6 concurrent preview, Excel, and migration requests, peak RAM, latency, 429 responses, recovery, and absence of secrets in application and proxy logs. Local tests do not establish these hosting guarantees.
 
@@ -947,6 +947,8 @@ Run Python linting:
 ```bash
 ruff check src tests
 ```
+
+Ruff checks syntax errors and all Pyflakes (`F`) rules in both production code and tests, including unused imports, undefined names and accidental redefinitions. Declare intentional package re-exports explicitly with `__all__`.
 
 For frontend changes:
 

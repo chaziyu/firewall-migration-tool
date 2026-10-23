@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field as dataclass_field
 from enum import Enum
 from typing import Any, Iterable
 
@@ -91,9 +91,9 @@ class ReferenceIndex:
     objects: dict[
         ReferenceKind,
         dict[tuple[str, str], Any],
-    ] = field(default_factory=dict)
+    ] = dataclass_field(default_factory=dict)
 
-    duplicates: list[DuplicateObject] = field(
+    duplicates: list[DuplicateObject] = dataclass_field(
         default_factory=list
     )
 

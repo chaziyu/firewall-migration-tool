@@ -5,7 +5,6 @@ import pytest
 from fwmigrate.conversion.fortigate_to_juniper_srx import (
     FortiGateToJuniperSRXPlanner,
     SRXInterfaceMapping,
-    SRXMigrationOptions,
 )
 from fwmigrate.vendors.fortigate.derived import build_derived_views
 

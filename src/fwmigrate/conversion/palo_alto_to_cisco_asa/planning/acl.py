@@ -1,6 +1,6 @@
 """PAN-OS ordered L3/L4 policies with provable ASA ingress and egress behavior."""
 
-from ipaddress import IPv4Address, IPv4Network, summarize_address_range
+from ipaddress import IPv4Address, summarize_address_range
 from itertools import product
 from fwmigrate.vendors.palo_alto.transform.effective_values import effective_value, RULE_REFERENCE
 
