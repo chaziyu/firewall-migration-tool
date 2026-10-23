@@ -269,8 +269,20 @@ def _classify(target, family, attribute, item, device, compare):
     name = item.target_name
     if not name:
         return None
+    def compare_with_metadata(source, existing):
+        strong, supporting, contradictions = compare(source, existing)
+        description = getattr(source, "description", None)
+        if description is not None:
+            if "description" not in _fields(existing) or existing.description is None:
+                supporting = (*supporting, "target description is not explicitly configured")
+            elif existing.description != description:
+                contradictions = (*contradictions, "target description differs")
+            else:
+                strong = (*strong, "same explicit description")
+        return strong, supporting, contradictions
+
     candidates = build_target_candidates(target, attribute, family, name, device, item.target_vsys,
-                                         comparator=compare, source_object=item)
+                                         comparator=compare_with_metadata, source_object=item)
     if not candidates:
         return {"status": "NO_MATCH", "family": family, "source_name": item.source_name,
                 "source_vdom": item.source_vdom or "root", "source_kind": item.source_kind,

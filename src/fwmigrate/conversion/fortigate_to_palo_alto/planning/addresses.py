@@ -12,6 +12,7 @@ from fwmigrate.conversion.fortigate_to_palo_alto.models import (
 )
 from fwmigrate.conversion.fortigate_to_palo_alto.planning.routing import _normalize_subnet
 from .vips import vip_translation
+from ..target.name_validation import object_description_issue
 from fwmigrate.vendors.fortigate.transform.effective_values import effective_value
 from fwmigrate.vendors.fortigate.relationships.address_bindings import association_verified
 
@@ -185,6 +186,9 @@ def _plan_address(source: Any, options: Any, derived=None, config=None):
     if getattr(source, "tagging", ()):
         status = PANMigrationStatus.MANUAL_REVIEW
         warnings = (*warnings, "Source address tagging requires manual metadata review")
+    if description_issue := object_description_issue(getattr(source, "comment", None)):
+        status = PANMigrationStatus.MANUAL_REVIEW
+        warnings = (*warnings, description_issue)
     return (
         PlannedAddress(
             source_vdom=getattr(source, "vdom", None),
@@ -197,6 +201,7 @@ def _plan_address(source: Any, options: Any, derived=None, config=None):
             address_type=address_type,
             value=value,
             source_interface=source_interface,
+            description=getattr(source, "comment", None),
         ),
         issue,
     )
@@ -229,6 +234,9 @@ def _plan_group(source: Any, options: Any):
     if getattr(source, "tagging", ()):
         status = PANMigrationStatus.MANUAL_REVIEW
         warnings = (*warnings, "Source address-group tagging requires manual metadata review")
+    if description_issue := object_description_issue(getattr(source, "comment", None)):
+        status = PANMigrationStatus.MANUAL_REVIEW
+        warnings = (*warnings, description_issue)
     return (
         PlannedAddressGroup(
             source_vdom=getattr(source, "vdom", None),
@@ -239,6 +247,7 @@ def _plan_group(source: Any, options: Any):
             status=status,
             warnings=warnings,
             members=tuple(source.members or ()),
+            description=getattr(source, "comment", None),
         ),
         issue,
     )

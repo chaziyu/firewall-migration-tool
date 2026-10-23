@@ -5,6 +5,7 @@ from dataclasses import replace
 
 from fwmigrate.conversion.fortigate_to_palo_alto.models import PANMigrationStatus, PlannedService, PlannedServiceGroup
 from .vips import vip_port_translation, vip_service_name
+from ..target.name_validation import object_description_issue
 
 
 PAN_BUILTIN_SERVICES = frozenset({"any", "service-https"})
@@ -19,7 +20,10 @@ def _source_service_warnings(originals):
         settings.add("proxy")
     if getattr(original, "session_ttl", None) is not None:
         settings.add("session-ttl")
-    return tuple(f"service setting {name!r} requires manual target semantics" for name in sorted(settings))
+    warnings = tuple(f"service setting {name!r} requires manual target semantics" for name in sorted(settings))
+    if issue := object_description_issue(getattr(original, 'comment', None)):
+        warnings += (issue,)
+    return warnings
 
 
 def service_target(name, explicit_names, names=None):
@@ -52,6 +56,7 @@ def plan_services(derived: Any, options: Any = None, source: Any = None):
             status=PANMigrationStatus.SUPPORTED if supported else PANMigrationStatus.UNSUPPORTED,
             warnings=warnings, protocol=item.protocol, destination_port=item.port,
             source_port=item.source_port,
+            description=item.comment,
         ))
     explicit_names = {(item.vdom, item.name) for item in (*result.services, *result.groups)}
     references = {(policy.vdom, name) for policy in getattr(source, "policies", ()) for name in policy.service or ()}
@@ -91,6 +96,9 @@ def plan_services(derived: Any, options: Any = None, source: Any = None):
             extra = _source_service_warnings(source_services.get((group.source_vdom or "root", group.source_name), ()))
         else:
             extra = _source_service_warnings(source_groups.get((group.source_vdom or "root", group.source_name), ()))
+            originals = source_groups.get((group.source_vdom or "root", group.source_name), ())
+            if len(originals) == 1 and originals[0].comment is not None:
+                extra += ('service-group comment has no verified PAN-OS description path; manual metadata review required',)
         checked_groups.append(replace(group, status=PANMigrationStatus.UNSUPPORTED,
                                       warnings=tuple(dict.fromkeys((*group.warnings, *extra)))) if extra else group)
     groups = tuple(checked_groups)
