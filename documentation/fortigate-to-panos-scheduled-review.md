@@ -201,3 +201,19 @@ Authority: selected FortiOS 7.4.6 CLI reference sections `config system session-
 Plan: use the documented family-specific identity fields, retain preserved unparsed native IDs, name singleton records by family, and preserve `None` scope instead of inventing root. Models without a VDOM field remain unscoped in this coverage; no global/VDOM placement is guessed. Verify duplicate-label helpers, global/root/blue isolation, malformed IDs, owner/path identities and browser manual tasks, then repeat the real CLI and required validation. Four initial real-path regressions failed before the fix.
 
 Cycle 9 completed: four new regression cases and 17 focused identity/inventory/central-NAT checks passed. **3,042 Python tests passed, two skipped, 16 subtests passed**; Ruff, compileall and whitespace checks passed. Full-input report assertions now find 19 distinct native session-helper identities. Chromium prepared the full example in **21.63 seconds**, displayed all 19 helpers as unique source objects, observed five HTTP 200 API responses and zero page errors. A duplicate-label synthetic browser check also passed. CLI totals remain 4,476 review records, 111 mappings, zero commands. Frontend checks also passed: **249 tests**, lint and build; the existing large-bundle warning remains.
+
+Pushed cycle 9 to `origin/main`: **`bfee92d4`** (`Preserve native source identities in manual migration coverage`).
+
+## Cycle 10 — one-time expiration notification loss
+
+Finding in the uploaded example: all three one-time schedules with explicit `expiration_days` were marked `SUPPORTED` without warnings by `plan_schedules`; their explicit event-log notification setting has no representation in `PlannedSchedule`. A valid synthetic schedule with explicit expiration controls also permitted its consuming policy to export and reported `READY`. Four regressions failed; the absent/unset control case already passed.
+
+Authority: selected FortiOS 7.4.6 `config firewall schedule onetime` reference defines `expiration-days` as writing an event-log message a configured number of days before expiry (including the permitted value zero). The selected PAN-OS schedule hierarchy covers time ranges; this implementation has no verified equivalent notification translation. This setting is not interpreted as the traffic-match expiration date or as disabled when zero.
+
+Plan: retain the existing time-range conversion, add a manual notification/monitoring review blocker whenever the source control is explicit, and let existing dependency validation block consuming rules. Missing/unset values must remain distinct and must not invent a notification requirement. Verify zero/nonzero/absent/unset behavior, web review, full-input CLI/report consistency and the required full validation before committing/pushing.
+
+Cycle 10 focused validation: **25 schedule checks passed**, including the five new cases. The full-input CLI report now includes exactly three expiration-notification review warnings, remains `NEEDS_MAPPING` with 111 decisions and 4,476 unplanned records, and reports zero commands/renderable/satisfied items. All 10,426 report items are unrendered, unsatisfied and not command-renderable; report consistency assertions passed.
+
+Chromium prepared the full input in **22.22 seconds**, showed all three explicit expiration-notification schedules in manual work, observed five HTTP 200 API responses and zero page errors. The synthetic notification check and signed approval/export/2,000-object walkthrough also passed without JavaScript errors. Ruff, compileall and whitespace checks passed. Full-suite completion is recorded below.
+
+Cycle 10 full validation: **3,047 Python tests passed, two skipped, 16 subtests passed**. The frontend's 249 tests, lint and build also passed during this continuation; no frontend source changed. No live firewall was contacted and no candidate or device commit was performed.
