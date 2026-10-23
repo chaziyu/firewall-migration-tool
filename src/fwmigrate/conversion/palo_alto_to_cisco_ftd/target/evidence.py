@@ -29,6 +29,9 @@ def build_target_evidence(analysis, source_text, metadata, options):
         raise ValueError("Declare valid complete Cisco FMC evidence families")
 
     config = analysis.config
+    native_domain = (getattr(config, "source_metadata", {}) or {}).get("domain_id")
+    if not options.domain_id or native_domain != options.domain_id:
+        raise ValueError("Cisco FTD destination domain UUID differs from the design or is missing")
     if getattr(config, "source_plane", None) not in {"fmc", "fmc-rest-bundle"}:
         raise ValueError("Cisco FTD destination evidence must be an authoritative FMC REST bundle")
 

@@ -1,6 +1,6 @@
 # Migration support matrix
 
-Updated 2026-10-22. These are partial, directional migration workflows. A successful export is not a complete replacement firewall configuration.
+Updated 2026-10-23. These are partial, directional migration workflows. A successful export is not a complete replacement firewall configuration.
 
 ## Version and execution boundaries
 
@@ -14,7 +14,7 @@ Updated 2026-10-22. These are partial, directional migration workflows. A succes
 | FortiGate to Juniper SRX | Junos 25.2R1, standalone | Native Junos configuration and explicit completeness metadata | Offline set export |
 | FortiGate to Check Point | Management API 1.8.1; separate Gaia output | New package needs no snapshot. Existing-target comparison uses native Management JSON and completeness metadata | Offline API requests, new-package mgmt_cli commands and Clish export |
 | PAN-OS to Check Point | Management API 1.8.1; separate Gaia output | Optional native Management snapshot for exact object reuse; existing-policy insertion and Gaia stay blocked | Offline API requests, response UID bindings, fresh-package mgmt_cli commands |
-| PAN-OS to Cisco FTD | FMC REST API 7.7.0 (FMC-managed FTD) | Optional native FMC REST export bundle for exact object and security zone reuse; existing-policy insertion stays blocked | Offline API requests, response ID bindings, fresh-policy curl script and instructions |
+| PAN-OS to Cisco FTD | FMC REST API 7.7.0 (FMC-managed FTD) | Optional native FMC REST export bundle for exact object and security zone reuse; existing-policy insertion stays blocked | Offline API requests, response ID bindings, target-bound application script and instructions |
 
 The browser accepts optional destination snapshots for every listed pair. Snapshots are sanitized by the native backend reporter. Completeness is an explicit operator declaration, checked against available collection evidence. A missing table does not prove absence. Snapshot comparison does not establish live device acceptance, licensing, hardware fit, or current candidate state.
 
@@ -32,7 +32,7 @@ All nine pairs offer Source → Review conversion → Download for offline conve
 - ASA port/name proposals leave security levels unresolved. Empty-target, routing-completeness, capacity and return-routing attestations are never auto-confirmed.
 - Eligible configuration appears in a paginated approval preview by default. Custom exclusions and dependency expansion remain visible. Approve and generate is the explicit action that signs the selection and builds the native files.
 - Included, reused, excluded and blocked/manual counts remain visible after generation. An unselected item is not a completed conversion. Reuse-only output is distinct from excluded or blocked output.
-- Check Point retains Management JSON, command shell, UID bindings and Gaia files. FTD retains FMC request specifications, curl script, ID bindings and application instructions.
+- Check Point retains Management JSON, command shell, UID bindings and Gaia files. FTD retains FMC request specifications, application script, ID bindings and application instructions.
 - Source, scope, options, target evidence and selection changes revoke affected approval/artifacts. Superseded responses cannot restore them. A current approval survives generation failure for retry; expiry still requires approval again.
 
 ## Source accounting
@@ -128,14 +128,23 @@ See [reverse migration usage and limits](guides/PAN-OS-to-FortiGate-migration.md
 - Zone-constrained policies, active/unknown NAT, App-ID, named schedules, logging/inspection profiles, Gaia interface topology and Gaia static routes remain blocked manual items.
 - Optional destination snapshots support exact native UID reuse for addresses and address groups with auto-rule NAT disabled; existing policy insertion and Gaia stay blocked.
 
+### PAN-OS to Juniper SRX safety requirements
+
+- Policy approval includes both zone/interface dependency closures and every active predecessor in the same zone pair. Explicitly disabled rules stay nonexecutable and do not sever that chain. Blocked topology or predecessors prevent approval of dependent policies.
+- Only omitted schedule behavior verified for standalone PAN-OS 11.1 can be treated as unrestricted. Every named schedule, including an object named `always`, remains blocked. Derived schedule evidence records its version and official reference separately from source XML.
+- Supported static routes render the planned Junos preference as well as metric and next hop. Exact target reuse includes preference; a different or missing explicit preference is not exact reuse.
+- PAN-OS to SRX and FTD use version 2 review/approval/artifact envelopes after this safety change. Previously generated envelopes require fresh review. Already downloaded files cannot be revoked.
+
 ### PAN-OS to Cisco FTD (FMC-managed)
 
-- Requires one selected standalone VSYS and Cisco FMC REST API 7.7.0 target baseline. Produces reviewed offline API request specification (`cisco_fmc_operations.json`), response ID bindings (`cisco_fmc_bindings.json`), fresh-policy `curl` script (`cisco_fmc_curl.sh`), and application instructions (`ftd_application_instructions.txt`). No live execution, login, credential storage, or deployment is performed.
+- Requires one selected standalone VSYS and Cisco FMC REST API 7.7.0 target baseline. Produces reviewed offline API request specification (`cisco_fmc_operations.json`), response ID bindings (`cisco_fmc_bindings.json`), fresh-policy application script (`cisco_fmc_curl.sh`), and application instructions (`ftd_application_instructions.txt`). No live execution, login, credential storage, or deployment is performed by this tool.
 - Converts explicit IPv4 hosts, subnets, ranges (`/object/networks`, `/object/rangeobjects`), static address groups (`/object/networkgroups`), TCP/UDP port objects split into atomic single-port/range objects (`/object/protocolportobjects`) and grouped under port groups (`/object/portobjectgroups`), and security zones (`/object/securityzones`). Returned object IDs bind later requests using `{$response_binding:...}`.
-- Target mode: New-target mode plans a fresh Access Control Policy container (`/policy/accesspolicies`) and default rule without requiring destination evidence. FMC domain UUID and policy container names are reviewed during target setup.
+- Target mode: New-target mode plans a fresh Access Control Policy container (`/policy/accesspolicies`) and default rule without requiring destination evidence. An explicit valid FMC domain UUID and manager hostname/IP are required before operations can be approved. No host, domain UUID or domain ownership is guessed. Policy container names remain reviewed proposals. Existing snapshots must carry the same native domain UUID as the design.
 - Access Policies: Only explicit L3/L4 policies with verified universal rule type, unlogged Drop defaults (`intrazone-default` and `interzone-default`), and explicit allow/drop actions are representable. Policies preserve source rule order and map to `/policy/accesspolicies/{acp_id}/accessrules`.
 - Fail-Closed Safety: FDM mode and device CLI target modes are unsupported and fail closed. Active/unknown NAT, App-ID, named schedules, logging/inspection profiles, device interface assignments, and FTD static routes remain blocked manual items.
 - Target Snapshot Comparison: Optional native FMC REST export bundle comparison supports exact address, port object, and security zone ID reuse when names and types match. Conflicting target objects fail closed. Existing policy insertion stays blocked.
+- `application-default` is blocked; it never becomes an unrestricted FMC service. Blocked predecessors also block their dependent rules.
+- The retained `.sh` filename wraps Python 3.11+ structured JSON/HTTPS execution. Run it manually with `bash cisco_fmc_curl.sh [TOKEN_FILE]`; without a token file it prompts privately. Host/domain are bound to the approved artifact. TLS verification stays enabled, redirects are rejected, and response IDs are resolved in both URLs and JSON. It preflights bindings and stops on HTTP, response or binding errors without retrying. Reconcile partial changes before running it again. The script does not assign interfaces/policies or deploy.
 
 ### FortiGate to PAN-OS
 

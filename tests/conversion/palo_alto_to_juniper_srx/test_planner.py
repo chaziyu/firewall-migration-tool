@@ -58,7 +58,7 @@ def test_supported_policy_renders_exact_junos_transport_and_zone_commands():
       <rulebase><security><rules><entry name='allow-web'><from><member>inside</member></from><to><member>outside</member></to>
       <source><member>inside-net</member></source><destination><member>any</member></destination><source-user><member>any</member></source-user>
       <application><member>any</member></application><service><member>web</member></service><category><member>any</member></category>
-      <negate-source>no</negate-source><negate-destination>no</negate-destination><action>allow</action><rule-type>universal</rule-type><log-start>no</log-start><log-end>no</log-end><disabled>no</disabled><schedule>always</schedule>
+      <negate-source>no</negate-source><negate-destination>no</negate-destination><action>allow</action><rule-type>universal</rule-type><log-start>no</log-start><log-end>no</log-end><disabled>no</disabled>
       </entry></rules></security></rulebase><zone><entry name='inside'><network><layer3><member>ethernet1/1</member></layer3></network></entry>
       <entry name='outside'><network><layer3><member>ethernet1/2</member></layer3></network></entry></zone>
       </entry></vsys><network><interface><ethernet><entry name='ethernet1/1'><layer3><ip><entry name='10.1.0.1/24'/></ip></layer3></entry>

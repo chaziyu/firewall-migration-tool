@@ -28,6 +28,8 @@ from fwmigrate.vendors.palo_alto.source_report import PaloAltoSourceReporter
 FIXTURE = Path(__file__).parents[2] / "fixtures/palo_alto/ftd_policy_explicit.xml"
 SCHEMA = Path(__file__).parents[2] / "fixtures/cisco_ftd/panos_target_fmc_7_7_0_fields.json"
 TARGET_FIXTURE = Path(__file__).parents[2] / "fixtures/cisco_ftd/pan_migration_target_fmc_770.json"
+TARGET_OPTIONS = {"manager_target": "fmc.lab.invalid", "domain_name": "Global",
+                  "domain_id": "e276abec-e0f2-11e3-8169-6d9ed49b625f"}
 
 
 def analyze(text=None):
@@ -43,9 +45,10 @@ def ready(review):
 
 def artifact(analysis=None, options=None, **target):
     analysis = analysis or analyze()
-    review = build_review(analysis, options or {}, "source", **target)
+    options = options or TARGET_OPTIONS
+    review = build_review(analysis, options, "source", **target)
     approval = approve_design(review, review["draft"], ready(review))
-    built = build_artifact(analysis, options or {}, "source", approval, **target)
+    built = build_artifact(analysis, options, "source", approval, **target)
     return review, approval, verify_export_artifact(built)
 
 
@@ -135,7 +138,7 @@ def test_unproved_policy_fails_closed(field, value):
     if node is None:
         node = ET.SubElement(rule, field)
     node.text = value
-    review = build_review(analyze(ET.tostring(tree, encoding="unicode")), {}, "source")
+    review = build_review(analyze(ET.tostring(tree, encoding="unicode")), TARGET_OPTIONS, "source")
     state = dispositions(review["plan"])
     first_policy = next(row for row in review["plan"].items if row.family == "policy")
     assert state[first_policy.key] == "BLOCK"
@@ -161,18 +164,18 @@ def test_default_drop_and_active_nat_blocking():
 
 def test_strict_dependency_approval_expiry_and_context_binding():
     analysis = analyze()
-    review = build_review(analysis, {}, "source")
+    review = build_review(analysis, TARGET_OPTIONS, "source")
     policy = next(row for row in review["plan"].items if row.family == "policy")
     with pytest.raises(ValueError, match="dependency"):
         approve_design(review, review["draft"], [policy.key])
     approval = approve_design(review, review["draft"], ready(review))
     for expires in [0, float("nan"), float("inf")]:
         with pytest.raises(ValueError):
-            build_artifact(analysis, {}, "source", {**approval, "expires_at": expires})
-    for source, options in [("changed", {}), ("source", {"policy_name": "another"})]:
+            build_artifact(analysis, TARGET_OPTIONS, "source", {**approval, "expires_at": expires})
+    for source, options in [("changed", TARGET_OPTIONS), ("source", {**TARGET_OPTIONS, "policy_name": "another"})]:
         with pytest.raises(ValueError):
             build_artifact(analysis, options, source, approval)
-    built = build_artifact(analysis, {}, "source", approval)
+    built = build_artifact(analysis, TARGET_OPTIONS, "source", approval)
     for expires in [0, float("nan"), float("inf")]:
         with pytest.raises(ValueError):
             verify_export_artifact({**built, "expires_at": expires})
@@ -198,6 +201,7 @@ def test_existing_fmc_snapshot_object_reuse():
     analysis = analyze()
     options = FTDMigrationOptions(
         target_mode="existing",
+        manager_target="fmc.lab.invalid",
         domain_name="Global",
         domain_id="e276abec-e0f2-11e3-8169-6d9ed49b625f",
     )
@@ -224,6 +228,8 @@ def test_cli_generates_fmc_review_bundle(tmp_path):
     from click.testing import CliRunner
     from fwmigrate.main import cli
     folder = tmp_path / "review"
+    mappings = tmp_path / "target.yaml"
+    mappings.write_text(json.dumps(TARGET_OPTIONS), encoding="utf-8")
     result = CliRunner().invoke(
         cli,
         [
@@ -233,6 +239,7 @@ def test_cli_generates_fmc_review_bundle(tmp_path):
             "--source-vendor", "palo_alto",
             "--target-vendor", "cisco_ftd",
             "--format", "json",
+            "--zone-map", str(mappings),
         ],
     )
     assert result.exit_code == 0, result.output

@@ -14,7 +14,8 @@ def payload():
             "vendor": "palo_alto",
             "source_text": (Path(__file__).parent / "fixtures/palo_alto/ftd_policy_explicit.xml").read_text(encoding="utf-8"),
         },
-        "options": {"target_mode": "new"},
+        "options": {"target_mode": "new", "manager_target": "fmc.lab.invalid",
+                    "domain_name": "Global", "domain_id": "e276abec-e0f2-11e3-8169-6d9ed49b625f"},
     }
 
 
@@ -80,7 +81,7 @@ def test_wrong_pair_source_and_import_cannot_grant_approval():
 def test_existing_target_ui_contract_reuse_and_stale_metadata():
     client = create_app({"TESTING": True, "WEB_MODE": "local"}).test_client()
     data = payload()
-    data["options"] = {"target_mode": "existing", "domain_name": "Global", "domain_id": "e276abec-e0f2-11e3-8169-6d9ed49b625f"}
+    data["options"] = {**data["options"], "target_mode": "existing"}
     unproven = client.post(BASE + "/design/prepare", json=data).get_json()
     assert not any(row["render_disposition"] in {"CREATE", "REUSE"} for row in unproven["report"]["items"])
 
@@ -96,3 +97,17 @@ def test_existing_target_ui_contract_reuse_and_stale_metadata():
     assert any(row["render_disposition"] == "REUSE" for row in review["report"]["items"])
     stale = {**data, "target_metadata": {**data["target_metadata"], "complete_families": ["objects"]}}
     assert client.post(BASE + "/build", json={**stale, "approval": approval}).status_code == 400
+
+
+def test_missing_fmc_target_identity_cannot_approve_or_generate_operations():
+    client = create_app({"TESTING": True, "WEB_MODE": "local"}).test_client()
+    data = payload()
+    data["options"] = {"target_mode": "new"}
+    response = client.post(BASE + "/design/prepare", json=data)
+    assert response.status_code == 200
+    review = response.get_json()
+    assert review["options"]["manager_target"] == review["options"]["domain_id"] == ""
+    assert review["report"]["fmc_operation_count"] == 0
+    assert not any(row["render_disposition"] in {"CREATE", "REUSE"} for row in review["report"]["items"])
+    key = review["report"]["items"][0]["key"]
+    assert client.post(BASE + "/design/approve", json={**data, "draft": review["draft"], "selected_items": [key]}).status_code == 400

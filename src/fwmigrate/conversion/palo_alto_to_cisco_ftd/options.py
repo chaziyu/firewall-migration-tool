@@ -1,6 +1,10 @@
 """Explicit Cisco FMC management and target choices."""
 
 from dataclasses import dataclass
+from ipaddress import ip_address
+import re
+from urllib.parse import urlsplit
+from uuid import UUID
 
 
 def _text(value: str | None, label: str) -> str | None:
@@ -31,6 +35,31 @@ class FTDMigrationOptions:
             "fmc_api_version", "policy_name", "target_device_id", "target_device_name",
         ):
             object.__setattr__(self, field, _text(getattr(self, field), field))
+        if self.domain_id is not None:
+            try:
+                parsed_id = UUID(self.domain_id)
+            except ValueError as exc:
+                raise ValueError("domain_id must be an explicit FMC domain UUID") from exc
+            object.__setattr__(self, "domain_id", str(parsed_id))
+        if self.manager_target is not None:
+            try:
+                parsed = urlsplit("https://" + self.manager_target)
+                host = parsed.hostname
+                port = parsed.port
+                if (not host or parsed.username is not None or parsed.password is not None
+                        or parsed.path or parsed.query or parsed.fragment
+                        or (port is not None and port == 0)):
+                    raise ValueError
+                try:
+                    ip_address(host)
+                except ValueError:
+                    if not re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?", host):
+                        raise ValueError from None
+                    if any(not label or len(label) > 63 or label.startswith("-") or label.endswith("-")
+                           for label in host.split(".")) or len(host) > 253:
+                        raise ValueError from None
+            except ValueError as exc:
+                raise ValueError("manager_target must be an FMC hostname or IP with an optional port") from exc
 
     def to_dict(self) -> dict[str, object]:
         return {

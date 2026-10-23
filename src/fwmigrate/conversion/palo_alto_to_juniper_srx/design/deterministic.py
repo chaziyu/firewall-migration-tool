@@ -11,8 +11,8 @@ from ..rendering.renderer import JunosSetRenderer
 
 
 PAIR = {"pair_id": "palo_alto_to_juniper_srx", "source_vendor": "palo_alto", "target_vendor": "juniper_srx"}
-DRAFT_TYPE = "palo_alto_to_juniper_srx_design_v1"
-APPROVAL_TYPE = "palo_alto_to_juniper_srx_approval_v1"
+DRAFT_TYPE = "palo_alto_to_juniper_srx_design_v2"
+APPROVAL_TYPE = "palo_alto_to_juniper_srx_approval_v2"
 
 
 def _digest(value):
