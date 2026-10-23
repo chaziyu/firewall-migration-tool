@@ -34,7 +34,7 @@ class PaloAltoToJuniperSRXPlanner:
         zones, zone_names = plan_zones(source, selected, options, interfaces, by_source)
         routes = plan_routes(source, selected, by_source, options)
         nat_items, nat_blocked = plan_nat(source, selected)
-        policies = plan_policies(source, selected, options, objects, zone_names, nat_blocked)
+        policies = plan_policies(source, derived, selected, options, objects, zones, zone_names, nat_blocked)
         findings = []
         if len(scopes) > 1:
             findings.append("Other VSYS scopes remain outside this migration plan.")

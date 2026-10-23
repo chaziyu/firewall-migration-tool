@@ -12,9 +12,6 @@ def propose_new_target(source, options):
         options,
         source_scope=scope,
         fmc_api_version=options.fmc_api_version or "7.7.0",
-        domain_name=options.domain_name or "Global",
-        domain_id=options.domain_id or "e276abec-e0f2-11e3-8169-6d9ed49b625f",
-        manager_target=options.manager_target or "fmc.example.com",
     )
     if proposed.target_mode == "new":
         default_policy_name = f"PAN_Migrated_{scope.replace(':', '_')}" if scope else "PAN_Migrated_ACP"

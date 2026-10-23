@@ -107,7 +107,9 @@ def plan_access_rules(source, derived, selected, options, domain_id, objects, tr
 
             # Services & Ports
             src_ports = None
-            if rule.service == ["any"] or rule.service == ["application-default"]:
+            if "application-default" in (rule.service or ()):
+                raise ValueError("PAN_APPLICATION_DEFAULT_ENFORCEMENT_UNPROVEN")
+            if rule.service == ["any"]:
                 dst_ports, service_deps = None, []
             else:
                 matched_services = []

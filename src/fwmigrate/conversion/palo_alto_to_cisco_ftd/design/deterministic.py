@@ -12,9 +12,9 @@ from ..rendering.fmc import FMCRequestRenderer
 
 
 PAIR = {"pair_id": "palo_alto_to_cisco_ftd", "source_vendor": "palo_alto", "target_vendor": "cisco_ftd"}
-DRAFT_TYPE = "palo_alto_to_cisco_ftd_draft_v1"
-APPROVAL_TYPE = "palo_alto_to_cisco_ftd_approval_v1"
-ARTIFACT_TYPE = "palo_alto_to_cisco_ftd_artifact_v1"
+DRAFT_TYPE = "palo_alto_to_cisco_ftd_draft_v2"
+APPROVAL_TYPE = "palo_alto_to_cisco_ftd_approval_v2"
+ARTIFACT_TYPE = "palo_alto_to_cisco_ftd_artifact_v2"
 APPROVAL_TTL = 1200
 
 

@@ -26,7 +26,7 @@ const review = {
 
 const tick = () => new Promise((resolve) => setImmediate(resolve))
 
-function harness(overrides = {}, savedOptions = options) {
+function harness(overrides = {}, savedOptions = options, restoreWorkspace = true) {
   const slots = []
   let cursor = 0
   let effects = []
@@ -100,7 +100,7 @@ function harness(overrides = {}, savedOptions = options) {
   const Component = load('../src/features/migration/paloAltoToCiscoFtd/MigrationWorkflow.tsx', {
     '../../../components/common/Button': { Button: 'Button' },
     '../../../components/common/ErrorBanner': { ErrorBanner: 'ErrorBanner' },
-    '../../../storage/workspaceStore': { workspace: () => ({ panosMigration: saved }), saveWorkspace: async () => {} },
+    '../../../storage/workspaceStore': { workspace: () => restoreWorkspace ? ({ panosMigration: saved }) : {}, saveWorkspace: async () => {} },
     '../components/OfflineMigrationReview': { OfflineMigrationReview: 'Review' },
     '../components/OfflineMigrationExport': { OfflineMigrationExport: 'Export' },
     '../components/DestinationSnapshot': { DestinationSnapshot: 'Snapshot' },
@@ -149,6 +149,18 @@ test('PAN Cisco FTD export presents file list and downloads exact bytes', async 
     await tick()
     assert.equal(h.downloads[0][1], 'cisco_fmc_operations.json')
     assert.equal(await h.downloads[0][0].text(), 'exact\n')
+  } finally {
+    h.close()
+  }
+})
+
+test('PAN Cisco FTD fresh setup requires explicit FMC identity', async () => {
+  const h = harness({}, options, false)
+  try {
+    h.props.stage = 'place'
+    const nodes = await h.render()
+    const inputs = nodes.filter((node) => node.type === 'input')
+    assert.deepEqual(inputs.map((node) => node.props.value), ['', '', '', '', '7.7.0'])
   } finally {
     h.close()
   }

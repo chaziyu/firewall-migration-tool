@@ -18,6 +18,7 @@ FIXTURE_XML = (Path(__file__).parent / "fixtures/palo_alto/all_targets_explicit.
 def _payload(pair_id: str):
     base_options = {"target_mode": "new"}
     if pair_id == "palo_alto_to_cisco_ftd":
+        base_options["manager_target"] = "fmc.lab.invalid"
         base_options["domain_id"] = "e276abec-e0f2-11e3-8169-6d9ed49b625f"
         base_options["policy_name"] = "PAN_ACP_test"
     elif pair_id == "palo_alto_to_checkpoint":

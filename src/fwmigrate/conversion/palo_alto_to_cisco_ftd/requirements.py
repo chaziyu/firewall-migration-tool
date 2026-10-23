@@ -42,7 +42,7 @@ def build_mapping_requirements(source, options):
             source_kind="domain_name",
             source_name=options.domain_name or "",
             target_field="domain_name",
-            label="Target FMC Domain Name",
+            label="Target FMC Domain Name (optional)",
             value=options.domain_name,
         ),
         FTDMigrationDecision(

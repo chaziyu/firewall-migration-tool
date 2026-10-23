@@ -120,7 +120,9 @@ class FMCRequestRenderer:
             })
 
         options = plan.options
-        curl_text = render_fmc_curl_commands(operations) if options.get("target_mode") == "new" else None
+        curl_text = (render_fmc_curl_commands(operations, manager_target=options.get("manager_target"),
+                                             domain_id=options.get("domain_id"))
+                     if options.get("target_mode") == "new" else None)
 
         operations_spec = {
             "format": "cisco_fmc_rest_api_request_spec_v1",
@@ -145,12 +147,16 @@ class FMCRequestRenderer:
             "",
             "1. FMC Management Authentication & Target Domain:",
             "   - Ensure access to Cisco Secure Firewall Management Center 7.7.",
-            f"   - Target Domain: {options.get('domain_name', 'Global')} (UUID: {options.get('domain_id', 'e276abec-e0f2-11e3-8169-6d9ed49b625f')}).",
+            f"   - Approved FMC host: {options.get('manager_target') or '(required)'}. Recheck its identity before applying.",
+            f"   - Target Domain: {options.get('domain_name') or '(optional name)'} (UUID: {options.get('domain_id') or '(required)'}).",
             "   - Generate an FMC REST API authentication token via POST /api/fmc_platform/v1/auth/generatetoken.",
             "",
             "2. Execute FMC Object & Policy Operations:",
             "   - Follow the sequence defined in cisco_fmc_operations.json.",
-            "   - Or execute cisco_fmc_curl.sh <fmc-host> <auth-token> in an authorized environment.",
+            "   - Or run bash cisco_fmc_curl.sh [TOKEN_FILE] with Python 3.11+ in an authorized environment.",
+            "   - Without TOKEN_FILE, the script prompts privately. Never pass the token itself as an argument.",
+            "   - The script is bound to the approved host/domain; TLS verification is enabled and redirects are rejected.",
+            "   - Requests stop on HTTP, response or binding errors. No automatic retries: reconcile partial changes first.",
             "   - Each operation captures returned IDs for dependent access control rules.",
             "",
             "3. Security Zone to Device Interface Assignment (Required):",
