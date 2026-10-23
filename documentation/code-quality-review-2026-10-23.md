@@ -117,3 +117,22 @@ feature-driven module extraction as described above. No incomplete
 implementation from the prioritized plan is left in this checkout. The
 separate scheduled FortiGate migration checkpoint continues to record its
 manual engineer decisions and migration limitations.
+
+## Source inventory header refinement
+
+The user identified the always-visible extraction paragraph as unnecessary
+header clutter. Moved the FortiGate and PAN-OS coverage counts into the
+Extraction tab, removed the repeated navigation/DNS-NTP boilerplate, and moved
+the FortiGate FULL command-expansion explanation into the collapsed Excel
+profile help. Source records, extraction tables, validation and export behavior
+are preserved. Updated the existing PAN-OS overview assertion to reflect the
+requested presentation; no new test suite or dependency was introduced.
+
+Validation: all **255 frontend tests**, ESLint and TypeScript/Vite build pass.
+Real built-frontend/Flask browser checks with synthetic FortiGate and PAN-OS
+fixtures confirm counts appear only in Extraction, source inventory rows remain
+accessible, Excel help is collapsed by default, and 390px mobile layouts have
+no horizontal overflow. No JavaScript errors occurred. React checklist review:
+no hooks, state, data-fetching, source-model or dependency changes; existing tab
+semantics and accessible Excel help association remain intact. The pre-existing
+large-chunk build warning remains. No customer configuration was used or saved.

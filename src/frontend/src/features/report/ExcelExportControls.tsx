@@ -11,7 +11,7 @@ export function ExcelExportControls({ vendor, profile, onProfileChange, exportin
   const descriptionId = useId()
   const evidence = vendor === 'palo_alto'
     ? 'FAST omits PAN-OS Source Inventory, Extraction Coverage, and PAN-OS Source Appendix, and skips empty sheets.'
-    : vendor === 'fortigate' ? 'FAST omits FortiGate Source Inventory and Extraction Coverage.'
+    : vendor === 'fortigate' ? 'FAST omits FortiGate Source Inventory and Extraction Coverage. FULL expands commands into inventory detail rows.'
       : vendor === 'cisco_asa' || vendor === 'juniper_srx' ? 'FAST omits Source Inventory and Extraction Coverage.'
         : vendor === 'cisco_ftd' || vendor === 'checkpoint' ? 'FAST and FULL retain source evidence worksheets.'
           : 'Evidence coverage depends on the source vendor. Check Export Limitations in the workbook summary.'
