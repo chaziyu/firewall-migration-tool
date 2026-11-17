@@ -20,8 +20,8 @@ def test_simple_commands_use_split_without_changing_tokens(monkeypatch):
     def fail_if_called(*args, **kwargs):
         raise AssertionError("shlex should not run for simple commands")
 
-    monkeypatch.setattr("fwmigrate.vendors.fortigate.tokenizer.shlex.shlex", fail_if_called)
-    monkeypatch.setattr("fwmigrate.vendors.fortigate.tokenizer.FortiGateTokenizer._scan_lexical_state", fail_if_called)
+    monkeypatch.setattr(shlex, "shlex", fail_if_called)
+    monkeypatch.setattr(FortiGateTokenizer, "_scan_lexical_state", fail_if_called)
 
     tokens = list(FortiGateTokenizer("set hostname edge01\n").tokenize())
 
@@ -96,7 +96,7 @@ def _shlex_parts(command):
 def test_ordinary_double_quotes_skip_shlex(monkeypatch):
     def fail_if_called(*args, **kwargs):
         raise AssertionError("ordinary double quotes should not need shlex")
-    monkeypatch.setattr("fwmigrate.vendors.fortigate.tokenizer.shlex.shlex", fail_if_called)
+    monkeypatch.setattr(shlex, "shlex", fail_if_called)
     assert FortiGateTokenizer._split_command('set member "" "a b" "中文" #literal') == ['set', 'member', '', 'a b', '中文', '#literal']
 
 
@@ -106,7 +106,7 @@ def test_complete_quoted_lines_skip_scanning_and_keep_tokens(monkeypatch, newlin
         raise AssertionError("complete simple quoted lines should not need scanning or shlex")
 
     monkeypatch.setattr(FortiGateTokenizer, '_scan_lexical_state', fail_if_called)
-    monkeypatch.setattr('fwmigrate.vendors.fortigate.tokenizer.shlex.shlex', fail_if_called)
+    monkeypatch.setattr(shlex, "shlex", fail_if_called)
     tokens = list(FortiGateTokenizer('set member "" "a b" "中文" #literal' + newline).tokenize())
     assert [(token.type, token.value, token.line_number) for token in tokens] == [
         (TokenType.SET, 'set', 1),

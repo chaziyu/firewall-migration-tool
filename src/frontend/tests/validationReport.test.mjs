@@ -97,12 +97,12 @@ test('warning group selection settles and retains the matching findings', () => 
     } while (pending)
     return tree
   }
-  function table(tree) { return tree.props.children[4].props.children[0].props.children[0] }
+  function table(tree) { return tree.props.children[4].props.children[0] }
   let tree = render()
   for (const group of presentation.findingGroups(rows)) {
     tree.props.children[2].props.onGroupChange(group.key)
     tree = render()
-    assert.equal(table(tree).props.rows.length, Math.min(group.count, 200))
+    assert.equal(table(tree).props.rows.length, group.count)
     assert.ok(table(tree).props.rows.every((row) => presentation.findingGroupKey(row) === group.key))
   }
   tree.props.children[2].props.onGroupChange('')

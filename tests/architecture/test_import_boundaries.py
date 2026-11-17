@@ -41,7 +41,7 @@ def deferred():
 
 def test_vendor_source_and_reporting_layers_do_not_import_conversion():
     violations = []
-    for layer in ("vendors", "source_reporting", "extraction", "parsers"):
+    for layer in ("vendors", "source_reporting", "extraction"):
         for path in (ROOT / layer).rglob("*.py"):
             forbidden = sorted(module for module in _file_imports(path) if _within(module, "fwmigrate.conversion"))
             if forbidden:

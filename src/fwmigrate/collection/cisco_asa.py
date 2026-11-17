@@ -7,12 +7,16 @@ from fwmigrate.extraction.sanitize import sanitize_raw_text
 from .contracts import CollectedSource, CollectionError, CollectionPart, CollectionStatus, SSH_FIELDS, validate_connection
 
 
-def _connect(options):
+def _default_connection_factory(**kwargs):
     try:
         from netmiko import ConnectHandler
     except ImportError as exc:
         raise CollectionError("Live collection requires the collection extra (netmiko).") from exc
-    return ConnectHandler(
+    return ConnectHandler(**kwargs)
+
+
+def _connect(options, connection_factory=_default_connection_factory):
+    return connection_factory(
         device_type="cisco_asa", host=options["host"], port=options["port"],
         username=options["username"], password=options["password"],
         conn_timeout=15, auth_timeout=15, banner_timeout=15,
@@ -32,18 +36,21 @@ class CiscoASACollector:
     method = "ssh"
     fields = SSH_FIELDS
 
+    def __init__(self, connection_factory=None):
+        self._connection_factory = _default_connection_factory if connection_factory is None else connection_factory
+
     def validate_options(self, connection):
         return validate_connection(connection, port=22)
 
     def test_connection(self, options):
-        connection = _connect(options)
+        connection = _connect(options, self._connection_factory)
         try:
             pass
         finally:
             connection.disconnect()
 
     def collect(self, options) -> CollectedSource:
-        connection = _connect(options)
+        connection = _connect(options, self._connection_factory)
         parts = []
         warnings = []
         sections = []

@@ -12,28 +12,28 @@ from fwmigrate.vendors.fortigate.source_report import FortiGateSourceReporter
 FIXTURES = Path(__file__).parents[2] / "fixtures" / "fortigate"
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def explicit_analysis():
     return FortiGateSourceReporter().analyze_source(
         (FIXTURES / "multi_vendor_explicit.conf").read_text(encoding="utf-8")
     )
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def policy_analysis():
     source = (FIXTURES / "multi_vendor_explicit.conf").read_text(encoding="utf-8")
     source = source.replace('set interface "lan" "app-vlan"', 'set interface "lan"', 1)
     return FortiGateSourceReporter().analyze_source(source)
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def blocker_analysis():
     return FortiGateSourceReporter().analyze_source(
         (FIXTURES / "multi_vendor_blockers.conf").read_text(encoding="utf-8")
     )
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def complete_options():
     return SRXMigrationOptions(
         source_vdom="root",

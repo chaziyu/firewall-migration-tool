@@ -17,10 +17,8 @@ from fwmigrate.collection.snapshot import MAX_BYTES
 from fwmigrate.conversion import migration_planners
 from fwmigrate.conversion.builtin import register_builtin_migration_planners, register_builtin_migration_workflows
 from fwmigrate.conversion.fortigate_to_palo_alto.application import classify_target_object_reuse
-from fwmigrate.deployment import PANSSHDeployer
 from fwmigrate.source_reporting import source_reporters as source_reporters
 from fwmigrate.source_reporting.builtin import register_builtin_source_reporters
-from fwmigrate.web_api.deployment import DeploymentCoordinator, register_deployment_routes
 from fwmigrate.web_api.migration import register_migration_routes
 from fwmigrate.web_api.migration_pairs import register_migration_pair_routes
 from fwmigrate.web_api.fortigate_to_juniper_srx import register_fortigate_to_juniper_srx_routes
@@ -34,6 +32,7 @@ from fwmigrate.web_api.palo_alto_to_cisco_ftd import register_palo_alto_to_cisco
 from fwmigrate.web_api.source import register_source_routes
 from fwmigrate.web_support.frontend import register_frontend_routes
 
+register_builtin_collectors()
 register_builtin_source_reporters()
 register_builtin_migration_planners()
 register_builtin_migration_workflows()
@@ -55,7 +54,6 @@ class _MemoryOnlyUploadRequest(FlaskRequest):
 
 
 def create_app(test_config=None):
-    register_builtin_collectors()
     base_dir = os.path.dirname(os.path.abspath(__file__))
     frontend_dist = os.path.join(os.path.dirname(base_dir), 'frontend', 'dist')
 
@@ -156,7 +154,6 @@ def create_app(test_config=None):
     else:
         signing_key = os.urandom(32)
         _LOGGER.warning('Temporary workspace signing key: signed artifacts expire on server restart')
-    deployment_coordinator = DeploymentCoordinator()
 
     @app.errorhandler(ValueError)
     def _invalid_request(error):
@@ -174,7 +171,7 @@ def create_app(test_config=None):
         return jsonify({'success': False, 'error': 'Request processing failed', 'error_code': 'internal_error'}), 500
 
     register_frontend_routes(app)
-    register_source_routes(app)
+    register_source_routes(app, collector_registry=app.config.get('SOURCE_COLLECTOR_REGISTRY'))
     register_migration_pair_routes(app)
     register_fortigate_to_juniper_srx_routes(app, signing_key)
     register_fortigate_to_cisco_asa_routes(app, signing_key)
@@ -190,12 +187,6 @@ def create_app(test_config=None):
         migration_planner_registry=migration_planners,
         object_reuse_classifier=classify_target_object_reuse,
         uuid_factory=uuid.uuid4,
-    )
-    register_deployment_routes(
-        app,
-        signing_key,
-        deployment_coordinator,
-        deployer_factory=lambda options: PANSSHDeployer(options),
     )
 
     return app

@@ -10,7 +10,6 @@ const pages: Record<WorkflowView, { title: string; description: string }> = {
   report: { title: 'Configuration Report', description: 'Review reported source state, validation findings, and inventory.' },
   collect: { title: 'Live Collection', description: 'Collect configuration directly from a supported device.' },
   migration: { title: 'Plan migration', description: 'Review the proposed conversion, resolve remaining choices, and generate supported target commands.' },
-  live: { title: 'Live migration', description: 'Prepare and validate a PAN-OS candidate, then commit it explicitly.' },
 }
 
 export default function App() {

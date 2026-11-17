@@ -15,23 +15,32 @@ from .contracts import (
 )
 
 
+def _default_connection_factory(**kwargs):
+    try:
+        from netmiko import ConnectHandler
+    except ImportError as exc:
+        raise CollectionError("Live collection requires the collection extra (netmiko).") from exc
+    return ConnectHandler(**kwargs)
+
+
 class JuniperSRXCollector:
     vendor_id = "juniper_srx"
     method = "ssh"
     fields = SSH_FIELDS
 
+    def __init__(self, connection_factory=None):
+        self._connection_factory = _default_connection_factory if connection_factory is None else connection_factory
+
     def validate_options(self, connection):
         return validate_connection(connection, port=22)
 
     def _connect(self, options):
-        try:
-            from netmiko import ConnectHandler
-        except ImportError as exc:
-            raise CollectionError("Live collection requires the collection extra (netmiko).") from exc
-        return ConnectHandler(device_type="juniper_junos", host=options["host"], port=options["port"],
-                              username=options["username"], password=options["password"],
-                              conn_timeout=15, auth_timeout=15, banner_timeout=15,
-                              ssh_strict=True, system_host_keys=True)
+        return self._connection_factory(
+            device_type="juniper_junos", host=options["host"], port=options["port"],
+            username=options["username"], password=options["password"],
+            conn_timeout=15, auth_timeout=15, banner_timeout=15,
+            ssh_strict=True, system_host_keys=True,
+        )
 
     def test_connection(self, options):
         connection = self._connect(options)

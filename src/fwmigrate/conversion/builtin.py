@@ -81,7 +81,7 @@ _BUILTIN_WORKFLOWS = (
         supported_formats=("set",),
         export_available=True,
         destination_aware_available=True,
-        deployment_available=True,
+        deployment_available=False,
     ),
     MigrationWorkflowRegistration(
         pair_id="palo_alto_to_fortigate",

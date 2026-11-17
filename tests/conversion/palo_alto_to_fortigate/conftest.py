@@ -10,13 +10,13 @@ from fwmigrate.vendors.palo_alto.source_model import pan_scope_identity
 SOURCE = (Path(__file__).parents[2] / 'fixtures' / 'palo_alto' / 'fortigate_conversion.xml').read_text(encoding='utf-8')
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def analyze():
     register_builtin_source_reporters()
     return source_reporters.get("palo_alto").analyze_source
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def analysis(analyze):
     return analyze(SOURCE)
 

@@ -35,7 +35,10 @@ from fwmigrate.web_support.reporting import (
 _LOGGER = logging.getLogger(__name__)
 
 
-def register_source_routes(app) -> None:
+def register_source_routes(app, collector_registry=None) -> None:
+    def collectors():
+        return collector_registry or app.config.get('SOURCE_COLLECTOR_REGISTRY') or source_collectors
+
     @app.errorhandler(RequestEntityTooLarge)
     def oversized_request(_error):
         return jsonify({'success': False, 'error': 'Source or snapshot exceeds the upload size limit.'}), 413
@@ -54,6 +57,8 @@ def register_source_routes(app) -> None:
     @app.route('/api/vendors', methods=['GET'])
     def list_vendors():
         """Return registered source-reporting vendors."""
+        active_collectors = collectors()
+        registered_collectors = {collector.vendor_id: collector for collector in active_collectors.list()}
         sources = [
             {
                 'vendor_id': reporter.vendor_id,
@@ -64,11 +69,11 @@ def register_source_routes(app) -> None:
                 'web_report': True,
                 'live_collection': (
                     live_collection_allowed()
-                    and reporter.vendor_id in {collector.vendor_id for collector in source_collectors.list()}
+                    and reporter.vendor_id in registered_collectors
                 ),
-                'collection': ({'method': source_collectors.get(reporter.vendor_id).method,
-                                'connection_fields': source_collectors.get(reporter.vendor_id).fields}
-                               if reporter.vendor_id in {collector.vendor_id for collector in source_collectors.list()} else None),
+                'collection': ({'method': registered_collectors[reporter.vendor_id].method,
+                                'connection_fields': registered_collectors[reporter.vendor_id].fields}
+                               if reporter.vendor_id in registered_collectors else None),
             }
             for reporter in source_reporters.list()
         ]
@@ -121,7 +126,7 @@ def register_source_routes(app) -> None:
         payload = request.get_json(silent=True) or {}
         if not isinstance(payload, dict):
             raise ValueError('Collection request must be a JSON object.')
-        collector = source_collectors.get(payload.get('vendor'))
+        collector = collectors().get(payload.get('vendor'))
         return collector, collector.validate_options(payload.get('connection'))
 
     @app.route('/api/collection/test', methods=['POST'])
