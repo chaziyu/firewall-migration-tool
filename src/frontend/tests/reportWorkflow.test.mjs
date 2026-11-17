@@ -13,7 +13,7 @@ function nodes(node) {
   return node && typeof node === 'object' ? [node, ...nodes(node.props?.children)] : []
 }
 
-test('topology rows load incrementally, reset on filters, and keep full inspector values', () => {
+test('topology rows render without load-more truncation, reset on filters, and keep full inspector values', () => {
   const slots = []
   let cursor = 0
   let pending = false
@@ -61,10 +61,8 @@ test('topology rows load incrementally, reset on filters, and keep full inspecto
   tree.find((node) => node.props.role === 'tab' && node.props.children === 'Interfaces').props.onClick()
   tree = render()
   const table = () => tree.find((node) => node.type?.name === 'SourceRowsTable')
-  assert.equal(table().props.rows.length, 200)
-  tree.find((node) => node.props.children === 'Load more rows').props.onClick()
-  tree = render()
-  assert.equal(table().props.rows.length, 400)
+  assert.equal(table().props.rows.length, 450)
+  assert.equal(tree.some((node) => node.props.children === 'Load more rows'), false)
   const first = table().props.rows[0]
   table().props.onSelect(first)
   tree = render()
@@ -77,7 +75,7 @@ test('topology rows load incrementally, reset on filters, and keep full inspecto
   assert.equal(tree.find((node) => node.type === 'ReportDetails').props.row.name, 'port-1')
   tree.find((node) => node.props['aria-label'] === 'Filter report scope').props.onChange({ target: { value: 'branch' } })
   tree = render()
-  assert.equal(table().props.rows.length, 200)
+  assert.equal(table().props.rows.length, 225)
   assert.ok(table().props.rows.every((row) => row.vdom === 'branch'))
   tree.find((node) => node.props.type === 'search').props.onChange({ target: { value: 'port-449' } })
   tree = render()
@@ -132,7 +130,7 @@ test('report table keeps a stable scroll viewport and row details', () => {
     const hooks = { useRef: () => ({ current: table }), useState: () => [undefined, () => {}], useEffect: (callback) => callback() }
     const modules = { react: hooks, 'react/jsx-runtime': jsxRuntime, './reportPresentation': presentation, './ReportDetails': {}, './ExcelExportControls': {}, '../../components/common/tabKeyboard': {}, '../../components/common/ErrorBanner': {} }
     new Function('require', 'exports', compiled)((name) => modules[name], exports)
-    const tree = exports.SourceRowsTable({ rows: [{ name: 'port1' }], columns: ['name'], loadMoreRef: { current: null }, onSelect(row) { selected = row } })
+    const tree = exports.SourceRowsTable({ rows: [{ name: 'port1' }], columns: ['name'], onSelect(row) { selected = row } })
     const rendered = nodes(tree)
     const tableWrap = rendered.find((node) => node.props.className === 'report-table-wrap')
     assert.equal(tableWrap.props.role, 'region')

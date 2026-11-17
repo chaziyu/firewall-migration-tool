@@ -8,6 +8,7 @@ import unittest
 
 from openpyxl import load_workbook
 from openpyxl.utils import get_column_letter
+import pytest
 
 from fwmigrate.vendors.fortigate.derived import build_derived_views
 from fwmigrate.vendors.fortigate.export import export_excel
@@ -325,12 +326,14 @@ end
             assert short["Policies"].column_dimensions[get_column_letter(column)].width == 32
 
     def test_fast_does_not_build_typed_source_inventory(self):
-        from unittest.mock import patch
+        import fwmigrate.vendors.fortigate.export.excel as fg_excel
 
-        with patch(
-            "fwmigrate.vendors.fortigate.export.excel.build_typed_source_inventory",
-            side_effect=AssertionError("FAST must not build typed source inventory"),
-        ):
+        with pytest.MonkeyPatch.context() as monkeypatch:
+            monkeypatch.setattr(
+                fg_excel,
+                "build_typed_source_inventory",
+                lambda *args, **kwargs: self.fail("FAST must not build typed source inventory"),
+            )
             self._workbook(profile=ExcelExportProfile.FAST)
 
     def test_export_profiles_do_not_mutate_analysis(self):
@@ -401,7 +404,7 @@ end
             self.assertNotIn(source_value, diagnostics)
 
     def test_fast_sheet_timing_starts_before_first_row_is_materialized(self):
-        from unittest.mock import patch
+        import fwmigrate.vendors.fortigate.export.excel as fg_excel
 
         extracted = extract_fortigate_config(parse_fortigate_config(_SAMPLE_CONFIG))
         derived = build_derived_views(extracted.config)
@@ -430,20 +433,10 @@ end
             return rows()
 
         metrics = ExcelExportMetrics()
-        with (
-            patch(
-                "fwmigrate.vendors.fortigate.export.excel.SHEET_ORDER",
-                ("Summary", "Addresses"),
-            ),
-            patch(
-                "fwmigrate.vendors.fortigate.export.excel.perf_counter",
-                side_effect=timed_counter,
-            ),
-            patch(
-                "fwmigrate.vendors.fortigate.export.excel._rows_for_sheet",
-                side_effect=rows_for_sheet,
-            ),
-        ):
+        with pytest.MonkeyPatch.context() as monkeypatch:
+            monkeypatch.setattr(fg_excel, "SHEET_ORDER", ("Summary", "Addresses"))
+            monkeypatch.setattr(fg_excel, "perf_counter", timed_counter)
+            monkeypatch.setattr(fg_excel, "_rows_for_sheet", rows_for_sheet)
             workbook = _build_fast_workbook(context, metrics=metrics)
 
         workbook.save(io.BytesIO())
@@ -765,13 +758,15 @@ end
         self.assertNotIn("raw-interface-secret", repr(context._interface_safe_source_cache))
 
     def test_overlay_safe_raw_does_not_sanitize_again(self):
-        from unittest.mock import patch
+        import fwmigrate.vendors.fortigate.export.excel_common as fg_excel_common
 
         row = {}
-        with patch(
-            "fwmigrate.vendors.fortigate.export.excel_common.sanitize_source_attributes",
-            side_effect=AssertionError("already-safe source was sanitized again"),
-        ):
+        with pytest.MonkeyPatch.context() as monkeypatch:
+            monkeypatch.setattr(
+                fg_excel_common,
+                "sanitize_source_attributes",
+                lambda *args, **kwargs: self.fail("already-safe source was sanitized again"),
+            )
             _overlay_safe_raw(row, {"description": "safe"}, ("Description",))
         self.assertEqual("safe", row["Description"])
 

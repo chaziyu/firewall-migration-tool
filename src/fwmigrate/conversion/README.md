@@ -5,7 +5,7 @@ This package contains directional migration planning. It is separate from source
 Implemented directional pairs:
 
 ```text
-FortiGate → Palo Alto PAN-OS
+FortiGate → Palo Alto PAN-OS (reviewed offline export)
 FortiGate → Juniper SRX (reviewed offline export)
 FortiGate → Cisco ASA (reviewed offline export)
 FortiGate → Check Point (Management API request specification and separate Gaia file)
@@ -16,11 +16,7 @@ Palo Alto PAN-OS → Check Point (reviewed offline Management API request specif
 Palo Alto PAN-OS → Cisco FTD (reviewed offline FMC REST API request specification)
 ```
 
-These are partial, directional implementations. Only FortiGate → PAN-OS supports
-reviewed live candidate operations, available only in local mode. The other
-eight pairs export offline artifacts. FMC-managed Cisco FTD targets the bounded
-FMC REST API 7.7.0 request schemas; it does not execute requests or deploy to a
-device. FDM and FTD CLI/device output remain separate products.
+These are partial, directional implementations producing **offline reviewed exports** (`deployment_available=False` across all pairs). FMC-managed Cisco FTD targets the bounded FMC REST API 7.7.0 request schemas; it does not execute requests or deploy to a device. FDM and FTD CLI/device output remain separate products.
 
 Use the [migration support matrix](../../../documentation/migration-support-matrix.md)
 for current versions, feature subsets, destination-comparison limits and manual
@@ -64,13 +60,13 @@ The reverse pair has its own `FGMigrationPlan`, options, target evidence,
 deterministic approval, application facade, and FortiOS renderer under
 `palo_alto_to_fortigate/`. It consumes the existing native PAN-OS analysis directly.
 It does not call the forward converter or construct a target source-model object.
-Its signed `fg_migration_artifact_v1` envelopes are rejected by PAN-OS deployment.
-See [coverage and usage](../../../documentation/guides/PAN-OS-to-FortiGate-migration.md).
+It has no live FortiGate deployment path.
+See [coverage and usage](../../../documentation/migration-support-matrix.md#palo-alto-pan-os-to-fortigate).
 
 The Check Point pair is owned by `fortigate_to_checkpoint/`. It emits only
 version-pinned Management API request templates and a separate reviewed Gaia
 static-route file. UID dependencies are response bindings. Optional existing
 Management snapshots support exact object reuse by UID and cleanup-only Drop
 rulebase insertion. Management evidence does not verify Gaia routes. It has no
-live Management API client or PAN-OS deployment path.
-See [Check Point coverage and usage](../../../documentation/guides/fortigate-to-checkpoint-migration.md).
+live Management API client.
+See [Check Point coverage and usage](../../../documentation/migration-support-matrix.md#fortigate-to-check-point).

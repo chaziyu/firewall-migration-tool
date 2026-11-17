@@ -57,17 +57,17 @@ end
 '''
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def asa_source():
     return FortiGateSourceReporter().analyze_source(SOURCE)
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def asa_source_text():
     return SOURCE
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def asa_options():
     return ASAMigrationOptions(
         source_vdom="root", target_context="single", target_version="9.20", target_mode="routed",

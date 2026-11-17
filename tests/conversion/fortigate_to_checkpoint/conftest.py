@@ -87,17 +87,17 @@ end
 '''
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def checkpoint_source_text():
     return SOURCE
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def checkpoint_analysis(checkpoint_source_text):
     return FortiGateSourceReporter().analyze_source(checkpoint_source_text)
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def checkpoint_options():
     return CPMigrationOptions(
         source_vdom="root",

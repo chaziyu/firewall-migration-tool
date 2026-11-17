@@ -102,7 +102,7 @@ def test_every_report_stage_leaves_authoritative_source_and_derived_state_read_o
 
 def test_public_reporter_preview_and_export_leave_source_and_derived_state_unchanged():
     reporter = CiscoASASourceReporter()
-    fixture = Path(__file__).parent / "fixtures" / "architecture_regression.cfg"
+    fixture = Path(__file__).parents[2] / "fixtures" / "cisco_asa" / "architecture_regression.cfg"
     analysis = reporter.analyze_source(fixture.read_text(encoding="utf-8"))
     assert {context.name for context in analysis.config.contexts} == {"customer-a", "customer-b"}
     source = snapshot_source(analysis.config)

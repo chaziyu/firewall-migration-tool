@@ -1,6 +1,6 @@
-# Resolved Python 3.12 constraints for production and deployment paths.
+# Resolved Python 3.12 constraints for hosted and production builds.
 #
-# Source dependency ranges remain in pyproject.toml. Release and deployment
+# Source dependency ranges remain in pyproject.toml. Release
 # builds install through this file to use reviewed, reproducible versions
 # instead of the lowest version admitted by a range.
 #
@@ -9,7 +9,7 @@
 #
 # Example refresh:
 #   python -m pip install --upgrade pip
-#   python -m pip install -e ".[collection,deployment]"
+#   python -m pip install -e ".[collection]"
 #   python -m pip freeze --exclude-editable
 
 annotated-types==0.8.0

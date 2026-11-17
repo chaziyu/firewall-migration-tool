@@ -1,173 +1,323 @@
-# Migration support matrix
+# Migration Support Matrix
 
-Updated 2026-10-23. These are partial, directional migration workflows. A successful export is not a complete replacement firewall configuration.
+Authoritative capability, scope, destination-comparison, and usage reference for all nine directional migration workflows.
 
-## Version and execution boundaries
+> **Important**: All workflows produce **partial, directional offline exports** (`deployment_available=False` across all pairs). A successful export is not a complete replacement firewall configuration and does not perform live device push, commit, publish, or policy installation.
 
-| Direction | Target syntax baseline | Destination comparison | Execution |
-| --- | --- | --- | --- |
-| FortiGate to PAN-OS | PAN-OS 11.1 | Native XML | Reviewed candidate push, separate validation and explicit commit |
-| PAN-OS to FortiGate | FortiOS 7.4.6 | Native FortiGate configuration | Offline CLI export |
-| PAN-OS to Juniper SRX | Junos 25.2R1, standalone | Optional complete native Junos snapshot | Offline set export |
-| PAN-OS to Cisco ASA | ASA 9.20, routed single context | Optional exact object comparison; existing-target traffic stays blocked | Bounded offline CLI export; reviewed ZIP download verified |
-| FortiGate to Cisco ASA | ASA 9.20, routed context | Native ASA configuration and explicit completeness metadata | Offline CLI export |
-| FortiGate to Juniper SRX | Junos 25.2R1, standalone | Native Junos configuration and explicit completeness metadata | Offline set export |
-| FortiGate to Check Point | Management API 1.8.1; separate Gaia output | New package needs no snapshot. Existing-target comparison uses native Management JSON and completeness metadata | Offline API requests, new-package mgmt_cli commands and Clish export |
-| PAN-OS to Check Point | Management API 1.8.1; separate Gaia output | Optional native Management snapshot for exact object reuse; existing-policy insertion and Gaia stay blocked | Offline API requests, response UID bindings, fresh-package mgmt_cli commands |
-| PAN-OS to Cisco FTD | FMC REST API 7.7.0 (FMC-managed FTD) | Optional native FMC REST export bundle for exact object and security zone reuse; existing-policy insertion stays blocked | Offline API requests, response ID bindings, target-bound application script and instructions |
+---
 
-The browser accepts optional destination snapshots for every listed pair. Snapshots are sanitized by the native backend reporter. Completeness is an explicit operator declaration, checked against available collection evidence. A missing table does not prove absence. Snapshot comparison does not establish live device acceptance, licensing, hardware fit, or current candidate state.
+## Supported Migration Pairs
 
-Destination text, selected scope, version, mode, completeness declarations, mappings, operations and dependencies are bound to the design. Changes require a new review and approval. Proposal imports do not restore approval. Unsupported directions fail closed.
+| Source Vendor | Target Vendor | Pair ID | Target Baseline | Format | Primary Emitted Files | Destination Comparison |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **FortiGate** | **Palo Alto PAN-OS** | `fortigate_to_palo_alto` | PAN-OS 11.1 | `.set` | `palo_alto_config.set`, `migration_report.json` | Optional native PAN-OS XML (`CREATE` / `CONFIGURE` / `REUSE` / `BLOCK`) |
+| **PAN-OS** | **FortiGate** | `palo_alto_to_fortigate` | FortiOS 7.4.6 (NAT / profile-based NGFW) | `.conf` (`cli`) | `fortigate_config.conf`, `migration_report.json` | Optional native FortiGate config (`REUSE`, `CREATE`, unreferenced-port `CONFIGURE`) |
+| **PAN-OS** | **Juniper SRX** | `palo_alto_to_juniper_srx` | Junos 25.2R1 standalone (root) | `.set` | `juniper_config.set`, `migration_report.json` | Optional family-complete Junos snapshot for exact reuse |
+| **PAN-OS** | **Cisco ASA** | `palo_alto_to_cisco_asa` | ASA 9.20 routed single-context | `.cfg` | `asa_config.cfg`, `migration_report.json` | Optional native ASA snapshot for exact object reuse; traffic stays blocked |
+| **PAN-OS** | **Check Point** | `palo_alto_to_checkpoint` | R81 Management API 1.8.1 + Gaia | `.json` + `.sh` + `.clish` | `checkpoint_management_operations.json`, `checkpoint_bindings.json`, `checkpoint_management.sh`, `gaia_config.clish`, `migration_decisions.json`, `migration_report.json` | Optional native Management JSON for address/group UID reuse; existing policy & Gaia blocked |
+| **PAN-OS** | **Cisco FTD** | `palo_alto_to_cisco_ftd` | FMC REST API 7.7.0 (FMC-managed) | `.json` + `.sh` + `.txt` | `cisco_fmc_operations.json`, `cisco_fmc_bindings.json`, `cisco_fmc_curl.sh`, `ftd_application_instructions.txt`, `migration_decisions.json`, `migration_report.json` | Optional FMC REST export bundle (`domain_id` match) for exact object/zone reuse; existing policy blocked |
+| **FortiGate** | **Cisco ASA** | `fortigate_to_cisco_asa` | ASA 9.20 routed single-context | `.cfg` | `asa_config.cfg`, `migration_report.json`, `migration_decisions.json`, `target_mapping.yaml`, `source_inventory.xlsx` | Optional native ASA snapshot for object/interface reuse; existing NAT blocks traffic |
+| **FortiGate** | **Juniper SRX** | `fortigate_to_juniper_srx` | Junos 25.2R1 standalone | `.set` | `juniper_config.set`, `migration_report.json`, `migration_decisions.json`, `target_mapping.yaml` | Optional Junos snapshot for exact reuse & empty-policy verification |
+| **FortiGate** | **Check Point** | `fortigate_to_checkpoint` | R81 Management API 1.8.1 + Gaia | `.json` + `.sh` + `.clish` | `checkpoint_management_operations.json`, `checkpoint_bindings.json`, `checkpoint_management.sh`, `gaia_config.clish`, `migration_decisions.json`, `migration_report.json` | Optional Management JSON for object UID reuse and cleanup-only Drop rulebase insertion |
 
-FortiGate to PAN-OS and PAN-OS to FortiGate have assisted mapping and guided review. The reverse pair prepares deterministic target proposals, derives a bounded documented PAN-OS 11.1 source-behavior subset, and groups remaining policy choices. PAN-OS to SRX supports an offline set export and optional family-complete Junos snapshot comparison; policy, NAT and routing ambiguity stays blocked. Check Point proposes a new package without destination evidence; existing-policy insertion still requires target choices. FortiGate to SRX proposes new-device placement for review. ASA proposes recognized numbered ports and safe nameif values; security levels and traffic attestations remain explicit choices. Discovery retains its existing availability flags and adds descriptive mapping, comparison, execution and activation limits. These descriptions do not authorize execution or enable unsupported capabilities.
+---
 
-## Offline browser workflow
+## Workflow & Security Contract
 
-All nine pairs offer Source → Review conversion → Download for offline conversion. FortiGate to PAN-OS also retains its advanced destination and live candidate workflow. The other eight pairs have no deployment path.
+### Unified Web Workflow
 
-- Source analysis opens the conversion review. No physical device selection or connection is required.
-- Target software baselines remain visible. Editable target setup sits inside review details.
-- Pair-owned proposals preserve engineer overrides. FortiGate SRX numbered ports use stable port-number placement; PAN-OS SRX proposes physical ports, logical units, source tags and zone names. These are offline conventions, not verified hardware allocation.
-- ASA port/name proposals leave security levels unresolved. Empty-target, routing-completeness, capacity and return-routing attestations are never auto-confirmed.
-- Eligible configuration appears in a paginated approval preview by default. Custom exclusions and dependency expansion remain visible. Approve and generate is the explicit action that signs the selection and builds the native files.
-- Included, reused, excluded and blocked/manual counts remain visible after generation. An unselected item is not a completed conversion. Reuse-only output is distinct from excluded or blocked output.
-- Check Point retains Management JSON, command shell, UID bindings and Gaia files. FTD retains FMC request specifications, application script, ID bindings and application instructions.
-- Source, scope, options, target evidence and selection changes revoke affected approval/artifacts. Superseded responses cannot restore them. A current approval survives generation failure for retry; expiry still requires approval again.
+All nine pairs follow the four-stage workspace flow: **Source → Target setup → Review conversion → Download**.
 
-## Source accounting
+1. **Source**: Upload a vendor-native configuration (or sanitized collection snapshot).
+2. **Target setup**: Select source scope (e.g., FortiGate VDOM or PAN-OS VSYS), target mode/baseline options, interface/zone/router mappings, and optional destination snapshot evidence. Saving draft edits does not grant approval.
+3. **Review conversion**: Inspect coverage, dependency chains, target conflicts, and exact candidate operations/commands, then explicitly sign **Approve**.
+4. **Download**: Export deterministic commands/specs, `migration_report.json`, and the ZIP bundle.
 
-ASA, SRX and Check Point reviews and artifact reports include scoped source inventory accounting. Repeated source edits retain separate records. Unknown sections remain visible as manual work. Counts describe source records, not command counts.
+Workspace state lives in memory for the active server session; editing source, scope, options, target evidence, or selections immediately revokes prior approvals and artifacts.
 
-- `MANUAL`: unrepresented source evidence or an item with its own blocker.
-- `DEPENDENCY_BLOCKED`: an otherwise planned item cannot satisfy its dependencies or atomic group.
-- `PENDING`: representable source evidence has not been selected for this artifact.
-- `REUSED`: selected target evidence satisfies the item without creation commands.
-- `RENDERED`: selected source evidence contributes to the export.
+### Dispositions & Source Accounting
 
-ASA and SRX artifact item rows use `NOT_APPROVED` for eligible but unselected work. Review-time eligibility stays unchanged. Selected reuse counts as satisfied work even when it emits zero commands. Reports retain omitted and blocked rows and source coverage.
+- **Render dispositions**:
+  - `CREATE`: Emit creation commands/requests for verified missing target items.
+  - `CONFIGURE`: Emit explicitly approved additive changes on an existing compatible target resource.
+  - `REUSE`: Satisfy via matching existing target evidence without emitting creation commands.
+  - `BLOCK`: Emit nothing; dependency blockers propagate deterministically before rendering.
+- **Source coverage states**:
+  - `RENDERED`: Selected source evidence contributes to exported output.
+  - `REUSED`: Selected target evidence satisfies the item without creation output.
+  - `DEPENDENCY_BLOCKED`: Planned item blocked by unresolved prerequisites or an atomic group member.
+  - `MANUAL`: Unrepresented source feature or item with an individual semantic blocker.
+  - `PENDING` / `NOT_APPROVED`: Eligible item not selected for the current artifact.
+- Reports retain `export_is_complete_migration: false`. Coverage accounting tracks source records rather than traffic equivalence.
 
-The report always retains `export_is_complete_migration: false`. Source inventory is evidence accounting; it does not prove traffic equivalence. CLI output remains unapproved review material even when records are labeled rendered.
+### Approval, Signing & Snapshot Rules
 
-## FortiGate source NAT evidence
+- **Signed approval binding**: Web exports require a current HMAC-signed approval envelope (24-hour TTL) bound to source SHA-256, destination SHA-256, target options/scope, selected items, and full dependency closure.
+- **Single immutable artifact**: Preview, single-file download, and ZIP bundle consume the exact same `RenderedMigration` (matching file list, count, and SHA-256).
+- **CLI material boundary**: `fwmigrate migrate` runs without web design approval and outputs unapproved review material.
+- **Destination snapshots**: Optional destination uploads are sanitized by the native reporter and require explicit operator completeness metadata (`target_evidence` with `context`, `version`, `mode`, and `complete_families`). Missing tables never prove absence, and snapshot comparison never establishes hardware fit, capacity, licensing, cabling, or live device acceptance.
+- **Secret redaction**: Passwords, hashes, PSKs, private keys, API keys, tokens, shared secrets, and sensitive SNMP communities are redacted across all inputs, snapshots, previews, Excel workbooks, reports, and exports.
 
-The FortiGate source pipeline preserves explicit policy `fixedport` and `port-preserve` controls. Central SNAT records preserve VDOM, order, edit identity, interfaces, addresses, pools, protocol, ports, state and unsupported evidence. Missing fields stay absent. Native preview exposes the typed central SNAT records; the source workbook retains inventory evidence.
+---
 
-Central SNAT extraction and derivation do not enable central SNAT conversion in ASA, SRX or Check Point. Unsupported port translation, allocation, identity NAT, ordering and return-path behavior remain manual.
+## Pair Coverage & Usage
 
-## Pair-specific verified increments
+### FortiGate to Palo Alto PAN-OS
 
-### Cisco ASA
+- **Target baseline**: PAN-OS 11.1 (`palo_alto_config.set`, `migration_report.json`).
+- **Scope & Objects**:
+  - Maps explicit FortiGate VDOMs to target PAN-OS VSYS, virtual routers, interfaces, and zones without guessing missing ownership.
+  - Separates explicit source state from FortiOS 7.2.13 documented defaults (omitted policy action `deny`, VIP `static-nat`, Phase 2 PFS `enable` and lifetime `43200s`), recording firmware version and reference provenance.
+  - Supports deterministic bounded object naming, `ssl-ssh-profile` `no-inspection` handling, device-scoped management profiles (with permitted management CIDRs), site-to-site `tunnel.N` interface proposals, scoped user/group mappings, and unnumbered static routes over planned tunnels.
+  - Supports non-secret IPsec crypto profiles (AES-128/256-CBC with SHA-256/384/512) while keeping gateway authentication, peer identity, Phase 2 selectors, and secrets manual.
+- **NAT & Routing**:
+  - Expands supported SNAT and VIP service unions into bounded single-service rules; supports isolated single-policy combined overload-pool SNAT + static VIP, single TCP/UDP VIP port translation, and flat VIP-group destinations when member settings are valid and disjointness is proven.
+  - Custom all-protocol services, unverified port-preservation controls, decryption profiles, DHCP/route-priority/VRF differences, IPv6/mixed-family policy matches, and Central-SNAT/NGFW-mode VDOM controls remain manual.
+- **Target Comparison**:
+  - Offline mode proposes `ethernet1/N` ports without PAN-OS XML.
+  - Destination-aware mode compares against native PAN-OS XML (`REUSE`, `CONFIGURE`, `CREATE`, `BLOCK`) and optionally scopes physical port proposals to PA-820 hardware (`ethernet1/1`–`ethernet1/12`).
+- **CLI**:
 
-See [ASA usage and limits](guides/fortigate-to-cisco-asa-migration.md).
+  ```bash
+  fwmigrate migrate \
+    --source-vendor fortigate --target-vendor palo_alto \
+    --input fortigate.conf --output out --format set \
+    [--zone-map mapping.yaml] [--target-config panos.xml] \
+    [--target-device SERIAL] [--target-intent intent.yaml] \
+    [--automation-mode VERIFIED_AND_DERIVED]
+  ```
 
-- Existing IPv4 objects, services, physical interfaces, routes, weekly schedules and ordered ingress ACL coverage remains available.
-- ASAv VLAN subinterfaces require an explicitly selected ASAv platform, confirmed capacity/availability, a mapped physical parent, a valid explicit tag and unique target interface ownership. Parent commands precede child commands. Existing target VLAN tags block creation; target VLAN replacement is unsupported.
-- Exact destination address objects may be reused only when the native command evidence matches and carries no unsupported or NAT behavior. Conflicts block creation.
-- A fixed one-host, one-address pool case emits static source NAT with `no-proxy-arp`. It requires explicit fixed-port preservation, routed-return confirmation and complete empty destination traffic evidence.
-- This NAT case is limited to one active HTTPS policy between distinct source and destination hosts, destination interface `any`, one ingress, no central SNAT/VIPs, and full interface mapping.
-- NAT, its mapped object, policy and every ingress ACL binding form one approval group. Explicit default denies prevent reverse initiation. A blocked or unapproved group emits no NAT traffic changes.
-- PAT, broad pool allocation, VIP/DNAT and uncertain NAT order remain manual.
-- Policies require explicit match, action, state, logging, disabled inspection/negation and supported NAT evidence. Missing fields block approval. NAT46/NAT64, inbound/outbound translation and unverified typed translation controls block ordinary ACL export. A blocked predecessor also blocks later rules on the same ingress.
-- Existing destination object or manual NAT blocks traffic exports until independence can be proven. Complete NAT evidence is not proof of compatibility. Independent address and service objects remain exportable.
-- Nested network and service groups use `group-object`. Groups and traffic render in stable dependency order; unresolved dependencies and cycles are rejected. Reused dependencies emit no creation commands.
-- Preview, commands and bundle export reject expired or malformed approval expiry. Downloads do not renew approval. Already downloaded files cannot be revoked.
+---
 
-### Juniper SRX
+### Palo Alto PAN-OS to FortiGate
 
-- New-device proposals allocate `ge-0/0/N` physical ports, source-tag-based VLAN units, root placement, and separate zones for interfaces outside explicit FortiGate zones. Existing engineer values are preserved. Proposals do not verify hardware, grant approval, or assume an uploaded destination is empty. Review port allocation and cabling before approval.
-- IPv4 objects and groups preserve source UUID/color evidence without treating those presentation fields as unsupported matching behavior. Interface-bound addresses require proof that every direct or nested policy consumer uses the bound source interface. Unknown fields, ambiguous representations, cycles and unresolved references remain blocked.
-- FortiOS 7.2.13 header evidence enables a bounded set of documented address, policy, interface and static-route defaults. Defaults remain in derived state; review settings carry each value, origin, version and official reference. Missing or other firmware versions do not receive these defaults. Explicit source values take precedence.
-- Explicit services and address objects take precedence over built-in-name aliases. TCP/UDP ports, numeric IP protocols 1–254, and ICMP with explicit type/code are supported. A verified unrestricted IP service maps directly to policy `application any`; it needs no custom application. Unsupported selectors, explicit service TTLs and unknown settings remain blocked.
-- Supported interface addressing is separate from manual administrative-access and discovery design. The export enables no host-inbound or administrative services. Source coverage remains manual for interfaces with these outstanding control-plane settings. Unsupported forwarding settings still block the interface itself.
-- Static routes retain distance as Junos preference. Unknown or disabled state, unsupported priority, missing gateways, ambiguous destinations and unsupported interfaces remain blocked. Ordinary policy defaults do not bypass UTM/identity, NAT, policy-order, dependency or approval checks. UTM-only logging adds no session logs when security inspection is disabled.
-- FQDN runtime/cache behavior, dynamic addresses, inspection profiles, VPN interfaces, advanced NAT and source ambiguities still require verified pair-specific design. Common Junos syntax does not prove feature availability or semantic equivalence across all SRX models.
-- The reserved `FABRIC_DEVICE` address remains manual even when its configured subnet is `0.0.0.0/0`. That subnet is a placeholder for Security Fabric runtime membership; it must not become an unrestricted target address.
-- vSRX VLAN output requires explicit platform/capacity choices and a tagged-only physical parent with explicitly configured `0.0.0.0 0.0.0.0` source addressing. The parent must have no direct zone, policy or route membership. The export emits `vlan-tagging`, the child's explicit `vlan-id`, and its IPv4 address. Addressed untagged parents remain manual; no native VLAN is invented. Existing parent configuration conflicts block the child.
-- The new fixed-pool case requires one source host, one active policy, builtin `all`/`ALL`, one translated IPv4 address, explicit fixed-port preservation, disabled pool proxy ARP and confirmed routed return traffic.
-- The pool emits `port no-translation`. Pool, source NAT rule and policy share an atomic approval group. A target conflict on any member blocks the entire group.
-- Interface PAT, shared pools, multiple policy allocation, central SNAT, VIP/DNAT and unverified topology remain manual.
-- Destination-aware new policies are allowed only with all relevant families declared complete, no existing local/global/inherited policy rules, no destination NAT or routing-instance ambiguity, and verified or planned zone/topology dependencies. An explicit local default `deny-all` is allowed; other policy settings, inactive policy hierarchies and populated placement remain blocked. Exact policy reuse remains separate. Source order and target snapshot approval binding are preserved.
+- **Target baseline**: FortiOS 7.4.6, NAT operating mode, profile-based NGFW (`fortigate_config.conf`, `migration_report.json`).
+- **Scope & Objects**:
+  - Converts one standalone VSYS; preserves shared object identity while keeping Panorama/template inheritance and ambiguous precedence manual.
+  - Derives documented standalone PAN-OS 11.1 rule defaults (rule type, logging, source-user, absent schedule) and predefined HTTP (`TCP 80/8080`) / HTTPS (`TCP 443`) services with explicit provenance.
+  - Converts IPv4 subnet/range/FQDN addresses, static address groups, TCP/UDP port intervals, static service groups, inactive `<override><no/></override>` service timeouts, one-time and uniform recurring schedules (with confirmed timezone match), primary IPv4 L3 ethernet/VLAN interfaces, L3 zones (explicit intrazone deny), and ordered L3/L4 `application any` security policies (with active-predecessor dependency chains).
+- **NAT & Routing**:
+  - Target must use (or declare) Central NAT mode; generated commands do not alter device mode.
+  - Dynamic-IP-and-port SNAT supports sole interface IP or literal pool IP when direct IPv4 source prefixes are pairwise disjoint. Disabled NAT rules remain visible as non-executable `inactive_nat` evidence.
+  - Single isolated static address-only DNAT (`/32` public object, literal mapped host, one ingress, connected post-NAT zone, explicit VIP proxy-ARP choice, empty target traffic tables) generates a VIP and policy with `match-vip-only enable`.
+  - Static IPv4 routes target VRF 0; self-referential next-hop gateways are blocked. App-ID, `application-default`, inspection profiles, port-translated/dynamic/bidirectional NAT, combined SNAT+DNAT, and non-disjoint NAT remain manual.
+- **Target Comparison**:
+  - Optional native FortiGate config validates firmware/operating/NGFW/NAT/VDOM compatibility (`REUSE` on exact match, `CREATE` on explicitly empty table, `CONFIGURE` only on verified unreferenced `0.0.0.0 0.0.0.0` ports).
+- **CLI & Mapping Shape**:
 
-### Check Point
+  ```bash
+  fwmigrate migrate \
+    --source-vendor palo_alto --target-vendor fortigate \
+    --input panos.xml --output out --format cli \
+    [--zone-map fortigate-mapping.yaml] [--target-config fortigate.conf]
+  ```
 
-See [Check Point usage and limits](guides/fortigate-to-checkpoint-migration.md).
+  ```yaml
+  source_scope: vsys:vsys1:device:fw1
+  vdom: root
+  interfaces:
+    ethernet1/1: port1
+    ethernet1/2: port2
+  zones:
+    trust: inside
+    untrust: outside
+  routers: {}
+  profile:
+    fortios_version: 7.4.6
+    operating_mode: nat
+    ngfw_mode: profile-based
+    nat_mode: central
+    vdom_mode: single
+    ports: [port1, port2]
+  timezone: ""
+  policy_settings: {}
+  ```
 
-- Explicit IPv4 ranges now produce `add-address-range`, alongside hosts, networks and TCP/UDP services. Invalid or IPv6 ranges remain blocked.
-- The first advanced increment supports explicit IPv6 `ipprefix` host and network objects through API 1.8.1 `ipv6-address`, `subnet6` and `mask-length6` fields. IPv4/IPv6 names retain distinct scoped identities. Exact IPv6 objects can be reused by UID; dual-stack collisions and unsupported source controls block reuse. IPv6 policies, groups and NAT remain manual.
-- Exact native Management hosts, networks, ranges and services may be reused by UID. Address reuse requires explicit automatic NAT disablement. Unknown settings and collisions block reuse and creation.
-- New-target mode creates a separate package and Drop anchor without a destination snapshot. Domain and gateways are selected during manual application. Its additional Bash command file uses an existing API session and requires `mgmt_cli` and `jq`.
-- Existing-target rule insertion requires an explicitly selected package, layer, gateways and a cleanup-only active Drop rulebase with explicit unrestricted matching and verified install-on scope. Native UIDs replace approved references; later created rules use response UID bindings.
-- In existing-target comparison, target NAT, other access rules, ambiguous domain ownership and incomplete collection prevent policy creation.
-- Management evidence cannot prove Gaia route safety. Gaia and Management remain separate planes.
-- NAT, non-always schedules, interface-bound policies and inline layers remain manual. No publish, policy installation or API execution is added.
-- Before approval, the browser shows selected operations plus required predecessor rules and object dependencies, request settings, placement and UID bindings. Confirmation is explicit. Failed file generation can retry the current approval without granting a new one. Target edits clear the preview, approval and executable files.
+---
 
-### PAN-OS to FortiGate
+### Palo Alto PAN-OS to Juniper SRX
 
-See [reverse migration usage and limits](guides/PAN-OS-to-FortiGate-migration.md).
+- **Target baseline**: Junos 25.2R1 standalone, confirmed root context (`juniper_config.set`, `migration_report.json`).
+- **Scope & Objects**:
+  - Converts one standalone VSYS with proposed physical ports, logical units, VLAN tags, and security zones.
+  - Ordered L3/L4 policies bind zone/interface dependencies and every active predecessor in the same zone pair (disabled rules do not sever the chain).
+  - Only verified standalone PAN-OS 11.1 omitted-schedule behavior is treated as unrestricted; all named schedules (including `always`) stay blocked.
+  - Static routes emit planned Junos preference, metric, and next hop.
+- **NAT & Manual**: App-ID, named schedules, policy/NAT/routing ambiguity, inspection profiles, and self-referential gateways remain blocked.
+- **Target Comparison**: Optional family-complete Junos 25.2R1 snapshot enables exact `REUSE` (including exact static-route preference); populated or ambiguous policy placement remains blocked.
+- **CLI & Application**:
 
-- Source upload opens a proposed conversion. Supported profile, zone, port/VLAN and single-router VRF placement proposals remain subject to engineer review. Ports require declared inventory or explicit eligible destination evidence.
-- Verified local PAN-OS 11.1 effective values remain separate from explicit XML. Unknown fields use individual or reviewed bulk target choices. Unsupported policies retain manual findings without ineffective questions.
-- Signed approval binds requested overrides, resolved mappings and provenance. Preview, download and bundle retain one approved command list. FortiGate execution remains unavailable.
+  ```bash
+  fwmigrate migrate \
+    --source-vendor palo_alto --target-vendor juniper_srx \
+    --input panos.xml --output out --format set \
+    [--zone-map mapping.yaml] [--target-config junos.set]
+  ```
 
-- Multiple dynamic source NAT rules are accepted only when direct literal IPv4 source prefixes prove pairwise disjointness. Source order is preserved.
-- Overlap, group/`any` ambiguity, no-NAT exceptions, combined DNAT and unsupported allocation remain blocked. Consuming policies retain dependencies on every active or unknown-state NAT item.
-- Explicitly disabled NAT rules remain visible as nonexecutable `inactive_nat` evidence. They do not participate in active overlap proofs or traffic dependencies. Disabled security policies do not sever the active predecessor chain.
-- UUID attributes, organizational group tags and explicitly unrestricted HIP selectors do not block supported matching. Only exact inactive service-timeout overrides are accepted; active, incomplete and unknown overrides remain blocked.
-- Verified standalone PAN-OS 11.1 predefined HTTP/HTTPS references generate explicit target services with version/reference provenance and normal approval dependencies. Custom objects and ambiguous references retain their source resolution.
-- Nested IPv6 interface controls and unknown service containers remain preserved source evidence. Self-referential route gateways are blocked. See the [automation review and implementation plan](history/panos-expansion/palo-alto-to-fortigate-automation-review.md).
-- Existing isolated DNAT restrictions remain unchanged.
+  Load the reviewed `.set` file, run `commit check`, and commit explicitly on the device.
 
-### PAN-OS to Check Point
+---
 
-- Requires one selected standalone VSYS and Check Point Management API 1.8.1 target baseline. Produces reviewed offline API request specification, response UID bindings, and fresh-package `mgmt_cli` commands. No live execution, login, publish, or policy installation is performed.
-- Converts explicit IPv4 hosts, subnets, ranges (`add-host`, `add-network`, `add-address-range`), static address groups (`add-group`), and TCP/UDP services with explicit source/destination port ranges split into atomic services and service groups (`add-service-tcp`, `add-service-udp`, `add-service-group`).
-- New-target mode creates a fresh policy package, access layer, and an explicit Drop cleanup rule anchor without requiring a target snapshot. Gateway installation targets (`install-on`) and management domain are reviewed during mapping.
-- Unrestricted-zone L3/L4 policies (`from any`, `to any`, `application any`) with explicit allow/drop and unlogged defaults map to ordered Check Point access rules with position preserved via response UID bindings.
-- Zone-constrained policies, active/unknown NAT, App-ID, named schedules, logging/inspection profiles, Gaia interface topology and Gaia static routes remain blocked manual items.
-- Optional destination snapshots support exact native UID reuse for addresses and address groups with auto-rule NAT disabled; existing policy insertion and Gaia stay blocked.
+### Palo Alto PAN-OS to Cisco ASA
 
-### PAN-OS to Juniper SRX safety requirements
+- **Target baseline**: ASA 9.20 routed single-context (`asa_config.cfg`, `migration_report.json`).
+- **Scope & Objects**:
+  - Converts one standalone VSYS with explicit target ports, `nameif` values, security levels (`0–100`), and complete connected/static routing evidence.
+  - Supports explicit TCP/UDP rules without inspection/logging, bounded ACE expansion, explicit unlogged `intrazone-default` / `interzone-default` Drop handling, and whole-destination egress proof.
+  - Interfaces, security controls, routes, ACL rules, final denies, bindings, and activation form one atomic approval unit.
+- **NAT & Manual**: Empty-target, routing-completeness, capacity, and return-routing attestations require explicit confirmation; active/unknown NAT, named schedules, App-ID, FQDN/IPv6, and topology ambiguity remain blocked.
+- **Target Comparison**: Optional native ASA snapshot supports exact address/port object reuse; existing-target traffic placement stays blocked.
+- **CLI & Application**:
 
-- Policy approval includes both zone/interface dependency closures and every active predecessor in the same zone pair. Explicitly disabled rules stay nonexecutable and do not sever that chain. Blocked topology or predecessors prevent approval of dependent policies.
-- Only omitted schedule behavior verified for standalone PAN-OS 11.1 can be treated as unrestricted. Every named schedule, including an object named `always`, remains blocked. Derived schedule evidence records its version and official reference separately from source XML.
-- Supported static routes render the planned Junos preference as well as metric and next hop. Exact target reuse includes preference; a different or missing explicit preference is not exact reuse.
-- PAN-OS to SRX and FTD use version 2 review/approval/artifact envelopes after this safety change. Previously generated envelopes require fresh review. Already downloaded files cannot be revoked.
+  ```bash
+  fwmigrate migrate \
+    --source-vendor palo_alto --target-vendor cisco_asa \
+    --input panos.xml --output out --format cfg \
+    [--zone-map mapping.yaml] [--target-config asa.cfg]
+  ```
 
-### PAN-OS to Cisco FTD (FMC-managed)
+  Review, apply, validate, and save manually on the ASA.
 
-- Requires one selected standalone VSYS and Cisco FMC REST API 7.7.0 target baseline. Produces reviewed offline API request specification (`cisco_fmc_operations.json`), response ID bindings (`cisco_fmc_bindings.json`), fresh-policy application script (`cisco_fmc_curl.sh`), and application instructions (`ftd_application_instructions.txt`). No live execution, login, credential storage, or deployment is performed by this tool.
-- Converts explicit IPv4 hosts, subnets, ranges (`/object/networks`, `/object/rangeobjects`), static address groups (`/object/networkgroups`), TCP/UDP port objects split into atomic single-port/range objects (`/object/protocolportobjects`) and grouped under port groups (`/object/portobjectgroups`), and security zones (`/object/securityzones`). Returned object IDs bind later requests using `{$response_binding:...}`.
-- Target mode: New-target mode plans a fresh Access Control Policy container (`/policy/accesspolicies`) and default rule without requiring destination evidence. An explicit valid FMC domain UUID and manager hostname/IP are required before operations can be approved. No host, domain UUID or domain ownership is guessed. Policy container names remain reviewed proposals. Existing snapshots must carry the same native domain UUID as the design.
-- Access Policies: Only explicit L3/L4 policies with verified universal rule type, unlogged Drop defaults (`intrazone-default` and `interzone-default`), and explicit allow/drop actions are representable. Policies preserve source rule order and map to `/policy/accesspolicies/{acp_id}/accessrules`.
-- Fail-Closed Safety: FDM mode and device CLI target modes are unsupported and fail closed. Active/unknown NAT, App-ID, named schedules, logging/inspection profiles, device interface assignments, and FTD static routes remain blocked manual items.
-- Target Snapshot Comparison: Optional native FMC REST export bundle comparison supports exact address, port object, and security zone ID reuse when names and types match. Conflicting target objects fail closed. Existing policy insertion stays blocked.
-- `application-default` is blocked; it never becomes an unrestricted FMC service. Blocked predecessors also block their dependent rules.
-- The retained `.sh` filename wraps Python 3.11+ structured JSON/HTTPS execution. Run it manually with `bash cisco_fmc_curl.sh [TOKEN_FILE]`; without a token file it prompts privately. Host/domain are bound to the approved artifact. TLS verification stays enabled, redirects are rejected, and response IDs are resolved in both URLs and JSON. It preflights bindings and stops on HTTP, response or binding errors without retrying. Reconcile partial changes before running it again. The script does not assign interfaces/policies or deploy.
+---
 
-### FortiGate to PAN-OS
+### Palo Alto PAN-OS to Check Point
 
-Existing destination-aware planning and deployment boundaries remain in place. Newly typed FortiGate port preservation controls stay blocked where their PAN-OS equivalence is unverified. This expansion does not add a deployment direction or bypass signed design approval.
+- **Target baseline**: Check Point R81 Management API 1.8.1 + separate Gaia output (`checkpoint_management_operations.json`, `checkpoint_bindings.json`, `checkpoint_management.sh`, `gaia_config.clish`, `migration_decisions.json`, `migration_report.json`).
+- **Scope & Objects**:
+  - Converts one standalone VSYS into a fresh policy package, access layer, and explicit Drop cleanup anchor (with `install-on` targets and management domain reviewed in mapping).
+  - Converts explicit IPv4 hosts, subnets, ranges (`add-host`, `add-network`, `add-address-range`), static address groups (`add-group`), and TCP/UDP services split into atomic port/range objects and groups (`add-service-tcp`, `add-service-udp`, `add-service-group`).
+  - Unrestricted-zone L3/L4 policies (`from any`, `to any`, `application any`) with explicit allow/drop and unlogged defaults map to ordered access rules bound via response UIDs (`{$response_binding:...}`).
+- **NAT & Manual**: Zone-constrained policies, active/unknown NAT, App-ID, named schedules, inspection/logging profiles, and Gaia interface/static-route commands remain blocked.
+- **Target Comparison**: Optional native Management API 1.8.1 export supports exact address and address-group UID reuse (auto-rule NAT disabled); existing policy insertion and Gaia stay blocked.
+- **CLI & Application**:
 
-## Remaining manual coverage
+  ```bash
+  fwmigrate migrate \
+    --source-vendor palo_alto --target-vendor checkpoint \
+    --input panos.xml --output out --format json \
+    [--zone-map mapping.yaml] [--target-config cp_mgmt.json]
+  ```
 
-This increment does not claim VLAN support beyond the ASAv/vSRX cases above, general NAT conversion, Check Point NAT or time objects, advanced routing, VPN, identity/inspection profiles, broad IPv6 traffic migration, or hardware acceptance. Interface PAT, VIP/DNAT, schedules and other advanced families from the wider roadmap remain pending pair-specific equivalence verification. Unsupported evidence remains visible and affected dependencies remain blocked. Further cases need pair-specific native fixtures, semantic proof and regression tests before enabling output.
+  Log in to Management separately, execute `bash checkpoint_management.sh /path/to/existing-session.json` (requires `mgmt_cli` and `jq`), then publish and install policy manually.
 
-## Semantic references
+---
 
-- PAN-OS to ASA requires one selected standalone VSYS, explicit target ports/nameifs/security levels, confirmed new empty target state and complete connected/static routing evidence. Supported traffic uses explicit TCP/UDP rules without inspection or logging, documented PAN-OS 11.1 always behavior only when no named schedule is configured, explicit unlogged Drop defaults, bounded ACE expansion and whole-destination egress proof. Missing source ports, named schedules, active/unknown NAT, unsupported predecessors, FQDN/IPv6 and topology ambiguity remain blocked. Interfaces, security controls, routes, ACL rules, final denies, bindings and final activation form one atomic approval unit. No live operation or automatic save is implemented. Browser ZIP saving and byte equality were verified with synthetic policy and supplied LFSA inputs, including a 390px final-build check. Direct `.cfg` saving did not work in the in-app browser, including on an isolated diagnostic page; the ZIP contains the same native `.cfg`. Standalone-browser direct saving and live ASA acceptance remain unverified. See the implementation progress log.
-- [ASA 9.20 access-rule order, implicit permits and security checks](https://www.cisco.com/c/en/us/td/docs/security/asa/asa920/configuration/firewall/asa-920-firewall-config/access-rules.html).
+### Palo Alto PAN-OS to Cisco FTD
 
-- [FortiOS 7.2.13 CLI reference](https://fortinetweb.s3.amazonaws.com/docs.fortinet.com/v2/attachments/9b85aed5-fafc-11f0-8b43-d2943efe5b2f/FortiOS-7.2.13-CLI_Reference.pdf), including the version-bound address, policy, interface, route and IP-service defaults retained in SRX review evidence.
-- [Junos custom applications](https://www.juniper.net/documentation/us/en/software/junos/cli-reference/topics/ref/statement/application-edit-applications-srx.html) and [ICMP selectors](https://www.juniper.net/documentation/us/en/software/junos/cli-reference/topics/ref/statement/applications-edit-icmp-type.html), including numeric protocol and explicit ICMP type/code syntax.
-- [FortiGate dynamic Fabric addresses](https://docs.fortinet.com/document/fortigate/7.2.4/administration-guide/146433/dynamic-policy-fabric-devices): configured placeholder subnets do not represent the runtime policy match set.
-- [FortiOS 7.4.6 CLI reference](https://fortinetweb.s3.amazonaws.com/docs.fortinet.com/v2/attachments/cb8d6b09-b8b3-11ef-9411-ae1fcf29f169/FortiOS-7.4.6-CLI_Reference.pdf), including central SNAT and explicit policy port controls.
-- [ASA 9.20 NAT guide](https://www.cisco.com/c/en/us/td/docs/security/asa/asa920/configuration/firewall/asa-920-firewall-config/nat-basics.html). `unidirectional` and `no-proxy-arp` are alternative static NAT options; the constrained implementation uses `no-proxy-arp` plus reviewed ACL isolation.
-- [ASA 9.20 objects and groups](https://www.cisco.com/c/en/us/td/docs/security/asa/asa920/configuration/firewall/asa-920-firewall-config/access-objects.html): object members and nested group members use different commands.
-- [Junos security policy order](https://www.juniper.net/documentation/us/en/software/junos/security-policies/topics/concept/policy-overview.html) and [global policy lookup](https://www.juniper.net/documentation/us/en/software/junos/security-policies/topics/topic-map/security-global-policies.html). The empty-target extension does not merge populated policy contexts or ignore global policies.
-- Junos 25.2R1 selected CLI references under `documentation/official-cli-references-selected version/`, including source NAT pools and `port no-translation`.
-- [ASA 9.20 VLAN subinterfaces](https://www.cisco.com/c/en/us/td/docs/security/asa/asa920/configuration/general/asa-920-general-config/interface-vlan.html), plus [ASAv interface support](https://www.cisco.com/c/en/us/td/docs/security/asa/asa92/configuration/general/asa-general-cli/interface-basic-asav.html).
-- [Junos VLAN tagging](https://www.juniper.net/documentation/us/en/software/junos/cli-reference/topics/ref/statement/vlan-tagging-edit-interfaces.html). The implemented vSRX case excludes mixed untagged/tagged routing.
-- [Check Point Management API 1.8.1 address ranges](https://sc1.checkpoint.com/documents/latest/APIs/index.html#web/add-address-range~v1.8.1) and its [versioned API schema](https://sc1.checkpoint.com/documents/latest/APIs/data/v1.8.1/dynamic/apis.json).
-- [Cisco Firepower Management Center REST API Configuration Guide, Version 7.7.0](https://www.cisco.com/c/en/us/td/docs/security/firepower/770/api/fmc/fmc-rest-api-quick-start-770.html), including object containers, access rules, response UUID structures, and batch request contracts.
+- **Target baseline**: Cisco FMC REST API 7.7.0, FMC-managed FTD (`cisco_fmc_operations.json`, `cisco_fmc_bindings.json`, `cisco_fmc_curl.sh`, `ftd_application_instructions.txt`, `migration_decisions.json`, `migration_report.json`).
+- **Scope & Objects**:
+  - Requires one standalone VSYS, explicit FMC manager hostname/IP, and valid `domain_id` UUID (never guessed).
+  - New-target mode creates a fresh Access Control Policy container (`/policy/accesspolicies`) and default rule.
+  - Converts IPv4 hosts/subnets/ranges (`/object/networks`, `/object/rangeobjects`), static address groups (`/object/networkgroups`), atomic TCP/UDP port objects (`/object/protocolportobjects`) and port groups (`/object/portobjectgroups`), security zones (`/object/securityzones`), and ordered L3/L4 universal access rules (`/policy/accesspolicies/{acp_id}/accessrules`) when `intrazone-default` and `interzone-default` are unlogged Drop.
+- **NAT & Manual**: FDM and FTD device CLI modes fail closed. `application-default`, App-ID, active/unknown NAT, named schedules, logging/inspection profiles, device interface assignments, and static routes remain blocked. Blocked predecessors block dependent rules.
+- **Target Comparison**: Optional native FMC REST export bundle (`fmc-rest-bundle`) with matching `domain_id` supports exact network, port, and security zone ID reuse; existing policy insertion stays blocked.
+- **CLI & Application**:
+
+  ```bash
+  fwmigrate migrate \
+    --source-vendor palo_alto --target-vendor cisco_ftd \
+    --input panos.xml --output out --format json \
+    [--zone-map mapping.yaml] [--target-config fmc_bundle.json]
+  ```
+
+  Execute manually with Python 3.11+:
+
+  ```bash
+  bash cisco_fmc_curl.sh [TOKEN_FILE]
+  ```
+
+  Without `TOKEN_FILE`, the script prompts privately (do not pass a token as an argument). It keeps TLS verification enabled, rejects redirects, binds response IDs, and stops on error without retrying. Reconcile partial changes before re-running, then assign interfaces/policies and deploy in FMC manually.
+
+---
+
+### FortiGate to Cisco ASA
+
+- **Target baseline**: ASA 9.20 routed single-context, one FortiGate VDOM (`asa_config.cfg`, `migration_report.json`, `migration_decisions.json`, `target_mapping.yaml`, `source_inventory.xlsx`).
+- **Scope & Objects**:
+  - Converts IPv4 `ipmask` and `iprange` addresses, static address/service groups (`group-object`), explicit TCP/UDP destination-port services, physical Ethernet interfaces (`nameif`, security level, IPv4, up/down state), IPv4 static routes with mapped egress, recurring weekly time ranges (matching source/target timezone confirmation), ordered ingress extended ACLs, and per-interface default-deny ACLs.
+  - ASAv VLAN subinterfaces require explicit platform/capacity confirmation, a mapped physical parent, unique tag, and explicit state; child approval includes its parent.
+  - `access-group` bindings emit only when complete destination binding evidence confirms no existing binding on the interface.
+- **NAT & Manual**:
+  - Supports one constrained static source NAT case (`no-proxy-arp`): one active HTTPS policy between distinct IPv4 hosts, `destination any`, one ingress interface, one-to-one pool, explicit `fixedport` and `port-preserve`, disabled pool proxy ARP, confirmed routed return, and complete empty destination traffic evidence (forming one atomic approval group).
+  - PAT, VIP/DNAT, destination interfaces other than `any`, central SNAT, inspection, and uncertain NAT ordering stay blocked.
+- **Target Comparison**: Optional native ASA snapshot supports exact address and physical-interface reuse; existing target NAT or bindings block traffic export until independence is proven.
+- **CLI & Application**:
+
+  ```bash
+  fwmigrate migrate \
+    --source-vendor fortigate --target-vendor cisco_asa \
+    --input fortigate.conf --output out --format cfg \
+    [--zone-map mapping.yaml] [--target-config asa.cfg]
+  ```
+
+  Review hardware fit, routing adjacency, ARP, and licensing, then apply, validate, and save manually.
+
+---
+
+### FortiGate to Juniper SRX
+
+- **Target baseline**: Junos 25.2R1 standalone (`juniper_config.set`, `migration_report.json`, `migration_decisions.json`, `target_mapping.yaml`).
+- **Scope & Objects**:
+  - Proposes `ge-0/0/N` ports, source-tag VLAN units, root placement, and zones for interfaces outside FortiGate zones.
+  - Converts IPv4 objects/groups (verifying interface-bound address consumers; `FABRIC_DEVICE` stays manual), TCP/UDP, numeric IP protocols `1–254`, explicit ICMP type/code, unrestricted IP services (`application any`), and static routes (retaining distance as Junos preference).
+  - Uses verified FortiOS 7.2.13 header defaults (retained with provenance) when firmware matches explicitly.
+  - vSRX VLAN output requires explicit platform/capacity confirmation and a tagged-only `0.0.0.0 0.0.0.0` physical parent with no direct zone/policy/route membership.
+- **NAT & Manual**:
+  - Supports a constrained fixed-pool SNAT case (`port no-translation`): one source host, one active policy, builtin `all`/`ALL`, one translated IPv4 address, explicit fixed-port preservation, disabled proxy ARP, and confirmed routed return (atomic approval group).
+  - Interface PAT, central SNAT, VIP/DNAT, FQDN runtime cache, host-inbound administrative services, and UTM/identity stay manual.
+- **Target Comparison**: Optional Junos snapshot supports exact reuse and absence checks; new policy output requires family-complete empty policy evidence (local default `deny-all` permitted) with no NAT or routing-instance ambiguity.
+- **CLI & Application**:
+
+  ```bash
+  fwmigrate migrate \
+    --source-vendor fortigate --target-vendor juniper_srx \
+    --input fortigate.conf --output out --format set \
+    [--zone-map mapping.yaml] [--target-config junos.set]
+  ```
+
+  Load the reviewed `.set` file, run `commit check`, and commit explicitly on the device.
+
+---
+
+### FortiGate to Check Point
+
+- **Target baseline**: Check Point R81 Management API 1.8.1 + separate Gaia Clish (`checkpoint_management_operations.json`, `checkpoint_bindings.json`, `checkpoint_management.sh`, `gaia_config.clish`, `migration_decisions.json`, `migration_report.json`).
+- **Scope & Objects**:
+  - Converts one selected FortiGate VDOM.
+  - Management API: IPv4 hosts, networks, ranges (`add-host`, `add-network`, `add-address-range`), explicit IPv6 `ipprefix` hosts/networks (`add-host` / `add-network` with IPv6 fields; IPv6 policies/groups/NAT stay manual), explicit TCP/UDP custom services (`add-service-tcp`, `add-service-udp`), leaf-expanded static groups, and ordered IPv4 access rules when interfaces are `any`, schedule is `always`, and NAT/UTM are explicitly disabled.
+  - New-target mode creates a fresh package (`add-package`), access layer, and Drop cleanup anchor; existing-target mode inserts above a confirmed Drop cleanup rule.
+  - Gaia Clish: Explicit enabled IPv4/IPv6 static routes with destination and same-family gateway when blackhole is disabled and no device/VRF/distance/dynamic-gateway selector is present.
+- **NAT & Manual**: Interface-bound rules, non-`always` schedules, NAT, central SNAT, inline layers, and UTM/identity stay blocked. Management and Gaia planes are independent; Management snapshots do not verify Gaia routes.
+- **Target Comparison**: Optional native Management JSON snapshot supports exact object UID reuse (auto-NAT disabled) and cleanup-only Drop layer verification.
+- **CLI & Application**:
+
+  ```bash
+  fwmigrate migrate \
+    --source-vendor fortigate --target-vendor checkpoint \
+    --input fortigate.conf --output out --format json \
+    [--zone-map mapping.yaml] [--target-config cp_mgmt.json]
+  ```
+
+  Execute Management templates manually with an existing API session (`bash checkpoint_management.sh /path/to/existing-session.json` using `mgmt_cli` and `jq`), then publish, install policy, and save Gaia configuration separately.
+
+---
+
+## Official Vendor References
+
+Pinned selected vendor references maintained in this repository:
+
+- [FortiGate Selected CLI References](official-cli-references-selected%20version/FortiGate%20Selected%20CLI%20References.md) (FortiOS 7.4.6)
+- [Palo Alto Selected CLI References](official-cli-references-selected%20version/Palo_Alto_Selected_CLI_References.md) (PAN-OS 11.1)
+- [Cisco ASA Selected Configuration References](official-cli-references-selected%20version/Cisco_ASA_Selected_Configuration_References.md) (ASA 9.20)
+- [Cisco FTD Selected Configuration References](official-cli-references-selected%20version/Cisco_FTD_Selected_Configuration_References.md) (FMC REST API 7.7.0)
+- [Juniper Selected CLI References](official-cli-references-selected%20version/Juniper_Selected_CLI_References.md) (Junos 25.2R1)
+- [Check Point R81 Selected CLI and Management API References](official-cli-references-selected%20version/Check_Point_R81_Selected_CLI_and_Management_API_References.md) (R81 Management API 1.8.1)
+
+External vendor baselines referenced during implementation:
+
+- [FortiOS 7.2.13 CLI Reference](https://fortinetweb.s3.amazonaws.com/docs.fortinet.com/v2/attachments/9b85aed5-fafc-11f0-8b43-d2943efe5b2f/FortiOS-7.2.13-CLI_Reference.pdf) and [FortiOS 7.4.6 CLI Reference](https://fortinetweb.s3.amazonaws.com/docs.fortinet.com/v2/attachments/cb8d6b09-b8b3-11ef-9411-ae1fcf29f169/FortiOS-7.4.6-CLI_Reference.pdf)
+- [PAN-OS 11.1 CLI Hierarchy](https://docs.paloaltonetworks.com/ngfw/pan-os-cli-quick-start/cli-command-hierarchy/pan-os-11-1-configure-cli-command-hierarchy) and [PAN-OS NAT Policy Rules](https://docs.paloaltonetworks.com/ngfw/networking/nat/nat-policy-rules)
+- [Cisco ASA 9.20 Access Rules](https://www.cisco.com/c/en/us/td/docs/security/asa/asa920/configuration/firewall/asa-920-firewall-config/access-rules.html) and [ASA 9.20 NAT Basics](https://www.cisco.com/c/en/us/td/docs/security/asa/asa920/configuration/firewall/asa-920-firewall-config/nat-basics.html)
+- [Cisco FMC REST API Quick Start 7.7.0](https://www.cisco.com/c/en/us/td/docs/security/firepower/770/api/fmc/fmc-rest-api-quick-start-770.html)
+- [Juniper Junos Security Policy Overview](https://www.juniper.net/documentation/us/en/software/junos/security-policies/topics/concept/policy-overview.html) and [Custom Applications](https://www.juniper.net/documentation/us/en/software/junos/cli-reference/topics/ref/statement/application-edit-applications-srx.html)
+- [Check Point Management API v1.8.1](https://sc1.checkpoint.com/documents/latest/APIs/index.html#web/add-address-range~v1.8.1) and [Gaia R81 IPv4 Static Routes](https://sc1.checkpoint.com/documents/R81/WebAdminGuides/EN/CP_R81_Gaia_AdminGuide/Topics-GAG/IPv4-Static-Routes-Gaia-Clish.htm)

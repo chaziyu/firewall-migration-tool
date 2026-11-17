@@ -1,5 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import type { RefObject } from 'react'
+import { useMemo, useState } from 'react'
 import type { SourcePreviewData } from '../source/types'
 import { activeSubsection, asRecord, asRows, compactValue, interfaceTopologyRows, matchingSourceRows, reportCounts, reportSections, reportSectionRowCount, reportSearchText, rowColumns, safeValue, defaultColumns, cellSummary, columnWidth, fieldLabel, findingGroups, findingGroupKey } from './reportPresentation'
 import { ReportDetails } from './ReportDetails'
@@ -110,24 +109,6 @@ function ValidationTable({ rows, selected, onSelect, onNavigate, grouped }: {
     })}</tbody></table></div>
 }
 
-function useScrollRows(filteredRows: Finding[], active = true) {
-  const [renderedRowCount, setRenderedRowCount] = useState(200)
-  const loadMoreRef = useRef<HTMLDivElement>(null)
-  const [previousRows, setPreviousRows] = useState(filteredRows)
-  if (previousRows !== filteredRows) { setPreviousRows(filteredRows); setRenderedRowCount(200) }
-  useEffect(() => {
-    const sentinel = loadMoreRef.current
-    if (!active || !sentinel || renderedRowCount >= filteredRows.length || typeof IntersectionObserver === 'undefined') return
-    const observer = new IntersectionObserver((entries) => {
-      if (entries.some((entry) => entry.isIntersecting)) setRenderedRowCount((count) => Math.min(count + 200, filteredRows.length))
-    }, { rootMargin: '600px' })
-    observer.observe(sentinel)
-    return () => observer.disconnect()
-  }, [filteredRows, renderedRowCount, active])
-  return { visibleRows: filteredRows.slice(0, renderedRowCount), loadMoreRef,
-    loadMore: () => setRenderedRowCount((count) => Math.min(count + 200, filteredRows.length)) }
-}
-
 function ValidationReport({ data, reportScope, onReportScope, active }: { data: SourcePreviewData; reportScope: string; onReportScope: (scope: string) => void; active: boolean }) {
   const sections = asRecord(data.sections)
   const allRows = useMemo(() => asRows(sections.validation), [sections.validation])
@@ -153,7 +134,6 @@ function ValidationReport({ data, reportScope, onReportScope, active }: { data: 
   const group = findingGroups(matchingRows).find((item) => item.key === activeGroup)
   const filteredRows = useMemo(() => matchingRows.filter((row) => !activeGroup
     || findingGroupKey(row) === activeGroup), [matchingRows, activeGroup])
-  const { visibleRows, loadMoreRef, loadMore } = useScrollRows(filteredRows, active)
 
   function clearFilters() {
     setSearch('')
@@ -175,18 +155,17 @@ function ValidationReport({ data, reportScope, onReportScope, active }: { data: 
     <ValidationFilters rows={allRows} search={search} scope={scope} severity={severity} activeGroup={group?.key ?? ''} onSearch={(value) => { setSearch(value); setSelected(null) }} onScope={(value) => { onReportScope(value); setSelected(null) }} onSeverity={(value) => { setSeverity(value); setSelected(null) }} onClear={() => { clearFilters(); setSelected(null) }} />
     <ValidationSummary rows={matchingRows} activeGroup={group?.key ?? ''} onGroupChange={(key) => { setActiveGroup(key); setSelected(null) }} />
     {group && <p className="validation-group-explanation"><strong>{group.count} affected findings</strong> · {text(group.row.message)}</p>}
-    <div className={`validation-workspace${selected && visibleRows.includes(selected) ? ' has-details' : ''}`}>
-      <div><ValidationTable rows={visibleRows} selected={selected} grouped={!!group} onSelect={(row) => { setSelected(row); setTarget(null) }} onNavigate={navigateToObject} /><div ref={loadMoreRef} aria-hidden="true" style={{ height: 1 }} /></div>
-      {active && selected && visibleRows.includes(selected) && <ReportDetails finding row={selected} target={target} onNavigate={() => navigateToObject(selected)} onClose={() => { setSelected(null); setTarget(null) }} />}
+    <div className={`validation-workspace${selected && filteredRows.includes(selected) ? ' has-details' : ''}`}>
+      <ValidationTable rows={filteredRows} selected={selected} grouped={!!group} onSelect={(row) => { setSelected(row); setTarget(null) }} onNavigate={navigateToObject} />
+      {active && selected && filteredRows.includes(selected) && <ReportDetails finding row={selected} target={target} onNavigate={() => navigateToObject(selected)} onClose={() => { setSelected(null); setTarget(null) }} />}
     </div>
     {!allRows.length && <p className="validation-empty">No validation findings were reported.</p>}
     {!!scopes.length && <p className="validation-scope-note">Findings are reported for {scopes.length} {scopes.length === 1 ? 'scope' : 'scopes'}.</p>}
-    <p className="report-row-count" role="status">Showing {visibleRows.length.toLocaleString()} of {filteredRows.length.toLocaleString()} matching findings · {allRows.length.toLocaleString()} total</p>
-    {visibleRows.length < filteredRows.length && <button type="button" className="secondary-button button-compact" onClick={loadMore}>Load more findings</button>}
+    <p className="report-row-count" role="status">Showing {filteredRows.length.toLocaleString()} matching findings · {allRows.length.toLocaleString()} total</p>
   </div>
 }
 
-function SourceRowsTable({ rows, columns, selected, hasSource, topology, loadMoreRef, onSelect }: { rows: Finding[]; columns: string[]; selected: Finding | null; hasSource: boolean; topology: boolean; loadMoreRef: RefObject<HTMLDivElement | null>; onSelect: (row: Finding) => void }) {
+function SourceRowsTable({ rows, columns, selected, hasSource, topology, onSelect }: { rows: Finding[]; columns: string[]; selected: Finding | null; hasSource: boolean; topology: boolean; onSelect: (row: Finding) => void }) {
   if (!rows.length) return <p className="report-empty">{hasSource ? 'No rows match the current filters.' : 'No reported entries in this subsection.'}</p>
   return <div className="report-table-wrap" role="region" aria-label="Source report rows" tabIndex={0}>
     <table className="report-table"><thead><tr>{columns.map((key, index) => <th key={key} scope="col" className={`report-column-${columnWidth(key)}${index === 0 ? ' report-identity' : ''}`}>{fieldLabel(key)}</th>)}</tr></thead>
@@ -200,11 +179,10 @@ function SourceRowsTable({ rows, columns, selected, hasSource, topology, loadMor
         })}
       </tr>)}</tbody>
     </table>
-    <div ref={loadMoreRef} aria-hidden="true" style={{ height: 1 }} />
   </div>
 }
 
-export function SourceReport({ data, excelProfile, onExcelProfileChange, exporting, exportStatus, exportError, onExport, onCancelExport }: {
+export function SourceReport({ data, excelProfile, onExcelProfileChange, exporting, exportStatus, exportError, onExport }: {
   data: SourcePreviewData
   excelProfile: 'fast' | 'full'
   onExcelProfileChange: (value: 'fast' | 'full') => void
@@ -212,7 +190,6 @@ export function SourceReport({ data, excelProfile, onExcelProfileChange, exporti
   exportStatus: string
   exportError?: string | null
   onExport: () => void
-  onCancelExport?: () => void
 }) {
   const sectionsData = asRecord(data.sections)
   const sections = useMemo(() => reportSections(asRecord(data.sections)), [data.sections])
@@ -276,12 +253,11 @@ export function SourceReport({ data, excelProfile, onExcelProfileChange, exporti
       return !query || reportSearchText(row).includes(query)
     })
   }, [subsectionRows, effectiveScope, activeObjectSection, search, unifiedInterfaces])
-  const { visibleRows, loadMoreRef, loadMore } = useScrollRows(filteredRows, activeSection !== 'Overview' && activeSection !== 'Validation')
   const subsectionCount = search || effectiveScope ? `${filteredRows.length} of ${subsectionRows.length}` : subsectionRows.length
   const reportTabs = ['Overview', 'Interfaces', 'Objects', 'Schedules', 'Policies', 'NAT', 'Routes', 'VPN', 'References', ...(sections.some((item) => item.label === 'Extraction') ? ['Extraction'] : []), ...(sections.some((item) => item.label === 'Additional sections') ? ['Additional sections'] : []), 'Validation']
   const objectTabs = unifiedInterfaces ? ['interface_topology'] : sourceSections.filter((key) => showEmpty || key === activeObjectSection || active?.subsections.find((item) => item.key === key)?.rows.length)
-  const currentSelected = selectedRow && visibleRows.includes(selectedRow) ? selectedRow : null
-  const selectedIndex = currentSelected ? visibleRows.indexOf(currentSelected) : -1
+  const currentSelected = selectedRow && filteredRows.includes(selectedRow) ? selectedRow : null
+  const selectedIndex = currentSelected ? filteredRows.indexOf(currentSelected) : -1
   const warningGroups = findingGroups(validationRows).filter((group) => String(group.row.severity).toLowerCase() === 'warning').length
 
   function renderOverviewMetric(item: OverviewMetric) {
@@ -297,7 +273,7 @@ export function SourceReport({ data, excelProfile, onExcelProfileChange, exporti
       <div className="report-workspace-header">
         <div><h2 id="report-title">Source inventory</h2>{Array.isArray(summary.scopes) && summary.scopes.length > 0 && <p className="report-scope-summary">Scopes: {summary.scopes.join(', ')}</p>}</div>
         <div className="report-header-actions">
-          <ExcelExportControls vendor={data.vendor ?? ''} profile={excelProfile} onProfileChange={onExcelProfileChange} exporting={exporting} onExport={onExport} onCancel={onCancelExport} />
+          <ExcelExportControls vendor={data.vendor ?? ''} profile={excelProfile} onProfileChange={onExcelProfileChange} exporting={exporting} onExport={onExport} />
         </div>
       </div>
       {data.collection != null && <div className="report-count-note"><p>Collection: {String(asRecord(data.collection).status ?? 'Unknown')} · Method: {String(asRecord(data.collection).method ?? 'Not reported')}</p>{Array.isArray(asRecord(data.collection).warnings) && <ul>{(asRecord(data.collection).warnings as unknown[]).map((warning, index) => <li key={index}>{String(safeValue(warning))}</li>)}</ul>}</div>}
@@ -344,12 +320,11 @@ export function SourceReport({ data, excelProfile, onExcelProfileChange, exporti
         </div>
         <details className="report-column-selector"><summary>Columns ({columns.length})</summary><div>{allColumns.map((key, index) => <label key={key}><input type="checkbox" checked={columns.includes(key)} disabled={index === 0} onChange={(event) => updateView({ columns: allColumns.filter((column) => column === allColumns[0] || (column === key ? event.target.checked : columns.includes(column))) })} />{fieldLabel(key)}</label>)}<button className="filter-clear" type="button" onClick={() => updateView({ columns: undefined })}>Reset columns</button></div></details>
       </div>
-      <p className="report-row-count" role="status">Showing {visibleRows.length.toLocaleString()} of {filteredRows.length.toLocaleString()} matching rows · {subsectionRows.length.toLocaleString()} total. Open Details for full values.</p>
+      <p className="report-row-count" role="status">Showing {filteredRows.length.toLocaleString()} matching rows · {subsectionRows.length.toLocaleString()} total. Open Details for full values.</p>
       <div className={`validation-workspace${currentSelected ? ' has-details' : ''}${unifiedInterfaces ? ' report-topology-view' : ''}`} key={activeSection}>
-        <SourceRowsTable rows={visibleRows} columns={columns} selected={currentSelected} hasSource={subsectionRows.length > 0} topology={activeObjectSection === 'interface_topology'} loadMoreRef={loadMoreRef} onSelect={setSelectedRow} />
-        {currentSelected && <ReportDetails row={currentSelected} subsection={activeObjectSection} vendor={data.vendor} onClose={() => setSelectedRow(null)} previous={selectedIndex > 0 ? () => setSelectedRow(visibleRows[selectedIndex - 1]) : undefined} next={selectedIndex < visibleRows.length - 1 ? () => setSelectedRow(visibleRows[selectedIndex + 1]) : undefined} />}
+        <SourceRowsTable rows={filteredRows} columns={columns} selected={currentSelected} hasSource={subsectionRows.length > 0} topology={activeObjectSection === 'interface_topology'} onSelect={setSelectedRow} />
+        {currentSelected && <ReportDetails row={currentSelected} subsection={activeObjectSection} vendor={data.vendor} onClose={() => setSelectedRow(null)} previous={selectedIndex > 0 ? () => setSelectedRow(filteredRows[selectedIndex - 1]) : undefined} next={selectedIndex < filteredRows.length - 1 ? () => setSelectedRow(filteredRows[selectedIndex + 1]) : undefined} />}
       </div>
-      {visibleRows.length < filteredRows.length && <button type="button" className="secondary-button button-compact" onClick={loadMore}>Load more rows</button>}
       </div>
     </>}
     <div hidden={activeSection !== 'Validation'}><ValidationReport data={data} reportScope={scope} onReportScope={changeScope} active={activeSection === 'Validation'} /></div>
