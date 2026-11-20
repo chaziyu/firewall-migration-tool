@@ -3,10 +3,8 @@ from copy import deepcopy
 
 import pytest
 from fwmigrate import web
-from fwmigrate.web_support.artifact_signing import sign_envelope
 from tests.approved_design import approved_migrate
 
-KEY = 'workspace-test-key-with-at-least-32-bytes'
 MINIMAL_FORTIGATE = (
     b'config system interface\n'
     b' edit port1\n set ip 192.0.2.1 255.255.255.0\n set allowaccess ping\n next\n'
@@ -23,10 +21,10 @@ def _ready_artifact(client):
     return migrated['artifact']
 
 
-def test_signed_artifact_survives_restart_and_id_only_requests_fail_closed():
-    first = web.create_app({'TESTING': True, 'WORKSPACE_SIGNING_KEY': KEY}).test_client()
+def test_artifact_survives_restart_and_id_only_requests_fail_closed():
+    first = web.create_app({'TESTING': True}).test_client()
     artifact = _ready_artifact(first)
-    second = web.create_app({'TESTING': True, 'WORKSPACE_SIGNING_KEY': KEY}).test_client()
+    second = web.create_app({'TESTING': True}).test_client()
     downloaded = second.post('/api/migration/download', json={'artifact': artifact})
     assert downloaded.status_code == 200
     assert downloaded.data.decode() == '\n'.join(artifact['commands'])
@@ -34,23 +32,19 @@ def test_signed_artifact_survives_restart_and_id_only_requests_fail_closed():
     assert second.post('/api/migrate', json={'preview_id': 'someone-elses-preview'}).status_code == 400
 
 
-@pytest.mark.parametrize('field', ['commands', 'command_count', 'command_sha256', 'report', 'decision_document', 'mapping', 'artifact_id'])
+@pytest.mark.parametrize('field', ['commands', 'command_count', 'command_sha256', 'report', 'decision_document'])
 def test_artifact_tampering_is_rejected_before_download(field):
-    client = web.create_app({
-        'TESTING': True,
-        'WORKSPACE_SIGNING_KEY': KEY,
-    }).test_client()
+    client = web.create_app({'TESTING': True}).test_client()
     artifact = deepcopy(_ready_artifact(client))
     artifact[field] = ['set malicious command'] if field == 'commands' else 'changed'
     assert client.post('/api/migration/download', json={'artifact': artifact}).status_code == 400
 
 
 @pytest.mark.parametrize('field,value', [('command_count', 999), ('command_sha256', 'wrong')])
-def test_signed_count_or_hash_mismatch_is_rejected(field, value):
-    client = web.create_app({'TESTING': True, 'WORKSPACE_SIGNING_KEY': KEY}).test_client()
+def test_count_or_hash_mismatch_is_rejected(field, value):
+    client = web.create_app({'TESTING': True}).test_client()
     artifact = deepcopy(_ready_artifact(client))
     artifact[field] = value
-    artifact = sign_envelope(artifact, KEY.encode())
     response = client.post('/api/migration/download', json={'artifact': artifact})
     assert response.status_code == 400
     assert 'count or SHA-256' in response.get_json()['error']

@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { PageHeader } from './PageHeader'
 import { Sidebar } from './Sidebar'
 import type { WorkflowView } from '../../features/source/SourceConfiguration'
@@ -13,13 +13,31 @@ export function AppLayout({ children, view, onViewChange, page, theme, onNewWork
   onNewWorkspace: () => void
   onToggleTheme: () => void
 }) {
+  const [collapsed, setCollapsed] = useState(true)
+  const [mobileOpen, setMobileOpen] = useState(false)
+
   return (
     <div className="app-layout">
-      <Sidebar view={view} onViewChange={onViewChange} liveDeviceAccess={liveDeviceAccess} />
-      <div className="app-content">
-        <PageHeader page={page} theme={theme} onNewWorkspace={onNewWorkspace} onToggleTheme={onToggleTheme} />
+      <Sidebar
+        view={view}
+        onViewChange={onViewChange}
+        liveDeviceAccess={liveDeviceAccess}
+        collapsed={collapsed}
+        mobileOpen={mobileOpen}
+        onClose={() => setMobileOpen(false)}
+      />
+      <main className="app-content">
+        <PageHeader
+          page={page}
+          theme={theme}
+          collapsed={collapsed}
+          onCollapseClick={() => setCollapsed((current) => !current)}
+          onMenuClick={() => setMobileOpen(true)}
+          onNewWorkspace={onNewWorkspace}
+          onToggleTheme={onToggleTheme}
+        />
         {children}
-      </div>
+      </main>
     </div>
   )
 }

@@ -11,12 +11,10 @@ import fwmigrate.main as migration_cli
 from fwmigrate.conversion.workflow_registry import MigrationWorkflowRegistration, MigrationWorkflowRegistry
 from fwmigrate.main import cli
 from fwmigrate.web import create_app
-from fwmigrate.web_support.artifact_signing import sign_envelope
 from tests.conversion.palo_alto_to_fortigate.conftest import SOURCE, options as mapping_fixture
 
 
 PREFIX = "/api/migration/palo_alto_to_fortigate"
-KEY = b"r" * 32
 
 
 @pytest.fixture
@@ -25,7 +23,7 @@ def setup_reverse():
 
     analysis = source_reporters.get("palo_alto").analyze_source(SOURCE)
     options = mapping_fixture.__wrapped__(analysis)
-    client = create_app({"TESTING": True, "WEB_MODE": "local", "WORKSPACE_SIGNING_KEY": KEY, "API_RATE_LIMIT_PER_MINUTE": 10000}).test_client()
+    client = create_app({"TESTING": True, "WEB_MODE": "local", "API_RATE_LIMIT_PER_MINUTE": 10000}).test_client()
     return client, {"source": {"vendor": "palo_alto", "source_text": SOURCE}, "options": options}
 
 
@@ -117,7 +115,7 @@ def test_web_build_rejects_forged_stale_or_wrong_pair_approval(setup_reverse, ch
     _, approval = approved_artifact(client, payload)
     payload = deepcopy(payload)
     if change == "unsigned":
-        approval.pop("signature")
+        approval = {}
     elif change == "options":
         payload["options"]["interfaces"]["ethernet1/1"] = "port3"
     elif change == "source":
@@ -129,7 +127,6 @@ def test_web_build_rejects_forged_stale_or_wrong_pair_approval(setup_reverse, ch
             approval["envelope_type"] = "pan_design_approval"
         else:
             approval["configuration"] = {}
-        approval = sign_envelope(approval, KEY)
     response = client.post(PREFIX + "/build", json={**payload, "approval": approval})
     assert response.status_code == 400
     assert "artifact" not in response.get_json()
@@ -140,9 +137,6 @@ def test_web_never_accepts_client_commands_or_unapproved_artifacts(setup_reverse
     assert client.post(PREFIX + "/build", json={**payload, "commands": ["config firewall policy"]}).status_code == 400
     artifact, _ = approved_artifact(client, payload)
     artifact["commands"].append("end")
-    assert client.post(PREFIX + "/commands", json={"artifact": artifact}).status_code == 400
-    artifact, _ = approved_artifact(client, payload)
-    artifact.pop("signature")
     assert client.post(PREFIX + "/commands", json={"artifact": artifact}).status_code == 400
 
 

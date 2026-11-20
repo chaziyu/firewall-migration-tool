@@ -57,7 +57,7 @@ from fwmigrate.conversion.fortigate_to_palo_alto.application import (
 )
 from fwmigrate.source_reporting import source_reporters
 from fwmigrate.vendors.palo_alto.config_fingerprint import BASELINE_FORMAT, destination_fingerprint
-from fwmigrate.web_support.artifact_signing import sign_envelope, verify_artifact, verify_envelope
+from fwmigrate.web_support.artifact_signing import verify_artifact, verify_envelope
 from fwmigrate.web_support.request_source import (
     _clone_preview,
     _require_complete_collection,
@@ -126,7 +126,6 @@ def _build_migration_review_state(entry, payload, apply_deterministic=False):
 
 def register_migration_routes(
     app,
-    signing_key,
     *,
     migration_planner_registry,
     object_reuse_classifier,
@@ -139,9 +138,11 @@ def register_migration_routes(
 
     def _request_artifact(payload):
         artifact = payload.get('artifact')
-        rendered = verify_artifact(artifact, signing_key)
-        document = artifact.get('decision_document') or {}
-        approval = verify_envelope(document.get('design_approval'), signing_key)
+        rendered = verify_artifact(artifact)
+        document = artifact.get('decision_document')
+        if not isinstance(document, dict):
+            raise ValueError('A migration artifact is required')
+        approval = verify_envelope(document.get('design_approval'))
         validate_artifact_approval(rendered, document, approval)
         return rendered
 
@@ -165,7 +166,7 @@ def register_migration_routes(
             if any(row.approved_operation for row in decisions.decisions):
                 raise ValueError('Draft operations require a signed engineer approval')
             return document, None
-        verify_envelope(approval, signing_key)
+        verify_envelope(approval)
         if approval.get('envelope_type') != 'pan_design_approval':
             raise ValueError('A signed design approval is required')
         bound = approval['context']
@@ -222,7 +223,7 @@ def register_migration_routes(
         entry = _migration_source(payload)
         state, draft, approval = _deterministic_state(payload, entry)
         response = _migration_review_payload(entry, state)
-        response['draft'] = sign_envelope(draft.to_dict(), signing_key)
+        response['draft'] = draft.to_dict()
         response['approval_readiness'] = {'current': bool(approval), 'expires_at': approval.get('expires_at') if approval else None}
         response['decision_document']['draft_required'] = True
         if approval:
@@ -235,7 +236,7 @@ def register_migration_routes(
             payload = request.get_json(silent=True)
             if not isinstance(payload, dict):
                 raise ValueError('A JSON object is required')
-            signed = verify_envelope(payload.get('draft'), signing_key)
+            signed = verify_envelope(payload.get('draft'))
             if signed.get('envelope_type') != 'pan_migration_draft':
                 raise ValueError('A signed deterministic draft is required')
             entry = _migration_source(payload)
@@ -250,10 +251,10 @@ def register_migration_routes(
             approved_rows = dict((previous_approval or {}).get('configuration', {}))
             approved_rows.update({row['item_key']: row for row in body['configuration'] if row['group_key'] in selected})
             # Bind the exact approved operations, values, scope, evidence and dependency context.
-            approval = sign_envelope({'envelope_type': 'pan_design_approval', 'context': body['context'],
+            approval = {'envelope_type': 'pan_design_approval', 'context': body['context'],
                 'draft_digest': body['digest'], 'configuration': approved_rows,
                 'expires_at': time.time() + DESIGN_APPROVAL_TTL_SECONDS,
-                'decisions': _decision_approval_snapshot(confirmed)}, signing_key)
+                'decisions': _decision_approval_snapshot(confirmed)}
             document = build_decision_document(entry.source_digest, confirmed,
                 state['target_context'].metadata if state['target_context'] and body['context']['reference_role'] == 'DESTINATION' else None)
             document['design_approval'] = approval
@@ -577,7 +578,7 @@ def register_migration_routes(
             target_evidence = serialized.get('target_evidence') if isinstance(serialized, dict) else None
             document = build_decision_document(entry.source_digest, decision_set, target_evidence)
             if isinstance(serialized, dict) and serialized.get('design_approval'):
-                verify_envelope(serialized['design_approval'], signing_key)
+                verify_envelope(serialized['design_approval'])
                 document['design_approval'] = serialized['design_approval']
                 document['draft_required'] = True
             return jsonify({'success': True, 'document': document})
@@ -594,7 +595,7 @@ def register_migration_routes(
             target_evidence = (payload.get('document') or {}).get('target_evidence') if isinstance(payload.get('document'), dict) else None
             document = build_decision_document(entry.source_digest, decision_set, target_evidence)
             if payload['document'].get('design_approval'):
-                verify_envelope(payload['document']['design_approval'], signing_key)
+                verify_envelope(payload['document']['design_approval'])
                 document['design_approval'] = payload['document']['design_approval']
                 document['draft_required'] = True
             return jsonify({'success': True, 'decision_document': document,
@@ -707,11 +708,11 @@ def register_migration_routes(
                     'deployment': deployment_eligibility},
                 'issues': [item.to_dict() for item in result.support_guidance]})
             artifact_id = uuid_factory().hex
-            artifact = sign_envelope({
+            artifact = {
                 'artifact_id': artifact_id, 'commands': list(rendered.commands),
                 'command_count': len(rendered.commands), 'command_sha256': rendered.report['command_sha256'],
                 'report': rendered.report, 'decision_document': decision_document, 'mapping': mapping,
-            }, signing_key)
+            }
 
             counts = rendered.report['counts']
             render_counts = rendered.report['render_dispositions']

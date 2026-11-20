@@ -12,25 +12,61 @@ const navIcons: Record<WorkflowView, string> = {
   migration: 'M4 18a2.5 2.5 0 1 0 0 .1M20 8a2.5 2.5 0 1 0 0 .1M6.5 18H9a4 4 0 0 0 4-4v-1a4 4 0 0 1 4-4h.5m-3-3 3 3-3 3',
 }
 
-export function Sidebar({ view, onViewChange, liveDeviceAccess }: {
+function renderSidebarBody({ view, liveDeviceAccess, collapsed, onSelect }: {
   view: WorkflowView
   liveDeviceAccess: boolean
-  onViewChange: (view: WorkflowView) => void
+  collapsed: boolean
+  onSelect: (view: WorkflowView) => void
 }) {
   return (
-    <aside className="sidebar" aria-label="Main navigation">
-      <a className="brand" href="/" aria-label="Firewall Migration Tool home">
+    <>
+      <a className="brand" href="/" aria-label="Firewall Migration Tool home" title="Firewall Migration Tool">
         <span className="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M4 7h16m-4-4 4 4-4 4M20 17H4m4 4-4-4 4-4" /></svg></span>
-        <span className="brand-wordmark"><span>Firewall</span><small>MIGRATION TOOL</small></span>
+        {!collapsed && <span className="brand-wordmark"><span>Firewall</span><small>MIGRATION TOOL</small></span>}
       </a>
       <nav className="workflow-nav" aria-label="Workflow">
         {navigation.filter((item) => liveDeviceAccess || item.id !== 'collect').map((item) => <button
           key={item.id}
           type="button"
+          title={collapsed ? item.label : undefined}
+          aria-label={item.label}
           aria-current={view === item.id ? 'page' : undefined}
-          onClick={() => onViewChange(item.id)}
-        ><svg className="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={navIcons[item.id]} /></svg><span>{item.label}</span></button>)}
+          onClick={() => onSelect(item.id)}
+        ><svg className="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={navIcons[item.id]} /></svg>{!collapsed && <span>{item.label}</span>}</button>)}
       </nav>
-    </aside>
+    </>
+  )
+}
+
+export function Sidebar({ view, onViewChange, liveDeviceAccess, collapsed = false, mobileOpen = false, onClose }: {
+  view: WorkflowView
+  liveDeviceAccess: boolean
+  onViewChange: (view: WorkflowView) => void
+  collapsed?: boolean
+  mobileOpen?: boolean
+  onClose?: () => void
+}) {
+  return (
+    <>
+      <aside className={collapsed ? 'sidebar collapsed' : 'sidebar'} aria-label="Main navigation">
+        {renderSidebarBody({ view, liveDeviceAccess, collapsed, onSelect: onViewChange })}
+      </aside>
+      {mobileOpen && (
+        <div className="sidebar-mobile-backdrop" role="presentation">
+          <div className="sidebar-mobile-scrim" onClick={onClose} />
+          <aside className="sidebar-mobile-drawer" aria-label="Mobile navigation">
+            {renderSidebarBody({
+              view,
+              liveDeviceAccess,
+              collapsed: false,
+              onSelect: (nextView) => {
+                onViewChange(nextView)
+                onClose?.()
+              },
+            })}
+          </aside>
+        </div>
+      )}
+    </>
   )
 }

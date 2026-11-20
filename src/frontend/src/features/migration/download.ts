@@ -1,8 +1,5 @@
+import { saveBlobWithFallback } from '../../utils/desktop'
+
 export function download(text: string, name: string, type: string) {
-  const url = URL.createObjectURL(new Blob([text], { type }))
-  const link = document.createElement('a')
-  link.href = url
-  link.download = name
-  link.click()
-  URL.revokeObjectURL(url)
+  void saveBlobWithFallback(new Blob([text], { type }), name)
 }

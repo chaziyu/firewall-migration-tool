@@ -891,13 +891,11 @@ def test_parent_allocation_unlocks_vlan_and_approved_additive_commands():
         assert response.status_code == 200, response.get_json()
 
 
-@pytest.mark.parametrize('change', ['signature', 'role', 'override', 'selection', 'parent'])
+@pytest.mark.parametrize('change', ['role', 'override', 'selection', 'parent'])
 def test_approval_rejects_forged_stale_and_incomplete_selection_atomically(change):
     client, payload = setup()
     data, payload = allocate(client, payload)
-    if change == 'signature':
-        data['draft']['decisions'][0]['operation'] = 'REUSE'
-    elif change == 'role':
+    if change == 'role':
         payload['reference_role'] = 'TEMPLATE'
     elif change == 'override':
         payload['draft_overrides'] = {key: 'ethernet1/2' for key in payload['draft_overrides']}
@@ -1050,16 +1048,14 @@ def test_proposal_edit_after_approval_requires_reapproval_and_keeps_new_value():
     assert any('zone new-zone' in command for command in plan.get_json()['commands'])
 
 
-@pytest.mark.parametrize('change', ['signature', 'unsigned', 'role'])
+@pytest.mark.parametrize('change', ['unsigned', 'role'])
 def test_manual_confirmation_cannot_launder_invalid_design_approval(change):
     client, payload = setup()
     data, payload = allocate(client, payload)
     payload['decision_document'] = approve(client, payload, data).get_json()['decision_document']
     interface = next(row for row in payload['decision_document']['decisions']
                      if row['source_name'] == 'port1' and row['target_field'] == 'target_interface')
-    if change == 'signature':
-        payload['decision_document']['design_approval']['signature'] = 'invalid'
-    elif change == 'unsigned':
+    if change == 'unsigned':
         payload['decision_document'].pop('design_approval')
     else:
         payload['reference_role'] = 'UNKNOWN'

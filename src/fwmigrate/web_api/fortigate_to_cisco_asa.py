@@ -13,11 +13,11 @@ from fwmigrate.conversion.fortigate_to_cisco_asa.application import (
     import_decisions, verify_export_artifact,
 )
 from fwmigrate.source_reporting import source_reporters
-from fwmigrate.web_support.artifact_signing import sign_envelope, verify_envelope
+from fwmigrate.web_support.artifact_signing import verify_envelope
 from fwmigrate.web_support.request_source import analyze_request_source, _require_complete_collection
 
 
-def register_fortigate_to_cisco_asa_routes(app, signing_key):
+def register_fortigate_to_cisco_asa_routes(app):
     prefix = "/api/migration/fortigate_to_cisco_asa"
 
     def target_source(payload):
@@ -36,7 +36,7 @@ def register_fortigate_to_cisco_asa_routes(app, signing_key):
             if not isinstance(payload, dict):
                 raise ValueError("A JSON object is required")
             if action in {"command-preview", "commands", "bundle"}:
-                artifact = verify_export_artifact(verify_envelope(payload.get("artifact"), signing_key))
+                artifact = verify_export_artifact(verify_envelope(payload.get("artifact")))
                 command_bytes = artifact["command_text"].encode("utf-8")
                 if action == "command-preview":
                     return jsonify({"success": True, "text": artifact["command_text"],
@@ -73,17 +73,17 @@ def register_fortigate_to_cisco_asa_routes(app, signing_key):
                 return jsonify({"success": True, "document": export_decisions(entry.source_digest, options)})
             target, target_text, metadata = target_source(payload)
             if action == "build":
-                approval = verify_envelope(payload.get("approval"), signing_key)
+                approval = verify_envelope(payload.get("approval"))
                 artifact = build_artifact(entry.analysis, options, entry.source_digest, approval,
                                           target=target, target_source_text=target_text,
                                           target_metadata=metadata)
-                return jsonify({"success": True, "artifact": sign_envelope(artifact, signing_key)})
+                return jsonify({"success": True, "artifact": artifact})
             review = build_review(entry.analysis, options, entry.source_digest, target=target,
                                   target_source_text=target_text, target_metadata=metadata)
             if action == "design/approve":
-                draft = verify_envelope(payload.get("draft"), signing_key)
+                draft = verify_envelope(payload.get("draft"))
                 approval = approve_design(review, draft, payload.get("selected_items"))
-                return jsonify({"success": True, "approval": sign_envelope(approval, signing_key)})
+                return jsonify({"success": True, "approval": approval})
             if action == "requirements":
                 return jsonify({"success": True, "source_digest": entry.source_digest,
                                 "options": review["options"].to_dict(),
@@ -91,7 +91,7 @@ def register_fortigate_to_cisco_asa_routes(app, signing_key):
             if action == "design/prepare":
                 return jsonify({"success": True, "source_digest": entry.source_digest,
                                 "options": review["options"].to_dict(),
-                                "draft": sign_envelope(review["draft"], signing_key),
+                                "draft": review["draft"],
                                 "requirements": review["requirements"], "report": review["report"]})
             raise ValueError("Unsupported ASA migration action")
         except (ValueError, TypeError, KeyError):

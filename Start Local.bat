@@ -4,17 +4,6 @@ cd /d "%~dp0"
 
 set "PYTHON=%~dp0.venv\Scripts\python.exe"
 
-where node >nul 2>&1
-if errorlevel 1 (
-    echo Node.js was not found. Install Node.js, then run this file again.
-    goto :failed
-)
-where npm >nul 2>&1
-if errorlevel 1 (
-    echo npm was not found. Install Node.js with npm, then retry.
-    goto :failed
-)
-
 if not exist "%PYTHON%" (
     echo Creating the Python environment...
     python -m venv .venv
@@ -34,25 +23,44 @@ if errorlevel 1 (
     goto :failed
 )
 
-echo Synchronizing frontend dependencies from the lockfile...
-call npm --prefix src\frontend ci --prefer-offline
-if errorlevel 1 goto :failed
+if exist "src\frontend\dist\index.html" goto :frontend_ready
 
-echo Backend:  http://127.0.0.1:5000
-echo Frontend: http://127.0.0.1:5173
-echo Press Ctrl+C in each server window to stop it.
-start "Firewall Migration Backend" cmd /k ""%PYTHON%" -m fwmigrate.main serve --host 127.0.0.1 --port 5000"
-if errorlevel 1 goto :failed
-
-echo Waiting for backend on http://127.0.0.1:5000...
-powershell -NoProfile -Command "$deadline = (Get-Date).AddSeconds(30); while ((Get-Date) -lt $deadline) { try { $c = [System.Net.Sockets.TcpClient]::new('127.0.0.1', 5000); $c.Close(); exit 0 } catch { Start-Sleep -Milliseconds 250 } }; exit 1"
+where node >nul 2>&1
 if errorlevel 1 (
-    echo Backend did not become ready on http://127.0.0.1:5000.
+    echo Frontend build ^(src\frontend\dist\index.html^) is missing and Node.js was not found.
+    echo Install Node.js or provide a prebuilt src\frontend\dist folder, then run this file again.
+    goto :failed
+)
+where npm >nul 2>&1
+if errorlevel 1 (
+    echo Frontend build ^(src\frontend\dist\index.html^) is missing and npm was not found.
     goto :failed
 )
 
-cd /d "%~dp0src\frontend"
-call npm run dev -- --host 127.0.0.1 --port 5173 --strictPort --open
+if not exist "src\frontend\node_modules\.bin\vite.cmd" (
+    echo Synchronizing frontend dependencies from the lockfile...
+    call npm --prefix src\frontend ci --prefer-offline
+    if errorlevel 1 goto :failed
+    if not exist "src\frontend\node_modules\.bin\vite.cmd" (
+        echo Frontend dependencies failed to install completely ^(vite.cmd missing^).
+        echo Try: rmdir /s /q src\frontend\node_modules ^&^& npm cache clean --force ^&^& npm --prefix src\frontend ci
+        goto :failed
+    )
+)
+
+echo Building frontend production bundle...
+call npm --prefix src\frontend run build
+if errorlevel 1 goto :failed
+if not exist "src\frontend\dist\index.html" (
+    echo Frontend build did not produce src\frontend\dist\index.html.
+    goto :failed
+)
+
+:frontend_ready
+echo Starting Firewall Migration Tool on http://127.0.0.1:5000/
+echo Press Ctrl+C in this window to stop the server.
+start "" /b powershell -NoProfile -WindowStyle Hidden -Command "$deadline = (Get-Date).AddSeconds(30); while ((Get-Date) -lt $deadline) { try { $c = [System.Net.Sockets.TcpClient]::new('127.0.0.1', 5000); $c.Close(); Start-Process 'http://127.0.0.1:5000/'; exit 0 } catch { Start-Sleep -Milliseconds 250 } }"
+"%PYTHON%" -m fwmigrate.main serve --host 127.0.0.1 --port 5000
 if errorlevel 1 goto :failed
 exit /b 0
 

@@ -16,7 +16,6 @@ from fwmigrate.collection.builtin import register_builtin_collectors
 from fwmigrate.collection.snapshot import MAX_BYTES
 from fwmigrate.conversion import migration_planners
 from fwmigrate.conversion.builtin import register_builtin_migration_planners, register_builtin_migration_workflows
-from fwmigrate.conversion.fortigate_to_palo_alto.application import classify_target_object_reuse
 from fwmigrate.source_reporting import source_reporters as source_reporters
 from fwmigrate.source_reporting.builtin import register_builtin_source_reporters
 from fwmigrate.web_api.migration import register_migration_routes
@@ -38,6 +37,15 @@ register_builtin_migration_planners()
 register_builtin_migration_workflows()
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def classify_target_object_reuse(*args, **kwargs):
+    """Defer importing FortiGate-to-PAN-OS reuse classification until first use."""
+    from fwmigrate.conversion.fortigate_to_palo_alto.application import (
+        classify_target_object_reuse as _classify_target_object_reuse,
+    )
+
+    return _classify_target_object_reuse(*args, **kwargs)
 
 
 class _MemoryOnlyUploadRequest(FlaskRequest):
@@ -146,15 +154,6 @@ def create_app(test_config=None):
             response.headers['Pragma'] = 'no-cache'
         return response
 
-    signing_key = app.config.get('WORKSPACE_SIGNING_KEY') or os.environ.get('FWMIGRATE_WORKSPACE_SIGNING_KEY')
-    if signing_key:
-        signing_key = signing_key.encode() if isinstance(signing_key, str) else signing_key
-        if len(signing_key) < 32:
-            raise ValueError('Workspace signing key must contain at least 32 bytes')
-    else:
-        signing_key = os.urandom(32)
-        _LOGGER.warning('Temporary workspace signing key: signed artifacts expire on server restart')
-
     @app.errorhandler(ValueError)
     def _invalid_request(error):
         return jsonify({'success': False, 'error': safe_validation_message(error, 'Invalid request')}), 400
@@ -173,17 +172,16 @@ def create_app(test_config=None):
     register_frontend_routes(app)
     register_source_routes(app, collector_registry=app.config.get('SOURCE_COLLECTOR_REGISTRY'))
     register_migration_pair_routes(app)
-    register_fortigate_to_juniper_srx_routes(app, signing_key)
-    register_fortigate_to_cisco_asa_routes(app, signing_key)
-    register_fortigate_to_checkpoint_routes(app, signing_key)
-    register_palo_alto_to_fortigate_routes(app, signing_key)
-    register_palo_alto_to_juniper_srx_routes(app, signing_key)
-    register_palo_alto_to_cisco_asa_routes(app, signing_key)
-    register_palo_alto_to_checkpoint_routes(app, signing_key)
-    register_palo_alto_to_cisco_ftd_routes(app, signing_key)
+    register_fortigate_to_juniper_srx_routes(app)
+    register_fortigate_to_cisco_asa_routes(app)
+    register_fortigate_to_checkpoint_routes(app)
+    register_palo_alto_to_fortigate_routes(app)
+    register_palo_alto_to_juniper_srx_routes(app)
+    register_palo_alto_to_cisco_asa_routes(app)
+    register_palo_alto_to_checkpoint_routes(app)
+    register_palo_alto_to_cisco_ftd_routes(app)
     register_migration_routes(
         app,
-        signing_key,
         migration_planner_registry=migration_planners,
         object_reuse_classifier=classify_target_object_reuse,
         uuid_factory=uuid.uuid4,

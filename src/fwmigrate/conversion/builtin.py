@@ -1,36 +1,53 @@
 """Registration of built-in pair-specific migration planners."""
 
-from fwmigrate.conversion.fortigate_to_palo_alto import FortiGateToPaloAltoPlanner
-from .fortigate_to_juniper_srx import FortiGateToJuniperSRXPlanner
-from .fortigate_to_juniper_srx.application.cli import run_cli as run_srx_cli
-from .fortigate_to_cisco_asa import FortiGateToCiscoASAPlanner
-from .fortigate_to_cisco_asa.application.cli import run_cli as run_asa_cli
-from .fortigate_to_checkpoint import FortiGateToCheckPointPlanner
-from .fortigate_to_checkpoint.application.cli import run_cli as run_checkpoint_cli
-from .palo_alto_to_fortigate import PaloAltoToFortiGatePlanner
-from .palo_alto_to_juniper_srx import PaloAltoToJuniperSRXPlanner
-from .palo_alto_to_juniper_srx.application.cli import run_cli as run_panos_srx_cli
-from .palo_alto_to_cisco_asa import PaloAltoToCiscoASAPlanner
-from .palo_alto_to_cisco_asa.application.cli import run_cli as run_panos_asa_cli
-from .palo_alto_to_checkpoint import PaloAltoToCheckPointPlanner
-from .palo_alto_to_checkpoint.application.cli import run_cli as run_panos_checkpoint_cli
-from .palo_alto_to_cisco_ftd import PaloAltoToCiscoFTDPlanner
-from .palo_alto_to_cisco_ftd.application.cli import run_cli as run_panos_ftd_cli
+from importlib import import_module
+from threading import Lock
+from typing import Any
 
 from .registry import migration_planners
 from .workflow_registry import MigrationWorkflowRegistration, migration_workflows
 
 
+class _LazyMigrationPlanner:
+    """Defer importing pair-specific planners until the pair is actually requested."""
+
+    def __init__(self, source_vendor: str, target_vendor: str, module_name: str, class_name: str) -> None:
+        self.source_vendor = source_vendor
+        self.target_vendor = target_vendor
+        self._module_name = module_name
+        self._class_name = class_name
+        self._planner = None
+        self._lock = Lock()
+
+    def _load(self):
+        with self._lock:
+            if self._planner is None:
+                module = import_module(self._module_name)
+                self._planner = getattr(module, self._class_name)()
+            return self._planner
+
+    def plan(self, source: Any, derived: Any, **options: Any) -> Any:
+        return self._load().plan(source, derived, **options)
+
+
+def _lazy_cli_application(module_name: str):
+    def _run_cli(*args, **kwargs):
+        module = import_module(module_name)
+        return module.run_cli(*args, **kwargs)
+
+    return _run_cli
+
+
 _BUILTIN_PLANNERS = (
-    FortiGateToPaloAltoPlanner(),
-    PaloAltoToFortiGatePlanner(),
-    PaloAltoToJuniperSRXPlanner(),
-    PaloAltoToCiscoASAPlanner(),
-    PaloAltoToCheckPointPlanner(),
-    PaloAltoToCiscoFTDPlanner(),
-    FortiGateToJuniperSRXPlanner(),
-    FortiGateToCiscoASAPlanner(),
-    FortiGateToCheckPointPlanner(),
+    _LazyMigrationPlanner("fortigate", "palo_alto", "fwmigrate.conversion.fortigate_to_palo_alto", "FortiGateToPaloAltoPlanner"),
+    _LazyMigrationPlanner("palo_alto", "fortigate", "fwmigrate.conversion.palo_alto_to_fortigate", "PaloAltoToFortiGatePlanner"),
+    _LazyMigrationPlanner("palo_alto", "juniper_srx", "fwmigrate.conversion.palo_alto_to_juniper_srx", "PaloAltoToJuniperSRXPlanner"),
+    _LazyMigrationPlanner("palo_alto", "cisco_asa", "fwmigrate.conversion.palo_alto_to_cisco_asa", "PaloAltoToCiscoASAPlanner"),
+    _LazyMigrationPlanner("palo_alto", "checkpoint", "fwmigrate.conversion.palo_alto_to_checkpoint", "PaloAltoToCheckPointPlanner"),
+    _LazyMigrationPlanner("palo_alto", "cisco_ftd", "fwmigrate.conversion.palo_alto_to_cisco_ftd", "PaloAltoToCiscoFTDPlanner"),
+    _LazyMigrationPlanner("fortigate", "juniper_srx", "fwmigrate.conversion.fortigate_to_juniper_srx", "FortiGateToJuniperSRXPlanner"),
+    _LazyMigrationPlanner("fortigate", "cisco_asa", "fwmigrate.conversion.fortigate_to_cisco_asa", "FortiGateToCiscoASAPlanner"),
+    _LazyMigrationPlanner("fortigate", "checkpoint", "fwmigrate.conversion.fortigate_to_checkpoint", "FortiGateToCheckPointPlanner"),
 )
 _BUILTIN_WORKFLOWS = (
     MigrationWorkflowRegistration(
@@ -42,7 +59,8 @@ _BUILTIN_WORKFLOWS = (
         destination_comparison="Optional complete FMC REST export bundles support exact address, port, and security zone reuse. Existing policy insertion stays blocked.",
         execution_mode="Offline FMC REST API request specification, response ID bindings, and shell script; no live execution.",
         activation_steps=("Review exact operations and dependencies", "Approve and download offline request bundle", "Apply target-bound requests manually with Python 3.11+", "Assign security zones to FTD device interfaces", "Assign Access Control Policy and deploy via FMC explicitly outside this tool"),
-        coverage_documentation="documentation/migration-support-matrix.md", cli_application=run_panos_ftd_cli,
+        coverage_documentation="documentation/migration-support-matrix.md",
+        cli_application=_lazy_cli_application("fwmigrate.conversion.palo_alto_to_cisco_ftd.application.cli"),
     ),
     MigrationWorkflowRegistration(
         pair_id="palo_alto_to_checkpoint", source_vendor="palo_alto", target_vendor="checkpoint",
@@ -53,7 +71,8 @@ _BUILTIN_WORKFLOWS = (
         destination_comparison="Optional scoped native Management snapshots support exact address/group UID reuse. Existing policy insertion and Gaia stay blocked.",
         execution_mode="Offline API request specification, response UID bindings and fresh-package commands; no live execution.",
         activation_steps=("Review exact operations and dependencies", "Approve and download offline files", "Validate and apply manually", "Publish and install policy explicitly outside this tool"),
-        coverage_documentation="documentation/migration-support-matrix.md", cli_application=run_panos_checkpoint_cli,
+        coverage_documentation="documentation/migration-support-matrix.md",
+        cli_application=_lazy_cli_application("fwmigrate.conversion.palo_alto_to_checkpoint.application.cli"),
     ),
     MigrationWorkflowRegistration(
         pair_id="palo_alto_to_cisco_asa", source_vendor="palo_alto", target_vendor="cisco_asa",
@@ -64,7 +83,8 @@ _BUILTIN_WORKFLOWS = (
         destination_comparison="Optional complete native ASA object snapshots support exact reuse; existing-target traffic placement stays blocked.",
         execution_mode="Offline ASA CLI export. Routing proof and atomic ACL/binding approval required for traffic.",
         activation_steps=("Review exact changes and dependencies", "Approve and download offline configuration", "Apply, validate and save manually"),
-        coverage_documentation="documentation/migration-support-matrix.md", cli_application=run_panos_asa_cli,
+        coverage_documentation="documentation/migration-support-matrix.md",
+        cli_application=_lazy_cli_application("fwmigrate.conversion.palo_alto_to_cisco_asa.application.cli"),
     ),
     MigrationWorkflowRegistration(
         pair_id="fortigate_to_palo_alto",
@@ -116,13 +136,13 @@ _BUILTIN_WORKFLOWS = (
         export_available=True,
         destination_aware_available=True,
         deployment_available=False,
-        cli_application=run_panos_srx_cli,
+        cli_application=_lazy_cli_application("fwmigrate.conversion.palo_alto_to_juniper_srx.application.cli"),
     ),
     MigrationWorkflowRegistration(
         pair_id="fortigate_to_juniper_srx",
         mapping_workflow="New-device interface and zone proposals with engineer review; version-verified FortiGate source defaults. Hardware fit remains unverified.",
         destination_comparison="Exact reuse and verified absence; new policies require complete empty policy evidence without NAT or routing-instance ambiguity. Populated placement stays blocked.",
-        execution_mode="Offline Junos set export; live execution unavailable.",
+        execution_mode="Offline Junos set export only; live execution unavailable.",
         activation_steps=("Review and approve the export", "Load and run commit check manually", "Commit explicitly on the device"),
         supported_target_versions=("25.2R1",),
         coverage_documentation="documentation/migration-support-matrix.md",
@@ -134,7 +154,7 @@ _BUILTIN_WORKFLOWS = (
         export_available=True,
         destination_aware_available=True,
         deployment_available=False,
-        cli_application=run_srx_cli,
+        cli_application=_lazy_cli_application("fwmigrate.conversion.fortigate_to_juniper_srx.application.cli"),
     ),
     MigrationWorkflowRegistration(
         pair_id="fortigate_to_cisco_asa",
@@ -152,7 +172,7 @@ _BUILTIN_WORKFLOWS = (
         export_available=True,
         destination_aware_available=True,
         deployment_available=False,
-        cli_application=run_asa_cli,
+        cli_application=_lazy_cli_application("fwmigrate.conversion.fortigate_to_cisco_asa.application.cli"),
     ),
     MigrationWorkflowRegistration(
         pair_id="fortigate_to_checkpoint",
@@ -170,22 +190,23 @@ _BUILTIN_WORKFLOWS = (
         export_available=True,
         destination_aware_available=True,
         deployment_available=False,
-        cli_application=run_checkpoint_cli,
+        cli_application=_lazy_cli_application("fwmigrate.conversion.fortigate_to_checkpoint.application.cli"),
     ),
 )
 
 
 def register_builtin_migration_planners() -> None:
     for planner in _BUILTIN_PLANNERS:
-        try:
-            migration_planners.get(planner.source_vendor, planner.target_vendor)
-        except KeyError:
-            migration_planners.register(planner)
+        if not migration_planners.has(planner.source_vendor, planner.target_vendor):
+            migration_planners.register(planner, loader=planner._load)
 
 
 def register_builtin_migration_workflows() -> None:
     for workflow in _BUILTIN_WORKFLOWS:
-        migration_planners.get(workflow.source_vendor, workflow.target_vendor)
+        if not migration_planners.has(workflow.source_vendor, workflow.target_vendor):
+            raise KeyError(
+                f"Planner '{workflow.source_vendor}_to_{workflow.target_vendor}' is not implemented"
+            )
         if not workflow.api_prefix or not workflow.supported_formats:
             raise ValueError(f"Export workflow '{workflow.pair_id}' requires an application path and format")
         try:

@@ -1,18 +1,62 @@
 @import './styles/primitives.css';
 
 .app-layout {
-  min-height: 100vh;
-  display: grid;
-  grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
+  height: calc(100vh / var(--app-zoom, 1));
+  overflow: hidden;
+  display: flex;
 }
 
 .sidebar {
-  position: sticky;
-  top: 0;
-  height: 100vh;
+  width: var(--sidebar-width);
+  flex: 0 0 auto;
+  height: 100%;
   padding: var(--space-6) var(--space-4);
   display: flex;
   flex-direction: column;
+  gap: var(--space-8);
+  background: var(--sidebar);
+  color: var(--sidebar-text);
+  border-right: 1px solid var(--sidebar-line);
+  transition: width 250ms ease, padding 250ms ease;
+  overflow: hidden;
+}
+
+.sidebar.collapsed {
+  width: 68px;
+  padding: var(--space-6) var(--space-2);
+}
+
+.sidebar.collapsed .brand {
+  justify-content: center;
+  padding: 0;
+}
+
+.sidebar.collapsed .workflow-nav button {
+  justify-content: center;
+  padding: 11px 0;
+}
+
+.sidebar-mobile-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: none;
+}
+
+.sidebar-mobile-scrim {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+}
+
+.sidebar-mobile-drawer {
+  position: relative;
+  z-index: 10;
+  display: flex;
+  height: 100%;
+  width: var(--sidebar-width);
+  flex-direction: column;
+  padding: var(--space-6) var(--space-4);
   gap: var(--space-8);
   background: var(--sidebar);
   color: var(--sidebar-text);
@@ -124,7 +168,31 @@
 }
 
 .app-content {
+  flex: 1 1 0%;
   min-width: 0;
+  overflow-y: auto;
+}
+
+.page-header-leading {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  min-width: 0;
+}
+
+.sidebar-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.sidebar-menu-toggle {
+  display: none;
 }
 
 .page-header {
@@ -2382,32 +2450,30 @@ body:has(.finding-inspector[open]) {
 
 @media (max-width: 760px) {
   .app-layout {
-    grid-template-columns: 1fr;
-    align-content: start;
+    display: block;
+    height: auto;
+    min-height: calc(100vh / var(--app-zoom, 1));
+    overflow: visible;
+  }
+
+  .app-content {
+    overflow-y: visible;
   }
 
   .sidebar {
-    position: static;
-    height: auto;
-    padding: 14px 16px;
-    gap: 12px;
-    border-right: 0;
-    border-bottom: 1px solid var(--sidebar-line);
+    display: none;
   }
 
-  .workflow-nav {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .sidebar-mobile-backdrop {
+    display: flex;
   }
 
-  .workflow-nav button {
-    justify-content: center;
-    padding: 9px 6px;
-    text-align: center;
+  .sidebar-collapse-toggle {
+    display: none;
   }
 
-  .workflow-nav .workflow-link {
-    justify-content: center;
-    padding: 9px 6px;
+  .sidebar-menu-toggle {
+    display: inline-flex;
   }
 
   .page-header {

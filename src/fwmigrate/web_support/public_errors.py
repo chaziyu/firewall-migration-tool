@@ -3,10 +3,12 @@
 # Only fixed literals with no customer values belong in this set.
 _SAFE_VALIDATION_MESSAGES = frozenset({
     'A JSON object is required',
+    'A migration artifact is required',
     'A signed design approval is required',
     'A signed deterministic draft is required',
     'A signed migration artifact is required',
     'A signed workspace envelope is required',
+    'A workspace envelope is required',
     'A vendor-native source file or snapshot is required',
     'An interface confirmation request is required',
     'Approved design is stale or modified; prepare and review it again',

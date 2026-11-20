@@ -13,11 +13,11 @@ from fwmigrate.conversion.palo_alto_to_checkpoint.application import (
 )
 from fwmigrate.collection.snapshot import parse_snapshot
 from fwmigrate.source_reporting import source_reporters
-from fwmigrate.web_support.artifact_signing import sign_envelope, verify_envelope
+from fwmigrate.web_support.artifact_signing import verify_envelope
 from fwmigrate.web_support.request_source import analyze_request_source, _require_complete_collection
 
 
-def register_palo_alto_to_checkpoint_routes(app, signing_key):
+def register_palo_alto_to_checkpoint_routes(app):
     prefix = "/api/migration/palo_alto_to_checkpoint"
     file_names = {
         "management-operations": (MANAGEMENT_FILE, "application/json"),
@@ -45,7 +45,7 @@ def register_palo_alto_to_checkpoint_routes(app, signing_key):
                 "target_metadata": payload.get("target_metadata")}
 
     def approved_artifact(payload, entry):
-        artifact = verify_export_artifact(verify_envelope(payload.get("artifact"), signing_key))
+        artifact = verify_export_artifact(verify_envelope(payload.get("artifact")))
         if artifact.get("source_digest") != entry.source_digest:
             raise ValueError("Check Point artifact belongs to a different source")
         return artifact
@@ -112,18 +112,18 @@ def register_palo_alto_to_checkpoint_routes(app, signing_key):
                 return jsonify({"success": True, "source_digest": entry.source_digest,
                                 "source_scopes": source_scopes(entry.analysis.config),
                                 "options": client_options(review),
-                                "draft": sign_envelope(review["draft"], signing_key),
+                                "draft": review["draft"],
                                 "requirements": review["requirements"], "report": review["report"]})
             if action == "design/approve":
-                draft = verify_envelope(payload.get("draft"), signing_key)
+                draft = verify_envelope(payload.get("draft"))
                 approval = approve_design(review, draft, payload.get("selected_items"))
                 return jsonify({"success": True,
-                                "approval": sign_envelope(approval, signing_key)})
+                                "approval": approval})
             if action == "build":
-                approval = verify_envelope(payload.get("approval"), signing_key)
+                approval = verify_envelope(payload.get("approval"))
                 artifact = build_artifact(entry.analysis, options, entry.source_digest, approval, **destination)
                 return jsonify({"success": True,
-                                "artifact": sign_envelope(artifact, signing_key)})
+                                "artifact": artifact})
             raise ValueError("Unsupported Check Point migration action")
         except (ValueError, TypeError, KeyError):
             return jsonify({"success": False,

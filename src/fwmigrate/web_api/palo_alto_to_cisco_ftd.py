@@ -18,7 +18,7 @@ from fwmigrate.conversion.palo_alto_to_cisco_ftd.application import (
     verify_export_artifact,
 )
 from fwmigrate.source_reporting import source_reporters
-from fwmigrate.web_support.artifact_signing import sign_envelope, verify_envelope
+from fwmigrate.web_support.artifact_signing import verify_envelope
 from fwmigrate.web_support.request_source import (
     _require_complete_collection,
     analyze_request_source,
@@ -31,7 +31,7 @@ CURL_FILE = "cisco_fmc_curl.sh"
 INSTRUCTIONS_FILE = "ftd_application_instructions.txt"
 
 
-def register_palo_alto_to_cisco_ftd_routes(app, signing_key):
+def register_palo_alto_to_cisco_ftd_routes(app):
     prefix = "/api/migration/palo_alto_to_cisco_ftd"
     file_names = {
         "fmc-operations": (OPERATION_FILE, "application/json"),
@@ -62,7 +62,7 @@ def register_palo_alto_to_cisco_ftd_routes(app, signing_key):
         }
 
     def approved_artifact(payload, entry):
-        artifact = verify_export_artifact(verify_envelope(payload.get("artifact"), signing_key))
+        artifact = verify_export_artifact(verify_envelope(payload.get("artifact")))
         if artifact.get("source_digest") != entry.source_digest:
             raise ValueError("Cisco FTD artifact belongs to a different source")
         return artifact
@@ -164,23 +164,23 @@ def register_palo_alto_to_cisco_ftd_routes(app, signing_key):
                     "source_digest": entry.source_digest,
                     "source_scopes": source_scopes(entry.analysis),
                     "options": client_options(review),
-                    "draft": sign_envelope(review["draft"], signing_key),
+                    "draft": review["draft"],
                     "requirements": review["requirements"],
                     "report": review["report"],
                 })
             if action == "design/approve":
-                draft = verify_envelope(payload.get("draft"), signing_key)
+                draft = verify_envelope(payload.get("draft"))
                 approval = approve_design(review, draft, payload.get("selected_items"))
                 return jsonify({
                     "success": True,
-                    "approval": sign_envelope(approval, signing_key),
+                    "approval": approval,
                 })
             if action == "build":
-                approval = verify_envelope(payload.get("approval"), signing_key)
+                approval = verify_envelope(payload.get("approval"))
                 artifact = build_artifact(entry.analysis, options, entry.source_digest, approval, **destination)
                 return jsonify({
                     "success": True,
-                    "artifact": sign_envelope(artifact, signing_key),
+                    "artifact": artifact,
                 })
             raise ValueError("Unsupported Cisco FTD migration action")
         except (ValueError, TypeError, KeyError):

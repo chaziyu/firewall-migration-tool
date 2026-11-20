@@ -12,6 +12,7 @@ import { SourceOverview } from './SourceOverview'
 import { VendorSelect } from './VendorSelect'
 import { LiveCollection, type CollectionResult } from './LiveCollection'
 import { MigrationWorkflow } from '../migration/MigrationWorkflow'
+import { saveBlobWithFallback } from '../../utils/desktop'
 import { MigrationReview } from '../migration/MigrationReview'
 import { loadMigrationPairs } from '../migration/pairApi'
 import { MigrationPairWorkflow } from '../migration/MigrationPairWorkflow'
@@ -59,7 +60,7 @@ export function SourceConfiguration({ view, onViewChange, liveDeviceAccess }: {
     ?? availableMigrationPairs[0]
   const activeMigrationPairId = selectedMigrationPair?.pair_id ?? ''
   const isPanosOfflinePair = vendor === 'palo_alto' && Boolean(selectedMigrationPair?.export_available)
-  const reviewContextKey = useMemo(() => JSON.stringify([previewId, activeMigrationPairId, targetSource, targetDevice]), [previewId, activeMigrationPairId, targetSource, targetDevice])
+  const reviewContextKey = JSON.stringify([previewId, activeMigrationPairId, targetSource, targetDevice])
   const [reviewTabState, setReviewTabState] = useState({ contextKey: reviewContextKey, tab: 'changes' as MigrationReviewTab })
   const migrationReviewTab = reviewTabState.contextKey === reviewContextKey ? reviewTabState.tab : 'changes'
   const setMigrationReviewTab = (tab: MigrationReviewTab) => setReviewTabState({ contextKey: reviewContextKey, tab })
@@ -196,13 +197,12 @@ export function SourceConfiguration({ view, onViewChange, liveDeviceAccess }: {
     try {
       const blob = await downloadSourceWorkbook(vendor, preview.source_evidence, excelProfile, controller.signal)
       if (!current()) return
-      const url = URL.createObjectURL(blob)
-      const link = document.createElement('a')
-      link.href = url
-      link.download = `${vendor}-source-report.xlsx`
-      document.body.append(link)
-      try { link.click() } finally { link.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000) }
-      setExportStatus(`${vendor} ${excelProfile.toUpperCase()} workbook ready. Download started: ${link.download}.`)
+      const targetName = `${vendor}-source-report.xlsx`
+      const result = await saveBlobWithFallback(blob, targetName)
+      if (!current()) return
+      if (result.status === 'cancelled') setExportStatus('Workbook export cancelled.')
+      else if (result.status === 'saved') setExportStatus(`${vendor} ${excelProfile.toUpperCase()} workbook saved: ${result.filename}.`)
+      else setExportStatus(`${vendor} ${excelProfile.toUpperCase()} workbook ready. Download started: ${result.filename}.`)
     } catch (cause) {
       if (current() && !controller.signal.aborted) setExportError(cause instanceof Error ? cause.message : 'Workbook export failed')
     } finally {

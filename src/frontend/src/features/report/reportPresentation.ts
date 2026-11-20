@@ -202,7 +202,7 @@ export function columnWidth(key: string) {
   return 'content'
 }
 export function rowColumns(rows: ReportRow[], subsection = '', vendor = '') {
-  const keys = [...new Set(rows.flatMap(Object.keys))].filter((key) => key !== 'Source section' && !(subsection === 'interface_topology' && key === 'display_name') && !(vendor === 'palo_alto' && key === 'policy_id') && rows.some((row) => Object.hasOwn(row, key) && !sensitiveKey(key, row[key])))
+  const keys = [...new Set(rows.flatMap(Object.keys))].filter((key) => key !== 'Source section' && !(subsection === 'interface_topology' && key === 'display_name') && !(vendor === 'palo_alto' && key === 'policy_id') && !(subsection !== 'source_inventory' && (key === 'cli_vdom' || key === 'cli_scope')) && rows.some((row) => Object.hasOwn(row, key) && !sensitiveKey(key, row[key])))
   if (!keys.length && rows.length) return ['Source section']
   const identity = vendor === 'palo_alto' && PANOS_COLUMNS[subsection] || (subsection === 'interface_topology'
     ? ['name', 'display_name', 'vdom', 'domain_id', 'device_name', 'device_id', 'scope', 'kind', 'ip', 'prefix', 'parent', 'members', 'aggregate', 'physical_interfaces', 'path', 'topology_path', 'issues']

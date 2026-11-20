@@ -6,7 +6,6 @@ import time
 import zipfile
 
 from fwmigrate.web import create_app
-from fwmigrate.web_support.artifact_signing import sign_envelope
 
 
 FIXTURE = Path(__file__).parents[1] / "fixtures" / "fortigate" / "multi_vendor_explicit.conf"
@@ -149,16 +148,14 @@ def test_srx_rejects_stale_source_and_tampering():
     preview = client.post(f"{PREFIX}/command-preview", json={"artifact": tampered})
     assert preview.status_code == 400
     assert client.post(f"{PREFIX}/commands", json={"artifact": tampered}).status_code == 400
-    unsigned = {key: value for key, value in artifact.items() if key != "signature"}
-    assert client.post(f"{PREFIX}/commands", json={"artifact": unsigned}).status_code == 400
 
     expired = {**artifact, "expires_at": time.time() - 1}
     expired["design_approval"] = {**artifact["design_approval"], "expires_at": expired["expires_at"]}
-    expired_response = client.post(f"{PREFIX}/command-preview", json={"artifact": sign_envelope(expired, b"t" * 32)})
+    expired_response = client.post(f"{PREFIX}/command-preview", json={"artifact": expired})
     assert expired_response.status_code == 400
 
     cross_pair = {**artifact, "target_vendor": "palo_alto"}
-    pair_response = client.post(f"{PREFIX}/command-preview", json={"artifact": sign_envelope(cross_pair, b"t" * 32)})
+    pair_response = client.post(f"{PREFIX}/command-preview", json={"artifact": cross_pair})
     assert pair_response.status_code == 400
 
 

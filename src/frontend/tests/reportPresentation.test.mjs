@@ -374,3 +374,17 @@ test('FortiGate restored sections and inspection details retain full nested sour
   assert.equal(sections.find((group) => group.label === 'Objects').rows.length, 5)
   assert.deepEqual(sections.find((group) => group.label === 'VPN').rows[0].authentication_rules[0].groups, ['staff'])
 })
+
+test('FortiGate cli_vdom and cli_scope are omitted from interface table columns but retained in Details and source_inventory', () => {
+  const row = { name: 'port1', vdom: 'corp', cli_vdom: null, cli_scope: 'global', ip: '192.0.2.1/24' }
+  for (const subsection of ['interface_topology', 'interfaces']) {
+    const columns = rowColumns([row], subsection, 'fortigate')
+    assert.equal(columns.includes('cli_vdom'), false)
+    assert.equal(columns.includes('cli_scope'), false)
+    const detailFields = detailGroups(row, subsection, 'fortigate').flatMap((group) => group.fields)
+    assert.equal(detailFields.find(([key]) => key === 'cli_scope')?.[1], 'global')
+    assert.equal(detailFields.find(([key]) => key === 'cli_vdom')?.[1], null)
+  }
+  const inventoryColumns = rowColumns([{ source_path: 'system interface', name: 'port1', vdom: 'corp', cli_scope: 'global' }], 'source_inventory', 'fortigate')
+  assert.equal(inventoryColumns.includes('cli_scope'), true)
+})

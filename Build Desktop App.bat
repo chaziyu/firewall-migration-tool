@@ -49,14 +49,26 @@ echo Packaging standalone desktop executable...
   --clean ^
   --onefile ^
   --windowed ^
+  --noupx ^
   --name "FirewallMigrationTool" ^
+  --icon "%~dp0scripts\assets\app.ico" ^
+  --splash "%~dp0scripts\assets\splash.png" ^
   --specpath "build" ^
   --add-data "%~dp0src\frontend\dist;frontend_dist" ^
   --collect-submodules fwmigrate ^
   --collect-data tzdata ^
-  --collect-data ntc_templates ^
-  --collect-data textfsm ^
   --collect-all webview ^
+  --exclude-module gunicorn ^
+  --exclude-module pytest ^
+  --exclude-module _pytest ^
+  --exclude-module pip ^
+  --exclude-module setuptools ^
+  --exclude-module wheel ^
+  --exclude-module webview.platforms.cocoa ^
+  --exclude-module webview.platforms.gtk ^
+  --exclude-module webview.platforms.qt ^
+  --exclude-module webview.platforms.android ^
+  --exclude-module webview.platforms.cef ^
   scripts\desktop_launcher.py
 if errorlevel 1 goto :failed
 

@@ -35,6 +35,62 @@ test('public navigation hides device access while local navigation exposes it', 
   assert.ok(!JSON.stringify(publicTree).includes('Live migration'))
   const localTree = await harness.render({ ...props, liveDeviceAccess: true })
   assert.equal(elements(localTree).filter((node) => node.type === 'button').length, 3)
+  const collapsedTree = await harness.render({ ...props, liveDeviceAccess: true, collapsed: true })
+  assert.equal(elements(collapsedTree).find((node) => node.type === 'aside').props.className, 'sidebar collapsed')
+  assert.ok(!JSON.stringify(collapsedTree).includes('MIGRATION TOOL'))
+})
+
+test('layout starts with sidebar collapsed and toggles desktop collapse and mobile drawer', async () => {
+  const harness = component('../src/components/layout/AppLayout.tsx', 'AppLayout', {
+    './PageHeader': { PageHeader: 'PageHeader' },
+    './Sidebar': { Sidebar: 'Sidebar' },
+  })
+  let tree = await harness.render({
+    view: 'report',
+    liveDeviceAccess: false,
+    onViewChange: () => { },
+    page: { title: 'Configuration Report', description: 'Desc' },
+    theme: 'light',
+    onNewWorkspace: () => { },
+    onToggleTheme: () => { },
+  })
+  const sidebar = () => elements(tree).find((node) => node.type === 'Sidebar')
+  const header = () => elements(tree).find((node) => node.type === 'PageHeader')
+  assert.equal(sidebar().props.collapsed, true)
+  assert.equal(sidebar().props.mobileOpen, false)
+  header().props.onCollapseClick()
+  tree = await harness.render({
+    view: 'report',
+    liveDeviceAccess: false,
+    onViewChange: () => { },
+    page: { title: 'Configuration Report', description: 'Desc' },
+    theme: 'light',
+    onNewWorkspace: () => { },
+    onToggleTheme: () => { },
+  })
+  assert.equal(sidebar().props.collapsed, false)
+  header().props.onMenuClick()
+  tree = await harness.render({
+    view: 'report',
+    liveDeviceAccess: false,
+    onViewChange: () => { },
+    page: { title: 'Configuration Report', description: 'Desc' },
+    theme: 'light',
+    onNewWorkspace: () => { },
+    onToggleTheme: () => { },
+  })
+  assert.equal(sidebar().props.mobileOpen, true)
+  sidebar().props.onClose()
+  tree = await harness.render({
+    view: 'report',
+    liveDeviceAccess: false,
+    onViewChange: () => { },
+    page: { title: 'Configuration Report', description: 'Desc' },
+    theme: 'light',
+    onNewWorkspace: () => { },
+    onToggleTheme: () => { },
+  })
+  assert.equal(sidebar().props.mobileOpen, false)
 })
 
 test('device controls stay unavailable when server capabilities cannot be loaded', async () => {
@@ -131,6 +187,14 @@ function component(file, name, modules, { strictEffectReplay = false } = {}) {
     if (key === './components/MigrationIssueWorkspace') return { MigrationIssueWorkspace: 'IssueWorkspace' }
     if (key === '../migration/fortigateToJuniperSrx/MigrationWorkflow') return { JuniperSRXMigrationWorkflow: 'JuniperSRX' }
     if (key === '../migration/fortigateToCiscoAsa/MigrationWorkflow') return { CiscoAsaMigrationWorkflow: 'CiscoAsa' }
+    if (key.endsWith('/utils/desktop')) {
+      const desktop = ts.transpileModule(readFileSync(new URL('../src/utils/desktop.ts', import.meta.url), 'utf8'), {
+        compilerOptions: { module: ts.ModuleKind.CommonJS },
+      }).outputText
+      const desktopExports = {}
+      new Function('require', 'exports', desktop)(requireModule, desktopExports)
+      return desktopExports
+    }
     if (key.endsWith('/MigrationMappingSummary')) return { MigrationMappingSummary: 'MappingSummary' }
     if (key === './hooks/useMigrationReviewActivity') {
       const hook = ts.transpileModule(readFileSync(new URL('../src/features/migration/hooks/useMigrationReviewActivity.ts', import.meta.url), 'utf8'), {

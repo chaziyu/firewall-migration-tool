@@ -6,24 +6,25 @@ import yaml
 
 from flask import Response, jsonify, request, send_file
 
-from fwmigrate.conversion.palo_alto_to_fortigate.application import (
-    approve_design, build_artifact, build_review, export_decisions, import_decisions, verify_export_artifact,
-)
 from fwmigrate.source_reporting import source_reporters
-from fwmigrate.web_support.artifact_signing import sign_envelope, verify_envelope
+from fwmigrate.web_support.artifact_signing import verify_envelope
 from fwmigrate.web_support.request_source import analyze_request_source, _require_complete_collection
 
 
-def register_palo_alto_to_fortigate_routes(app, signing_key):
+def register_palo_alto_to_fortigate_routes(app):
     prefix = "/api/migration/palo_alto_to_fortigate"
 
     def handle(action):
+        from fwmigrate.conversion.palo_alto_to_fortigate.application import (
+            approve_design, build_artifact, build_review, export_decisions, import_decisions, verify_export_artifact,
+        )
+
         payload = request.get_json(silent=True)
         try:
             if not isinstance(payload, dict):
                 raise ValueError("A JSON object is required")
             if action in {"command-preview", "commands", "bundle"}:
-                artifact = verify_export_artifact(verify_envelope(payload.get("artifact"), signing_key))
+                artifact = verify_export_artifact(verify_envelope(payload.get("artifact")))
                 command_text = "\n".join(artifact["commands"])
                 if action == "command-preview":
                     return jsonify({"success": True, "text": command_text, "command_sha256": artifact["command_sha256"]})
@@ -61,15 +62,14 @@ def register_palo_alto_to_fortigate_routes(app, signing_key):
                 review = build_review(entry.analysis, options, entry.source_digest, **kwargs)
                 return jsonify({"success": True, "document": export_decisions(entry.source_digest, review["resolved_options"])})
             if action == "build":
-                approval = verify_envelope(payload.get("approval"), signing_key)
+                approval = verify_envelope(payload.get("approval"))
                 artifact = build_artifact(entry.analysis, options, entry.source_digest, approval, **kwargs)
-                return jsonify({"success": True, "artifact": sign_envelope(artifact, signing_key)})
+                return jsonify({"success": True, "artifact": artifact})
             review = build_review(entry.analysis, options, entry.source_digest, **kwargs)
             if action == "design/approve":
-                signed_draft = verify_envelope(payload.get("draft"), signing_key)
+                signed_draft = verify_envelope(payload.get("draft"))
                 approval = approve_design(review, signed_draft, payload.get("selected_items"))
-                return jsonify({"success": True, "approval": sign_envelope(approval, signing_key)})
-            review["draft"] = sign_envelope(review["draft"], signing_key)
+                return jsonify({"success": True, "approval": approval})
             return jsonify({"success": True, "source_digest": entry.source_digest, **review})
         except (ValueError, TypeError, KeyError):
             return jsonify({"success": False, "error": "Invalid, blocked or stale FortiGate migration request. Check source scope, target choices, approval and dependencies."}), 400
