@@ -12,7 +12,7 @@ This repository uses **vendor-native extraction/reporting** plus **pair-specific
 - **Local dev**: `Start Local.bat` runs Flask on `127.0.0.1:5000` and Vite on `127.0.0.1:5173` (proxying API calls to Flask).
 - **Hosting & access**: Hosted web uses single-worker Gunicorn (`gunicorn.conf.py`, `WEB_MODE=public` default). Live collection runs on the backend machine, requires `WEB_MODE=local` + loopback client/host, and is blocked (`403`) in `public` mode. API POST concurrency (`MAX_CONCURRENT_REQUESTS`) and workbook streams (`MAX_CONCURRENT_EXPORTS`) are process-local.
 - **Removed packaging**: Tauri desktop packaging, Docker deployment files, and live device deployment (`deployment/`) have been removed. Do not assume Rust/Cargo, desktop sidecars, container builds, desktop installers, or live deployment transports exist.
-- **Versions & CI**: Frontend CI and Render use the Node.js 24 baseline in `.node-version` (`package.json` enforces `>=24.22.1 <25`). Python CI covers 3.11–3.14; the constrained dependency job uses Python 3.12 + `requirements/constraints-python312.txt`.
+- **Versions & CI**: Frontend CI and Render use the Node.js 24 baseline in `.node-version` (`package.json` enforces `>=24.22.1 <25`). Python CI and Render target Python 3.14 (`.python-version`, `requires-python = ">=3.14"`).
 
 ## Pipelines
 
@@ -113,7 +113,7 @@ npm run lint
 npm run build
 ```
 
-For release dependency or packaging changes, validate the constrained Python 3.12 set (`requirements/constraints-python312.txt`) or rely on CI when local reproduction is unavailable.
+For release dependency or packaging changes, validate with `python -m pip install -e ".[dev,collection]"` and `python -m pip check` on Python 3.14 or rely on CI when local reproduction is unavailable.
 
 ## Priority
 

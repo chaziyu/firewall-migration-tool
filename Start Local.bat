@@ -8,7 +8,7 @@ if not exist "%PYTHON%" (
     echo Creating the Python environment...
     python -m venv .venv
     if errorlevel 1 (
-        echo Install Python 3.11 or newer and add it to PATH, then retry.
+        echo Install Python 3.14 or newer and add it to PATH, then retry.
         goto :failed
     )
     "%PYTHON%" -m pip install -e ".[collection]"

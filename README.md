@@ -1,9 +1,9 @@
 # Firewall Migration Tool
 
-![Python](https://img.shields.io/badge/python-3.11%2B-green.svg)
+![Python](https://img.shields.io/badge/python-3.14%2B-green.svg)
 ![Node.js](https://img.shields.io/badge/node-24.22.1%2B-green.svg)
 
-Vendor-native firewall configuration extraction, validation, Excel reporting, live collection, and deterministic pair-specific migration planning for Python 3.11+.
+Vendor-native firewall configuration extraction, validation, Excel reporting, live collection, and deterministic pair-specific migration planning for Python 3.14+.
 
 Website: https://firewall-migration-tool.onrender.com/
 
@@ -64,7 +64,7 @@ All pairs generate **reviewed offline artifacts** (`deployment_available=False`)
 
 ### Prerequisites
 
-- **Python**: `3.11+` (`3.12` pinned via `requirements/constraints-python312.txt` for production builds)
+- **Python**: `>=3.14` (matching `.python-version`)
 - **Node.js**: `>=24.22.1` (matching `.node-version`)
 
 ### Windows Local Development Launcher
@@ -92,13 +92,6 @@ cd src/frontend && npm ci && npm run build && cd ../..
 
 # Start the local web application
 fwmigrate serve --port 5000
-```
-
-For a reproducible Python 3.12 installation:
-
-```bash
-python -m pip install --constraint requirements/constraints-python312.txt -e ".[collection]"
-python -m pip check
 ```
 
 ---
@@ -200,7 +193,6 @@ src/
 documentation/
 ├── migration-support-matrix.md                Authoritative pair capabilities, limits, and CLI usage
 └── official-cli-references-selected version/  Pinned official vendor CLI/API syntax references
-requirements/             Python 3.12 constraint pins (`constraints-python312.txt`)
 scripts/                  Excel benchmark scripts and standalone Playwright browser scripts (`browser/`)
 tests/                    Domain-mirrored test suites (`architecture/`, `collection/`, `conversion/`, `source_reporting/`, `vendors/`, `web/`, `fixtures/`)
 AGENTS.md                 Mandatory architecture boundaries and contributor rules

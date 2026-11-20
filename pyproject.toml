@@ -7,7 +7,7 @@ name = "firewall-migration-tool"
 version = "0.2.1"
 description = "Vendor-native firewall reporting and pair-specific migration planning"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.14"
 dependencies = [
     "pydantic>=2.0,<3.0",
     "click>=8.0",
@@ -34,7 +34,7 @@ collection = [
 fwmigrate = "fwmigrate.main:cli"
 
 [tool.ruff]
-target-version = "py311"
+target-version = "py314"
 
 [tool.ruff.lint]
 select = ["E9", "F"]

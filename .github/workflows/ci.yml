@@ -24,7 +24,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v7
         with:
-          python-version: "3.12"
+          python-version: "3.14"
           cache: pip
       - name: Install lint dependencies
         run: |
@@ -41,7 +41,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.11", "3.12", "3.13", "3.14"]
+        python-version: ["3.14"]
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -66,12 +66,12 @@ jobs:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v7
         with:
-          python-version: "3.12"
+          python-version: "3.14"
           cache: pip
-      - name: Install constrained release dependencies and test tools
+      - name: Install release dependencies and test tools
         run: |
           python -m pip install --upgrade pip
-          python -m pip install --constraint requirements/constraints-python312.txt -e ".[dev,collection]"
+          python -m pip install -e ".[dev,collection]"
           python -m pip check
       - name: Test release dependency set
         run: python -m pytest -q

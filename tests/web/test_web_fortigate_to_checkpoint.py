@@ -86,7 +86,6 @@ def test_checkpoint_destination_review_reuses_uids_and_rejects_stale_metadata():
 
 
 def test_checkpoint_web_approval_previews_and_downloads_exact_split_bytes():
-    transport_calls = []
     app = create_app({
         "TESTING": True,
         "WORKSPACE_SIGNING_KEY": b"x" * 32,
