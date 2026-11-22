@@ -42,9 +42,11 @@ test('native IPsec and static-route reference findings have source-object links'
     let navigated
     const tree = exports.ValidationTable({ rows: [row], selected: null, onSelect() {}, onNavigate(value) { navigated = value }, grouped: false })
     const html = renderToStaticMarkup(tree)
+    assert.ok(!html.includes('<th>Review</th>'), 'Review column is removed')
     assert.match(html, /View object/)
-    const buttons = tree.props.children.props.children[1].props.children[0].props.children.at(-1).props.children
-    buttons[1].props.onClick()
+    const objectCell = tree.props.children.props.children[1].props.children[0].props.children[0]
+    const viewButton = objectCell.props.children.props.children[1]
+    viewButton.props.onClick({ stopPropagation() {} })
     assert.equal(navigated, row)
     assert.ok(html.includes('owner'))
   }
@@ -107,4 +109,26 @@ test('warning group selection settles and retains the matching findings', () => 
   }
   tree.props.children[2].props.onGroupChange('')
   assert.equal(table(render()).props.grouped, false)
+})
+
+test('overview displays public management exposure warning when interface allowaccess findings exist', async () => {
+  const { createServer } = await import('vite')
+  const { createElement } = await import('react')
+  const server = await createServer({ server: { middlewareMode: true }, appType: 'custom' })
+  try {
+    const { SourceReport } = await server.ssrLoadModule('/src/features/report/SourceReport.tsx')
+    const html = renderToStaticMarkup(createElement(SourceReport, {
+      data: {
+        vendor: 'fortigate',
+        sections: {
+          validation: [
+            { severity: 'warning', domain: 'interface', field: 'allowaccess', object_name: 'wan1', message: "Public-facing interface 'wan1' exposes management access (https, ssh)." },
+          ],
+        },
+      },
+      excelProfile: 'fast', onExcelProfileChange() {}, exporting: false, exportStatus: '', onExport() {},
+    })).replace(/<!-- -->/g, '')
+    assert.ok(html.includes('Public management exposure (1)'))
+    assert.ok(html.includes('wan1'))
+  } finally { await server.close() }
 })

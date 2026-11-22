@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from ipaddress import IPv4Interface
+from ipaddress import IPv4Interface, IPv4Network
 
 from ..derived import (
     DerivedViews,
@@ -19,6 +19,23 @@ from .models import (
     ValidationSeverity,
 )
 from .cli_constraints import validate_cli_constraints
+
+
+_PUBLIC_MGMT_PROTOCOLS = frozenset({"http", "https", "ssh", "telnet"})
+_CGNAT_NETWORK = IPv4Network("100.64.0.0/10")
+
+
+def _is_public_ipv4(ip_value: str | None) -> bool:
+    if not ip_value:
+        return False
+    parts = ip_value.split()
+    if len(parts) not in {1, 2}:
+        return False
+    try:
+        addr = IPv4Interface("/".join(parts)).ip
+    except ValueError:
+        return False
+    return addr.is_global and not addr.is_private and addr not in _CGNAT_NETWORK
 
 
 def validate_config(
@@ -71,6 +88,30 @@ def validate_config(
                 severity=ValidationSeverity.WARNING, domain="interface",
                 vdom=None, object_name=interface.name, field="vdom",
                 message="Interface VDOM ownership is unresolved; source ownership is missing or explicitly unset.",
+            ))
+        exposed = sorted({
+            proto.lower()
+            for proto in (
+                *interface.allowaccess,
+                *(p for sec in interface.secondary_ips for p in sec.allowaccess),
+            )
+            if proto.lower() in _PUBLIC_MGMT_PROTOCOLS
+        })
+        if exposed and (
+            (interface.role or "").strip().lower() == "wan"
+            or _is_public_ipv4(interface.ip)
+            or any(_is_public_ipv4(sec.ip) for sec in interface.secondary_ips)
+        ):
+            issues.append(ValidationIssue(
+                severity=ValidationSeverity.WARNING,
+                domain="interface",
+                vdom=interface.vdom,
+                object_name=interface.name,
+                field="allowaccess",
+                message=(
+                    f"Public-facing interface {interface.name!r} exposes management access "
+                    f"({', '.join(exposed)}); verify trusthosts or local-in-policy restrictions."
+                ),
             ))
 
     for source_path, objects in build_typed_source_inventory(config).items():

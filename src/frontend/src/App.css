@@ -2608,8 +2608,70 @@ body:has(.finding-inspector[open]) {
 
 .source-report .report-object-tabs {
   flex-wrap: wrap;
+  align-items: center;
   overflow: visible;
   margin: 6px 0 8px;
+}
+
+.report-object-more {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.report-object-more summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 8px 11px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text-muted);
+  font: inherit;
+  user-select: none;
+}
+
+.report-object-more summary::-webkit-details-marker {
+  display: none;
+}
+
+.report-object-more summary::after {
+  content: ' ▾';
+  font-size: 11px;
+}
+
+.report-object-more.has-active summary {
+  border-color: var(--color-primary);
+  background: var(--color-primary-subtle);
+  color: var(--color-primary);
+  font-weight: 700;
+}
+
+.report-object-more summary:hover {
+  background: var(--surface-hover);
+}
+
+.report-object-more-menu {
+  position: absolute;
+  left: 0;
+  top: calc(100% + 4px);
+  z-index: 6;
+  display: grid;
+  gap: 4px;
+  min-width: 220px;
+  max-height: 320px;
+  overflow: auto;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  box-shadow: var(--shadow-popover);
+}
+
+.report-object-more-menu button {
+  width: 100%;
+  text-align: left;
+  border: 0;
+  padding: 7px 10px;
 }
 
 .report-empty-toggle {
@@ -2646,6 +2708,31 @@ body:has(.finding-inspector[open]) {
 
 .report-validation-attention.has-errors {
   border-left: 3px solid var(--danger);
+}
+
+.report-exposure-warning {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 12px 0 18px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--warning);
+  border-radius: var(--radius-sm);
+  background: var(--surface-muted);
+}
+
+.report-exposure-warning strong {
+  color: var(--text-heading);
+  font-size: 14px;
+}
+
+.report-exposure-warning p {
+  margin: 4px 0 0;
+  color: var(--text-muted);
+  font-size: 13px;
 }
 
 .report-column-selector {
@@ -2735,6 +2822,9 @@ body:has(.finding-inspector[open]) {
 }
 
 .source-report .report-table {
+  table-layout: fixed;
+  width: max-content;
+  min-width: 100%;
   border-collapse: separate;
   border-spacing: 0;
   font-size: 14px;
@@ -2742,14 +2832,29 @@ body:has(.finding-inspector[open]) {
 
 .source-report .report-table th,
 .source-report .report-table td {
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: none;
   padding: 6px var(--space-3);
   overflow-wrap: normal;
+}
+
+.source-report .report-table tbody tr:not(.report-virtual-spacer) {
+  height: 40px;
+  cursor: pointer;
+}
+
+.source-report .report-virtual-spacer td {
+  padding: 0;
+  border: 0;
 }
 
 .source-report .report-identity-content {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 8px;
+  min-width: 0;
 }
 
 .source-report .report-table .finding-inline-link {
@@ -2761,19 +2866,19 @@ body:has(.finding-inspector[open]) {
 .source-report .report-table th {
   position: sticky;
   top: 0;
-  z-index: 1;
+  z-index: 2;
   background: var(--surface-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .source-report .report-cell {
-  display: -webkit-box;
-  width: 240px;
-  max-height: 3em;
+  display: block;
+  width: 100%;
   overflow: hidden;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  white-space: normal;
-  overflow-wrap: break-word;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .source-report .report-table-wrap {
@@ -2783,6 +2888,7 @@ body:has(.finding-inspector[open]) {
   overflow: auto;
   scrollbar-gutter: stable;
   overscroll-behavior: contain;
+  contain: layout style;
 }
 
 .source-report .report-row-count {
@@ -2798,7 +2904,6 @@ body:has(.finding-inspector[open]) {
 
 .excel-export-controls {
   min-width: 0;
-  max-width: 460px;
 }
 
 .excel-actions {
@@ -2811,17 +2916,19 @@ body:has(.finding-inspector[open]) {
   color: var(--text-muted);
   font-size: 12px;
   line-height: 1.5;
+  white-space: normal;
+  overflow-wrap: break-word;
 }
 
 .excel-profile-help {
   position: relative;
-  margin-top: 4px;
   color: var(--text-muted);
   font-size: 12px;
 }
 
 .excel-profile-help summary {
   cursor: pointer;
+  white-space: nowrap;
 }
 
 .excel-profile-help[open] .excel-profile-description {
@@ -2857,16 +2964,8 @@ body:has(.finding-inspector[open]) {
   min-width: 100px;
 }
 
-.source-report .report-column-short .report-cell {
-  width: 100px;
-}
-
 .source-report .report-column-identity {
   min-width: 200px;
-}
-
-.source-report .report-column-identity .report-cell {
-  width: 200px;
 }
 
 .source-report .report-column-content {
@@ -2895,7 +2994,7 @@ body:has(.finding-inspector[open]) {
 }
 
 .source-report th.report-identity {
-  z-index: 2;
+  z-index: 3;
   background: var(--surface-muted);
 }
 
@@ -2944,13 +3043,25 @@ body:has(.finding-inspector[open]) {
 
 .source-report .validation-groups {
   display: grid;
+  gap: 6px;
+  max-height: 200px;
+  overflow-y: auto;
+  padding-right: 4px;
 }
 
 .source-report .validation-group {
   width: 100%;
   font: inherit;
-  line-height: 1.5;
+  line-height: 1.4;
+  padding: 7px 10px;
   overflow-wrap: anywhere;
+}
+
+.source-report .validation-group > span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .source-report .validation-group .finding-severity,
@@ -2978,6 +3089,17 @@ body:has(.finding-inspector[open]) {
 .source-report .validation-table td {
   min-width: 90px;
   max-width: none;
+}
+
+.source-report .validation-table tbody tr {
+  cursor: pointer;
+}
+
+.source-report .validation-object-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
 }
 
 .source-report .validation-table .finding-inline-link {

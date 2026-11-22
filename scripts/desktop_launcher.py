@@ -70,6 +70,32 @@ def _configure_environment() -> None:
     os.environ["FWMIGRATE_FRONTEND_DIST_DIR"] = str(_resolve_frontend_dist())
 
 
+def _compute_window_geometry(webview_module: Any) -> dict[str, Any]:
+    """Compute a centered initial window size and position fitted to the primary screen."""
+    screens = getattr(webview_module, "screens", None) or []
+    if not screens:
+        return {"width": 1200, "height": 760, "min_size": (800, 600)}
+
+    primary = screens[0]
+    screen_w = int(getattr(primary, "width", 1440))
+    screen_h = int(getattr(primary, "height", 900))
+    screen_x = int(getattr(primary, "x", 0))
+    screen_y = int(getattr(primary, "y", 0))
+
+    width = max(1, min(1440, int(screen_w * 0.88)))
+    height = max(1, min(900, int(screen_h * 0.85)))
+    x = screen_x + max(0, (screen_w - width) // 2)
+    y = screen_y + max(0, (screen_h - height) // 2)
+    return {
+        "width": width,
+        "height": height,
+        "x": x,
+        "y": y,
+        "screen": primary,
+        "min_size": (min(800, width), min(600, height)),
+    }
+
+
 def _close_splash() -> None:
     """Close the PyInstaller splash screen if running in a frozen build."""
     try:
@@ -147,15 +173,14 @@ def main(argv: list[str] | None = None) -> int:
 
         webview.settings["ALLOW_DOWNLOADS"] = True
         api = DesktopApi(webview)
+        geometry = _compute_window_geometry(webview)
         window = webview.create_window(
             "Firewall Migration Tool",
             url,
             js_api=api,
-            width=1440,
-            height=900,
-            min_size=(800, 600),
             resizable=True,
             zoomable=True,
+            **geometry,
         )
         api.attach_window(window)
         events = getattr(window, "events", None)

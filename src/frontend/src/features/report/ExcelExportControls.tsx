@@ -17,9 +17,9 @@ export function ExcelExportControls({ vendor, profile, onProfileChange, exportin
           : 'Evidence coverage depends on the source vendor. Check Export Limitations in the workbook summary.'
   return <div className="excel-export-controls">
     <div className="excel-actions">
+      <details className="excel-profile-help"><summary>About Excel profiles</summary><p id={descriptionId} className="excel-profile-description">{evidence} FULL retains all available report sheets; it does not imply complete extraction.</p></details>
       <label className="excel-profile-control">Excel profile<select aria-label="Excel export profile" aria-describedby={descriptionId} value={profile} disabled={exporting} onChange={(event) => onProfileChange(event.target.value as 'fast' | 'full')}><option value="fast">FAST</option><option value="full">FULL</option></select></label>
       <Button type="button" className="excel-export-button" disabled={exporting} aria-busy={exporting} onClick={onExport}>{exporting ? 'Preparing workbook…' : 'Export Excel'}</Button>
     </div>
-    <details className="excel-profile-help"><summary>About Excel profiles</summary><p id={descriptionId} className="excel-profile-description">{evidence} FULL retains all available report sheets; it does not imply complete extraction.</p></details>
   </div>
 }

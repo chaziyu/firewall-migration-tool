@@ -9,9 +9,10 @@ This repository uses **vendor-native extraction/reporting** plus **pair-specific
 - **Core packages**: `vendors/<vendor>/` (vendor-owned extraction/reporting), `source_reporting/` & `extraction/` (shared reporting contracts), `collection/` (acquisition & snapshots), `conversion/<pair>/` (pair-specific migration).
 - **Tests**: Mirror `src/fwmigrate/` under `tests/architecture/`, `tests/collection/`, `tests/source_reporting/`, `tests/vendors/<vendor>/`, `tests/conversion/<pair>/`, `tests/web/`, and `tests/fixtures/`. Standalone Playwright scripts live under `scripts/browser/`.
 - **Frontend build**: Flask serves `src/frontend/dist/`. Run `npm ci && npm run build` in `src/frontend` before opening Flask's URL (`/` returns HTTP 503 without it).
-- **Local dev**: `Start Local.bat` runs Flask on `127.0.0.1:5000` and Vite on `127.0.0.1:5173` (proxying API calls to Flask).
+- **Local dev**: `Start Local.bat` builds `src/frontend/dist/` if missing and runs Flask on `127.0.0.1:5000`.
+- **Desktop packaging**: `Build Desktop App.bat [all|portable|installer]` packages `scripts/desktop_launcher.py` (`pywebview` + Flask + `src/frontend/dist/`) via PyInstaller as a portable `--onefile` `.exe` (`dist/FirewallMigrationTool.exe`) and/or an Inno Setup 6 Windows installer (`scripts/installer/FirewallMigrationTool.iss` → `dist/FirewallMigrationTool-Setup-<version>.exe`).
 - **Hosting & access**: Hosted web uses single-worker Gunicorn (`gunicorn.conf.py`, `WEB_MODE=public` default). Live collection runs on the backend machine, requires `WEB_MODE=local` + loopback client/host, and is blocked (`403`) in `public` mode. API POST concurrency (`MAX_CONCURRENT_REQUESTS`) and workbook streams (`MAX_CONCURRENT_EXPORTS`) are process-local.
-- **Removed packaging**: Tauri desktop packaging, Docker deployment files, and live device deployment (`deployment/`) have been removed. Do not assume Rust/Cargo, desktop sidecars, container builds, desktop installers, or live deployment transports exist.
+- **Removed packaging**: Tauri desktop packaging, Docker deployment files, and live device deployment (`deployment/`) have been removed. Do not assume Rust/Cargo, desktop sidecars, container builds, or live deployment transports exist.
 - **Versions & CI**: Frontend CI and Render use the Node.js 24 baseline in `.node-version` (`package.json` enforces `>=24.22.1 <25`). Python CI and Render target Python 3.14 (`.python-version`, `requires-python = ">=3.14"`).
 
 ## Pipelines

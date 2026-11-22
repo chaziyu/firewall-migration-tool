@@ -69,11 +69,24 @@ All pairs generate **reviewed offline artifacts** (`deployment_available=False`)
 
 ### Windows Local Development Launcher
 
-[`Start Local.bat`](Start%20Local.bat) creates `.venv` if absent, starts Flask on `http://127.0.0.1:5000` and Vite on `http://127.0.0.1:5173`, and opens the browser:
+[`Start Local.bat`](Start%20Local.bat) creates `.venv` if absent, builds `src/frontend/dist` if missing, starts Flask on `http://127.0.0.1:5000`, and opens the browser:
 
 ```bat
 "Start Local.bat"
 ```
+
+### Windows Desktop App & Installer
+
+[`Build Desktop App.bat`](Build%20Desktop%20App.bat) packages [`scripts/desktop_launcher.py`](scripts/desktop_launcher.py) (Flask + `pywebview` + bundled frontend) as a standalone Windows desktop app:
+
+```bat
+"Build Desktop App.bat"            :: Builds portable .exe + installer (if Inno Setup 6 is installed)
+"Build Desktop App.bat" portable   :: Builds only dist\FirewallMigrationTool.exe (--onefile)
+"Build Desktop App.bat" installer  :: Builds --onedir bundle + dist\FirewallMigrationTool-Setup-<version>.exe
+```
+
+- **Inno Setup requirement**: Installer builds use [Inno Setup 6](https://jrsoftware.org/isinfo.php) (`winget install JRSoftware.InnoSetup`) and [`scripts/installer/FirewallMigrationTool.iss`](scripts/installer/FirewallMigrationTool.iss). Version is read from `pyproject.toml`.
+- **Upgrading**: Run the new `FirewallMigrationTool-Setup-<version>.exe` directly over an existing installation—it upgrades in-place, closes any running instance, clears stale `_internal` files, and updates the Windows Apps & features entry.
 
 ### Manual Setup
 
@@ -193,7 +206,7 @@ src/
 documentation/
 ├── migration-support-matrix.md                Authoritative pair capabilities, limits, and CLI usage
 └── official-cli-references-selected version/  Pinned official vendor CLI/API syntax references
-scripts/                  Excel benchmark scripts and standalone Playwright browser scripts (`browser/`)
+scripts/                  Desktop launcher (`desktop_launcher.py`), Inno Setup script (`installer/`), benchmarks, and Playwright scripts (`browser/`)
 tests/                    Domain-mirrored test suites (`architecture/`, `collection/`, `conversion/`, `source_reporting/`, `vendors/`, `web/`, `fixtures/`)
 AGENTS.md                 Mandatory architecture boundaries and contributor rules
 ```

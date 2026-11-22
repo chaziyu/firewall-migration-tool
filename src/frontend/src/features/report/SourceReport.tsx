@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { SourcePreviewData } from '../source/types'
 import { activeSubsection, asRecord, asRows, compactValue, interfaceTopologyRows, matchingSourceRows, reportCounts, reportSections, reportSectionRowCount, reportSearchText, rowColumns, safeValue, defaultColumns, cellSummary, columnWidth, fieldLabel, findingGroups, findingGroupKey } from './reportPresentation'
 import { ReportDetails } from './ReportDetails'
@@ -58,7 +58,6 @@ function ValidationSummary({ rows, activeGroup, onGroupChange }: {
 
   return <section className="validation-summary" aria-label="Validation summary">
     <div className="validation-counts"><strong>{rows.length} {rows.length === 1 ? 'finding' : 'findings'}</strong><span>{errors} {errors === 1 ? 'error' : 'errors'}</span><span>{warnings} {warnings === 1 ? 'warning' : 'warnings'}</span></div>
-    <button type="button" className="secondary-button" aria-pressed={!activeGroup} onClick={() => onGroupChange('')}>All findings</button>
     {!!ordered.length && <div className="validation-groups" aria-label="Finding groups">{ordered.map((group) => { const key = group.key; return (
       <button type="button" key={key} className={`validation-group ${activeGroup === key ? 'active' : ''}`} aria-pressed={activeGroup === key} onClick={() => onGroupChange(activeGroup === key ? '' : key)}>
         <span className={`finding-severity severity-${String(group.row.severity ?? 'other').toLowerCase()}`}>{text(group.row.severity || 'Issue')}</span>
@@ -97,14 +96,14 @@ function ValidationTable({ rows, selected, onSelect, onNavigate, grouped }: {
   grouped: boolean
 }) {
   if (!rows.length) return <p className="validation-empty">No findings match the current filters.</p>
-  return <div className="validation-table-wrap"><table className="validation-table"><thead><tr><th>Object</th><th>Scope</th><th>Domain / field</th><th>Severity</th>{!grouped && <th>Finding</th>}<th>Review</th></tr></thead>
+  return <div className="validation-table-wrap"><table className="validation-table"><thead><tr><th>Object</th><th>Scope</th><th>Domain / field</th><th>Severity</th>{!grouped && <th>Finding</th>}</tr></thead>
     <tbody>{rows.map((row, index) => {
       const targetInfo = validationTarget(row)
-      return <tr key={`${row.code ?? ''}-${row.domain ?? ''}-${row.object_name ?? ''}-${index}`} className={selected === row ? 'selected' : ''}>
-        <td><strong>{text(row.object_name)}</strong></td><td>{text(row.scope ?? row.vdom)}</td><td>{text(row.domain)}<br />{text(row.field)}</td>
+      return <tr key={`${row.code ?? ''}-${row.domain ?? ''}-${row.object_name ?? ''}-${index}`} className={selected === row ? 'selected' : ''} onClick={() => onSelect(row)}>
+        <td><div className="validation-object-cell"><strong>{text(row.object_name)}</strong>{row.object_name != null && targetInfo != null ? <button type="button" className="finding-inline-link" onClick={(event) => { event.stopPropagation(); onNavigate(row) }}>View object →</button> : null}</div></td>
+        <td>{text(row.scope ?? row.vdom)}</td><td>{text(row.domain)}<br />{text(row.field)}</td>
         <td><span className={`finding-severity severity-${String(row.severity ?? 'other').toLowerCase()}`}>{text(row.severity ?? 'Issue')}</span></td>
-        {!grouped && <td><button type="button" className="finding-message" onClick={() => onSelect(row)}>{text(row.message)}</button></td>}
-        <td><button type="button" className="finding-inline-link" onClick={() => onSelect(row)}>Details</button>{row.object_name != null && targetInfo != null ? <button type="button" className="finding-inline-link" onClick={() => onNavigate(row)}>View object →</button> : null}</td>
+        {!grouped && <td><button type="button" className="finding-message" onClick={(event) => { event.stopPropagation(); onSelect(row) }}>{text(row.message)}</button></td>}
       </tr>
     })}</tbody></table></div>
 }
@@ -165,19 +164,71 @@ function ValidationReport({ data, reportScope, onReportScope, active }: { data: 
   </div>
 }
 
+const ROW_HEIGHT = 40
+const VIRTUAL_OVERSCAN = 8
+const VIRTUAL_THRESHOLD = 50
+
+function columnPixelWidth(key: string): number {
+  const kind = columnWidth(key)
+  if (kind === 'short') return 124
+  if (kind === 'identity') return 250
+  return 240
+}
+
 function SourceRowsTable({ rows, columns, selected, hasSource, topology, onSelect }: { rows: Finding[]; columns: string[]; selected: Finding | null; hasSource: boolean; topology: boolean; onSelect: (row: Finding) => void }) {
+  const wrapRef = useRef<HTMLDivElement>(null)
+  const [scrollState, setScrollState] = useState({ scrollTop: 0, viewportHeight: 0 })
+
+  useEffect(() => {
+    const element = wrapRef.current
+    if (!element) return
+    if (element.scrollTop) element.scrollTop = 0
+    const nextHeight = element.clientHeight ?? 0
+    setScrollState((current) => (current.scrollTop === 0 && current.viewportHeight === nextHeight ? current : { scrollTop: 0, viewportHeight: nextHeight }))
+  }, [rows, columns])
+
   if (!rows.length) return <p className="report-empty">{hasSource ? 'No rows match the current filters.' : 'No reported entries in this subsection.'}</p>
-  return <div className="report-table-wrap" role="region" aria-label="Source report rows" tabIndex={0}>
-    <table className="report-table"><thead><tr>{columns.map((key, index) => <th key={key} scope="col" className={`report-column-${columnWidth(key)}${index === 0 ? ' report-identity' : ''}`}>{fieldLabel(key)}</th>)}</tr></thead>
-      <tbody>{rows.map((row, index) => <tr className={selected === row ? 'selected' : ''} key={`${row.name ?? row.policy_id ?? index}-${index}`}>
-        {columns.map((key, index) => {
-          const value = topology && key === 'name' ? row.display_name ?? row.name : row[key]
-          const cell = <span className={`report-cell${value == null ? ' report-not-reported' : ''}`} title={value == null ? 'This value was not reported. No default is inferred. See details for the exact value.' : undefined}>{cellSummary(value)}</span>
-          return <td key={key} className={`report-column-${columnWidth(key)}${index === 0 ? ' report-identity' : ''}`}>
-            {index === 0 ? <div className="report-identity-content">{cell}<button type="button" className="finding-inline-link" aria-label={`Details for ${text(row.name ?? row.policy_id ?? row.route_id ?? value)}`} onClick={() => onSelect(row)}>Details</button></div> : cell}
-          </td>
+
+  const virtualize = rows.length > VIRTUAL_THRESHOLD && scrollState.viewportHeight > 0
+  const startIndex = virtualize ? Math.max(0, Math.floor(scrollState.scrollTop / ROW_HEIGHT) - VIRTUAL_OVERSCAN) : 0
+  const endIndex = virtualize ? Math.min(rows.length, Math.ceil((scrollState.scrollTop + scrollState.viewportHeight) / ROW_HEIGHT) + VIRTUAL_OVERSCAN) : rows.length
+  const visibleRows = virtualize ? rows.slice(startIndex, endIndex) : rows
+  const topSpacerHeight = startIndex * ROW_HEIGHT
+  const bottomSpacerHeight = (rows.length - endIndex) * ROW_HEIGHT
+
+  return <div
+    ref={wrapRef}
+    className="report-table-wrap"
+    role="region"
+    aria-label="Source report rows"
+    tabIndex={0}
+    onScroll={(event) => {
+      const target = event.currentTarget
+      const nextTop = target.scrollTop
+      const nextHeight = target.clientHeight
+      setScrollState((current) => (current.scrollTop === nextTop && current.viewportHeight === nextHeight ? current : { scrollTop: nextTop, viewportHeight: nextHeight }))
+    }}
+  >
+    <table className="report-table">
+      <colgroup>{columns.map((key) => <col key={key} style={{ width: `${columnPixelWidth(key)}px` }} />)}</colgroup>
+      <thead><tr>{columns.map((key, index) => <th key={key} scope="col" className={`report-column-${columnWidth(key)}${index === 0 ? ' report-identity' : ''}`}>{topology && key === 'name' ? 'Interface' : fieldLabel(key)}</th>)}</tr></thead>
+      <tbody>
+        {topSpacerHeight > 0 && <tr aria-hidden="true" className="report-virtual-spacer"><td colSpan={columns.length} style={{ height: `${topSpacerHeight}px` }} /></tr>}
+        {visibleRows.map((row, offset) => {
+          const rowIndex = startIndex + offset
+          return <tr className={selected === row ? 'selected' : ''} key={`${row.name ?? row.policy_id ?? rowIndex}-${rowIndex}`} onClick={() => onSelect(row)}>
+            {columns.map((key, colIndex) => {
+              const value = topology && key === 'name' ? row.display_name ?? row.name : row[key]
+              const summaryText = cellSummary(value)
+              const cell = <span className={`report-cell${value == null ? ' report-not-reported' : ''}`} title={value == null ? 'This value was not reported. No default is inferred. See details for the exact value.' : summaryText}>{summaryText}</span>
+              return <td key={key} className={`report-column-${columnWidth(key)}${colIndex === 0 ? ' report-identity' : ''}`}>
+                {colIndex === 0 ? <div className="report-identity-content">{cell}<button type="button" className="finding-inline-link" aria-label={`Details for ${text(row.name ?? row.policy_id ?? row.route_id ?? value)}`} onClick={(event) => { event?.stopPropagation?.(); onSelect(row) }}>Details</button></div> : cell}
+              </td>
+            })}
+          </tr>
         })}
-      </tr>)}</tbody>
+        {bottomSpacerHeight > 0 && <tr aria-hidden="true" className="report-virtual-spacer"><td colSpan={columns.length} style={{ height: `${bottomSpacerHeight}px` }} /></tr>}
+      </tbody>
     </table>
   </div>
 }
@@ -256,9 +307,16 @@ export function SourceReport({ data, excelProfile, onExcelProfileChange, exporti
   const subsectionCount = search || effectiveScope ? `${filteredRows.length} of ${subsectionRows.length}` : subsectionRows.length
   const reportTabs = ['Overview', 'Interfaces', 'Objects', 'Schedules', 'Policies', 'NAT', 'Routes', 'VPN', 'References', ...(sections.some((item) => item.label === 'Extraction') ? ['Extraction'] : []), ...(sections.some((item) => item.label === 'Additional sections') ? ['Additional sections'] : []), 'Validation']
   const objectTabs = unifiedInterfaces ? ['interface_topology'] : sourceSections.filter((key) => showEmpty || key === activeObjectSection || active?.subsections.find((item) => item.key === key)?.rows.length)
+  const primaryObjectTabs = objectTabs.length > 5 ? objectTabs.slice(0, 4) : objectTabs
+  const overflowObjectTabs = objectTabs.length > 5 ? objectTabs.slice(4) : []
+  const activeOverflowTab = overflowObjectTabs.includes(activeObjectSection) ? activeObjectSection : ''
+  const tabLabel = (item: string) => unifiedInterfaces
+    ? `Interface Topology (${subsectionCount})`
+    : `${fieldLabel(item)} (${activeObjectSection === item ? subsectionCount : active?.subsections.find((section) => section.key === item)?.rows.length ?? 0})`
   const currentSelected = selectedRow && filteredRows.includes(selectedRow) ? selectedRow : null
   const selectedIndex = currentSelected ? filteredRows.indexOf(currentSelected) : -1
   const warningGroups = findingGroups(validationRows).filter((group) => String(group.row.severity).toLowerCase() === 'warning').length
+  const exposureWarnings = useMemo(() => validationRows.filter((row) => row.domain === 'interface' && row.field === 'allowaccess'), [validationRows])
 
   function renderOverviewMetric(item: OverviewMetric) {
     return <tr key={item.label} className={item.tone ? `configuration-summary-${item.tone}` : undefined}>
@@ -293,6 +351,13 @@ export function SourceReport({ data, excelProfile, onExcelProfileChange, exporti
     {activeSection === 'Overview' ? <>
       <h3 className="report-overview-heading">Validation</h3>
       <button type="button" className={`report-validation-attention${errorCount ? ' has-errors' : warningCount ? ' has-warnings' : ''}`} onClick={() => changeSection('Validation')}><div>{sectionsData.validation == null && asRecord(summary.validation).severity_counts == null ? 'Not reported' : <>{errorCount.toLocaleString()} {errorCount === 1 ? 'error' : 'errors'} · {warningCount.toLocaleString()} {warningCount === 1 ? 'warning' : 'warnings'} <small>{warningGroups.toLocaleString()} warning {warningGroups === 1 ? 'group' : 'groups'}</small></>}</div><span>Review findings →</span></button>
+      {!!exposureWarnings.length && <div className="report-exposure-warning" role="status">
+        <div>
+          <strong>Public management exposure ({exposureWarnings.length})</strong>
+          <p>{exposureWarnings.map((row) => text(row.object_name)).filter(Boolean).join(', ')} — HTTP/HTTPS/SSH/Telnet management access is enabled on a WAN or public-facing interface.</p>
+        </div>
+        <button type="button" className="secondary-button" onClick={() => changeSection('Validation')}>Inspect in Validation →</button>
+      </div>}
       <div className="report-overview-group">
         <h3 className="report-overview-heading" id="configuration-summary-title">Configuration summary</h3>
         <div className="configuration-summary-wrap">
@@ -302,14 +367,21 @@ export function SourceReport({ data, excelProfile, onExcelProfileChange, exporti
           </table>
         </div>
       </div>
-      <details className="report-count-explanation"><summary>About these counts</summary><p>Configured objects count addresses, address groups, services, and service groups once. Policies and interfaces use configured inventory counts. Report sections count rows, including expanded entries. Not reported means the count is unavailable.</p></details>
     </> : activeSection === 'Validation' ? null : <>
       {activeSection === 'Extraction' && sectionsData.extraction_coverage != null && <>
         {data.vendor === 'palo_alto' && <p className="report-count-note">{Number(summary.source_only_count ?? 0).toLocaleString()} source-only records · {Number(summary.partial_count ?? 0).toLocaleString()} partial records · {asRows(sectionsData.source_inventory).length.toLocaleString()} source inventory records.</p>}
         {data.vendor === 'fortigate' && <p className="report-count-note">{Number(summary.source_only_count ?? 0).toLocaleString()} source-only records · {Number(summary.empty_section_count ?? 0).toLocaleString()} empty sections · {Number(summary.model_gap_count ?? 0).toLocaleString()} model gaps · {Number(summary.typed_with_additional_settings_count ?? 0).toLocaleString()} typed records with additional settings · {asRows(sectionsData.source_inventory).length.toLocaleString()} source object records.</p>}
       </>}
       {activeSection !== 'Interfaces' && active?.subsections.some((item) => !item.rows.length) && <label className="report-empty-toggle"><input type="checkbox" checked={showEmpty} onChange={(event) => setShowEmpty(event.target.checked)} /> Show empty sections</label>}
-      {!!objectTabs.length && <nav className="report-object-tabs" role="tablist" aria-label="Source subsections" onKeyDown={tabKeyboard}>{objectTabs.map((item) => <button type="button" role="tab" id={`subsection-tab-${encodeURIComponent(item)}`} aria-controls={`subsection-panel-${encodeURIComponent(item)}`} tabIndex={activeObjectSection === item ? 0 : -1} aria-selected={activeObjectSection === item} className={activeObjectSection === item ? 'active' : ''} key={item} onClick={() => setSourceSection(item)}>{unifiedInterfaces ? `Interface Topology (${subsectionCount})` : `${fieldLabel(item)} (${activeObjectSection === item ? subsectionCount : active?.subsections.find((section) => section.key === item)?.rows.length ?? 0})`}</button>)}</nav>}
+      {!!objectTabs.length && <nav className="report-object-tabs" role="tablist" aria-label="Source subsections" onKeyDown={tabKeyboard}>
+        {primaryObjectTabs.map((item) => <button type="button" role="tab" id={`subsection-tab-${encodeURIComponent(item)}`} aria-controls={`subsection-panel-${encodeURIComponent(item)}`} tabIndex={activeObjectSection === item ? 0 : -1} aria-selected={activeObjectSection === item} className={activeObjectSection === item ? 'active' : ''} key={item} onClick={() => setSourceSection(item)}>{tabLabel(item)}</button>)}
+        {!!overflowObjectTabs.length && <details className={`report-object-more${activeOverflowTab ? ' has-active' : ''}`}>
+          <summary>{activeOverflowTab ? `${tabLabel(activeOverflowTab)} · More (${overflowObjectTabs.length})` : `More (${overflowObjectTabs.length})`}</summary>
+          <div className="report-object-more-menu">
+            {overflowObjectTabs.map((item) => <button type="button" role="tab" id={`subsection-tab-${encodeURIComponent(item)}`} aria-controls={`subsection-panel-${encodeURIComponent(item)}`} tabIndex={activeObjectSection === item ? 0 : -1} aria-selected={activeObjectSection === item} className={activeObjectSection === item ? 'active' : ''} key={item} onClick={(event) => { setSourceSection(item); event.currentTarget.closest('details')?.removeAttribute('open') }}>{tabLabel(item)}</button>)}
+          </div>
+        </details>}
+      </nav>}
       {objectTabs.filter((item) => item !== activeObjectSection).map((item) => <div key={item} hidden role="tabpanel" id={`subsection-panel-${encodeURIComponent(item)}`} aria-labelledby={`subsection-tab-${encodeURIComponent(item)}`} />)}
       <div {...(unifiedInterfaces ? {} : { role: 'tabpanel', id: `subsection-panel-${encodeURIComponent(activeObjectSection)}`, 'aria-labelledby': `subsection-tab-${encodeURIComponent(activeObjectSection)}`, tabIndex: 0 as const })}>
       <div className="report-toolbar">

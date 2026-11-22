@@ -1,0 +1,101 @@
+name: Desktop Release
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  check-release:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      tag: ${{ steps.meta.outputs.tag }}
+      should_build: ${{ steps.meta.outputs.should_build }}
+      should_release: ${{ steps.meta.outputs.should_release }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Check version and existing tag
+        id: meta
+        shell: bash
+        run: |
+          VERSION=$(python3 -c "import tomllib, pathlib; print(tomllib.loads(pathlib.Path('pyproject.toml').read_text(encoding='utf-8'))['project']['version'])")
+          TAG="v${VERSION}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+
+          if git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null || [ -n "$(git ls-remote --tags origin "refs/tags/${TAG}")" ]; then
+            echo "Tag ${TAG} already exists."
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+            if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+              echo "should_build=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "should_build=false" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "New version ${TAG} detected."
+            echo "should_build=true" >> "$GITHUB_OUTPUT"
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  build-desktop:
+    needs: check-release
+    if: needs.check-release.outputs.should_build == 'true'
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+          cache: pip
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: ".node-version"
+          cache: npm
+          cache-dependency-path: src/frontend/package-lock.json
+
+      - name: Install Inno Setup 6
+        shell: cmd
+        run: |
+          if not exist "%ProgramFiles(x86)%\Inno Setup 6\ISCC.exe" (
+            choco install innosetup -y --no-progress
+          )
+
+      - name: Build portable executable and Windows installer
+        shell: cmd
+        run: call "Build Desktop App.bat" all
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-desktop-${{ needs.check-release.outputs.tag }}
+          path: |
+            dist/FirewallMigrationTool.exe
+            dist/FirewallMigrationTool-Setup-*.exe
+          if-no-files-found: error
+
+      - name: Tag and publish GitHub Release
+        if: needs.check-release.outputs.should_release == 'true'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = "${{ needs.check-release.outputs.tag }}"
+          $files = @(
+            "dist\FirewallMigrationTool.exe"
+          ) + (Get-ChildItem "dist\FirewallMigrationTool-Setup-*.exe" | ForEach-Object { $_.FullName })
+          gh release create $tag @files --target "${{ github.sha }}" --title $tag --generate-notes

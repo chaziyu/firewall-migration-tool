@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 
 const ZOOM_STORAGE_KEY = 'fwmigrate-zoom'
+const DEFAULT_ZOOM = 90
 const MIN_ZOOM = 70
 const MAX_ZOOM = 150
 const ZOOM_STEP = 10
@@ -12,9 +13,9 @@ function clampZoom(value: number): number {
 function readSavedZoom(): number {
   try {
     const raw = Number(localStorage.getItem(ZOOM_STORAGE_KEY))
-    return Number.isFinite(raw) && raw >= MIN_ZOOM && raw <= MAX_ZOOM ? clampZoom(raw) : 100
+    return Number.isFinite(raw) && raw >= MIN_ZOOM && raw <= MAX_ZOOM ? clampZoom(raw) : DEFAULT_ZOOM
   } catch {
-    return 100
+    return DEFAULT_ZOOM
   }
 }
 
@@ -31,7 +32,7 @@ export function ZoomControl() {
       root.style.setProperty('--app-zoom', String(zoom / 100))
     }
     try {
-      if (zoom === 100) localStorage.removeItem(ZOOM_STORAGE_KEY)
+      if (zoom === DEFAULT_ZOOM) localStorage.removeItem(ZOOM_STORAGE_KEY)
       else localStorage.setItem(ZOOM_STORAGE_KEY, String(zoom))
     } catch { /* Zoom remains active for this session. */ }
   }, [zoom])

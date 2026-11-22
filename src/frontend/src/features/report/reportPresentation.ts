@@ -137,22 +137,22 @@ const CISCO_FTD_COLUMNS: Record<string, string[]> = {
 const FORTIGATE_COLUMNS: Record<string, string[]> = {
   policies: ['policy_id', 'name', 'vdom', 'source_interfaces', 'source_addresses', 'destination_interfaces', 'destination_addresses', 'services', 'action', 'status'],
   interfaces: ['name', 'vdom', 'kind', 'ip', 'parent', 'members', 'role', 'status'],
-  interface_topology: ['display_name', 'name', 'vdom', 'kind', 'ip', 'parent', 'physical_interfaces'],
-  addresses: ['name', 'vdom', 'type', 'value', 'associated_interface', 'review'],
-  address_groups: ['name', 'vdom', 'members', 'exclude_members', 'review'],
+  interface_topology: ['display_name', 'name', 'vdom', 'kind', 'ip', 'parent'],
+  addresses: ['name', 'vdom', 'type', 'value', 'associated_interface'],
+  address_groups: ['name', 'vdom', 'members', 'exclude_members'],
   wildcard_fqdns: ['name', 'vdom', 'wildcard_fqdn', 'comment'],
   local_users: ['name', 'vdom', 'type', 'status', 'two_factor', 'ldap_server', 'radius_server'],
   administrators: ['name', 'vdom', 'accprofile', 'vdoms', 'trusthosts', 'remote_auth', 'two_factor'],
-  services: ['name', 'vdom', 'protocol', 'port', 'source_port', 'review'],
-  service_groups: ['name', 'vdom', 'members', 'review'],
+  services: ['name', 'vdom', 'protocol', 'port', 'source_port'],
+  service_groups: ['name', 'vdom', 'members'],
   routes: ['route_id', 'vdom', 'destination', 'gateway', 'device', 'distance', 'status'],
-  nat: ['policy_id', 'policy_name', 'vdom', 'translation_type', 'egress_interfaces', 'pool_names', 'translated_addresses', 'review'],
+  nat: ['policy_id', 'policy_name', 'vdom', 'translation_type', 'egress_interfaces', 'pool_names', 'translated_addresses'],
   vips: ['name', 'vdom', 'address_family', 'extip', 'extintf', 'mappedip', 'portforward', 'extport', 'mappedport'],
   vip_groups: ['name', 'vdom', 'address_family', 'interface', 'members'],
   ip_pools: ['name', 'vdom', 'address_family', 'type', 'startip', 'endip', 'associated_interface', 'arp_reply'],
   dhcp_servers: ['id', 'vdom', 'interface', 'status', 'default_gateway', 'netmask', 'lease_time'],
-  vpn_tunnels: ['name', 'vdom', 'interface', 'remote_gateway', 'ike_version', 'proposal', 'review'],
-  vpn_phase2: ['name', 'vdom', 'phase1', 'source_range', 'destination_range', 'proposal', 'pfs', 'review'],
+  vpn_tunnels: ['name', 'vdom', 'interface', 'remote_gateway', 'ike_version', 'proposal'],
+  vpn_phase2: ['name', 'vdom', 'phase1', 'source_range', 'destination_range', 'proposal', 'pfs'],
   ssl_vpn_bookmarks: ['name', 'vdom', 'owner_name', 'apptype', 'host', 'url'],
   ssl_vpn_portals: ['name', 'vdom', 'tunnel_mode', 'web_mode', 'ip_pools', 'split_tunneling'],
   schedules: ['name', 'vdom', 'type', 'days', 'start', 'end'],
@@ -160,20 +160,20 @@ const FORTIGATE_COLUMNS: Record<string, string[]> = {
   extraction_coverage: ['source_path', 'status', 'source_records', 'typed_objects', 'source_only_records', 'empty_sections', 'model_gaps', 'typed_with_additional_settings'],
 }
 const CHECKPOINT_COLUMNS: Record<string, string[]> = {
-  addresses: ['name', 'scope', 'type', 'address_family', 'ipv4_value', 'ipv4_mask_length', 'ipv4_range_end', 'ipv6_value', 'ipv6_mask_length', 'value', 'review'],
+  addresses: ['name', 'scope', 'type', 'address_family', 'ipv4_value', 'ipv4_mask_length', 'ipv4_range_end', 'ipv6_value', 'ipv6_mask_length', 'value'],
 }
 const PANOS_COLUMNS: Record<string, string[]> = {
   policies: ['rule_order', 'name', 'scope', 'from_zones', 'source_addresses', 'to_zones', 'destination_addresses', 'application', 'services', 'action', 'disabled'],
   default_security_rules: ['name', 'scope', 'action', 'disabled', 'log_start', 'log_end', 'profile_setting'],
   nat: ['rule_order', 'name', 'scope', 'from_zones', 'source_addresses', 'to_zones', 'destination_addresses', 'service', 'source_translation', 'destination_translation', 'dynamic_destination_translation', 'disabled'],
-  interface_topology: ['name', 'scope', 'kind', 'ip', 'tag', 'zone', 'virtual_routers', 'review'],
-  addresses: ['name', 'scope', 'type', 'value', 'tags', 'description', 'review'],
-  address_groups: ['name', 'scope', 'members', 'dynamic_filter', 'tags', 'review'],
-  services: ['name', 'scope', 'protocol', 'port', 'source_port', 'review'],
-  service_groups: ['name', 'scope', 'members', 'review'],
+  interface_topology: ['name', 'scope', 'kind', 'ip', 'tag', 'zone', 'virtual_routers'],
+  addresses: ['name', 'scope', 'type', 'value', 'tags', 'description'],
+  address_groups: ['name', 'scope', 'members', 'dynamic_filter', 'tags'],
+  services: ['name', 'scope', 'protocol', 'port', 'source_port'],
+  service_groups: ['name', 'scope', 'members'],
   schedules: ['name', 'scope', 'recurring', 'non_recurring'],
-  vpn_tunnels: ['name', 'scope', 'interface', 'ike_gateways', 'ipsec_crypto_profile', 'tunnel_monitor', 'review'],
-  ipsec_tunnels: ['name', 'scope', 'tunnel_interface', 'ike_gateways', 'ipsec_crypto_profile', 'tunnel_monitor', 'review'],
+  vpn_tunnels: ['name', 'scope', 'interface', 'ike_gateways', 'ipsec_crypto_profile', 'tunnel_monitor'],
+  ipsec_tunnels: ['name', 'scope', 'tunnel_interface', 'ike_gateways', 'ipsec_crypto_profile', 'tunnel_monitor'],
   vpn_phase2: ['name', 'tunnel', 'scope', 'address_family', 'local', 'remote', 'protocol', 'local_port', 'remote_port'],
   ike_gateways: ['name', 'scope', 'local_interface', 'peer_address', 'ike_version', 'authentication_method', 'pre_shared_key_configured'],
   extraction_coverage: ['domain', 'status', 'source_records', 'typed_objects', 'unknown_paths'],
@@ -193,6 +193,9 @@ export function fieldLabel(key: string) {
     ipv4_value: 'IPv4 definition', ipv6_value: 'IPv6 definition', address_family: 'Address family',
     ipv4_mask_length: 'IPv4 mask length', ipv4_range_end: 'IPv4 range end', ipv6_mask_length: 'IPv6 mask length',
     rule_order: 'Rule position', source_order: 'Source inventory order', rule_uuid: 'Rule UUID',
+    kind: 'Interface type', vlanid: 'VLAN ID', allowaccess: 'Management access',
+    secondary_ips: 'Secondary IPs', vrf: 'VRF', issues: 'Topology issues',
+    physical_interfaces: 'Underlying ports',
     extraction_coverage: 'Extraction coverage', source_inventory: 'Source inventory' }
   return labels[key] ?? key.replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())
 }
@@ -202,20 +205,24 @@ export function columnWidth(key: string) {
   return 'content'
 }
 export function rowColumns(rows: ReportRow[], subsection = '', vendor = '') {
-  const keys = [...new Set(rows.flatMap(Object.keys))].filter((key) => key !== 'Source section' && !(subsection === 'interface_topology' && key === 'display_name') && !(vendor === 'palo_alto' && key === 'policy_id') && !(subsection !== 'source_inventory' && (key === 'cli_vdom' || key === 'cli_scope')) && rows.some((row) => Object.hasOwn(row, key) && !sensitiveKey(key, row[key])))
+  const keys = [...new Set(rows.flatMap(Object.keys))].filter((key) => key !== 'Source section' && key !== 'review' && key !== 'unset_fields' && !(subsection === 'interface_topology' && key === 'display_name') && !(vendor === 'palo_alto' && key === 'policy_id') && !(subsection !== 'source_inventory' && (key === 'cli_vdom' || key === 'cli_scope')) && rows.some((row) => Object.hasOwn(row, key) && !sensitiveKey(key, row[key])))
   if (!keys.length && rows.length) return ['Source section']
   const identity = vendor === 'palo_alto' && PANOS_COLUMNS[subsection] || (subsection === 'interface_topology'
-    ? ['name', 'display_name', 'vdom', 'domain_id', 'device_name', 'device_id', 'scope', 'kind', 'ip', 'prefix', 'parent', 'members', 'aggregate', 'physical_interfaces', 'path', 'topology_path', 'issues']
+    ? ['name', 'display_name', 'vdom', 'domain_id', 'device_name', 'device_id', 'scope', 'kind', 'role', 'ip', 'vlanid', 'zone', 'virtual_routers', 'vrf', 'status', 'issues', 'prefix', 'parent', 'members', 'aggregate', 'physical_interfaces', 'path', 'topology_path']
     : vendor === 'fortigate' && FORTIGATE_COLUMNS[subsection]
       || vendor === 'cisco_ftd' && CISCO_FTD_COLUMNS[subsection]
       || vendor === 'checkpoint' && CHECKPOINT_COLUMNS[subsection]
       || ['name', 'policy_id', 'rule_id', 'route_id', 'display_name', 'policy_name', 'domain_id', 'device_name', 'device_id', 'vdom', 'scope'])
   return [...identity.filter((key) => keys.includes(key)), ...keys.filter((key) => !identity.includes(key))]
 }
+const INTERFACE_DEFAULT_COLUMNS = new Set([
+  'name', 'vdom', 'domain_id', 'device_name', 'device_id', 'scope',
+  'kind', 'role', 'ip', 'vlanid', 'zone', 'virtual_routers', 'vrf', 'status', 'issues',
+])
 export function defaultColumns(rows: ReportRow[], subsection = '', vendor = '') {
   const columns = rowColumns(rows, subsection, vendor)
   if (vendor === 'palo_alto' && PANOS_COLUMNS[subsection]) return columns.filter((key) => PANOS_COLUMNS[subsection].includes(key))
-  if (subsection === 'interface_topology') return columns.filter((key) => !['type', 'parent', 'members', 'aggregate', 'path', 'topology_path'].includes(key))
+  if (subsection === 'interface_topology') return columns.filter((key) => INTERFACE_DEFAULT_COLUMNS.has(key))
   const preferred = vendor === 'fortigate' ? FORTIGATE_COLUMNS[subsection]
     : vendor === 'cisco_ftd' ? CISCO_FTD_COLUMNS[subsection]
     : vendor === 'checkpoint' ? CHECKPOINT_COLUMNS[subsection]

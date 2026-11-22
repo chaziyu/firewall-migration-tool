@@ -30,7 +30,7 @@ test('configuration summary renders each count once, preserves missing and zero 
       assert.equal(row.includes('<button'), index < 8)
       assert.equal(row.includes('›'), index < 8)
     })
-    assert.match(html, /<summary>About these counts<\/summary>/)
+    assert.ok(!html.includes('About these counts'))
     assert.ok(!table.includes('Review findings'))
     assert.ok(!table.includes('configuration-summary-warning'))
     const missing = render({ vendor: 'fortigate' })
@@ -189,7 +189,38 @@ test('interface topology rows retain topology relationships and enrich only uniq
   assert.equal(rows[4].status, undefined)
   assert.equal(rows[6].name, 'topology-only')
   assert.deepEqual(inventory, before)
-  assert.ok(defaultColumns(rows, 'interface_topology').includes('physical_interfaces'))
+  assert.ok(rowColumns(rows, 'interface_topology').includes('physical_interfaces'))
+  assert.ok(!defaultColumns(rows, 'interface_topology').includes('physical_interfaces'))
+  assert.equal(fieldLabel('kind'), 'Interface type')
+  assert.equal(fieldLabel('vlanid'), 'VLAN ID')
+  assert.equal(fieldLabel('allowaccess'), 'Management access')
+  assert.equal(fieldLabel('issues'), 'Topology issues')
+  assert.equal(fieldLabel('physical_interfaces'), 'Underlying ports')
+})
+
+test('object subsections pin top 4 pills and place remaining types in a More menu', async () => {
+  const server = await createServer({ server: { middlewareMode: true }, appType: 'custom' })
+  try {
+    const { SourceReport } = await server.ssrLoadModule('/src/features/report/SourceReport.tsx')
+    const { default: React } = await import('react')
+    const { renderToStaticMarkup } = await import('react-dom/server')
+    const html = renderToStaticMarkup(React.createElement(SourceReport, {
+      data: {
+        vendor: 'fortigate',
+        sections: {
+          addresses: [{ name: 'a1' }],
+          address_groups: [{ name: 'g1' }],
+          wildcard_fqdns: [{ name: 'w1' }],
+          services: [{ name: 's1' }],
+          service_groups: [{ name: 'sg1' }],
+          zones: [{ name: 'z1' }],
+          local_users: [{ name: 'u1' }],
+        },
+      },
+      excelProfile: 'fast', onExcelProfileChange() {}, exporting: false, exportStatus: '', onExport() {},
+    }))
+    assert.ok(html.includes('Overview'))
+  } finally { await server.close() }
 })
 
 test('finding navigation preserves duplicate names across scopes and resolves NAT policy and route identities', () => {
