@@ -24,7 +24,7 @@ const reportSearchIndex = new WeakMap<ReportRow, string>()
 export function reportSearchText(row: ReportRow): string {
   const cached = reportSearchIndex.get(row)
   if (cached !== undefined) return cached
-  const text = JSON.stringify(safeValue(row)).toLowerCase()
+  const text = JSON.stringify(row, (key, value) => (key && sensitiveKey(key, value) ? undefined : value)).toLowerCase()
   reportSearchIndex.set(row, text)
   return text
 }
@@ -205,7 +205,23 @@ export function columnWidth(key: string) {
   return 'content'
 }
 export function rowColumns(rows: ReportRow[], subsection = '', vendor = '') {
-  const keys = [...new Set(rows.flatMap(Object.keys))].filter((key) => key !== 'Source section' && key !== 'review' && key !== 'unset_fields' && !(subsection === 'interface_topology' && key === 'display_name') && !(vendor === 'palo_alto' && key === 'policy_id') && !(subsection !== 'source_inventory' && (key === 'cli_vdom' || key === 'cli_scope')) && rows.some((row) => Object.hasOwn(row, key) && !sensitiveKey(key, row[key])))
+  const seen = new Set<string>()
+  for (const row of rows) {
+    for (const key of Object.keys(row)) {
+      if (
+        seen.has(key)
+        || key === 'Source section'
+        || key === 'review'
+        || key === 'unset_fields'
+        || (subsection === 'interface_topology' && key === 'display_name')
+        || (vendor === 'palo_alto' && key === 'policy_id')
+        || (subsection !== 'source_inventory' && (key === 'cli_vdom' || key === 'cli_scope'))
+        || sensitiveKey(key, row[key])
+      ) continue
+      seen.add(key)
+    }
+  }
+  const keys = [...seen]
   if (!keys.length && rows.length) return ['Source section']
   const identity = vendor === 'palo_alto' && PANOS_COLUMNS[subsection] || (subsection === 'interface_topology'
     ? ['name', 'display_name', 'vdom', 'domain_id', 'device_name', 'device_id', 'scope', 'kind', 'role', 'ip', 'vlanid', 'zone', 'virtual_routers', 'vrf', 'status', 'issues', 'prefix', 'parent', 'members', 'aggregate', 'physical_interfaces', 'path', 'topology_path']
@@ -219,8 +235,8 @@ const INTERFACE_DEFAULT_COLUMNS = new Set([
   'name', 'vdom', 'domain_id', 'device_name', 'device_id', 'scope',
   'kind', 'role', 'ip', 'vlanid', 'zone', 'virtual_routers', 'vrf', 'status', 'issues',
 ])
-export function defaultColumns(rows: ReportRow[], subsection = '', vendor = '') {
-  const columns = rowColumns(rows, subsection, vendor)
+export function defaultColumns(rows: ReportRow[], subsection = '', vendor = '', precomputedColumns?: string[]) {
+  const columns = precomputedColumns ?? rowColumns(rows, subsection, vendor)
   if (vendor === 'palo_alto' && PANOS_COLUMNS[subsection]) return columns.filter((key) => PANOS_COLUMNS[subsection].includes(key))
   if (subsection === 'interface_topology') return columns.filter((key) => INTERFACE_DEFAULT_COLUMNS.has(key))
   const preferred = vendor === 'fortigate' ? FORTIGATE_COLUMNS[subsection]
@@ -231,13 +247,21 @@ export function defaultColumns(rows: ReportRow[], subsection = '', vendor = '') 
   return selected.length ? selected : columns.slice(0, 8)
 }
 export function cellSummary(value: unknown): string {
-  const safe = safeValue(value)
-  if (safe == null) return 'Not reported'
-  if (Array.isArray(safe) && safe.length) {
-    const shown = safe.slice(0, 2).map((item) => Array.isArray(item) || (item !== null && typeof item === 'object') ? compactValue(item) : cellSummary(item))
-    return `${shown.join(', ')}${safe.length > 2 ? ` +${safe.length - 2} more` : ''}`
+  if (value == null) return 'Not reported'
+  if (typeof value !== 'object') return compactValue(value)
+  if (Array.isArray(value)) {
+    const defined: unknown[] = []
+    for (const item of value) {
+      if (item !== undefined) defined.push(item)
+    }
+    if (!defined.length) return '(empty list)'
+    const shown = defined.slice(0, 2).map((item) => {
+      if (item !== null && typeof item === 'object') return compactValue(safeValue(item))
+      return cellSummary(item)
+    })
+    return `${shown.join(', ')}${defined.length > 2 ? ` +${defined.length - 2} more` : ''}`
   }
-  return compactValue(safe)
+  return compactValue(safeValue(value))
 }
 const FORTIGATE_DETAILS: Record<string, Array<[string, string[]]>> = {
   policies: [

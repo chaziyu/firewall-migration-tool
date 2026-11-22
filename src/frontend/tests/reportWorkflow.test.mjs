@@ -156,3 +156,20 @@ test('report table keeps a stable scroll viewport and row details', () => {
     globalThis.ResizeObserver = originalObserver
   }
 })
+
+test('large report tables virtualize on initial mount before viewport measurement', () => {
+  const source = readFileSync(new URL('../src/features/report/SourceReport.tsx', import.meta.url), 'utf8')
+  const compiled = ts.transpileModule(`${source}\nexport { SourceRowsTable }`, { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText
+  const exports = {}
+  const hooks = {
+    useRef: (initial) => ({ current: initial }),
+    useState: (initial) => [initial, () => {}],
+    useEffect: () => {},
+  }
+  const modules = { react: hooks, 'react/jsx-runtime': jsxRuntime, './reportPresentation': presentation, './ReportDetails': {}, './ExcelExportControls': {}, '../../components/common/tabKeyboard': {}, '../../components/common/ErrorBanner': {} }
+  new Function('require', 'exports', compiled)((name) => modules[name], exports)
+  const rows = Array.from({ length: 5209 }, (_, index) => ({ name: `addr-${index}`, vdom: 'root' }))
+  const tree = exports.SourceRowsTable({ rows, columns: ['name', 'vdom'], selected: null, hasSource: true, topology: false, onSelect() {} })
+  const renderedRows = nodes(tree).filter((node) => node.type === 'tr' && node.props.className !== 'report-virtual-spacer')
+  assert.ok(renderedRows.length > 1 && renderedRows.length < 50, `Expected bounded initial window, got ${renderedRows.length} rows`)
+})

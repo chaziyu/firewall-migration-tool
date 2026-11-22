@@ -51,6 +51,8 @@ const ROW_HEIGHT = 40
 const VALIDATION_ROW_HEIGHT = 56
 const VIRTUAL_OVERSCAN = 8
 const VIRTUAL_THRESHOLD = 50
+// Bounds initial mount before clientHeight is measured so large tables never render thousands of DOM rows.
+const DEFAULT_VIRTUAL_VIEWPORT_HEIGHT = 600
 
 function useVirtualRows<T>(rows: T[], rowHeight: number, resetKey: unknown) {
   const wrapRef = useRef<HTMLDivElement>(null)
@@ -87,9 +89,11 @@ function useVirtualRows<T>(rows: T[], rowHeight: number, resetKey: unknown) {
     }
   }
 
-  const virtualize = rows.length > VIRTUAL_THRESHOLD && scrollState.viewportHeight > 0
-  const startIndex = virtualize ? Math.max(0, Math.floor(scrollState.scrollTop / rowHeight) - VIRTUAL_OVERSCAN) : 0
-  const endIndex = virtualize ? Math.min(rows.length, Math.ceil((scrollState.scrollTop + scrollState.viewportHeight) / rowHeight) + VIRTUAL_OVERSCAN) : rows.length
+  const virtualize = rows.length > VIRTUAL_THRESHOLD
+  const effectiveHeight = (scrollState?.viewportHeight ?? 0) > 0 ? scrollState.viewportHeight : DEFAULT_VIRTUAL_VIEWPORT_HEIGHT
+  const scrollTop = scrollState?.scrollTop ?? 0
+  const startIndex = virtualize ? Math.max(0, Math.floor(scrollTop / rowHeight) - VIRTUAL_OVERSCAN) : 0
+  const endIndex = virtualize ? Math.min(rows.length, Math.ceil((scrollTop + effectiveHeight) / rowHeight) + VIRTUAL_OVERSCAN) : rows.length
   return {
     wrapRef,
     onScroll,
@@ -216,19 +220,16 @@ function ValidationReport({ data, reportScope, onReportScope, active }: { data: 
   const [requestedScope, setRequestedScope] = useState(reportScope)
   if (requestedScope !== reportScope) { setRequestedScope(reportScope); setSelected(null); setTarget(null) }
 
-  const validationSearchText = useMemo(
-    () => new Map(allRows.map((row) => [row, reportSearchText(row)])),
-    [allRows],
-  )
   const matchingRows = useMemo(() => {
     const query = search.toLowerCase()
+    if (!query && !scope && !severity) return allRows
     return allRows.filter((row) => {
       if (scope && (row.scope || row.vdom) !== scope) return false
       if (severity && String(row.severity || '').toLowerCase() !== severity) return false
-      if (query) return (validationSearchText.get(row) ?? '').includes(query)
+      if (query) return reportSearchText(row).includes(query)
       return true
     })
-  }, [allRows, validationSearchText, scope, severity, search])
+  }, [allRows, scope, severity, search])
   const matchingGroups = useMemo(() => findingGroups(matchingRows), [matchingRows])
   const group = matchingGroups.find((item) => item.key === activeGroup)
   const filteredRows = useMemo(() => matchingRows.filter((row) => !activeGroup
@@ -361,31 +362,33 @@ export function SourceReport({ data, excelProfile, onExcelProfileChange, exporti
     const rowsForScope = activeSection === 'Extraction'
       ? subsectionRows
       : (sections.find(({ label }) => label === activeSection)?.rows ?? EMPTY_ROWS)
-    return [...new Set(rowsForScope.map((row) => String(row.scope ?? row.vdom ?? '')).filter(Boolean))].sort()
+    const seen = new Set<string>()
+    for (const row of rowsForScope) {
+      const item = String(row.scope ?? row.vdom ?? '')
+      if (item) seen.add(item)
+    }
+    return [...seen].sort()
   }, [activeSection, sections, subsectionRows])
   const view = views[activeObjectSection] ?? { search: '' }
   const search = view.search
   const effectiveScope = scopes.includes(scope) ? scope : ''
   const allColumns = useMemo(() => rowColumns(subsectionRows, activeObjectSection, data.vendor), [subsectionRows, activeObjectSection, data.vendor])
-  const preferredColumns = useMemo(() => defaultColumns(subsectionRows, activeObjectSection, data.vendor), [subsectionRows, activeObjectSection, data.vendor])
+  const preferredColumns = useMemo(() => defaultColumns(subsectionRows, activeObjectSection, data.vendor, allColumns), [subsectionRows, activeObjectSection, data.vendor, allColumns])
   const columns = view.columns ?? preferredColumns
   function updateView(change: Partial<typeof view>) { setViews((current) => ({ ...current, [activeObjectSection]: { ...view, ...change } })); setSelectedRow(null) }
   function setSearch(value: string) { updateView({ search: value }) }
   function setSourceSection(value: string, section = activeSection) { setSubsectionChoices((current) => ({ ...current, [section]: value })); setSelectedRow(null) }
   function changeSection(value: string) { setActiveSection(value); setSelectedRow(null) }
   function changeScope(value: string) { setScope(value); setSelectedRow(null) }
-  const subsectionSearchText = useMemo(
-    () => new Map(subsectionRows.map((row) => [row, reportSearchText(row)])),
-    [subsectionRows],
-  )
   const filteredRows = useMemo(() => {
     const query = search.toLowerCase()
+    if (!query && !effectiveScope) return subsectionRows
     return subsectionRows.filter((row) => {
       if (effectiveScope && String(row.scope ?? row.vdom ?? '') !== effectiveScope) return false
       if (!unifiedInterfaces && activeObjectSection && row['Source section'] !== activeObjectSection) return false
-      return !query || (subsectionSearchText.get(row) ?? '').includes(query)
+      return !query || reportSearchText(row).includes(query)
     })
-  }, [subsectionRows, subsectionSearchText, effectiveScope, activeObjectSection, search, unifiedInterfaces])
+  }, [subsectionRows, effectiveScope, activeObjectSection, search, unifiedInterfaces])
   const subsectionCount = search || effectiveScope ? `${filteredRows.length} of ${subsectionRows.length}` : subsectionRows.length
   const reportTabs = ['Overview', 'Interfaces', 'Objects', 'Schedules', 'Policies', 'NAT', 'Routes', 'VPN', 'References', ...(sections.some((item) => item.label === 'Extraction') ? ['Extraction'] : []), ...(sections.some((item) => item.label === 'Additional sections') ? ['Additional sections'] : []), 'Validation']
   const objectTabs = unifiedInterfaces ? ['interface_topology'] : sourceSections.filter((key) => showEmpty || key === activeObjectSection || active?.subsections.find((item) => item.key === key)?.rows.length)
@@ -478,7 +481,7 @@ export function SourceReport({ data, excelProfile, onExcelProfileChange, exporti
             <details className="report-column-selector"><summary>Columns ({columns.length})</summary><div>{allColumns.map((key, index) => <label key={key}><input type="checkbox" checked={columns.includes(key)} disabled={index === 0} onChange={(event) => updateView({ columns: allColumns.filter((column) => column === allColumns[0] || (column === key ? event.target.checked : columns.includes(column))) })} />{fieldLabel(key)}</label>)}<button className="filter-clear" type="button" onClick={() => updateView({ columns: undefined })}>Reset columns</button></div></details>
           </div>
           <p className="report-row-count" role="status">Showing {filteredRows.length.toLocaleString()} matching rows · {subsectionRows.length.toLocaleString()} total. Open Details for full values.</p>
-          <div className={`validation-workspace${currentSelected ? ' has-details' : ''}${unifiedInterfaces ? ' report-topology-view' : ''}`} key={activeSection}>
+          <div className={`validation-workspace${currentSelected ? ' has-details' : ''}${unifiedInterfaces ? ' report-topology-view' : ''}`}>
             <SourceRowsTable rows={filteredRows} columns={columns} selected={currentSelected} hasSource={subsectionRows.length > 0} topology={activeObjectSection === 'interface_topology'} onSelect={setSelectedRow} />
             {currentSelected && <ReportDetails row={currentSelected} subsection={activeObjectSection} vendor={data.vendor} onClose={() => setSelectedRow(null)} previous={selectedIndex > 0 ? () => setSelectedRow(filteredRows[selectedIndex - 1]) : undefined} next={selectedIndex < filteredRows.length - 1 ? () => setSelectedRow(filteredRows[selectedIndex + 1]) : undefined} />}
           </div>
