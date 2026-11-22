@@ -64,10 +64,15 @@ def readable_report_row(sheet, row_number, values):
 def _bounded_wrap_lines(value, width):
     """Estimate only enough lines to reach Excel's row-height cap."""
     lines = 0
+    max_single_line = width * 27
     for line in value.split("\n", 27):
-        if len(line) > width * 27:
+        line_len = len(line)
+        if line_len <= width:
+            lines += 1
+        elif line_len > max_single_line:
             return 27
-        lines += max(1, len(wrap(line, width=width)))
+        else:
+            lines += max(1, len(wrap(line, width=width)))
         if lines >= 27:
             return 27
     return lines
@@ -176,13 +181,21 @@ def write_report_summary(
     sheet.print_area = f"A1:F{row_number}"
 
 
+_FORMULA_PREFIX_CHARS = frozenset("=+-@\t\r\n ")
+
+
 def excel_safe_value(value):
     """Make XML-prohibited characters visible and prevent source formulas."""
-    if not isinstance(value, str):
+    if type(value) is not str:
+        if not isinstance(value, str):
+            return value
+    if not value:
         return value
-    value = _XML_UNSAFE.sub(lambda match: f"\\u{ord(match.group()):04x}", value)
-    if (
-        value.lstrip().startswith(("=", "+", "-", "@")) or value.startswith(("\t", "\r", "\n"))
+    if _XML_UNSAFE.search(value) is not None:
+        value = _XML_UNSAFE.sub(lambda match: f"\\u{ord(match.group()):04x}", value)
+    first = value[0]
+    if first in _FORMULA_PREFIX_CHARS and (
+        first in ("\t", "\r", "\n") or value.lstrip().startswith(("=", "+", "-", "@"))
     ):
         return "'" + value
     return value

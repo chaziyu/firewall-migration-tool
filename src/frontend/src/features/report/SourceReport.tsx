@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { SourcePreviewData } from '../source/types'
-import { activeSubsection, asRecord, asRows, compactValue, interfaceTopologyRows, matchingSourceRows, reportCounts, reportSections, reportSectionRowCount, reportSearchText, rowColumns, safeValue, defaultColumns, cellSummary, columnWidth, fieldLabel, findingGroups, findingGroupKey } from './reportPresentation'
+import { activeSubsection, asRecord, asRows, compactValue, interfaceTopologyRows, matchingSourceRows, reportCounts, reportSections, reportSectionRowCount, reportSearchText, rowColumns, safeValue, defaultColumns, cellSummary, cellTooltip, columnWidth, fieldLabel, findingGroups, findingGroupKey } from './reportPresentation'
 import { ReportDetails } from './ReportDetails'
 import { ExcelExportControls } from './ExcelExportControls'
 import { tabKeyboard } from '../../components/common/tabKeyboard'
@@ -296,7 +296,7 @@ function SourceRowsTable({ rows, columns, selected, hasSource, topology, onSelec
             {columns.map((key, colIndex) => {
               const value = topology && key === 'name' ? row.display_name ?? row.name : row[key]
               const summaryText = cellSummary(value)
-              const cell = <span className={`report-cell${value == null ? ' report-not-reported' : ''}`} title={value == null ? 'This value was not reported. No default is inferred. See details for the exact value.' : summaryText}>{summaryText}</span>
+              const cell = <span className={`report-cell${value == null ? ' report-not-reported' : ''}`} title={cellTooltip(value, summaryText)}>{summaryText}</span>
               return <td key={key} className={`report-column-${columnWidth(key)}${colIndex === 0 ? ' report-identity' : ''}`}>
                 {colIndex === 0 ? <div className="report-identity-content">{cell}<button type="button" className="finding-inline-link" aria-label={`Details for ${text(row.name ?? row.policy_id ?? row.route_id ?? value)}`} onClick={(event) => { event?.stopPropagation?.(); onSelect(row) }}>Details</button></div> : cell}
               </td>

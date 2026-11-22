@@ -82,7 +82,6 @@ class FortiGateSourceReporter:
         analysis: FortiGateSourceResult,
         **options: Any,
     ) -> dict[str, Any]:
-        del options
         from .web_report import build_web_report
 
         return build_web_report(
@@ -91,6 +90,7 @@ class FortiGateSourceReporter:
             analysis.validation,
             top_level_sections=analysis.top_level_sections,
             extracted=analysis.extracted,
+            include_source_commands=bool(options.get("include_source_commands", True)),
         )
 
     def export_excel(

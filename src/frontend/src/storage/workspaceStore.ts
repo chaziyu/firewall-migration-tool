@@ -39,13 +39,22 @@ export async function restoreWorkspace(): Promise<Workspace> {
   return current
 }
 
+function sameSourceEvidence(nextPreview: Workspace['preview'], prevPreview: Workspace['preview']): boolean {
+  if (nextPreview?.source_evidence === prevPreview?.source_evidence) return true
+  if (typeof nextPreview?.source_digest === 'string' && nextPreview.source_digest
+    && typeof prevPreview?.source_digest === 'string' && prevPreview.source_digest) {
+    return nextPreview.source_digest === prevPreview.source_digest
+  }
+  return JSON.stringify(nextPreview?.source_evidence) === JSON.stringify(prevPreview?.source_evidence)
+}
+
 export function saveWorkspace(update: Partial<Workspace>): Promise<void> {
   // Workflow state can contain sanitized customer configuration and target topology.
   // Keep it in memory only; connection forms and credentials never enter this object.
   const modeChanged = update.workflowMode !== undefined && update.workflowMode !== (current.workflowMode ?? 'offline')
   const pairChanged = update.migrationPairId !== undefined && update.migrationPairId !== current.migrationPairId
-  const contextChanged = (update.preview !== undefined && JSON.stringify(update.preview?.source_evidence) !== JSON.stringify(current.preview?.source_evidence))
-    || (update.targetSource !== undefined && JSON.stringify(update.targetSource) !== JSON.stringify(current.targetSource))
+  const contextChanged = (update.preview !== undefined && !sameSourceEvidence(update.preview, current.preview))
+    || (update.targetSource !== undefined && update.targetSource !== current.targetSource && JSON.stringify(update.targetSource) !== JSON.stringify(current.targetSource))
     || (update.targetDevice !== undefined && update.targetDevice !== current.targetDevice)
     || (update.referenceRole !== undefined && update.referenceRole !== current.referenceRole)
     || modeChanged || pairChanged

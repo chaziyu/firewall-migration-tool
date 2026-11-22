@@ -23,7 +23,7 @@ from .excel_common import (
     _additional_settings,
     _additional_source_settings,
     _enabled_text,
-    _excel_safe,
+    _excel_value,
     _interface_source_values,
     _model_rows,
     _nat_type,
@@ -1627,31 +1627,32 @@ def _iter_fortigate_source_inventory_rows(
             continue
         registration = "REGISTERED" if record.source_path in context.registered_sections else "GENERIC"
         base = (
-            _excel_safe(_source_category(record.source_path)),
-            _excel_safe(record.vdom),
-            _excel_safe("Object" if record.object_name is not None else "Config"),
-            _excel_safe(record.source_path),
-            _excel_safe(record.object_name),
-            _excel_safe("\n".join(record.parent_objects) or None),
+            _source_category(record.source_path),
+            record.vdom,
+            "Object" if record.object_name is not None else "Config",
+            record.source_path,
+            record.object_name,
+            "\n".join(record.parent_objects) or None,
         )
 
         provenance = (
-            _excel_safe(record.cli_scope), _excel_safe(" / ".join(record.cli_path)),
+            record.cli_scope, " / ".join(record.cli_path),
             record.start_line_number, record.end_line_number,
         )
         if not record.commands:
-            yield (*base, None, None, None, _excel_safe(registration), _excel_safe(status), len(raw_extra) if typed else None, *provenance)
+            yield (*base, None, None, None, registration, status, len(raw_extra) if typed else None, *provenance)
             continue
 
+        raw_extra_count = len(raw_extra) if typed else None
         for command in record.commands:
             yield (
                 *base,
-                _excel_safe(command.operation),
-                _excel_safe(command.key),
-                _excel_safe(_safe_command_value(command.key, command.values)),
-                _excel_safe(registration),
-                _excel_safe(status),
-                len(raw_extra) if typed else None,
+                command.operation,
+                command.key,
+                _excel_value(_safe_command_value(command.key, command.values)),
+                registration,
+                status,
+                raw_extra_count,
                 *provenance,
             )
 

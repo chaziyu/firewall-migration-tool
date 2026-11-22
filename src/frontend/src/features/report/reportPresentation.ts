@@ -12,11 +12,35 @@ export function asRows(value: unknown): ReportRow[] {
   return Array.isArray(value) ? value.filter((row): row is ReportRow => row !== null && typeof row === 'object' && !Array.isArray(row)) : []
 }
 export function safeValue(value: unknown, key = ''): unknown {
-  if (sensitiveKey(key, value)) return undefined
-  if (Array.isArray(value)) return value.map((item) => safeValue(item)).filter((item) => item !== undefined)
-  if (value !== null && typeof value === 'object') return Object.fromEntries(Object.entries(value)
-    .filter(([name, item]) => !sensitiveKey(name, item)).map(([name, item]) => [name, safeValue(item, name)]))
-  return value
+  if (key && sensitiveKey(key, value)) return undefined
+  if (value === null || typeof value !== 'object') return value
+  if (Array.isArray(value)) {
+    let changed = false
+    const result: unknown[] = []
+    for (let i = 0; i < value.length; i++) {
+      const item = value[i]
+      const next = safeValue(item)
+      if (next !== item) changed = true
+      if (next !== undefined) result.push(next)
+      else changed = true
+    }
+    return changed ? result : value
+  }
+  let changed = false
+  const record = value as ReportRow
+  const result: ReportRow = {}
+  for (const name in record) {
+    if (!Object.hasOwn(record, name)) continue
+    const item = record[name]
+    if (sensitiveKey(name, item)) {
+      changed = true
+      continue
+    }
+    const next = safeValue(item, name)
+    if (next !== item) changed = true
+    result[name] = next
+  }
+  return changed ? result : value
 }
 
 // Rows remain immutable for the lifetime of a source preview.
@@ -71,19 +95,38 @@ export function reportSectionRowCount(section: ReturnType<typeof reportSections>
 }
 
 export function interfaceTopologyRows(inventory: ReportRow[], topology: ReportRow[]) {
+  const topologyByName = new Map<unknown, number>()
+  for (const item of topology) {
+    if (item.name != null) topologyByName.set(item.name, (topologyByName.get(item.name) ?? 0) + 1)
+  }
+  const inventoryByName = new Map<unknown, ReportRow[]>()
+  for (const item of inventory) {
+    if (item.name == null) continue
+    let list = inventoryByName.get(item.name)
+    if (!list) { list = []; inventoryByName.set(item.name, list) }
+    list.push(item)
+  }
   return topology.map((row) => {
     if (row.name == null) return row
+    const candidates = inventoryByName.get(row.name)
+    if (!candidates?.length) return row
     const rowScope = row.vdom ?? row.scope
-    const topologyNameRows = topology.filter((item) => item.name === row.name)
-    const inventoryNameRows = inventory.filter((item) => item.name === row.name)
-    const matches = inventory.filter((item) => {
-      if (item.name !== row.name) return false
+    const uniqueByName = topologyByName.get(row.name) === 1 && candidates.length === 1
+    let match: ReportRow | null = null
+    for (const item of candidates) {
       const itemScope = item.vdom ?? item.scope
-      if (rowScope != null && itemScope != null) return rowScope === itemScope
-      return topologyNameRows.length === 1 && inventoryNameRows.length === 1
-    })
-    if (matches.length !== 1) return row
-    return { ...row, ...Object.fromEntries(Object.entries(matches[0]).filter(([key]) => key !== 'Source section')), 'Source section': row['Source section'] }
+      const matched = rowScope != null && itemScope != null ? rowScope === itemScope : uniqueByName
+      if (!matched) continue
+      if (match !== null) return row
+      match = item
+    }
+    if (!match) return row
+    const merged: ReportRow = { ...row }
+    for (const key in match) {
+      if (Object.hasOwn(match, key) && key !== 'Source section') merged[key] = match[key]
+    }
+    merged['Source section'] = row['Source section']
+    return merged
   })
 }
 
@@ -135,7 +178,7 @@ const CISCO_FTD_COLUMNS: Record<string, string[]> = {
 }
 
 const FORTIGATE_COLUMNS: Record<string, string[]> = {
-  policies: ['policy_id', 'name', 'vdom', 'source_interfaces', 'source_addresses', 'destination_interfaces', 'destination_addresses', 'services', 'action', 'status'],
+  policies: ['policy_id', 'name', 'vdom', 'source_interfaces', 'source_addresses', 'destination_interfaces', 'destination_addresses', 'services', 'action', 'schedule', 'logtraffic', 'status'],
   interfaces: ['name', 'vdom', 'kind', 'ip', 'parent', 'members', 'role', 'status'],
   interface_topology: ['display_name', 'name', 'vdom', 'kind', 'ip', 'parent'],
   addresses: ['name', 'vdom', 'type', 'value', 'associated_interface'],
@@ -262,6 +305,18 @@ export function cellSummary(value: unknown): string {
     return `${shown.join(', ')}${defined.length > 2 ? ` +${defined.length - 2} more` : ''}`
   }
   return compactValue(safeValue(value))
+}
+export function cellTooltip(value: unknown, summaryText: string): string {
+  if (value == null) return 'This value was not reported. No default is inferred. See details for the exact value.'
+  if (Array.isArray(value) && value.length > 2) {
+    const defined = value.filter((item) => item !== undefined)
+    if (defined.length > 2) {
+      const limit = 25
+      const shown = defined.slice(0, limit).map((item) => (item !== null && typeof item === 'object' ? compactValue(safeValue(item)) : cellSummary(item)))
+      return `${shown.join(', ')}${defined.length > limit ? ` (+${defined.length - limit} more — open Details)` : ''}`
+    }
+  }
+  return summaryText
 }
 const FORTIGATE_DETAILS: Record<string, Array<[string, string[]]>> = {
   policies: [

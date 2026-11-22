@@ -96,7 +96,8 @@ def register_source_routes(app, collector_registry=None) -> None:
             source_vendor = reporter.vendor_id
             entry = analyze_request_source({}, source_vendor, metrics=metrics)
             analysis = entry.analysis
-            report = _timed(metrics, 'web_preview_construction', lambda: normalize_web_report(reporter.build_preview(analysis), source_vendor, copy=False))
+            preview_options = {'include_source_commands': False} if source_vendor == 'fortigate' else {}
+            report = _timed(metrics, 'web_preview_construction', lambda: normalize_web_report(reporter.build_preview(analysis, **preview_options), source_vendor, copy=False))
             response = {
                 'success': True,
                 **report,

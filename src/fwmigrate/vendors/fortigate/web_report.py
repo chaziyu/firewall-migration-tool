@@ -19,7 +19,11 @@ from .extraction.coverage import (
 )
 
 
-def _source_evidence(extracted: ExtractionResult) -> tuple[dict[str, Any], dict[str, Any]]:
+def _source_evidence(
+    extracted: ExtractionResult,
+    *,
+    include_commands: bool = True,
+) -> tuple[dict[str, Any], dict[str, Any]]:
     typed = build_typed_source_inventory(extracted.config)
     index = build_typed_source_identity_index(typed)
     by_path: dict[str, Counter] = defaultdict(Counter)
@@ -27,17 +31,24 @@ def _source_evidence(extracted: ExtractionResult) -> tuple[dict[str, Any], dict[
     for record in extracted.source_objects:
         status = extraction_status(supports_path(record.source_path), find_typed_source_object(index, record), record)
         by_path[record.source_path][status] += 1
-        records.append({
+        entry: dict[str, Any] = {
             "name": record.object_name, "vdom": record.vdom, "source_path": record.source_path,
             "cli_scope": record.cli_scope, "cli_path": list(record.cli_path),
             "parent_objects": list(record.parent_objects), "extraction_status": status,
             "values": sanitize_source_attributes(record.values, preserve_keys=True), "explicit_fields": list(record.explicit_fields),
             "unset_fields": list(record.unset_fields), "start_line_number": record.start_line_number,
             "end_line_number": record.end_line_number,
-            "commands": [{"operation": command.operation, "field": command.key,
-                          "values": sanitize_source_value(command.key, list(command.values)),
-                          "line_number": command.line_number} for command in record.commands],
-        })
+        }
+        if include_commands:
+            entry["commands"] = [
+                {"operation": command.operation, "field": command.key,
+                 "values": sanitize_source_value(command.key, list(command.values)),
+                 "line_number": command.line_number}
+                for command in record.commands
+            ]
+        else:
+            entry["command_count"] = len(record.commands)
+        records.append(entry)
     coverage = []
     for path in sorted(set(by_path) | {path for path, items in typed.items() if items}):
         statuses = by_path[path]
@@ -263,6 +274,7 @@ def build_web_report(
     *,
     top_level_sections: int,
     extracted: ExtractionResult | None = None,
+    include_source_commands: bool = True,
 ) -> dict[str, Any]:
     """Build a secret-safe presentation model for the browser report."""
 
@@ -757,7 +769,11 @@ def build_web_report(
         }
     )
 
-    evidence_summary, evidence_sections = _source_evidence(extracted) if extracted is not None else ({}, {})
+    evidence_summary, evidence_sections = (
+        _source_evidence(extracted, include_commands=include_source_commands)
+        if extracted is not None
+        else ({}, {})
+    )
     return {
         "vendor": "fortigate",
         "summary": {

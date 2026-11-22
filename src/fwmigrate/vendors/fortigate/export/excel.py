@@ -106,6 +106,62 @@ _SOURCE_INVENTORY_WIDTHS = {
 
 _FAST_REQUIRED_SHEETS = frozenset({"Review Required", "Review Summary"})
 _FAST_EXCLUDED_SHEETS = frozenset({"FortiGate Source Inventory", "Extraction Coverage"})
+_IPV6_COLUMNS_BY_SHEET: dict[str, tuple[str, ...]] = {
+    "Policies": (
+        "Source IPv6 Addresses",
+        "Source IPv6 Address Negate",
+        "Destination IPv6 Addresses",
+        "Destination IPv6 Address Negate",
+    ),
+    "NAT Rules": ("Source IPv6 Addresses", "Destination IPv6 Addresses"),
+    "VPN Phase 2": ("Source Range IPv6", "Destination Range IPv6"),
+    "Policy IPsec Phase 2": ("Source Range IPv6", "Destination Range IPv6"),
+    "SSL VPN Portals": ("IPv6 Tunnel Mode", "IPv6 Pools"),
+}
+
+
+def _sheet_has_ipv6_data(sheet_name: str, context: _ExcelContext) -> bool:
+    if not context.ipv6_explicit:
+        return False
+    config = context.config
+    if sheet_name in {"Policies", "NAT Rules"}:
+        return any(
+            p.srcaddr6 or p.dstaddr6 or p.srcaddr6_negate is not None or p.dstaddr6_negate is not None
+            for p in config.policies
+        )
+    if sheet_name == "VPN Phase 2":
+        return any(
+            item.source_range6 or item.destination_range6
+            for item in context.derived.vpn.phase2
+            if item.vpn_type == "route-based"
+        )
+    if sheet_name == "Policy IPsec Phase 2":
+        return any(
+            item.source_range6 or item.destination_range6
+            for item in context.derived.vpn.phase2
+            if item.vpn_type == "policy-based"
+        )
+    if sheet_name == "SSL VPN Portals":
+        return any(p.ipv6_tunnel_mode is not None or p.ipv6_pools for p in config.ssl_vpn_portals)
+    return True
+
+
+def _hidden_headers_for_sheet(sheet_name: str, context: _ExcelContext) -> set[str]:
+    hidden = set(HIDDEN_COLUMNS_BY_DEFAULT.get(sheet_name, ()))
+    if sheet_name in _IPV6_COLUMNS_BY_SHEET and not _sheet_has_ipv6_data(sheet_name, context):
+        hidden.update(_IPV6_COLUMNS_BY_SHEET[sheet_name])
+    return hidden
+
+
+def _back_to_summary_cell(sheet) -> WriteOnlyCell:
+    cell = _fast_cell(
+        sheet,
+        "Back to Summary",
+        font=_LINK_FONT,
+        alignment=Alignment(horizontal="right"),
+    )
+    cell.hyperlink = "#'Summary'!A1"
+    return cell
 
 
 
@@ -141,7 +197,7 @@ def export_excel(
     if metrics is not None and profile is ExcelExportProfile.FAST:
         metrics.add_stage("excel_context", (perf_counter() - context_started) * 1000)
 
-    with report_workbook(Workbook(write_only=profile is ExcelExportProfile.FAST)) as workbook:
+    with report_workbook(Workbook(write_only=True)) as workbook:
         build_started = perf_counter()
         workbook = _build_workbook(
             context,
@@ -291,8 +347,9 @@ def _build_workbook(
     if context.profile is ExcelExportProfile.FAST:
         return _build_fast_workbook(context, metrics=metrics, workbook=workbook)
 
-    workbook = workbook if workbook is not None else Workbook()
-    workbook.remove(workbook.active)
+    workbook = workbook if workbook is not None else Workbook(write_only=True)
+    if not workbook.write_only and workbook.active is not None:
+        workbook.remove(workbook.active)
 
     order = list(SHEET_ORDER)
 
@@ -444,70 +501,93 @@ def _write_table_sheet(
     sheet.sheet_view.showGridLines = True
     sheet.sheet_view.zoomScale = 90
     sheet.sheet_format.defaultRowHeight = 18
+    sheet.row_dimensions[1].height = 24
     sheet.row_dimensions[3].height = 30
 
     max_col = max(len(headers), 1)
-    hidden_headers = set(HIDDEN_COLUMNS_BY_DEFAULT.get(sheet_name, ()))
-    sheet.merge_cells(start_row=1, start_column=1, end_row=1, end_column=max_col)
-    sheet.cell(1, 1, sheet_name)
-    sheet.cell(1, 1).fill = _TITLE_FILL
-    sheet.cell(1, 1).font = _TITLE_FONT
-    sheet.cell(1, 1).alignment = Alignment(vertical="center")
-    sheet.row_dimensions[1].height = 24
-
-    if max_col > 2:
-        sheet.merge_cells(
-            start_row=2,
-            start_column=1,
-            end_row=2,
-            end_column=max_col - 1,
-        )
-    note = sheet.cell(2, 1)
-    note.value = ""
-    note.font = _MUTED_FONT
-    note.alignment = Alignment(wrap_text=True, vertical="top")
-
-    for column, header in enumerate(headers, start=1):
-        cell = sheet.cell(3, column, header)
-        style_report_header(cell)
-
+    hidden_headers = _hidden_headers_for_sheet(sheet_name, context)
     _apply_widths(sheet, headers, sheet_name=sheet_name)
     for column, header in enumerate(headers, start=1):
         if header in hidden_headers:
             sheet.column_dimensions[get_column_letter(column)].hidden = True
+    sheet.freeze_panes = _freeze_pane(sheet_name, headers)
+
+    last_col_letter = get_column_letter(max_col)
+    if max_col > 1:
+        sheet.merged_cells.add(f"A1:{last_col_letter}1")
+    if max_col > 2:
+        sheet.merged_cells.add(f"A2:{get_column_letter(max_col - 1)}2")
+
+    no_rows = object()
+    row_iter = iter(rows)
+    first = next(row_iter, no_rows)
+    has_rows = first is not no_rows
+
+    title_cell = _fast_cell(
+        sheet,
+        sheet_name,
+        font=_TITLE_FONT,
+        fill=_TITLE_FILL,
+        alignment=Alignment(vertical="center"),
+    )
+    sheet.append([title_cell, *([None] * (max_col - 1))])
+
+    note_text = _sheet_note(sheet_name, 1 if has_rows else 0) + " " + REPORT_BODY_NOTE
+    note_cell = _fast_cell(
+        sheet,
+        note_text,
+        font=_MUTED_FONT,
+        alignment=Alignment(wrap_text=True, vertical="top"),
+    )
+    if max_col > 1:
+        sheet.append([note_cell, *([None] * (max_col - 2)), _back_to_summary_cell(sheet)])
+    else:
+        sheet.append([note_cell])
+
+    header_cells = []
+    for header in headers:
+        cell = WriteOnlyCell(sheet, header)
+        style_report_header(cell)
+        header_cells.append(cell)
+    sheet.append(header_cells)
+
+    first_detail_col = headers.index("First Detail") if sheet_name == "Review Summary" and "First Detail" in headers else -1
+    raw_capture_col = (
+        headers.index("Raw Capture Location")
+        if sheet_name == "Unsupported" and context.profile is ExcelExportProfile.FULL and "Raw Capture Location" in headers
+        else -1
+    )
+    severity_col = headers.index("Severity") if sheet_name == "Review Required" and "Severity" in headers else -1
 
     row_count = 0
-    for row in rows:
+    for row in (() if not has_rows else chain((first,), row_iter)):
         row_count += 1
-        check_report_dimensions(row_count + 3, len(headers))
-        values = [report_cell_value(sheet, row_count + 3, column, _excel_value(row.get(header)))
-                  for column, header in enumerate(headers, 1)]
-        append_readable_report_row(sheet, row_count + 3, values)
-        if sheet_name == "Review Summary" and row.get("First Detail"):
-            column = headers.index("First Detail") + 1
-            cell = sheet.cell(row_count + 3, column)
+        row_number = row_count + 3
+        check_report_dimensions(row_number, len(headers))
+        values = [
+            report_cell_value(sheet, row_number, column, _excel_value(row.get(header)))
+            for column, header in enumerate(headers, 1)
+        ]
+        if first_detail_col >= 0 and row.get("First Detail"):
             target_sheet, target_cell = row["First Detail"].split("!", 1)
-            cell.value = "Open detail"
-            cell.hyperlink = f"#'{target_sheet}'!{target_cell}"
-            cell.font = _LINK_FONT
-        elif sheet_name == "Unsupported" and context.profile is ExcelExportProfile.FULL and row.get("Raw Capture Location") == "FortiGate Source Inventory":
-            cell = sheet.cell(row_count + 3, headers.index("Raw Capture Location") + 1)
-            cell.hyperlink = "#'FortiGate Source Inventory'!A1"
-            cell.font = _LINK_FONT
+            link_cell = _fast_cell(sheet, "Open detail", font=_LINK_FONT)
+            link_cell.hyperlink = f"#'{target_sheet}'!{target_cell}"
+            values[first_detail_col] = link_cell
+        elif raw_capture_col >= 0 and row.get("Raw Capture Location") == "FortiGate Source Inventory":
+            link_cell = _fast_cell(sheet, values[raw_capture_col], font=_LINK_FONT)
+            link_cell.hyperlink = "#'FortiGate Source Inventory'!A1"
+            values[raw_capture_col] = link_cell
+        if severity_col >= 0:
+            severity = str(values[severity_col] or "").lower()
+            fill = _ERROR_FILL if severity == "error" else _REVIEW_FILL
+            values = [_fast_cell(sheet, val, fill=fill) for val in values]
         outline = row.get("__outline_level__")
         if isinstance(outline, int) and outline > 0:
-            sheet.row_dimensions[row_count + 3].outlineLevel = min(outline, 7)
-
-    note.value = _sheet_note(sheet_name, row_count) + " " + REPORT_BODY_NOTE
+            sheet.row_dimensions[row_number].outlineLevel = min(outline, 7)
+        append_readable_report_row(sheet, row_number, values)
 
     if row_count:
-        sheet.auto_filter.ref = f"A3:{get_column_letter(max_col)}{row_count + 3}"
-
-    sheet.freeze_panes = _freeze_pane(sheet_name, headers)
-    _add_back_link(sheet)
-
-    if sheet_name == "Review Required":
-        _apply_review_colors(sheet, headers, row_count)
+        sheet.auto_filter.ref = f"A3:{last_col_letter}{row_count + 3}"
 
 
 def _write_table_sheet_fast(
@@ -518,14 +598,13 @@ def _write_table_sheet_fast(
     *,
     context: _ExcelContext,
 ) -> int:
-    del context
     sheet = workbook.create_sheet(sheet_name)
     sheet.sheet_view.showGridLines = True
     sheet.sheet_view.zoomScale = 90
     sheet.sheet_format.defaultRowHeight = 18
     sheet.row_dimensions[3].height = 30
     max_col = max(len(headers), 1)
-    hidden_headers = set(HIDDEN_COLUMNS_BY_DEFAULT.get(sheet_name, ()))
+    hidden_headers = _hidden_headers_for_sheet(sheet_name, context)
     sheet.freeze_panes = _freeze_pane(sheet_name, headers)
     _apply_widths(sheet, headers, wide=True)
     for column, header in enumerate(headers, start=1):
@@ -535,19 +614,20 @@ def _write_table_sheet_fast(
         _fast_cell(sheet, sheet_name, font=_TITLE_FONT, fill=_TITLE_FILL),
         *([None] * (max_col - 1)),
     ])
-    sheet.append([
-        _fast_cell(
-            sheet,
-            (
-                "FAST lightweight export. " + _POLICY_ACTION_NOTE
-                if sheet_name == "Policies"
-                else "FAST lightweight export; values preserve explicit source data and analysis columns."
-            ) + " " + REPORT_BODY_NOTE,
-            font=_MUTED_FONT,
-            alignment=Alignment(wrap_text=True, vertical="top"),
-        ),
-        *([None] * (max_col - 1)),
-    ])
+    note_cell = _fast_cell(
+        sheet,
+        (
+            "FAST lightweight export. " + _POLICY_ACTION_NOTE
+            if sheet_name == "Policies"
+            else "FAST lightweight export; values preserve explicit source data and analysis columns."
+        ) + " " + REPORT_BODY_NOTE,
+        font=_MUTED_FONT,
+        alignment=Alignment(wrap_text=True, vertical="top"),
+    )
+    if max_col > 1:
+        sheet.append([note_cell, *([None] * (max_col - 2)), _back_to_summary_cell(sheet)])
+    else:
+        sheet.append([note_cell])
     cells = []
     for header in headers:
         cell = WriteOnlyCell(sheet, header)
@@ -555,19 +635,26 @@ def _write_table_sheet_fast(
         cells.append(cell)
     sheet.append(cells)
 
+    first_detail_col = headers.index("First Detail") if sheet_name == "Review Summary" and "First Detail" in headers else -1
+    severity_col = headers.index("Severity") if sheet_name == "Review Required" and "Severity" in headers else -1
+
     row_count = 0
     for row in rows:
         row_count += 1
-        check_report_dimensions(row_count + 3, len(headers))
-        values = [report_cell_value(sheet, row_count + 3, column, _excel_value(row.get(header)))
+        row_number = row_count + 3
+        check_report_dimensions(row_number, len(headers))
+        values = [report_cell_value(sheet, row_number, column, _excel_value(row.get(header)))
                   for column, header in enumerate(headers, 1)]
-        if sheet_name == "Review Summary" and row.get("First Detail"):
-            column = headers.index("First Detail")
+        if first_detail_col >= 0 and row.get("First Detail"):
             target_sheet, target_cell = row["First Detail"].split("!", 1)
-            cell = _fast_cell(sheet, "Open detail")
+            cell = _fast_cell(sheet, "Open detail", font=_LINK_FONT)
             cell.hyperlink = f"#'{target_sheet}'!{target_cell}"
-            values[column] = cell
-        append_readable_report_row(sheet, row_count + 3, values)
+            values[first_detail_col] = cell
+        if severity_col >= 0:
+            severity = str(values[severity_col] or "").lower()
+            fill = _ERROR_FILL if severity == "error" else _REVIEW_FILL
+            values[severity_col] = _fast_cell(sheet, values[severity_col], fill=fill)
+        append_readable_report_row(sheet, row_number, values)
 
     if row_count:
         sheet.auto_filter.ref = f"A3:{get_column_letter(max_col)}{row_count + 3}"
@@ -587,41 +674,52 @@ def _write_source_inventory_sheet(
     sheet.sheet_view.showGridLines = True
     sheet.sheet_view.zoomScale = 90
     sheet.sheet_format.defaultRowHeight = 18
+    sheet.row_dimensions[1].height = 24
     sheet.row_dimensions[3].height = 30
 
     max_col = len(headers)
-    sheet.merge_cells(start_row=1, start_column=1, end_row=1, end_column=max_col)
-    sheet.cell(1, 1, sheet_name)
-    sheet.cell(1, 1).fill = _TITLE_FILL
-    sheet.cell(1, 1).font = _TITLE_FONT
-    sheet.cell(1, 1).alignment = Alignment(vertical="center")
-    sheet.row_dimensions[1].height = 24
-
-    sheet.merge_cells(start_row=2, start_column=1, end_row=2, end_column=max_col - 1)
-    note = sheet.cell(2, 1)
-    note.font = _MUTED_FONT
-    note.alignment = Alignment(wrap_text=True, vertical="top")
-
-    for column, header in enumerate(headers, start=1):
-        cell = sheet.cell(3, column, header)
-        style_report_header(cell)
-
     for column, header in enumerate(headers, start=1):
         sheet.column_dimensions[get_column_letter(column)].width = _SOURCE_INVENTORY_WIDTHS[header]
+    sheet.freeze_panes = "A4"
+
+    last_col_letter = get_column_letter(max_col)
+    sheet.merged_cells.add(f"A1:{last_col_letter}1")
+    sheet.merged_cells.add(f"A2:{get_column_letter(max_col - 1)}2")
+
+    title_cell = _fast_cell(
+        sheet,
+        sheet_name,
+        font=_TITLE_FONT,
+        fill=_TITLE_FILL,
+        alignment=Alignment(vertical="center"),
+    )
+    sheet.append([title_cell, *([None] * (max_col - 1))])
+
+    note_cell = _fast_cell(
+        sheet,
+        _sheet_note(sheet_name, 1, context.profile),
+        font=_MUTED_FONT,
+        alignment=Alignment(wrap_text=True, vertical="top"),
+    )
+    sheet.append([note_cell, *([None] * (max_col - 2)), _back_to_summary_cell(sheet)])
+
+    header_cells = []
+    for header in headers:
+        cell = WriteOnlyCell(sheet, header)
+        style_report_header(cell)
+        header_cells.append(cell)
+    sheet.append(header_cells)
 
     row_count = 0
     source_rows = rows if rows is not None else _iter_fortigate_source_inventory_rows(context)
     for values in source_rows:
-        check_report_dimensions(row_count + 4, len(headers))
-        sheet.append([report_cell_value(sheet, row_count + 4, column, value)
+        row_number = row_count + 4
+        check_report_dimensions(row_number, max_col)
+        sheet.append([report_cell_value(sheet, row_number, column, value)
                       for column, value in enumerate(values, 1)])
         row_count += 1
 
-    note.value = _sheet_note(sheet_name, row_count, context.profile)
-
-    sheet.auto_filter.ref = f"A3:{get_column_letter(max_col)}{row_count + 3}"
-    sheet.freeze_panes = "A4"
-    _add_back_link(sheet)
+    sheet.auto_filter.ref = f"A3:{last_col_letter}{row_count + 3}"
 
 
 def _add_back_link(sheet) -> None:
