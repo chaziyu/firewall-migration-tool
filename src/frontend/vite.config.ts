@@ -4,6 +4,16 @@ import { defineConfig } from 'vite'
 export default defineConfig({
   plugins: [react()],
 
+  build: {
+    rolldownOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('node_modules')) return 'vendor'
+        },
+      },
+    },
+  },
+
   server: {
     proxy: {
       '/api': {

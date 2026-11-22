@@ -47,24 +47,84 @@ function text(value: unknown): string {
   return String(value)
 }
 
+const ROW_HEIGHT = 40
+const VALIDATION_ROW_HEIGHT = 56
+const VIRTUAL_OVERSCAN = 8
+const VIRTUAL_THRESHOLD = 50
+
+function useVirtualRows<T>(rows: T[], rowHeight: number, resetKey: unknown) {
+  const wrapRef = useRef<HTMLDivElement>(null)
+  const rafRef = useRef<number | null>(null)
+  const [scrollState, setScrollState] = useState({ scrollTop: 0, viewportHeight: 0 })
+
+  useEffect(() => {
+    const element = wrapRef.current
+    if (!element) return
+    if (element.scrollTop) element.scrollTop = 0
+    const nextHeight = element.clientHeight ?? 0
+    setScrollState((current) => (current.scrollTop === 0 && current.viewportHeight === nextHeight ? current : { scrollTop: 0, viewportHeight: nextHeight }))
+  }, [rows, resetKey])
+
+  useEffect(() => () => {
+    if (rafRef.current !== null && typeof cancelAnimationFrame === 'function') {
+      cancelAnimationFrame(rafRef.current)
+    }
+  }, [])
+
+  function onScroll(event: React.UIEvent<HTMLDivElement>) {
+    const target = event.currentTarget
+    const nextTop = target.scrollTop
+    const nextHeight = target.clientHeight
+    const apply = () => {
+      rafRef.current = null
+      setScrollState((current) => (current.scrollTop === nextTop && current.viewportHeight === nextHeight ? current : { scrollTop: nextTop, viewportHeight: nextHeight }))
+    }
+    if (typeof requestAnimationFrame === 'function') {
+      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current)
+      rafRef.current = requestAnimationFrame(apply)
+    } else {
+      apply()
+    }
+  }
+
+  const virtualize = rows.length > VIRTUAL_THRESHOLD && scrollState.viewportHeight > 0
+  const startIndex = virtualize ? Math.max(0, Math.floor(scrollState.scrollTop / rowHeight) - VIRTUAL_OVERSCAN) : 0
+  const endIndex = virtualize ? Math.min(rows.length, Math.ceil((scrollState.scrollTop + scrollState.viewportHeight) / rowHeight) + VIRTUAL_OVERSCAN) : rows.length
+  return {
+    wrapRef,
+    onScroll,
+    startIndex,
+    visibleRows: virtualize ? rows.slice(startIndex, endIndex) : rows,
+    topSpacerHeight: startIndex * rowHeight,
+    bottomSpacerHeight: (rows.length - endIndex) * rowHeight,
+  }
+}
+
 function ValidationSummary({ rows, activeGroup, onGroupChange }: {
   rows: Finding[]
   activeGroup: string
   onGroupChange: (key: string) => void
 }) {
   const ordered = findingGroups(rows)
-  const errors = rows.filter((row) => String(row.severity).toLowerCase() === 'error').length
-  const warnings = rows.filter((row) => String(row.severity).toLowerCase() === 'warning').length
+  let errors = 0
+  let warnings = 0
+  for (const row of rows) {
+    const sev = String(row.severity).toLowerCase()
+    if (sev === 'error') errors += 1
+    else if (sev === 'warning') warnings += 1
+  }
 
   return <section className="validation-summary" aria-label="Validation summary">
     <div className="validation-counts"><strong>{rows.length} {rows.length === 1 ? 'finding' : 'findings'}</strong><span>{errors} {errors === 1 ? 'error' : 'errors'}</span><span>{warnings} {warnings === 1 ? 'warning' : 'warnings'}</span></div>
-    {!!ordered.length && <div className="validation-groups" aria-label="Finding groups">{ordered.map((group) => { const key = group.key; return (
-      <button type="button" key={key} className={`validation-group ${activeGroup === key ? 'active' : ''}`} aria-pressed={activeGroup === key} onClick={() => onGroupChange(activeGroup === key ? '' : key)}>
-        <span className={`finding-severity severity-${String(group.row.severity ?? 'other').toLowerCase()}`}>{text(group.row.severity || 'Issue')}</span>
-        <span className="finding-group-count">{group.count}</span>
-        <span>{text(group.row.message || group.row.field || group.row.domain || 'Validation finding')}</span>
-      </button>
-    )})}</div>}
+    {!!ordered.length && <div className="validation-groups" aria-label="Finding groups">{ordered.map((group) => {
+      const key = group.key; return (
+        <button type="button" key={key} className={`validation-group ${activeGroup === key ? 'active' : ''}`} aria-pressed={activeGroup === key} onClick={() => onGroupChange(activeGroup === key ? '' : key)}>
+          <span className={`finding-severity severity-${String(group.row.severity ?? 'other').toLowerCase()}`}>{text(group.row.severity || 'Issue')}</span>
+          <span className="finding-group-count">{group.count}</span>
+          <span>{text(group.row.message || group.row.field || group.row.domain || 'Validation finding')}</span>
+        </button>
+      )
+    })}</div>}
   </section>
 }
 
@@ -79,13 +139,53 @@ function ValidationFilters({ rows, search, scope, severity, activeGroup, onSearc
   onSeverity: (value: string) => void
   onClear: () => void
 }) {
-  const scopes = [...new Set(rows.map((row) => String(row.scope || row.vdom || '')).filter(Boolean))].sort()
+  const scopes = useMemo(
+    () => [...new Set(rows.map((row) => String(row.scope || row.vdom || '')).filter(Boolean))].sort(),
+    [rows],
+  )
   return <div className="validation-filters" aria-label="Validation filters">
     <label>Search findings<input value={search} onChange={(event) => onSearch(event.target.value)} placeholder="Search findings" /></label>
     <label>Severity<select value={severity} onChange={(event) => onSeverity(event.target.value)}><option value="">All severities</option>{[...new Set(['error', 'warning', ...rows.map((row) => String(row.severity ?? '').toLowerCase()).filter(Boolean)])].map((item) => <option key={item} value={item}>{fieldLabel(item)}</option>)}</select></label>
     <label>Scope<select value={scope} onChange={(event) => onScope(event.target.value)}><option value="">All scopes</option>{scopes.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
     <button type="button" className="filter-clear" disabled={!search && !scope && !severity && !activeGroup} onClick={onClear}>Clear filters</button>
   </div>
+}
+
+function renderValidationRows(
+  visibleRows: Finding[],
+  startIndex: number,
+  selected: Finding | null,
+  grouped: boolean,
+  onSelect: (row: Finding) => void,
+  onNavigate: (row: Finding) => void,
+) {
+  return visibleRows.map((row, offset) => {
+    const index = startIndex + offset
+    const targetInfo = validationTarget(row)
+    return <tr key={`${row.code ?? ''}-${row.domain ?? ''}-${row.object_name ?? ''}-${index}`} className={selected === row ? 'selected' : ''} onClick={() => onSelect(row)}>
+      <td><div className="validation-object-cell"><strong>{text(row.object_name)}</strong>{row.object_name != null && targetInfo != null ? <button type="button" className="finding-inline-link" onClick={(event) => { event.stopPropagation(); onNavigate(row) }}>View object →</button> : null}</div></td>
+      <td>{text(row.scope ?? row.vdom)}</td><td>{text(row.domain)}<br />{text(row.field)}</td>
+      <td><span className={`finding-severity severity-${String(row.severity ?? 'other').toLowerCase()}`}>{text(row.severity ?? 'Issue')}</span></td>
+      {!grouped && <td><button type="button" className="finding-message" onClick={(event) => { event.stopPropagation(); onSelect(row) }}>{text(row.message)}</button></td>}
+    </tr>
+  })
+}
+
+function VirtualizedValidationTable({ rows, selected, onSelect, onNavigate, grouped }: {
+  rows: Finding[]
+  selected: Finding | null
+  onSelect: (row: Finding) => void
+  onNavigate: (row: Finding) => void
+  grouped: boolean
+}) {
+  const { wrapRef, onScroll, startIndex, visibleRows, topSpacerHeight, bottomSpacerHeight } = useVirtualRows(rows, VALIDATION_ROW_HEIGHT, grouped)
+  const colCount = grouped ? 4 : 5
+  return <div ref={wrapRef} className="validation-table-wrap" onScroll={onScroll}><table className="validation-table"><thead><tr><th>Object</th><th>Scope</th><th>Domain / field</th><th>Severity</th>{!grouped && <th>Finding</th>}</tr></thead>
+    <tbody>
+      {topSpacerHeight > 0 && <tr aria-hidden="true" className="report-virtual-spacer"><td colSpan={colCount} style={{ height: `${topSpacerHeight}px` }} /></tr>}
+      {renderValidationRows(visibleRows, startIndex, selected, grouped, onSelect, onNavigate)}
+      {bottomSpacerHeight > 0 && <tr aria-hidden="true" className="report-virtual-spacer"><td colSpan={colCount} style={{ height: `${bottomSpacerHeight}px` }} /></tr>}
+    </tbody></table></div>
 }
 
 function ValidationTable({ rows, selected, onSelect, onNavigate, grouped }: {
@@ -96,16 +196,11 @@ function ValidationTable({ rows, selected, onSelect, onNavigate, grouped }: {
   grouped: boolean
 }) {
   if (!rows.length) return <p className="validation-empty">No findings match the current filters.</p>
+  if (rows.length > VIRTUAL_THRESHOLD) {
+    return <VirtualizedValidationTable rows={rows} selected={selected} onSelect={onSelect} onNavigate={onNavigate} grouped={grouped} />
+  }
   return <div className="validation-table-wrap"><table className="validation-table"><thead><tr><th>Object</th><th>Scope</th><th>Domain / field</th><th>Severity</th>{!grouped && <th>Finding</th>}</tr></thead>
-    <tbody>{rows.map((row, index) => {
-      const targetInfo = validationTarget(row)
-      return <tr key={`${row.code ?? ''}-${row.domain ?? ''}-${row.object_name ?? ''}-${index}`} className={selected === row ? 'selected' : ''} onClick={() => onSelect(row)}>
-        <td><div className="validation-object-cell"><strong>{text(row.object_name)}</strong>{row.object_name != null && targetInfo != null ? <button type="button" className="finding-inline-link" onClick={(event) => { event.stopPropagation(); onNavigate(row) }}>View object →</button> : null}</div></td>
-        <td>{text(row.scope ?? row.vdom)}</td><td>{text(row.domain)}<br />{text(row.field)}</td>
-        <td><span className={`finding-severity severity-${String(row.severity ?? 'other').toLowerCase()}`}>{text(row.severity ?? 'Issue')}</span></td>
-        {!grouped && <td><button type="button" className="finding-message" onClick={(event) => { event.stopPropagation(); onSelect(row) }}>{text(row.message)}</button></td>}
-      </tr>
-    })}</tbody></table></div>
+    <tbody>{renderValidationRows(rows, 0, selected, grouped, onSelect, onNavigate)}</tbody></table></div>
 }
 
 function ValidationReport({ data, reportScope, onReportScope, active }: { data: SourcePreviewData; reportScope: string; onReportScope: (scope: string) => void; active: boolean }) {
@@ -121,16 +216,21 @@ function ValidationReport({ data, reportScope, onReportScope, active }: { data: 
   const [requestedScope, setRequestedScope] = useState(reportScope)
   if (requestedScope !== reportScope) { setRequestedScope(reportScope); setSelected(null); setTarget(null) }
 
+  const validationSearchText = useMemo(
+    () => new Map(allRows.map((row) => [row, reportSearchText(row)])),
+    [allRows],
+  )
   const matchingRows = useMemo(() => {
     const query = search.toLowerCase()
     return allRows.filter((row) => {
       if (scope && (row.scope || row.vdom) !== scope) return false
       if (severity && String(row.severity || '').toLowerCase() !== severity) return false
-      if (query) return reportSearchText(row).includes(query)
+      if (query) return (validationSearchText.get(row) ?? '').includes(query)
       return true
     })
-  }, [allRows, scope, severity, search])
-  const group = findingGroups(matchingRows).find((item) => item.key === activeGroup)
+  }, [allRows, validationSearchText, scope, severity, search])
+  const matchingGroups = useMemo(() => findingGroups(matchingRows), [matchingRows])
+  const group = matchingGroups.find((item) => item.key === activeGroup)
   const filteredRows = useMemo(() => matchingRows.filter((row) => !activeGroup
     || findingGroupKey(row) === activeGroup), [matchingRows, activeGroup])
 
@@ -164,10 +264,6 @@ function ValidationReport({ data, reportScope, onReportScope, active }: { data: 
   </div>
 }
 
-const ROW_HEIGHT = 40
-const VIRTUAL_OVERSCAN = 8
-const VIRTUAL_THRESHOLD = 50
-
 function columnPixelWidth(key: string): number {
   const kind = columnWidth(key)
   if (kind === 'short') return 124
@@ -176,25 +272,9 @@ function columnPixelWidth(key: string): number {
 }
 
 function SourceRowsTable({ rows, columns, selected, hasSource, topology, onSelect }: { rows: Finding[]; columns: string[]; selected: Finding | null; hasSource: boolean; topology: boolean; onSelect: (row: Finding) => void }) {
-  const wrapRef = useRef<HTMLDivElement>(null)
-  const [scrollState, setScrollState] = useState({ scrollTop: 0, viewportHeight: 0 })
-
-  useEffect(() => {
-    const element = wrapRef.current
-    if (!element) return
-    if (element.scrollTop) element.scrollTop = 0
-    const nextHeight = element.clientHeight ?? 0
-    setScrollState((current) => (current.scrollTop === 0 && current.viewportHeight === nextHeight ? current : { scrollTop: 0, viewportHeight: nextHeight }))
-  }, [rows, columns])
+  const { wrapRef, onScroll, startIndex, visibleRows, topSpacerHeight, bottomSpacerHeight } = useVirtualRows(rows, ROW_HEIGHT, columns)
 
   if (!rows.length) return <p className="report-empty">{hasSource ? 'No rows match the current filters.' : 'No reported entries in this subsection.'}</p>
-
-  const virtualize = rows.length > VIRTUAL_THRESHOLD && scrollState.viewportHeight > 0
-  const startIndex = virtualize ? Math.max(0, Math.floor(scrollState.scrollTop / ROW_HEIGHT) - VIRTUAL_OVERSCAN) : 0
-  const endIndex = virtualize ? Math.min(rows.length, Math.ceil((scrollState.scrollTop + scrollState.viewportHeight) / ROW_HEIGHT) + VIRTUAL_OVERSCAN) : rows.length
-  const visibleRows = virtualize ? rows.slice(startIndex, endIndex) : rows
-  const topSpacerHeight = startIndex * ROW_HEIGHT
-  const bottomSpacerHeight = (rows.length - endIndex) * ROW_HEIGHT
 
   return <div
     ref={wrapRef}
@@ -202,12 +282,7 @@ function SourceRowsTable({ rows, columns, selected, hasSource, topology, onSelec
     role="region"
     aria-label="Source report rows"
     tabIndex={0}
-    onScroll={(event) => {
-      const target = event.currentTarget
-      const nextTop = target.scrollTop
-      const nextHeight = target.clientHeight
-      setScrollState((current) => (current.scrollTop === nextTop && current.viewportHeight === nextHeight ? current : { scrollTop: nextTop, viewportHeight: nextHeight }))
-    }}
+    onScroll={onScroll}
   >
     <table className="report-table">
       <colgroup>{columns.map((key) => <col key={key} style={{ width: `${columnPixelWidth(key)}px` }} />)}</colgroup>
@@ -268,7 +343,6 @@ export function SourceReport({ data, excelProfile, onExcelProfileChange, exporti
   const unsupported = Number(summary.unsupported_count ?? summary.source_only_count ?? 0)
   if (summary.unsupported_count != null || summary.source_only_count != null) overviewMetrics.push({ label: 'Unsupported / source-only', value: unsupported })
   const active = sections.find(({ label: sectionLabel }) => sectionLabel === activeSection)
-  const activeRows: Finding[] = active?.rows ?? EMPTY_ROWS
   const sourceSections = active?.subsections.map((item) => item.key) ?? []
   const subsection = useMemo(() => activeSubsection(
     sections.find((item) => item.label === activeSection)?.subsections ?? [], subsectionChoices[activeSection] ?? '',
@@ -283,8 +357,12 @@ export function SourceReport({ data, excelProfile, onExcelProfileChange, exporti
     )
   }, [sections, activeSection])
   const subsectionRows = unifiedInterfaces ? unifiedRows : subsection?.rows ?? EMPTY_ROWS
-  const scopeRows = activeSection === 'Extraction' ? subsectionRows : activeRows
-  const scopes = [...new Set(scopeRows.map((row) => String(row.scope ?? row.vdom ?? '')).filter(Boolean))].sort()
+  const scopes = useMemo(() => {
+    const rowsForScope = activeSection === 'Extraction'
+      ? subsectionRows
+      : (sections.find(({ label }) => label === activeSection)?.rows ?? EMPTY_ROWS)
+    return [...new Set(rowsForScope.map((row) => String(row.scope ?? row.vdom ?? '')).filter(Boolean))].sort()
+  }, [activeSection, sections, subsectionRows])
   const view = views[activeObjectSection] ?? { search: '' }
   const search = view.search
   const effectiveScope = scopes.includes(scope) ? scope : ''
@@ -296,14 +374,18 @@ export function SourceReport({ data, excelProfile, onExcelProfileChange, exporti
   function setSourceSection(value: string, section = activeSection) { setSubsectionChoices((current) => ({ ...current, [section]: value })); setSelectedRow(null) }
   function changeSection(value: string) { setActiveSection(value); setSelectedRow(null) }
   function changeScope(value: string) { setScope(value); setSelectedRow(null) }
+  const subsectionSearchText = useMemo(
+    () => new Map(subsectionRows.map((row) => [row, reportSearchText(row)])),
+    [subsectionRows],
+  )
   const filteredRows = useMemo(() => {
     const query = search.toLowerCase()
     return subsectionRows.filter((row) => {
       if (effectiveScope && String(row.scope ?? row.vdom ?? '') !== effectiveScope) return false
       if (!unifiedInterfaces && activeObjectSection && row['Source section'] !== activeObjectSection) return false
-      return !query || reportSearchText(row).includes(query)
+      return !query || (subsectionSearchText.get(row) ?? '').includes(query)
     })
-  }, [subsectionRows, effectiveScope, activeObjectSection, search, unifiedInterfaces])
+  }, [subsectionRows, subsectionSearchText, effectiveScope, activeObjectSection, search, unifiedInterfaces])
   const subsectionCount = search || effectiveScope ? `${filteredRows.length} of ${subsectionRows.length}` : subsectionRows.length
   const reportTabs = ['Overview', 'Interfaces', 'Objects', 'Schedules', 'Policies', 'NAT', 'Routes', 'VPN', 'References', ...(sections.some((item) => item.label === 'Extraction') ? ['Extraction'] : []), ...(sections.some((item) => item.label === 'Additional sections') ? ['Additional sections'] : []), 'Validation']
   const objectTabs = unifiedInterfaces ? ['interface_topology'] : sourceSections.filter((key) => showEmpty || key === activeObjectSection || active?.subsections.find((item) => item.key === key)?.rows.length)
@@ -315,7 +397,10 @@ export function SourceReport({ data, excelProfile, onExcelProfileChange, exporti
     : `${fieldLabel(item)} (${activeObjectSection === item ? subsectionCount : active?.subsections.find((section) => section.key === item)?.rows.length ?? 0})`
   const currentSelected = selectedRow && filteredRows.includes(selectedRow) ? selectedRow : null
   const selectedIndex = currentSelected ? filteredRows.indexOf(currentSelected) : -1
-  const warningGroups = findingGroups(validationRows).filter((group) => String(group.row.severity).toLowerCase() === 'warning').length
+  const warningGroups = useMemo(
+    () => findingGroups(validationRows).filter((group) => String(group.row.severity).toLowerCase() === 'warning').length,
+    [validationRows],
+  )
   const exposureWarnings = useMemo(() => validationRows.filter((row) => row.domain === 'interface' && row.field === 'allowaccess'), [validationRows])
 
   function renderOverviewMetric(item: OverviewMetric) {
@@ -339,67 +424,67 @@ export function SourceReport({ data, excelProfile, onExcelProfileChange, exporti
       {exportError && <ErrorBanner message={exportError} />}
       <label className="report-section-select">Report section<select value={activeSection} onChange={(event) => changeSection(event.target.value)}>{reportTabs.map((name) => <option key={name}>{name}</option>)}</select></label>
       <nav className="report-tabs" role="tablist" aria-label="Report sections" onKeyDown={tabKeyboard}>
-      {reportTabs.map((sectionLabel) => (
-        <button key={sectionLabel} id={`report-tab-${encodeURIComponent(sectionLabel)}`} aria-controls={`report-panel-${encodeURIComponent(sectionLabel)}`} tabIndex={activeSection === sectionLabel ? 0 : -1} type="button" role="tab" aria-selected={activeSection === sectionLabel} className={`report-tab${activeSection === sectionLabel ? ' active' : ''}`} onClick={() => changeSection(sectionLabel)}>
-          {sectionLabel}
-        </button>
-      ))}
+        {reportTabs.map((sectionLabel) => (
+          <button key={sectionLabel} id={`report-tab-${encodeURIComponent(sectionLabel)}`} aria-controls={`report-panel-${encodeURIComponent(sectionLabel)}`} tabIndex={activeSection === sectionLabel ? 0 : -1} type="button" role="tab" aria-selected={activeSection === sectionLabel} className={`report-tab${activeSection === sectionLabel ? ' active' : ''}`} onClick={() => changeSection(sectionLabel)}>
+            {sectionLabel}
+          </button>
+        ))}
       </nav>
     </div>
     {reportTabs.filter((item) => item !== activeSection).map((item) => <div key={item} hidden role="tabpanel" id={`report-panel-${encodeURIComponent(item)}`} aria-labelledby={`report-tab-${encodeURIComponent(item)}`} />)}
     <div role="tabpanel" id={`report-panel-${encodeURIComponent(activeSection)}`} aria-labelledby={`report-tab-${encodeURIComponent(activeSection)}`} tabIndex={0}>
-    {activeSection === 'Overview' ? <>
-      <h3 className="report-overview-heading">Validation</h3>
-      <button type="button" className={`report-validation-attention${errorCount ? ' has-errors' : warningCount ? ' has-warnings' : ''}`} onClick={() => changeSection('Validation')}><div>{sectionsData.validation == null && asRecord(summary.validation).severity_counts == null ? 'Not reported' : <>{errorCount.toLocaleString()} {errorCount === 1 ? 'error' : 'errors'} · {warningCount.toLocaleString()} {warningCount === 1 ? 'warning' : 'warnings'} <small>{warningGroups.toLocaleString()} warning {warningGroups === 1 ? 'group' : 'groups'}</small></>}</div><span>Review findings →</span></button>
-      {!!exposureWarnings.length && <div className="report-exposure-warning" role="status">
-        <div>
-          <strong>Public management exposure ({exposureWarnings.length})</strong>
-          <p>{exposureWarnings.map((row) => text(row.object_name)).filter(Boolean).join(', ')} — HTTP/HTTPS/SSH/Telnet management access is enabled on a WAN or public-facing interface.</p>
-        </div>
-        <button type="button" className="secondary-button" onClick={() => changeSection('Validation')}>Inspect in Validation →</button>
-      </div>}
-      <div className="report-overview-group">
-        <h3 className="report-overview-heading" id="configuration-summary-title">Configuration summary</h3>
-        <div className="configuration-summary-wrap">
-          <table className="configuration-summary" aria-labelledby="configuration-summary-title">
-            <thead><tr><th scope="col">Section</th><th scope="col">Count</th><th scope="col"><span className="visually-hidden">Navigation</span></th></tr></thead>
-            <tbody>{overviewMetrics.map(renderOverviewMetric)}</tbody>
-          </table>
-        </div>
-      </div>
-    </> : activeSection === 'Validation' ? null : <>
-      {activeSection === 'Extraction' && sectionsData.extraction_coverage != null && <>
-        {data.vendor === 'palo_alto' && <p className="report-count-note">{Number(summary.source_only_count ?? 0).toLocaleString()} source-only records · {Number(summary.partial_count ?? 0).toLocaleString()} partial records · {asRows(sectionsData.source_inventory).length.toLocaleString()} source inventory records.</p>}
-        {data.vendor === 'fortigate' && <p className="report-count-note">{Number(summary.source_only_count ?? 0).toLocaleString()} source-only records · {Number(summary.empty_section_count ?? 0).toLocaleString()} empty sections · {Number(summary.model_gap_count ?? 0).toLocaleString()} model gaps · {Number(summary.typed_with_additional_settings_count ?? 0).toLocaleString()} typed records with additional settings · {asRows(sectionsData.source_inventory).length.toLocaleString()} source object records.</p>}
-      </>}
-      {activeSection !== 'Interfaces' && active?.subsections.some((item) => !item.rows.length) && <label className="report-empty-toggle"><input type="checkbox" checked={showEmpty} onChange={(event) => setShowEmpty(event.target.checked)} /> Show empty sections</label>}
-      {!!objectTabs.length && <nav className="report-object-tabs" role="tablist" aria-label="Source subsections" onKeyDown={tabKeyboard}>
-        {primaryObjectTabs.map((item) => <button type="button" role="tab" id={`subsection-tab-${encodeURIComponent(item)}`} aria-controls={`subsection-panel-${encodeURIComponent(item)}`} tabIndex={activeObjectSection === item ? 0 : -1} aria-selected={activeObjectSection === item} className={activeObjectSection === item ? 'active' : ''} key={item} onClick={() => setSourceSection(item)}>{tabLabel(item)}</button>)}
-        {!!overflowObjectTabs.length && <details className={`report-object-more${activeOverflowTab ? ' has-active' : ''}`}>
-          <summary>{activeOverflowTab ? `${tabLabel(activeOverflowTab)} · More (${overflowObjectTabs.length})` : `More (${overflowObjectTabs.length})`}</summary>
-          <div className="report-object-more-menu">
-            {overflowObjectTabs.map((item) => <button type="button" role="tab" id={`subsection-tab-${encodeURIComponent(item)}`} aria-controls={`subsection-panel-${encodeURIComponent(item)}`} tabIndex={activeObjectSection === item ? 0 : -1} aria-selected={activeObjectSection === item} className={activeObjectSection === item ? 'active' : ''} key={item} onClick={(event) => { setSourceSection(item); event.currentTarget.closest('details')?.removeAttribute('open') }}>{tabLabel(item)}</button>)}
+      {activeSection === 'Overview' ? <>
+        <h3 className="report-overview-heading">Validation</h3>
+        <button type="button" className={`report-validation-attention${errorCount ? ' has-errors' : warningCount ? ' has-warnings' : ''}`} onClick={() => changeSection('Validation')}><div>{sectionsData.validation == null && asRecord(summary.validation).severity_counts == null ? 'Not reported' : <>{errorCount.toLocaleString()} {errorCount === 1 ? 'error' : 'errors'} · {warningCount.toLocaleString()} {warningCount === 1 ? 'warning' : 'warnings'} <small>{warningGroups.toLocaleString()} warning {warningGroups === 1 ? 'group' : 'groups'}</small></>}</div><span>Review findings →</span></button>
+        {!!exposureWarnings.length && <div className="report-exposure-warning" role="status">
+          <div>
+            <strong>Public management exposure ({exposureWarnings.length})</strong>
+            <p>{exposureWarnings.map((row) => text(row.object_name)).filter(Boolean).join(', ')} — HTTP/HTTPS/SSH/Telnet management access is enabled on a WAN or public-facing interface.</p>
           </div>
-        </details>}
-      </nav>}
-      {objectTabs.filter((item) => item !== activeObjectSection).map((item) => <div key={item} hidden role="tabpanel" id={`subsection-panel-${encodeURIComponent(item)}`} aria-labelledby={`subsection-tab-${encodeURIComponent(item)}`} />)}
-      <div {...(unifiedInterfaces ? {} : { role: 'tabpanel', id: `subsection-panel-${encodeURIComponent(activeObjectSection)}`, 'aria-labelledby': `subsection-tab-${encodeURIComponent(activeObjectSection)}`, tabIndex: 0 as const })}>
-      <div className="report-toolbar">
-        <label className="report-search-control"><span className="visually-hidden">Search report rows</span><input type="search" value={search} placeholder={unifiedInterfaces ? 'Search topology' : 'Search this section'} onChange={(event) => setSearch(event.target.value)} /></label>
-        <div className="report-filter-controls">
-          {scopes.length > 0 && <select aria-label="Filter report scope" value={effectiveScope} onChange={(event) => changeScope(event.target.value)}><option value="">All scopes</option>{scopes.map((item) => <option key={item} value={item}>{item}</option>)}</select>}
-          <button type="button" className="filter-clear" disabled={!search && !effectiveScope} onClick={() => { setSearch(''); changeScope('') }}>Clear filters</button>
+          <button type="button" className="secondary-button" onClick={() => changeSection('Validation')}>Inspect in Validation →</button>
+        </div>}
+        <div className="report-overview-group">
+          <h3 className="report-overview-heading" id="configuration-summary-title">Configuration summary</h3>
+          <div className="configuration-summary-wrap">
+            <table className="configuration-summary" aria-labelledby="configuration-summary-title">
+              <thead><tr><th scope="col">Section</th><th scope="col">Count</th><th scope="col"><span className="visually-hidden">Navigation</span></th></tr></thead>
+              <tbody>{overviewMetrics.map(renderOverviewMetric)}</tbody>
+            </table>
+          </div>
         </div>
-        <details className="report-column-selector"><summary>Columns ({columns.length})</summary><div>{allColumns.map((key, index) => <label key={key}><input type="checkbox" checked={columns.includes(key)} disabled={index === 0} onChange={(event) => updateView({ columns: allColumns.filter((column) => column === allColumns[0] || (column === key ? event.target.checked : columns.includes(column))) })} />{fieldLabel(key)}</label>)}<button className="filter-clear" type="button" onClick={() => updateView({ columns: undefined })}>Reset columns</button></div></details>
-      </div>
-      <p className="report-row-count" role="status">Showing {filteredRows.length.toLocaleString()} matching rows · {subsectionRows.length.toLocaleString()} total. Open Details for full values.</p>
-      <div className={`validation-workspace${currentSelected ? ' has-details' : ''}${unifiedInterfaces ? ' report-topology-view' : ''}`} key={activeSection}>
-        <SourceRowsTable rows={filteredRows} columns={columns} selected={currentSelected} hasSource={subsectionRows.length > 0} topology={activeObjectSection === 'interface_topology'} onSelect={setSelectedRow} />
-        {currentSelected && <ReportDetails row={currentSelected} subsection={activeObjectSection} vendor={data.vendor} onClose={() => setSelectedRow(null)} previous={selectedIndex > 0 ? () => setSelectedRow(filteredRows[selectedIndex - 1]) : undefined} next={selectedIndex < filteredRows.length - 1 ? () => setSelectedRow(filteredRows[selectedIndex + 1]) : undefined} />}
-      </div>
-      </div>
-    </>}
-    <div hidden={activeSection !== 'Validation'}><ValidationReport data={data} reportScope={scope} onReportScope={changeScope} active={activeSection === 'Validation'} /></div>
+      </> : activeSection === 'Validation' ? null : <>
+        {activeSection === 'Extraction' && sectionsData.extraction_coverage != null && <>
+          {data.vendor === 'palo_alto' && <p className="report-count-note">{Number(summary.source_only_count ?? 0).toLocaleString()} source-only records · {Number(summary.partial_count ?? 0).toLocaleString()} partial records · {asRows(sectionsData.source_inventory).length.toLocaleString()} source inventory records.</p>}
+          {data.vendor === 'fortigate' && <p className="report-count-note">{Number(summary.source_only_count ?? 0).toLocaleString()} source-only records · {Number(summary.empty_section_count ?? 0).toLocaleString()} empty sections · {Number(summary.model_gap_count ?? 0).toLocaleString()} model gaps · {Number(summary.typed_with_additional_settings_count ?? 0).toLocaleString()} typed records with additional settings · {asRows(sectionsData.source_inventory).length.toLocaleString()} source object records.</p>}
+        </>}
+        {activeSection !== 'Interfaces' && active?.subsections.some((item) => !item.rows.length) && <label className="report-empty-toggle"><input type="checkbox" checked={showEmpty} onChange={(event) => setShowEmpty(event.target.checked)} /> Show empty sections</label>}
+        {!!objectTabs.length && <nav className="report-object-tabs" role="tablist" aria-label="Source subsections" onKeyDown={tabKeyboard}>
+          {primaryObjectTabs.map((item) => <button type="button" role="tab" id={`subsection-tab-${encodeURIComponent(item)}`} aria-controls={`subsection-panel-${encodeURIComponent(item)}`} tabIndex={activeObjectSection === item ? 0 : -1} aria-selected={activeObjectSection === item} className={activeObjectSection === item ? 'active' : ''} key={item} onClick={() => setSourceSection(item)}>{tabLabel(item)}</button>)}
+          {!!overflowObjectTabs.length && <details className={`report-object-more${activeOverflowTab ? ' has-active' : ''}`}>
+            <summary>{activeOverflowTab ? `${tabLabel(activeOverflowTab)} · More (${overflowObjectTabs.length})` : `More (${overflowObjectTabs.length})`}</summary>
+            <div className="report-object-more-menu">
+              {overflowObjectTabs.map((item) => <button type="button" role="tab" id={`subsection-tab-${encodeURIComponent(item)}`} aria-controls={`subsection-panel-${encodeURIComponent(item)}`} tabIndex={activeObjectSection === item ? 0 : -1} aria-selected={activeObjectSection === item} className={activeObjectSection === item ? 'active' : ''} key={item} onClick={(event) => { setSourceSection(item); event.currentTarget.closest('details')?.removeAttribute('open') }}>{tabLabel(item)}</button>)}
+            </div>
+          </details>}
+        </nav>}
+        {objectTabs.filter((item) => item !== activeObjectSection).map((item) => <div key={item} hidden role="tabpanel" id={`subsection-panel-${encodeURIComponent(item)}`} aria-labelledby={`subsection-tab-${encodeURIComponent(item)}`} />)}
+        <div {...(unifiedInterfaces ? {} : { role: 'tabpanel', id: `subsection-panel-${encodeURIComponent(activeObjectSection)}`, 'aria-labelledby': `subsection-tab-${encodeURIComponent(activeObjectSection)}`, tabIndex: 0 as const })}>
+          <div className="report-toolbar">
+            <label className="report-search-control"><span className="visually-hidden">Search report rows</span><input type="search" value={search} placeholder={unifiedInterfaces ? 'Search topology' : 'Search this section'} onChange={(event) => setSearch(event.target.value)} /></label>
+            <div className="report-filter-controls">
+              {scopes.length > 0 && <select aria-label="Filter report scope" value={effectiveScope} onChange={(event) => changeScope(event.target.value)}><option value="">All scopes</option>{scopes.map((item) => <option key={item} value={item}>{item}</option>)}</select>}
+              <button type="button" className="filter-clear" disabled={!search && !effectiveScope} onClick={() => { setSearch(''); changeScope('') }}>Clear filters</button>
+            </div>
+            <details className="report-column-selector"><summary>Columns ({columns.length})</summary><div>{allColumns.map((key, index) => <label key={key}><input type="checkbox" checked={columns.includes(key)} disabled={index === 0} onChange={(event) => updateView({ columns: allColumns.filter((column) => column === allColumns[0] || (column === key ? event.target.checked : columns.includes(column))) })} />{fieldLabel(key)}</label>)}<button className="filter-clear" type="button" onClick={() => updateView({ columns: undefined })}>Reset columns</button></div></details>
+          </div>
+          <p className="report-row-count" role="status">Showing {filteredRows.length.toLocaleString()} matching rows · {subsectionRows.length.toLocaleString()} total. Open Details for full values.</p>
+          <div className={`validation-workspace${currentSelected ? ' has-details' : ''}${unifiedInterfaces ? ' report-topology-view' : ''}`} key={activeSection}>
+            <SourceRowsTable rows={filteredRows} columns={columns} selected={currentSelected} hasSource={subsectionRows.length > 0} topology={activeObjectSection === 'interface_topology'} onSelect={setSelectedRow} />
+            {currentSelected && <ReportDetails row={currentSelected} subsection={activeObjectSection} vendor={data.vendor} onClose={() => setSelectedRow(null)} previous={selectedIndex > 0 ? () => setSelectedRow(filteredRows[selectedIndex - 1]) : undefined} next={selectedIndex < filteredRows.length - 1 ? () => setSelectedRow(filteredRows[selectedIndex + 1]) : undefined} />}
+          </div>
+        </div>
+      </>}
+      <div hidden={activeSection !== 'Validation'}><ValidationReport data={data} reportScope={scope} onReportScope={changeScope} active={activeSection === 'Validation'} /></div>
     </div>
   </section>
 }

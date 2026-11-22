@@ -2264,7 +2264,9 @@
 
 .validation-table-wrap {
   min-width: 0;
-  overflow-x: auto;
+  max-height: clamp(320px, 75svh, 820px);
+  overflow: auto;
+  scrollbar-gutter: stable;
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
 }
