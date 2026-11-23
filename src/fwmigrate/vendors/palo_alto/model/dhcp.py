@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 from .common import PANNamedSourceModel, PANNestedSourceModel
 
 
@@ -47,3 +49,4 @@ class PANDHCPServer(PANNamedSourceModel):
     ip_pools: list[PANDHCPIPPool] | None = None
     reservations: list[PANDHCPReservation] | None = None
     options: list[PANDHCPOption] | None = None
+    relay: dict[str, Any] | None = None

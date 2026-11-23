@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import json
 import unittest
@@ -457,6 +457,299 @@ end'''))
             with self.subTest(value=value):
                 config = FGConfig(interfaces=[FGInterface(name="wan1", ip=value)])
                 self.assertFalse([issue for issue in validate_config(config).issues if issue.domain == "interface" and issue.field == "ip"])
+
+    def test_extended_fortigate_sections_and_fields_preserve_source_data_without_secret_leaks(self):
+        source = '''#config-version=FGT60F-7.2.8-FW-build1639-240415:opmode=0:vdom=0:user=admin
+#conf_file_ver=123456
+#buildno=1639
+#global_vdom=1
+config system global
+ set hostname fg-edge-01
+ set timezone 04
+ set admin-sport 8443
+ set revision-backup-on-logout enable
+end
+config system ha
+ set mode a-p
+ set group-id 10
+ set group-name ha-cluster
+ set priority 200
+ set password SUPER_SECRET_HA_PWD
+ set monitor port1 port2
+end
+config system snmp community
+ edit 1
+  set name SUPER_SECRET_COMMUNITY
+  set query-v2c-status enable
+  config hosts
+   edit 1
+    set ip 192.0.2.50 255.255.255.255
+   next
+  end
+ next
+end
+config system interface
+ edit "port1"
+  set ip 192.0.2.1 255.255.255.0
+  set mtu 1500
+  set distance 5
+  set priority 10
+  set snmp-index 1
+  set lacp-mode active
+  set management-ip 192.0.2.2 255.255.255.0
+ next
+end
+config router bgp
+ set as 65100
+ set router-id 192.0.2.1
+ config neighbor
+  edit "192.0.2.254"
+   set remote-as 65200
+   set password SUPER_SECRET_BGP_PWD
+  next
+ end
+end
+config router policy
+ edit 1
+  set input-device "port1"
+  set src "10.0.0.0/8"
+  set gateway 192.0.2.254
+  set output-device "port2"
+ next
+end
+config firewall proxy-policy
+ edit 1
+  set proxy explicit-web
+  set srcintf "port1"
+  set dstintf "port2"
+  set srcaddr "all"
+  set dstaddr "all"
+  set service "webproxy"
+  set action accept
+ next
+end
+config firewall shaper traffic-shaper
+ edit "VoIP-Guarantee"
+  set guaranteed-bandwidth 1000
+  set maximum-bandwidth 5000
+ next
+end
+config firewall ldb-monitor
+ edit "http-check"
+  set type http
+  set port 8080
+  set interval 10
+ next
+end
+config firewall vip
+ edit "vs-web"
+  set type server-load-balance
+  set extip 198.51.100.20
+  set extintf "port1"
+  set server-type http
+  set ldb-method round-robin
+  config realservers
+   edit 1
+    set ip 10.10.10.10
+    set port 80
+   next
+  end
+ next
+end
+config antivirus profile
+ edit "av-strict"
+  set feature-set proxy
+  config http
+   set av-scan block
+  end
+ next
+end
+config webfilter profile
+ edit "wf-corp"
+  set feature-set flow
+  config web
+   set urlfilter-table 1
+  end
+ next
+end
+config firewall ssl-ssh-profile
+ edit "deep-inspect"
+  config https
+   set ports 443
+   set status deep-inspection
+  end
+ next
+end
+config user ldap
+ edit "corp-ad"
+  set server 10.0.0.10
+  set port 636
+  set cnid "sAMAccountName"
+  set dn "dc=example,dc=com"
+  set password SUPER_SECRET_LDAP_PWD
+ next
+end
+config user fortitoken
+ edit "FTKMOB123456"
+  set status active
+  set seed SUPER_SECRET_TOKEN_SEED
+ next
+end
+config wireless-controller vap
+ edit "corp-wifi"
+  set ssid "CorpWiFi"
+  set security wpa2-only-personal
+  set passphrase SUPER_SECRET_WIFI_PSK
+ next
+end
+config log syslogd setting
+ set status enable
+ set server 192.0.2.200
+ set port 514
+end
+config system admin
+ edit "secadmin"
+  set accprofile "super_admin"
+  set vdom "root"
+  set password SUPER_SECRET_ADMIN_PWD
+  set force-password-change enable
+  set ssh-public-key1 "ssh-rsa AAAA"
+ next
+end
+'''
+        reporter = FortiGateSourceReporter()
+        analysis = reporter.analyze_source(source)
+        report = reporter.build_preview(analysis)
+        sections = report["sections"]
+        summary = report["summary"]
+
+        self.assertEqual("FGT60F", summary["source_metadata"]["hardware_model"])
+        self.assertEqual("7.2.8", summary["source_metadata"]["fortios_version"])
+        self.assertEqual("build1639", summary["source_metadata"]["firmware_build"])
+
+        port1 = next(row for row in sections["interfaces"] if row["name"] == "port1")
+        self.assertEqual(1500, port1["mtu"])
+        self.assertEqual(5, port1["distance"])
+        self.assertEqual(10, port1["priority"])
+        self.assertEqual(1, port1["snmp_index"])
+        self.assertEqual("active", port1["lacp_mode"])
+        self.assertEqual("192.0.2.2 255.255.255.0", port1["management_ip"])
+
+        self.assertEqual("fg-edge-01", sections["system_global"][0]["hostname"])
+        self.assertEqual("a-p", sections["ha_config"][0]["mode"])
+        self.assertTrue(sections["ha_config"][0]["password_configured"])
+        self.assertTrue(sections["snmp_communities"][0]["community_configured"])
+        self.assertIsNone(sections["snmp_communities"][0]["name"])
+        self.assertEqual(65100, sections["router_bgp"][0]["bgp_as"])
+        self.assertTrue(sections["router_bgp"][0]["neighbors"][0]["password_configured"])
+        self.assertEqual(["port1"], sections["policy_routes"][0]["input_device"])
+        self.assertEqual("explicit-web", sections["proxy_policies"][0]["proxy"])
+        self.assertEqual(1000, sections["traffic_shapers"][0]["guaranteed_bandwidth"])
+        self.assertEqual("http", sections["ldb_monitors"][0]["type"])
+        self.assertEqual("vs-web", sections["virtual_servers"][0]["name"])
+        self.assertEqual("block", sections["antivirus_profiles"][0]["protocols"][0]["av_scan"])
+        self.assertEqual(1, sections["webfilter_profiles"][0]["urlfilter_table"])
+        self.assertEqual("deep-inspection", sections["ssl_ssh_profiles"][0]["protocols"][0]["status"])
+        self.assertTrue(sections["ldap_servers"][0]["password_configured"])
+        self.assertEqual("FTKMOB123456", sections["fortitokens"][0]["serial_number"])
+        self.assertTrue(sections["fortitokens"][0]["seed_configured"])
+        self.assertTrue(sections["wireless_vaps"][0]["passphrase_configured"])
+        self.assertEqual("192.0.2.200", sections["syslog_settings"][0]["server"])
+        self.assertEqual("enable", sections["administrators"][0]["additional_settings"]["force_password_change"])
+        self.assertTrue(sections["administrators"][0]["password_configured"])
+        self.assertTrue(sections["administrators"][0]["ssh_key_configured"])
+
+        serialized = json.dumps(report)
+        self.assertNotIn("SUPER_SECRET_", serialized)
+        self.assertNotIn("raw_extra", serialized)
+
+    def test_guest_users_switch_policies_references_and_excel_sheets(self):
+        import io
+        from openpyxl import load_workbook
+        from fwmigrate.vendors.fortigate.export.excel import export_excel
+
+        source = '''
+config system interface
+ edit "port1"
+  set vdom "root"
+ next
+end
+config user guest
+ edit "1"
+  set user-id "visitor1"
+  set sponsor "alice"
+  set password SUPER_SECRET_GUEST_PWD
+ next
+end
+config switch-controller port-policy
+ edit "corp-port"
+  set fortilink "fortilink"
+  set qos-policy "qos1"
+  set vlan-policy "vlan1"
+ next
+end
+config switch-controller lldp-profile
+ edit "lldp1"
+  set med-tlvs inventory-management network-policy
+ next
+end
+config switch-controller qos qos-policy
+ edit "qos1"
+  set default-cos 3
+ next
+end
+config switch-controller vlan-policy
+ edit "vlan1"
+  set vlan "corp-vlan"
+ next
+end
+config firewall ssl-ssh-profile
+ edit "custom-ssl"
+ next
+end
+config firewall proxy-policy
+ edit 10
+  set proxy explicit-web
+  set srcintf "port1"
+  set dstintf "port1"
+  set srcaddr "all"
+  set dstaddr "all"
+  set service "ALL"
+  set schedule "always"
+  set ssl-ssh-profile "missing-ssl"
+ next
+end
+'''
+        reporter = FortiGateSourceReporter()
+        analysis = reporter.analyze_source(source)
+        report = reporter.build_preview(analysis)
+        sections = report["sections"]
+
+        self.assertEqual("visitor1", sections["guest_users"][0]["user_id"])
+        self.assertTrue(sections["guest_users"][0]["password_configured"])
+        self.assertNotIn("SUPER_SECRET_GUEST_PWD", json.dumps(report))
+        self.assertEqual("corp-port", sections["switch_port_policies"][0]["name"])
+        self.assertEqual("lldp1", sections["switch_lldp_profiles"][0]["name"])
+        self.assertEqual(3, sections["switch_qos_policies"][0]["default_cos"])
+        self.assertEqual("corp-vlan", sections["switch_vlan_policies"][0]["vlan"])
+        self.assertTrue(any(
+            item["source_kind"] == "proxy_policy" and item["reference"] == "missing-ssl"
+            for item in sections["unresolved_references"]
+        ))
+
+        buf = io.BytesIO()
+        export_excel(
+            extracted=analysis.extracted,
+            derived=analysis.derived,
+            validation=analysis.validation,
+            output=buf,
+            source_name="test.conf",
+        )
+        buf.seek(0)
+        wb = load_workbook(buf, read_only=True)
+        for sheet_name in ("Guest Users", "Switch Port Policies", "Proxy Policies", "SSL-SSH Profiles"):
+            self.assertIn(sheet_name, wb.sheetnames)
+        wb.close()
 
 
 if __name__ == "__main__":

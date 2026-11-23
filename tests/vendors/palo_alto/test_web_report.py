@@ -167,3 +167,126 @@ def test_vulnerability_preview_preserves_count_fields_and_adds_serializable_deta
     assert row["rule_details"][0]["name"] == "rule1"
     assert row["exception_details"] == []
     json.dumps(preview)
+
+
+def test_extended_panos_sections_and_omitted_models_reach_preview_safely():
+    source = """<config version="11.1.0">
+      <shared>
+        <application-group><entry name="web-apps"><members><member>ssl</member><member>web-browsing</member></members></entry></application-group>
+        <dynamic-user-group><entry name="risky-users"><filter>'high-risk'</filter></entry></dynamic-user-group>
+        <external-list><entry name="bad-ips"><type><ip><url>https://edl.example.test/list.txt</url><auth><username>edl-user</username><password>PAN_SECRET_EDL</password></auth></ip></type></entry></external-list>
+        <custom-url-category><entry name="blocked-urls"><type>URL List</type><list><member>bad.example.test</member></list></entry></custom-url-category>
+        <profiles>
+          <virus><entry name="strict-av"><packet-capture>yes</packet-capture></entry></virus>
+          <spyware><entry name="strict-as"><cloud-inline-analysis>yes</cloud-inline-analysis></entry></spyware>
+          <url-filtering><entry name="corp-url"><block><member>malware</member></block></entry></url-filtering>
+          <file-blocking><entry name="corp-fb"><description>block exe</description></entry></file-blocking>
+          <wildfire-analysis><entry name="corp-wf"><description>wf</description></entry></wildfire-analysis>
+          <data-filtering><entry name="corp-df"><data-capture>yes</data-capture></entry></data-filtering>
+          <dos-protection><entry name="corp-dos"><type>classified</type></entry></dos-protection>
+          <decryption><entry name="corp-decrypt"><ssl-forward-proxy><block-expired-certificate>yes</block-expired-certificate></ssl-forward-proxy></entry></decryption>
+        </profiles>
+        <server-profile>
+          <radius><entry name="rad-1"><timeout>5</timeout><server><entry name="r1"><ip-address>10.0.0.20</ip-address><secret>PAN_SECRET_RADIUS</secret></entry></server></entry></radius>
+          <ldap><entry name="ldap-1"><ldap-type>active-directory</ldap-type><bind-password>PAN_SECRET_LDAP</bind-password></entry></ldap>
+        </server-profile>
+        <certificate><entry name="web-cert"><common-name>fw.example.test</common-name><private-key>PAN_SECRET_PRIVKEY</private-key></entry></certificate>
+        <authentication-profile><entry name="auth-ldap"><user-domain>CORP</user-domain></entry></authentication-profile>
+      </shared>
+      <devices><entry name="fw1">
+        <deviceconfig>
+          <system><hostname>fw1</hostname><ip-address>10.0.0.1</ip-address><timezone>UTC</timezone></system>
+          <high-availability><enabled>yes</enabled><group><group-id>5</group-id></group></high-availability>
+        </deviceconfig>
+        <network>
+          <profiles><interface-management-profile><entry name="mgmt-https"><https>yes</https><ping>yes</ping></entry></interface-management-profile></profiles>
+          <vlan><entry name="vlan-100"><virtual-interface><interface>vlan.100</interface></virtual-interface></entry></vlan>
+          <virtual-wire><entry name="vw-1"><interface1>ethernet1/1</interface1><interface2>ethernet1/2</interface2></entry></virtual-wire>
+          <virtual-router><entry name="vr-default"><ecmp><enable>yes</enable></ecmp></entry></virtual-router>
+        </network>
+        <vsys><entry name="vsys1">
+          <import><network><interface><member>ethernet1/1</member></interface></network></import>
+          <rulebase>
+            <pbf><rules><entry name="pbf-1"><from><zone><member>trust</member></zone></from><action><forward><egress-interface>ethernet1/2</egress-interface></forward></action></entry></rules></pbf>
+            <decryption><rules><entry name="dec-1"><action>decrypt</action><profile>corp-decrypt</profile></entry></rules></decryption>
+            <qos><rules><entry name="qos-1"><class>4</class></entry></rules></qos>
+          </rulebase>
+        </entry></vsys>
+      </entry></devices>
+    </config>"""
+    reporter = PaloAltoSourceReporter()
+    preview = reporter.build_preview(reporter.analyze_source(source))
+    sections = preview["sections"]
+    assert sections["management_profiles"][0]["name"] == "mgmt-https"
+    assert sections["interface_imports"][0]["interfaces"] == ["ethernet1/1"]
+    assert sections["virtual_routers"][0]["ecmp"]["enable"] == "yes"
+    assert sections["system_settings"][0]["timezone"] == "UTC"
+    assert sections["ha_configs"][0]["enabled"] == "yes"
+    assert sections["pbf_rules"][0]["egress_interface"] == "ethernet1/2"
+    assert sections["decryption_rules"][0]["profile"] == "corp-decrypt"
+    assert sections["qos_rules"][0]["qos_class"] == "4"
+    assert sections["application_groups"][0]["members"] == ["ssl", "web-browsing"]
+    assert sections["external_lists"][0]["password_configured"] is True
+    assert sections["radius_server_profiles"][0]["secret_configured"] is True
+    assert sections["ldap_server_profiles"][0]["bind_password_configured"] is True
+    assert sections["certificates"][0]["private_key_configured"] is True
+    assert sections["vlans"][0]["virtual_interface"] == "vlan.100"
+    assert sections["virtual_wires"][0]["interface1"] == "ethernet1/1"
+    import json
+    assert "PAN_SECRET_" not in json.dumps(preview)
+
+
+def test_panos_dhcp_relay_device_objects_scp_ssh_references_and_excel():
+    import io
+    import json
+    from openpyxl import load_workbook
+    from fwmigrate.vendors.palo_alto.export.excel import export_panos_excel
+
+    source = """<config>
+      <shared>
+        <devices><entry name="managed-dev"><source>mac</source><description>Printer</description></entry></devices>
+        <profiles>
+          <decryption><entry name="dec-prof"/></decryption>
+        </profiles>
+        <certificate><entry name="srv-cert"><common-name>fw.test</common-name></entry></certificate>
+        <ssl-tls-service-profile><entry name="tls-ok"><certificate>srv-cert</certificate></entry><entry name="tls-miss"><certificate>no-such-cert</certificate></entry></ssl-tls-service-profile>
+        <server-profile>
+          <scp><entry name="scp-1"><hostname>10.0.0.50</hostname><username>scpuser</username><password>PAN_SECRET_SCP</password></entry></scp>
+          <ssh><entry name="ssh-1"><hostname>10.0.0.51</hostname><username>sshuser</username><password>PAN_SECRET_SSH</password></entry></ssh>
+        </server-profile>
+        <log-settings><system><match-list><entry name="sys-all"/></match-list></system></log-settings>
+      </shared>
+      <devices><entry name="fw1">
+        <deviceconfig><setting><alarm><enable>yes</enable></alarm></setting></deviceconfig>
+        <network><dhcp><interface><entry name="ethernet1/1"><relay><ip><member>10.0.0.254</member></ip></relay></entry></interface></dhcp></network>
+        <vsys><entry name="vsys1">
+          <user-identification><enable>yes</enable></user-identification>
+          <rulebase><decryption><rules><entry name="dec-rule"><action>decrypt</action><profile>missing-dec</profile></entry></rules></decryption></rulebase>
+        </entry></vsys>
+      </entry></devices>
+    </config>"""
+    reporter = PaloAltoSourceReporter()
+    analysis = reporter.analyze_source(source)
+    preview = reporter.build_preview(analysis)
+    sections = preview["sections"]
+
+    assert sections["device_objects"][0]["name"] == "managed-dev"
+    assert sections["scp_server_profiles"][0]["password_configured"] is True
+    assert sections["ssh_server_profiles"][0]["password_configured"] is True
+    assert sections["user_id_settings"][0]["setting_type"] == "user-identification"
+    assert sections["log_setting_categories"][0]["category"] == "system"
+    assert sections["device_setup_settings"][0]["alarm"]["enable"] == "yes"
+    assert sections["dhcp_servers"][0]["relay"]["ip"]["member"] == "10.0.0.254"
+    assert "PAN_SECRET_" not in json.dumps(preview)
+
+    unresolved = {(r["owner_family"], r["reference_name"], r["status"]) for r in preview["unresolved_references"]}
+    assert ("decryption-rule", "missing-dec", "UNRESOLVED") in unresolved
+    assert ("ssl-tls-service-profile", "no-such-cert", "UNRESOLVED") in unresolved
+
+    buf = io.BytesIO()
+    export_panos_excel(analysis, buf, source_name="test.xml")
+    buf.seek(0)
+    wb = load_workbook(buf, read_only=True)
+    for sheet_name in ("Device Objects", "SCP Server Profiles", "SSH Server Profiles", "Decryption Rules", "Log Setting Categories"):
+        assert sheet_name in wb.sheetnames
+    wb.close()

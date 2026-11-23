@@ -7,6 +7,7 @@ export interface DesktopSaveResult {
 }
 
 export interface PyWebViewApi {
+  download_file?: (filename: string, contentBase64: string) => Promise<DesktopSaveResult>
   save_file?: (filename: string, contentBase64: string) => Promise<DesktopSaveResult>
 }
 
@@ -35,14 +36,20 @@ async function blobToBase64(blob: Blob): Promise<string> {
 export async function saveBlobWithFallback(
   blob: Blob,
   filename: string,
-): Promise<{ status: 'saved' | 'cancelled' | 'downloaded'; filename: string }> {
-  const saveFile = getDesktopApi()?.save_file
-  if (saveFile) {
+): Promise<{ status: 'saved' | 'cancelled' | 'downloaded'; filename: string; path?: string }> {
+  const api = getDesktopApi()
+  if (api?.download_file || api?.save_file) {
     const contentBase64 = await blobToBase64(blob)
-    const result = await saveFile(filename, contentBase64)
+    const result = api.download_file
+      ? await api.download_file(filename, contentBase64)
+      : await api.save_file!(filename, contentBase64)
     if (result?.cancelled) return { status: 'cancelled', filename }
     if (!result?.saved) throw new Error(result?.error || 'Could not save file')
-    return { status: 'saved', filename: result.filename || filename }
+    return {
+      status: 'saved',
+      filename: result.filename || filename,
+      ...(result.path ? { path: result.path } : {}),
+    }
   }
 
   const url = URL.createObjectURL(blob)

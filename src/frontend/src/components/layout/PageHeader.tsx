@@ -12,7 +12,7 @@ export function PageHeader({ page, theme, collapsed = false, onCollapseClick, on
   onToggleTheme: () => void
 }) {
   return (
-    <header className="page-header">
+    <header className="page-header fw-workspace-bar">
       <div className="page-header-leading">
         {onCollapseClick && (
           <Button
@@ -24,7 +24,7 @@ export function PageHeader({ page, theme, collapsed = false, onCollapseClick, on
             title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
             onClick={onCollapseClick}
           >
-            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <rect x="3" y="4" width="18" height="16" rx="2" />
               <path d="M9 4v16" />
             </svg>
@@ -39,14 +39,13 @@ export function PageHeader({ page, theme, collapsed = false, onCollapseClick, on
             title="Open navigation menu"
             onClick={onMenuClick}
           >
-            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <path d="M4 6h16M4 12h16M4 18h16" />
             </svg>
           </Button>
         )}
-        <div>
+        <div className="fw-crumb-wrap">
           <h1>{page.title}</h1>
-          <span className="page-description">{page.description}</span>
         </div>
       </div>
       <div className="page-header-actions">
@@ -62,3 +61,4 @@ export function PageHeader({ page, theme, collapsed = false, onCollapseClick, on
     </header>
   )
 }
+

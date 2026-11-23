@@ -56,6 +56,19 @@ class DesktopApi:
         target.write_bytes(raw)
         return {"saved": True, "cancelled": False, "path": str(target), "filename": target.name}
 
+    def download_file(self, filename: str, content_base64: str) -> dict[str, object]:
+        """Save file directly into native Windows Downloads with a unique filename (no manual prompt)."""
+        from fwmigrate.web_support.desktop_downloads import get_downloads_dir, unique_export_path
+
+        safe_name = Path(filename or "export.xlsx").name or "export.xlsx"
+        stem = Path(safe_name).stem or "export"
+        ext = Path(safe_name).suffix or ".xlsx"
+        downloads_dir = get_downloads_dir()
+        target = unique_export_path(downloads_dir, stem, ext)
+        raw = base64.b64decode(content_base64)
+        target.write_bytes(raw)
+        return {"saved": True, "cancelled": False, "path": str(target), "filename": target.name}
+
 
 def _resolve_frontend_dist() -> Path:
     """Return the built frontend directory for frozen and source runs."""

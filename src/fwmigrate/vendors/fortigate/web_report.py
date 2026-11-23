@@ -137,8 +137,21 @@ def _object_counts(config: FGConfig) -> dict[str, int]:
         "session_helpers": len(config.session_helpers),
         "ssl_vpn_realms": len(config.ssl_vpn_realms),
         "ssl_vpn_clients": len(config.ssl_vpn_clients),
+        "ssl_vpn_host_check_software": len(config.ssl_vpn_host_check_software),
         "ssl_vpn_bookmarks": sum(len(owner.bookmarks) for owner in config.ssl_vpn_user_bookmarks + config.ssl_vpn_user_group_bookmarks),
         "nac_policies": len(config.nac_policies),
+        "profile_groups": len(config.profile_groups),
+        "address6_templates": len(config.address6_templates),
+        "ips_settings": len(config.ips_settings),
+        "kmip_servers": len(config.kmip_servers),
+        "kerberos_keytabs": len(config.kerberos_keytabs),
+        "router_settings": len(config.router_settings),
+        "sdn_proxies": len(config.sdn_proxies),
+        "on_demand_sniffers": len(config.on_demand_sniffers),
+        "affinity_interrupts": len(config.affinity_interrupts),
+        "serial_ports": len(config.serial_ports),
+        "firewall_regions": len(config.firewall_regions),
+        "vendor_macs": len(config.vendor_macs),
         "ip_pools": len(config.ip_pools) + len(config.ip_pools6),
         "vips": len(config.vips) + len(config.vips6),
         "vip_groups": len(config.vip_groups) + len(config.vip_groups6),
@@ -152,6 +165,67 @@ def _object_counts(config: FGConfig) -> dict[str, int]:
         "ipsec_policy_phase1": len(config.ipsec_policy_phase1),
         "ipsec_phase2": len(config.ipsec_phase2) + len(config.ipsec_policy_phase2),
         "ipsec_policy_phase2": len(config.ipsec_policy_phase2),
+        "system_global": len(config.system_global),
+        "system_dns": len(config.system_dns),
+        "system_ntp": len(config.system_ntp),
+        "ha_config": len(config.ha_config),
+        "snmp_sysinfo": len(config.snmp_sysinfo),
+        "snmp_communities": len(config.snmp_communities),
+        "snmp_users": len(config.snmp_users),
+        "fortiguard": len(config.fortiguard),
+        "router_bgp": len(config.router_bgp),
+        "router_ospf": len(config.router_ospf),
+        "router_ospf6": len(config.router_ospf6),
+        "router_rip": len(config.router_rip),
+        "policy_routes": len(config.policy_routes),
+        "prefix_lists": len(config.prefix_lists),
+        "route_maps": len(config.route_maps),
+        "aspath_lists": len(config.aspath_lists),
+        "community_lists": len(config.community_lists),
+        "router_multicast": len(config.router_multicast),
+        "system_ipam": len(config.system_ipam),
+        "fortiextenders": len(config.fortiextenders),
+        "proxy_policies": len(config.proxy_policies),
+        "auth_policies": len(config.auth_policies),
+        "traffic_shapers": len(config.traffic_shapers),
+        "ldb_monitors": len(config.ldb_monitors),
+        "virtual_servers": sum(1 for item in config.vips if item.type == "server-load-balance" or item.realservers),
+        "antivirus_profiles": len(config.antivirus_profiles),
+        "webfilter_profiles": len(config.webfilter_profiles),
+        "urlfilter_tables": len(config.urlfilter_tables),
+        "webfilter_local_categories": len(config.webfilter_local_categories),
+        "webfilter_local_ratings": len(config.webfilter_local_ratings),
+        "webfilter_overrides": len(config.webfilter_overrides),
+        "dnsfilter_profiles": len(config.dnsfilter_profiles),
+        "application_lists": len(config.application_lists),
+        "file_filter_profiles": len(config.file_filter_profiles),
+        "emailfilter_profiles": len(config.emailfilter_profiles),
+        "voip_profiles": len(config.voip_profiles),
+        "waf_profiles": len(config.waf_profiles),
+        "ssl_ssh_profiles": len(config.ssl_ssh_profiles),
+        "ldap_servers": len(config.ldap_servers),
+        "radius_servers": len(config.radius_servers),
+        "tacacs_servers": len(config.tacacs_servers),
+        "fsso_servers": len(config.fsso_servers),
+        "fsso_pollings": len(config.fsso_pollings),
+        "fortitokens": len(config.fortitokens),
+        "user_settings": len(config.user_settings),
+        "password_policies": len(config.password_policies),
+        "wireless_vaps": len(config.wireless_vaps),
+        "wireless_wtps": len(config.wireless_wtps),
+        "wtp_profiles": len(config.wtp_profiles),
+        "wids_profiles": len(config.wids_profiles),
+        "managed_switches": len(config.managed_switches),
+        "syslog_settings": len(config.syslog_settings),
+        "log_memory_settings": len(config.log_memory_settings),
+        "log_disk_settings": len(config.log_disk_settings),
+        "log_settings": len(config.log_settings),
+        "log_threat_weights": len(config.log_threat_weights),
+        "guest_users": len(config.guest_users),
+        "switch_port_policies": len(config.switch_port_policies),
+        "switch_lldp_profiles": len(config.switch_lldp_profiles),
+        "switch_qos_policies": len(config.switch_qos_policies),
+        "switch_vlan_policies": len(config.switch_vlan_policies),
     }
 
 
@@ -304,13 +378,27 @@ def build_web_report(
         )
 
     interfaces = []
+    _INTERFACE_EXTRA_FIELDS = (
+        "mtu", "tcp_mss", "distance", "priority", "ha_priority", "min_links",
+        "weight", "snmp_index", "link_up_delay", "link_down_delay",
+        "dhcp_renew_time", "defaultgw", "lacp_mode", "lacp_speed",
+        "aggregate_type", "management_ip", "dhcp_relay_ip",
+    )
     for item in config.interfaces:
         top = topology.get((item.vdom, item.name))
-        source = _source_rows((item,), ("alias", "description", "mode", "allowaccess", "vlanid", "vrf",
-                                       "secondary_ips", "members", "cli_scope", "cli_vdom", "unset_fields"))[0]
+        source = _source_rows((item,), (
+            "alias", "description", "mode", "allowaccess", "vlanid", "vrf",
+            "secondary_ips", "members", "cli_scope", "cli_vdom", "unset_fields",
+        ))[0]
+        extra_settings = source.get("additional_settings") or {}
+        extra_projected = {
+            field: extra_settings.get(field)
+            for field in _INTERFACE_EXTRA_FIELDS
+        }
         interfaces.append(
             {
                 **source,
+                **extra_projected,
                 "name": item.name,
                 "vdom": item.vdom,
                 "ip": item.ip,
@@ -719,9 +807,7 @@ def build_web_report(
              "tacacs_server", "authtimeout", "passwd_time", "passwd_policy", "email_to"),
         ),
         "administrators": [
-            {**item.model_dump(mode="json", include={"name", "accprofile", "vdoms", "trusthosts",
-                                                    "ip6_trusthosts", "remote_auth", "remote_group",
-                                                    "two_factor", "schedule", "comments"}),
+            {**{key: value for key, value in _source_details(item).items() if key != "cli_vdom"},
              "vdom": item.cli_vdom}
             for item in config.administrators
         ],
@@ -738,6 +824,120 @@ def build_web_report(
              "ipv6_split_tunneling_routing_address", "limit_user_logins", "forticlient_download",
              "host_check", "host_check_policy"),
         ),
+        "session_helpers": _source_rows(config.session_helpers, ("id", "name", "vdom", "protocol", "port")),
+        "ssl_vpn_clients": _source_rows(
+            config.ssl_vpn_clients,
+            ("name", "vdom", "interface", "server", "port", "user", "peer", "realm", "certificate",
+             "psk_configured", "source_ip", "ipv4_subnets", "ipv6_subnets", "distance", "priority",
+             "class_id", "status", "comment"),
+        ),
+        "ssl_vpn_host_check_software": _source_rows(
+            config.ssl_vpn_host_check_software,
+            ("name", "vdom", "os_type", "type", "version", "guid", "check_items"),
+        ),
+        "profile_groups": _source_rows(
+            config.profile_groups,
+            ("name", "vdom", "application_list", "av_profile", "ips_sensor", "webfilter_profile",
+             "dnsfilter_profile", "ssl_ssh_profile", "casb_profile", "cifs_profile",
+             "diameter_filter_profile", "dlp_profile", "emailfilter_profile", "file_filter_profile",
+             "icap_profile", "profile_protocol_options", "sctp_filter_profile", "ssh_filter_profile",
+             "ips_voip_filter", "videofilter_profile", "virtual_patch_profile", "voip_profile", "waf_profile"),
+        ),
+        "address6_templates": _source_rows(
+            config.address6_templates,
+            ("name", "vdom", "ip6", "subnet_segment_count", "fabric_object", "segments"),
+        ),
+        "ips_settings": _source_rows(config.ips_settings, ("vdom", "ips_packet_quota", "packet_log_history")),
+        "kmip_servers": _source_rows(
+            config.kmip_servers,
+            ("name", "vdom", "interface", "interface_select_method", "source_ip", "source_port",
+             "username", "password_configured", "ssl_min_proto_version", "server_identity_check", "server_list"),
+        ),
+        "kerberos_keytabs": _source_rows(
+            config.kerberos_keytabs,
+            ("name", "vdom", "principal", "ldap_server", "pac_data", "keytab_configured"),
+        ),
+        "router_settings": _source_rows(config.router_settings, ("vdom", "hostname", "show_filter")),
+        "sdn_proxies": _source_rows(
+            config.sdn_proxies,
+            ("name", "vdom", "type", "server", "server_port", "username", "password_configured"),
+        ),
+        "on_demand_sniffers": _source_rows(
+            config.on_demand_sniffers,
+            ("name", "vdom", "interface", "hosts", "ports", "protocols", "max_packet_count",
+             "non_ip_packet", "advanced_filter"),
+        ),
+        "affinity_interrupts": _source_rows(
+            config.affinity_interrupts,
+            ("id", "interrupt", "affinity_cpumask", "default_affinity_cpumask"),
+        ),
+        "serial_ports": _source_rows(config.serial_ports, ("name",)),
+        "firewall_regions": _source_rows(config.firewall_regions, ("id", "name", "city")),
+        "vendor_macs": _source_rows(config.vendor_macs, ("id", "name", "mac_number", "obsolete")),
+        "system_global": [_source_details(item) for item in config.system_global],
+        "system_dns": [_source_details(item) for item in config.system_dns],
+        "system_ntp": [_source_details(item) for item in config.system_ntp],
+        "ha_config": [_source_details(item) for item in config.ha_config],
+        "snmp_sysinfo": [_source_details(item) for item in config.snmp_sysinfo],
+        "snmp_communities": [_source_details(item) for item in config.snmp_communities],
+        "snmp_users": [_source_details(item) for item in config.snmp_users],
+        "fortiguard": [_source_details(item) for item in config.fortiguard],
+        "router_bgp": [_source_details(item) for item in config.router_bgp],
+        "router_ospf": [_source_details(item) for item in config.router_ospf],
+        "router_ospf6": [_source_details(item) for item in config.router_ospf6],
+        "router_rip": [_source_details(item) for item in config.router_rip],
+        "policy_routes": [_source_details(item) for item in config.policy_routes],
+        "prefix_lists": [_source_details(item) for item in config.prefix_lists],
+        "route_maps": [_source_details(item) for item in config.route_maps],
+        "aspath_lists": [_source_details(item) for item in config.aspath_lists],
+        "community_lists": [_source_details(item) for item in config.community_lists],
+        "router_multicast": [_source_details(item) for item in config.router_multicast],
+        "system_ipam": [_source_details(item) for item in config.system_ipam],
+        "fortiextenders": [_source_details(item) for item in config.fortiextenders],
+        "proxy_policies": [_source_details(item) for item in config.proxy_policies],
+        "auth_policies": [_source_details(item) for item in config.auth_policies],
+        "traffic_shapers": [_source_details(item) for item in config.traffic_shapers],
+        "ldb_monitors": [_source_details(item) for item in config.ldb_monitors],
+        "virtual_servers": _source_rows(
+            (item for item in config.vips if item.type == "server-load-balance" or item.realservers),
+            ("name", "vdom", "type", "status", "extip", "extintf", "extport", "server_type", "ldb_method", "monitor", "realservers", "comment"),
+        ),
+        "antivirus_profiles": [_source_details(item) for item in config.antivirus_profiles],
+        "webfilter_profiles": [_source_details(item) for item in config.webfilter_profiles],
+        "urlfilter_tables": [_source_details(item) for item in config.urlfilter_tables],
+        "webfilter_local_categories": [_source_details(item) for item in config.webfilter_local_categories],
+        "webfilter_local_ratings": [_source_details(item) for item in config.webfilter_local_ratings],
+        "webfilter_overrides": [_source_details(item) for item in config.webfilter_overrides],
+        "dnsfilter_profiles": [_source_details(item) for item in config.dnsfilter_profiles],
+        "application_lists": [_source_details(item) for item in config.application_lists],
+        "file_filter_profiles": [_source_details(item) for item in config.file_filter_profiles],
+        "emailfilter_profiles": [_source_details(item) for item in config.emailfilter_profiles],
+        "voip_profiles": [_source_details(item) for item in config.voip_profiles],
+        "waf_profiles": [_source_details(item) for item in config.waf_profiles],
+        "ssl_ssh_profiles": [_source_details(item) for item in config.ssl_ssh_profiles],
+        "ldap_servers": [_source_details(item) for item in config.ldap_servers],
+        "radius_servers": [_source_details(item) for item in config.radius_servers],
+        "tacacs_servers": [_source_details(item) for item in config.tacacs_servers],
+        "fsso_servers": [_source_details(item) for item in config.fsso_servers],
+        "fsso_pollings": [_source_details(item) for item in config.fsso_pollings],
+        "fortitokens": [_source_details(item) for item in config.fortitokens],
+        "user_settings": [_source_details(item) for item in config.user_settings],
+        "password_policies": [_source_details(item) for item in config.password_policies],
+        "wireless_vaps": [_source_details(item) for item in config.wireless_vaps],
+        "wireless_wtps": [_source_details(item) for item in config.wireless_wtps],
+        "wtp_profiles": [_source_details(item) for item in config.wtp_profiles],
+        "wids_profiles": [_source_details(item) for item in config.wids_profiles],
+        "managed_switches": [_source_details(item) for item in config.managed_switches],
+        "syslog_settings": [_source_details(item) for item in config.syslog_settings],
+        "log_memory_settings": [_source_details(item) for item in config.log_memory_settings],
+        "log_disk_settings": [_source_details(item) for item in config.log_disk_settings],
+        "log_settings": [_source_details(item) for item in config.log_settings],
+        "log_threat_weights": [_source_details(item) for item in config.log_threat_weights],
+        "guest_users": [_source_details(item) for item in config.guest_users],
+        "switch_port_policies": [_source_details(item) for item in config.switch_port_policies],
+        "switch_lldp_profiles": [_source_details(item) for item in config.switch_lldp_profiles],
+        "switch_qos_policies": [_source_details(item) for item in config.switch_qos_policies],
+        "switch_vlan_policies": [_source_details(item) for item in config.switch_vlan_policies],
     }
 
     vdoms = sorted(
@@ -774,10 +974,22 @@ def build_web_report(
         if extracted is not None
         else ({}, {})
     )
+    meta = extracted.source_metadata if extracted is not None else None
+    source_meta_dict = (
+        {
+            "fortios_version": meta.fortios_version,
+            "hardware_model": meta.hardware_model,
+            "firmware_build": meta.firmware_build,
+            "serial_number": meta.serial_number,
+        }
+        if meta is not None
+        else {}
+    )
     return {
         "vendor": "fortigate",
         "summary": {
             **evidence_summary,
+            "source_metadata": source_meta_dict,
             "top_level_sections": top_level_sections,
             "objects": _object_counts(config),
             "validation": {

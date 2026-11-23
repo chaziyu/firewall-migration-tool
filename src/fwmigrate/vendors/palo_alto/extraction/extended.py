@@ -12,6 +12,31 @@ from ..model import (
     PANSDWANPathQualityProfile, PANSDWANRule, PANSDWANSaaSQualityProfile,
     PANSDWANTrafficDistributionLink, PANSDWANTrafficDistributionProfile, PANVulnerabilityProfile,
 )
+from ..model.extended_sections import (
+    PANSystemSettings, PANHAConfig, PANDeviceSetupSetting,
+    PANQoSRule, PANPBFRule, PANDecryptionRule, PANTunnelInspectRule,
+    PANAppOverrideRule, PANAuthenticationRule, PANDoSRule,
+    PANApplicationGroup, PANRegion, PANDynamicUserGroup,
+    PANHIPObject, PANHIPProfile, PANExternalList, PANCustomURLCategory,
+    PANDataPattern, PANCustomThreat,
+    PANAntivirusProfile, PANAntiSpywareProfile, PANURLFilteringProfile,
+    PANFileBlockingProfile, PANWildFireProfile, PANDataFilteringProfile,
+    PANDoSProtectionProfile, PANDecryptionProfile, PANLogForwardingProfile,
+    PANAuthenticationProfile, PANAuthenticationSequence,
+    PANVLAN, PANVirtualWire, PANGRETunnel, PANDNSProxy,
+    PANQoSInterface, PANQoSProfile,
+    PANZoneProtectionProfile, PANMonitorProfile, PANLLDPProfile, PANBFDProfile,
+    PANGlobalProtectClientlessApp, PANGlobalProtectClientlessAppGroup, PANGlobalProtectMDM,
+    PANRadiusServerProfile, PANLDAPServerProfile, PANTACPlusServerProfile,
+    PANKerberosServerProfile, PANSAMLIdPServerProfile, PANMFAServerProfile,
+    PANCertificate, PANSSLTLSServiceProfile,
+    PANSyslogServerProfile, PANEmailServerProfile, PANSNMPTrapServerProfile,
+    PANHTTPServerProfile, PANNetflowServerProfile,
+    PANPasswordComplexity, PANPasswordProfile, PANUserIDAgent,
+    PANDeviceObject, PANSCPServerProfile, PANSSHServerProfile,
+    PANUserIDSetting, PANLogSettingCategory,
+)
+from ..sanitization import sanitize_panos_attributes
 from ..model.security_profile import PANBlockIPAction, PANVulnerabilityException, PANVulnerabilityRule
 from ..model.administration import PANAdminRolePermission
 from ..schema_registry import PANPathSpec
@@ -454,6 +479,202 @@ def extract_sdwan_mode(cls):
     return extract
 
 
+def _entry_list_capture(container: ET.Element) -> list[dict[str, Any]]:
+    rows = []
+    for entry in container.findall("entry"):
+        captured = structured_xml_capture(entry)
+        row = {"name": entry.get("name")}
+        if isinstance(captured, dict):
+            row.update(captured)
+        elif captured:
+            row["value"] = captured
+        rows.append(sanitize_panos_attributes(row))
+    return rows
+
+
+def extract_structured(
+    cls,
+    *,
+    dict_fields: dict[str, str] | None = None,
+    entry_list_fields: dict[str, str] | None = None,
+    secret_fields: tuple[str, ...] = (),
+    secret_paths: dict[str, tuple[str, ...]] | None = None,
+    rulebase: bool = False,
+    default_name: str | None = None,
+    static_attrs: dict[str, Any] | None = None,
+):
+    dict_fields = dict_fields or {}
+    entry_list_fields = entry_list_fields or {}
+
+    def extract(element: ET.Element, path: tuple[str, ...], context: PANWalkContext, source_order: int, spec: PANPathSpec):
+        item = _named(
+            cls, element, path, context, source_order, spec,
+            secret_fields=secret_fields, secret_paths=secret_paths,
+        )
+        if default_name is not None and not item.name:
+            item.name = default_name
+        if rulebase and "rulebase_position" in cls.model_fields:
+            item.rulebase_position = context.rulebase_position
+        if static_attrs:
+            for attr, val in static_attrs.items():
+                if attr in cls.model_fields:
+                    setattr(item, attr, val)
+        for tag, target in dict_fields.items():
+            node = element.find(tag)
+            if node is not None and target in cls.model_fields:
+                captured = structured_xml_capture(node)
+                setattr(item, target, sanitize_panos_attributes(captured) if isinstance(captured, dict) else {"value": sanitize_panos_attributes(captured)})
+                item.explicit_fields.add(target)
+        for tag, target in entry_list_fields.items():
+            node = element.find(tag)
+            if node is not None and target in cls.model_fields:
+                setattr(item, target, _entry_list_capture(node))
+                item.explicit_fields.add(target)
+        return item
+    return extract
+
+
+def extract_system_settings(element: ET.Element, path: tuple[str, ...], context: PANWalkContext, source_order: int, spec: PANPathSpec):
+    extractor = extract_structured(
+        PANSystemSettings,
+        default_name="system",
+        dict_fields={
+            "dns-setting": "dns_setting",
+            "ntp-servers": "ntp_servers",
+            "service": "service",
+            "route": "route",
+            "panorama": "panorama",
+            "snmp-setting": "snmp_setting",
+        },
+    )
+    item = extractor(element, path, context, source_order, spec)
+    type_node = element.find("type")
+    if type_node is not None:
+        branch = next(iter(type_node), None)
+        item.type = branch.tag if branch is not None else _text(type_node)
+        item.explicit_fields.add("type")
+    perm = element.find("permitted-ip")
+    if perm is not None:
+        item.permitted_ip = [entry.get("name") or _text(entry) or "" for entry in perm.findall("entry")]
+        item.explicit_fields.add("permitted_ip")
+    return item
+
+
+def extract_pbf_rule(element: ET.Element, path: tuple[str, ...], context: PANWalkContext, source_order: int, spec: PANPathSpec):
+    item = _named(PANPBFRule, element, path, context, source_order, spec)
+    item.rulebase_position = context.rulebase_position
+    sym = element.find("enforce-symmetric-return")
+    if sym is not None:
+        item.enforce_symmetric_return = sanitize_panos_attributes(structured_xml_capture(sym)) if len(sym) else {"enabled": _text(sym)}
+        item.explicit_fields.add("enforce_symmetric_return")
+    from_node = element.find("from")
+    if from_node is not None:
+        zones_node = from_node.find("zone")
+        if zones_node is not None:
+            item.from_zones = [_text(m) or m.get("name") or "" for m in zones_node.findall("member")]
+            item.explicit_fields.add("from_zones")
+        intf_node = from_node.find("interface")
+        if intf_node is not None:
+            item.from_interfaces = [_text(m) or m.get("name") or "" for m in intf_node.findall("member")]
+            item.explicit_fields.add("from_interfaces")
+        from_extra = raw_extra(from_node, {"zone", "interface"})
+        if from_extra:
+            item.raw_extra["from"] = from_extra
+    action_node = element.find("action")
+    if action_node is not None:
+        branch = next(iter(action_node), None)
+        if branch is not None:
+            item.action = branch.tag
+            item.explicit_fields.add("action")
+            if branch.tag == "forward":
+                egress = branch.find("egress-interface")
+                if egress is not None:
+                    item.egress_interface = _text(egress)
+                    item.explicit_fields.add("egress_interface")
+                nh_node = branch.find("nexthop")
+                if nh_node is not None:
+                    ip_addr = nh_node.find("ip-address")
+                    item.nexthop = _text(ip_addr) if ip_addr is not None else _text(nh_node)
+                    item.explicit_fields.add("nexthop")
+                fwd_extra = raw_extra(branch, {"egress-interface", "nexthop"})
+                if fwd_extra:
+                    item.raw_extra["action"] = {"forward": fwd_extra}
+        elif _text(action_node):
+            item.action = _text(action_node)
+            item.explicit_fields.add("action")
+    return item
+
+
+def extract_external_list(element: ET.Element, path: tuple[str, ...], context: PANWalkContext, source_order: int, spec: PANPathSpec):
+    item = _named(PANExternalList, element, path, context, source_order, spec, secret_fields=("password_configured",), secret_paths={"password_configured": ("type/*/password", "password")})
+    type_node = element.find("type")
+    if type_node is not None:
+        item.type = sanitize_panos_attributes(structured_xml_capture(type_node))
+        item.explicit_fields.add("type")
+        branch = next(iter(type_node), None)
+        if branch is not None:
+            if branch.find("url") is not None:
+                item.url = _text(branch.find("url"))
+                item.explicit_fields.add("url")
+            if branch.find("certificate-profile") is not None:
+                item.certificate_profile = _text(branch.find("certificate-profile"))
+                item.explicit_fields.add("certificate_profile")
+            if branch.find("recurring") is not None:
+                item.recurring = sanitize_panos_attributes(structured_xml_capture(branch.find("recurring")))
+                item.explicit_fields.add("recurring")
+            if branch.find("auth/username") is not None:
+                item.username = _text(branch.find("auth/username"))
+                item.explicit_fields.add("username")
+            if branch.find("auth/password") is not None:
+                item.password_configured = True
+                item.explicit_fields.add("password_configured")
+    return item
+
+
+def extract_vlan(element: ET.Element, path: tuple[str, ...], context: PANWalkContext, source_order: int, spec: PANPathSpec):
+    item = _named(PANVLAN, element, path, context, source_order, spec)
+    vi_node = element.find("virtual-interface")
+    if vi_node is not None:
+        item.virtual_interface = _value(vi_node, "interface") or _text(vi_node)
+        item.explicit_fields.add("virtual_interface")
+    mac_node = element.find("mac")
+    if mac_node is not None:
+        item.mac = _entry_list_capture(mac_node)
+        item.explicit_fields.add("mac")
+    return item
+
+
+def extract_dns_proxy(element: ET.Element, path: tuple[str, ...], context: PANWalkContext, source_order: int, spec: PANPathSpec):
+    item = extract_structured(
+        PANDNSProxy,
+        dict_fields={"cache": "cache", "tcp-queries": "tcp_queries"},
+        entry_list_fields={"domain-servers": "domain_servers"},
+    )(element, path, context, source_order, spec)
+    default_node = element.find("default")
+    if default_node is not None:
+        item.default_primary = _value(default_node, "primary")
+        item.default_secondary = _value(default_node, "secondary")
+        if item.default_primary is not None:
+            item.explicit_fields.add("default_primary")
+        if item.default_secondary is not None:
+            item.explicit_fields.add("default_secondary")
+    return item
+
+
+def extract_mfa_server(element: ET.Element, path: tuple[str, ...], context: PANWalkContext, source_order: int, spec: PANPathSpec):
+    item = _named(PANMFAServerProfile, element, path, context, source_order, spec, secret_fields=("secret_configured",), secret_paths={"secret_configured": ("mfa-vendor-type/*/secret", "mfa-config/*/secret", "secret")})
+    mvt = element.find("mfa-vendor-type")
+    if mvt is not None:
+        branch = next(iter(mvt), None)
+        item.mfa_vendor_type = branch.tag if branch is not None else _text(mvt)
+        item.explicit_fields.add("mfa_vendor_type")
+    cfg = element.find("mfa-config")
+    if cfg is not None:
+        item.mfa_config = sanitize_panos_attributes(structured_xml_capture(cfg))
+        item.explicit_fields.add("mfa_config")
+    return item
+
+
 EXTRACTORS = {
     "vulnerability_profile": ("vulnerability_profiles", extract_vulnerability),
     "administrator": ("administrators", extract_administrator),
@@ -478,5 +699,77 @@ EXTRACTORS = {
     "globalprotect_gateway": ("globalprotect_gateways", extract_gateway),
     "globalprotect_portal_selected": ("globalprotect_portals", extract_portal),
     "globalprotect_gateway_selected": ("globalprotect_gateways", extract_gateway),
+    "system_settings": ("system_settings", extract_system_settings),
+    "ha_config": ("ha_configs", extract_structured(PANHAConfig, default_name="high-availability", dict_fields={"mode": "mode", "group": "group", "interface": "interface", "election-option": "election_option", "state-synchronization": "state_synchronization", "monitoring": "monitoring"})),
+    "device_setup_setting": ("device_setup_settings", extract_structured(PANDeviceSetupSetting, default_name="setting", dict_fields={"config": "config", "management": "management", "wildfire": "wildfire", "tcp": "tcp", "session": "session", "logging": "logging", "ctd": "ctd", "application": "application", "alarm": "alarm", "user-id-collector": "user_id_collector"})),
+    "qos_rule": ("qos_rules", extract_structured(PANQoSRule, rulebase=True, dict_fields={"dscp-marking": "dscp_marking"})),
+    "pbf_rule": ("pbf_rules", extract_pbf_rule),
+    "decryption_rule": ("decryption_rules", extract_structured(PANDecryptionRule, rulebase=True, dict_fields={"type": "type"})),
+    "tunnel_inspect_rule": ("tunnel_inspect_rules", extract_structured(PANTunnelInspectRule, rulebase=True)),
+    "app_override_rule": ("app_override_rules", extract_structured(PANAppOverrideRule, rulebase=True)),
+    "authentication_rule": ("authentication_rules", extract_structured(PANAuthenticationRule, rulebase=True)),
+    "dos_rule": ("dos_rules", extract_structured(PANDoSRule, rulebase=True, dict_fields={"action": "action", "protection": "protection"})),
+    "application_group": ("application_groups", extract_named(PANApplicationGroup)),
+    "region": ("regions", extract_structured(PANRegion, dict_fields={"geo-location": "geo_location"})),
+    "dynamic_user_group": ("dynamic_user_groups", extract_named(PANDynamicUserGroup)),
+    "hip_object": ("hip_objects", extract_structured(PANHIPObject, dict_fields={"host-info": "host_info", "network-info": "network_info", "patch-management": "patch_management", "disk-backup": "disk_backup", "disk-encryption": "disk_encryption", "mobile-device": "mobile_device", "certificate": "certificate"})),
+    "hip_profile": ("hip_profiles", extract_named(PANHIPProfile)),
+    "external_list": ("external_lists", extract_external_list),
+    "custom_url_category": ("custom_url_categories", extract_named(PANCustomURLCategory)),
+    "data_pattern": ("data_patterns", extract_structured(PANDataPattern, dict_fields={"pattern-type": "pattern_type"})),
+    "custom_threat_vulnerability": ("custom_threats", extract_structured(PANCustomThreat, dict_fields={"default-action": "default_action"}, static_attrs={"threat_type": "vulnerability"})),
+    "custom_threat_spyware": ("custom_threats", extract_structured(PANCustomThreat, dict_fields={"default-action": "default_action"}, static_attrs={"threat_type": "spyware"})),
+    "antivirus_profile": ("antivirus_profiles", extract_structured(PANAntivirusProfile, entry_list_fields={"decoder": "decoders", "application": "applications", "threat-exception": "threat_exceptions"})),
+    "anti_spyware_profile": ("anti_spyware_profiles", extract_structured(PANAntiSpywareProfile, dict_fields={"botnet-domains": "botnet_domains"}, entry_list_fields={"rules": "rules", "threat-exception": "threat_exceptions"})),
+    "url_filtering_profile": ("url_filtering_profiles", extract_structured(PANURLFilteringProfile, dict_fields={"credential-enforcement": "credential_enforcement"})),
+    "file_blocking_profile": ("file_blocking_profiles", extract_structured(PANFileBlockingProfile, entry_list_fields={"rules": "rules"})),
+    "wildfire_profile": ("wildfire_profiles", extract_structured(PANWildFireProfile, entry_list_fields={"rules": "rules"})),
+    "data_filtering_profile": ("data_filtering_profiles", extract_structured(PANDataFilteringProfile, entry_list_fields={"rules": "rules"})),
+    "dos_protection_profile": ("dos_protection_profiles", extract_structured(PANDoSProtectionProfile, dict_fields={"flood": "flood", "resource": "resource"})),
+    "decryption_profile": ("decryption_profiles", extract_structured(PANDecryptionProfile, dict_fields={"ssl-forward-proxy": "ssl_forward_proxy", "ssl-inbound-proxy": "ssl_inbound_proxy", "ssl-no-proxy": "ssl_no_proxy", "ssl-protocol-settings": "ssl_protocol_settings", "ssh-proxy": "ssh_proxy"})),
+    "log_forwarding_profile": ("log_forwarding_profiles", extract_structured(PANLogForwardingProfile, entry_list_fields={"match-list": "match_list"})),
+    "authentication_profile": ("authentication_profiles", extract_structured(PANAuthenticationProfile, dict_fields={"method": "method", "single-sign-on": "single_sign_on", "lockout": "lockout", "multi-factor-auth": "multi_factor_auth"})),
+    "authentication_sequence": ("authentication_sequences", extract_named(PANAuthenticationSequence)),
+    "vlan": ("vlans", extract_vlan),
+    "virtual_wire": ("virtual_wires", extract_structured(PANVirtualWire, dict_fields={"link-state-pass-through": "link_state_pass_through", "multicast-firewalling": "multicast_firewalling"})),
+    "gre_tunnel": ("gre_tunnels", extract_structured(PANGRETunnel, dict_fields={"local-address": "local_address", "peer-address": "peer_address", "keep-alive": "keep_alive"})),
+    "dns_proxy": ("dns_proxies", extract_dns_proxy),
+    "qos_interface": ("qos_interfaces", extract_structured(PANQoSInterface, dict_fields={"regular-traffic": "regular_traffic", "tunnel-traffic": "tunnel_traffic"})),
+    "qos_profile": ("qos_profiles", extract_structured(PANQoSProfile, dict_fields={"class-bandwidth-type": "class_bandwidth_type"})),
+    "zone_protection_profile": ("zone_protection_profiles", extract_structured(PANZoneProtectionProfile, dict_fields={"flood": "flood"}, entry_list_fields={"scan": "scan"})),
+    "monitor_profile": ("monitor_profiles", extract_named(PANMonitorProfile)),
+    "lldp_profile": ("lldp_profiles", extract_structured(PANLLDPProfile, dict_fields={"option-tlvs": "option_tlvs"})),
+    "bfd_profile": ("bfd_profiles", extract_named(PANBFDProfile)),
+    "gp_clientless_app": ("gp_clientless_apps", extract_named(PANGlobalProtectClientlessApp)),
+    "gp_clientless_app_group": ("gp_clientless_app_groups", extract_named(PANGlobalProtectClientlessAppGroup)),
+    "gp_mdm": ("gp_mdms", extract_named(PANGlobalProtectMDM)),
+    "radius_server_profile": ("radius_server_profiles", extract_structured(PANRadiusServerProfile, dict_fields={"protocol": "protocol"}, entry_list_fields={"server": "servers"}, secret_fields=("secret_configured",), secret_paths={"secret_configured": ("server/entry/secret", "secret")})),
+    "ldap_server_profile": ("ldap_server_profiles", extract_structured(PANLDAPServerProfile, entry_list_fields={"server": "servers"}, secret_fields=("bind_password_configured",), secret_paths={"bind_password_configured": ("bind-password",)})),
+    "tacplus_server_profile": ("tacplus_server_profiles", extract_structured(PANTACPlusServerProfile, entry_list_fields={"server": "servers"}, secret_fields=("secret_configured",), secret_paths={"secret_configured": ("server/entry/secret", "secret")})),
+    "kerberos_server_profile": ("kerberos_server_profiles", extract_structured(PANKerberosServerProfile, entry_list_fields={"server": "servers"})),
+    "saml_idp_server_profile": ("saml_idp_server_profiles", extract_named(PANSAMLIdPServerProfile)),
+    "mfa_server_profile": ("mfa_server_profiles", extract_mfa_server),
+    "certificate": ("certificates", extract_named(PANCertificate, secret_fields=("private_key_configured",))),
+    "ssl_tls_service_profile": ("ssl_tls_service_profiles", extract_structured(PANSSLTLSServiceProfile, dict_fields={"protocol-settings": "protocol_settings"})),
+    "syslog_server_profile": ("syslog_server_profiles", extract_structured(PANSyslogServerProfile, entry_list_fields={"server": "servers"})),
+    "email_server_profile": ("email_server_profiles", extract_structured(PANEmailServerProfile, entry_list_fields={"server": "servers"})),
+    "snmptrap_server_profile": ("snmptrap_server_profiles", extract_structured(PANSNMPTrapServerProfile, dict_fields={"version": "version"})),
+    "http_server_profile": ("http_server_profiles", extract_structured(PANHTTPServerProfile, entry_list_fields={"server": "servers"})),
+    "netflow_server_profile": ("netflow_server_profiles", extract_structured(PANNetflowServerProfile, dict_fields={"template-refresh-rate": "template_refresh_rate"}, entry_list_fields={"server": "servers"})),
+    "password_complexity": ("password_complexities", extract_structured(PANPasswordComplexity, default_name="password-complexity")),
+    "password_profile": ("password_profiles", extract_named(PANPasswordProfile)),
+    "user_id_agent": ("user_id_agents", extract_named(PANUserIDAgent)),
+    "device_object_shared": ("device_objects", extract_named(PANDeviceObject)),
+    "device_object_vsys": ("device_objects", extract_named(PANDeviceObject)),
+    "scp_server_profile": ("scp_server_profiles", extract_structured(PANSCPServerProfile, entry_list_fields={"server": "servers"}, secret_fields=("password_configured",), secret_paths={"password_configured": ("password", "server/entry/password")})),
+    "ssh_server_profile": ("ssh_server_profiles", extract_structured(PANSSHServerProfile, entry_list_fields={"server": "servers"}, secret_fields=("password_configured",), secret_paths={"password_configured": ("password", "server/entry/password")})),
+    "user_identification": ("user_id_settings", lambda el, p, c, o, s: PANUserIDSetting(name="user-identification", setting_type="user-identification", source_path="/".join(p), scope=c.scope, source_order=o, settings=sanitize_panos_attributes(structured_xml_capture(el)) if len(el) else None, raw_extra={}, explicit_fields={"setting_type", "settings"} if len(el) else {"setting_type"})),
+    "user_id_collector": ("user_id_settings", lambda el, p, c, o, s: PANUserIDSetting(name="user-id-collector", setting_type="user-id-collector", source_path="/".join(p), scope=c.scope, source_order=o, settings=sanitize_panos_attributes(structured_xml_capture(el)) if len(el) else None, raw_extra={}, explicit_fields={"setting_type", "settings"} if len(el) else {"setting_type"})),
+    "log_system_setting": ("log_setting_categories", extract_structured(PANLogSettingCategory, default_name="system", entry_list_fields={"match-list": "match_list"}, static_attrs={"category": "system"})),
+    "log_config_setting": ("log_setting_categories", extract_structured(PANLogSettingCategory, default_name="config", entry_list_fields={"match-list": "match_list"}, static_attrs={"category": "config"})),
+    "log_threat_setting": ("log_setting_categories", extract_structured(PANLogSettingCategory, default_name="threat", entry_list_fields={"match-list": "match_list"}, static_attrs={"category": "threat"})),
+    "log_traffic_setting": ("log_setting_categories", extract_structured(PANLogSettingCategory, default_name="traffic", entry_list_fields={"match-list": "match_list"}, static_attrs={"category": "traffic"})),
+    "log_wildfire_setting": ("log_setting_categories", extract_structured(PANLogSettingCategory, default_name="wildfire", entry_list_fields={"match-list": "match_list"}, static_attrs={"category": "wildfire"})),
+    "log_userid_setting": ("log_setting_categories", extract_structured(PANLogSettingCategory, default_name="userid", entry_list_fields={"match-list": "match_list"}, static_attrs={"category": "userid"})),
 }
 EXTRACTORS.update({f"{name}_cli": EXTRACTORS[name] for name in ("sdwan_interface_profile", "sdwan_path_quality_profile", "sdwan_traffic_distribution_profile", "sdwan_saas_quality_profile", "sdwan_error_correction_profile")})

@@ -47,6 +47,22 @@ from .selected_sections import (
     FGNACPolicy, FGAddress6Template, FGIPSSettings, FGKMIPServer, FGKerberosKeytab,
     FGRouterSettings, FGSDNProxy, FGOnDemandSniffer, FGAffinityInterrupt,
     FGSerialPort, FGFirewallRegion, FGVendorMAC,
+    FGSystemGlobal, FGSystemDNS, FGSystemNTP, FGSystemHA,
+    FGSNMPSysinfo, FGSNMPCommunity, FGSNMPUser, FGFortiGuard,
+    FGRouterBGP, FGRouterOSPF, FGRouterOSPF6, FGRouterRIP,
+    FGPolicyRoute, FGPrefixList, FGRouteMap, FGASPathList, FGCommunityList,
+    FGRouterMulticast, FGSystemIPAM, FGFortiExtender,
+    FGProxyPolicy, FGAuthPolicy, FGTrafficShaper, FGLDBMonitor,
+    FGAntivirusProfile, FGWebFilterProfile, FGURLFilterTable,
+    FGWebFilterLocalCategory, FGWebFilterLocalRating, FGWebFilterOverride,
+    FGDNSFilterProfile, FGApplicationList, FGFileFilterProfile,
+    FGEmailFilterProfile, FGVoIPProfile, FGWAFProfile, FGSSLSSHProfile,
+    FGLDAPServer, FGRADIUSServer, FGTACACSServer, FGFSSOServer, FGFSSOPolling,
+    FGFortiToken, FGUserSetting, FGPasswordPolicy,
+    FGWirelessVAP, FGWirelessWTP, FGWirelessWTPProfile, FGWirelessWIDSProfile,
+    FGManagedSwitch, FGSyslogSetting, FGLogMemorySetting, FGLogDiskSetting,
+    FGLogSetting, FGLogThreatWeight,
+    FGUserGuest, FGSwitchPortPolicy, FGSwitchLLDPProfile, FGSwitchQoSPolicy, FGSwitchVLANPolicy,
 )
 
 
@@ -130,3 +146,75 @@ class FGConfig(BaseModel):
     admin_profiles: list[FGAdminProfile] = Field(default_factory=list)
 
     external_resources: list[FGExternalResource] = Field(default_factory=list)
+
+    # System / HA / SNMP / DNS / NTP / FortiGuard
+    system_global: tuple[FGSystemGlobal, ...] = ()
+    system_dns: tuple[FGSystemDNS, ...] = ()
+    system_ntp: tuple[FGSystemNTP, ...] = ()
+    ha_config: list[FGSystemHA] = Field(default_factory=list)
+    snmp_sysinfo: list[FGSNMPSysinfo] = Field(default_factory=list)
+    snmp_communities: list[FGSNMPCommunity] = Field(default_factory=list)
+    snmp_users: list[FGSNMPUser] = Field(default_factory=list)
+    fortiguard: list[FGFortiGuard] = Field(default_factory=list)
+
+    # Dynamic Routing & Multicast
+    router_bgp: list[FGRouterBGP] = Field(default_factory=list)
+    router_ospf: list[FGRouterOSPF] = Field(default_factory=list)
+    router_ospf6: list[FGRouterOSPF6] = Field(default_factory=list)
+    router_rip: list[FGRouterRIP] = Field(default_factory=list)
+    policy_routes: list[FGPolicyRoute] = Field(default_factory=list)
+    prefix_lists: list[FGPrefixList] = Field(default_factory=list)
+    route_maps: list[FGRouteMap] = Field(default_factory=list)
+    aspath_lists: list[FGASPathList] = Field(default_factory=list)
+    community_lists: list[FGCommunityList] = Field(default_factory=list)
+    router_multicast: list[FGRouterMulticast] = Field(default_factory=list)
+    system_ipam: list[FGSystemIPAM] = Field(default_factory=list)
+    fortiextenders: list[FGFortiExtender] = Field(default_factory=list)
+
+    # Extended Policies & Shapers
+    proxy_policies: list[FGProxyPolicy] = Field(default_factory=list)
+    auth_policies: list[FGAuthPolicy] = Field(default_factory=list)
+    traffic_shapers: list[FGTrafficShaper] = Field(default_factory=list)
+    ldb_monitors: list[FGLDBMonitor] = Field(default_factory=list)
+
+    # Security Profiles
+    antivirus_profiles: list[FGAntivirusProfile] = Field(default_factory=list)
+    webfilter_profiles: list[FGWebFilterProfile] = Field(default_factory=list)
+    urlfilter_tables: list[FGURLFilterTable] = Field(default_factory=list)
+    webfilter_local_categories: list[FGWebFilterLocalCategory] = Field(default_factory=list)
+    webfilter_local_ratings: list[FGWebFilterLocalRating] = Field(default_factory=list)
+    webfilter_overrides: list[FGWebFilterOverride] = Field(default_factory=list)
+    dnsfilter_profiles: list[FGDNSFilterProfile] = Field(default_factory=list)
+    application_lists: list[FGApplicationList] = Field(default_factory=list)
+    file_filter_profiles: list[FGFileFilterProfile] = Field(default_factory=list)
+    emailfilter_profiles: list[FGEmailFilterProfile] = Field(default_factory=list)
+    voip_profiles: list[FGVoIPProfile] = Field(default_factory=list)
+    waf_profiles: list[FGWAFProfile] = Field(default_factory=list)
+    ssl_ssh_profiles: list[FGSSLSSHProfile] = Field(default_factory=list)
+
+    # User & Auth Extensions
+    ldap_servers: list[FGLDAPServer] = Field(default_factory=list)
+    radius_servers: list[FGRADIUSServer] = Field(default_factory=list)
+    tacacs_servers: list[FGTACACSServer] = Field(default_factory=list)
+    fsso_servers: list[FGFSSOServer] = Field(default_factory=list)
+    fsso_pollings: list[FGFSSOPolling] = Field(default_factory=list)
+    fortitokens: list[FGFortiToken] = Field(default_factory=list)
+    user_settings: list[FGUserSetting] = Field(default_factory=list)
+    password_policies: list[FGPasswordPolicy] = Field(default_factory=list)
+
+    # WiFi, Switch & Logging
+    wireless_vaps: list[FGWirelessVAP] = Field(default_factory=list)
+    wireless_wtps: list[FGWirelessWTP] = Field(default_factory=list)
+    wtp_profiles: list[FGWirelessWTPProfile] = Field(default_factory=list)
+    wids_profiles: list[FGWirelessWIDSProfile] = Field(default_factory=list)
+    managed_switches: list[FGManagedSwitch] = Field(default_factory=list)
+    syslog_settings: list[FGSyslogSetting] = Field(default_factory=list)
+    log_memory_settings: list[FGLogMemorySetting] = Field(default_factory=list)
+    log_disk_settings: list[FGLogDiskSetting] = Field(default_factory=list)
+    log_settings: list[FGLogSetting] = Field(default_factory=list)
+    log_threat_weights: list[FGLogThreatWeight] = Field(default_factory=list)
+    guest_users: list[FGUserGuest] = Field(default_factory=list)
+    switch_port_policies: list[FGSwitchPortPolicy] = Field(default_factory=list)
+    switch_lldp_profiles: list[FGSwitchLLDPProfile] = Field(default_factory=list)
+    switch_qos_policies: list[FGSwitchQoSPolicy] = Field(default_factory=list)
+    switch_vlan_policies: list[FGSwitchVLANPolicy] = Field(default_factory=list)

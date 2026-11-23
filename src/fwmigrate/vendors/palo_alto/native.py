@@ -60,6 +60,19 @@ def build_derived_views(config: PANOSConfig) -> PANOSDerivedViews:
         "globalprotect-portal": len(config.globalprotect_portals), "globalprotect-gateway": len(config.globalprotect_gateways),
         "local-user": len(config.local_users), "local-user-group": len(config.local_user_groups),
         "group-mapping": len(config.group_mappings),
+        "qos-rule": len(config.qos_rules), "pbf-rule": len(config.pbf_rules),
+        "decryption-rule": len(config.decryption_rules), "tunnel-inspect-rule": len(config.tunnel_inspect_rules),
+        "app-override-rule": len(config.app_override_rules), "authentication-rule": len(config.authentication_rules),
+        "dos-rule": len(config.dos_rules),
+        "application-group": len(config.application_groups), "region": len(config.regions),
+        "dynamic-user-group": len(config.dynamic_user_groups), "external-list": len(config.external_lists),
+        "antivirus-profile": len(config.antivirus_profiles), "anti-spyware-profile": len(config.anti_spyware_profiles),
+        "url-filtering-profile": len(config.url_filtering_profiles), "file-blocking-profile": len(config.file_blocking_profiles),
+        "wildfire-profile": len(config.wildfire_profiles), "data-filtering-profile": len(config.data_filtering_profiles),
+        "dos-protection-profile": len(config.dos_protection_profiles), "decryption-profile": len(config.decryption_profiles),
+        "log-forwarding-profile": len(config.log_forwarding_profiles),
+        "authentication-profile": len(config.authentication_profiles),
+        "certificate": len(config.certificates), "ssl-tls-service-profile": len(config.ssl_tls_service_profiles),
     }
     hierarchy = build_scope_hierarchy(config.scopes)
     index = build_reference_index(config)

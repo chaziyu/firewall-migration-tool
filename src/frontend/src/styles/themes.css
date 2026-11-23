@@ -24,4 +24,29 @@
   --shadow-panel: 0 3px 16px #10191024;
   --shadow-popover: 0 12px 32px #10191066;
   --backdrop: #101910a6;
+
+  /* Firewall Config Reader semantic badges & row highlight tokens (dark) */
+  --fw-allow: #3fb950;
+  --fw-allow-soft: rgba(63, 185, 80, 0.15);
+  --fw-warn: #d29922;
+  --fw-warn-soft: rgba(210, 153, 34, 0.15);
+  --fw-deny: #f85149;
+  --fw-deny-soft: rgba(248, 81, 73, 0.15);
+  --fw-info: #58a6ff;
+  --fw-info-soft: rgba(47, 129, 247, 0.16);
+  --fw-purple: #c084fc;
+  --fw-purple-soft: rgba(192, 132, 252, 0.15);
+
+  --fw-row-danger-bg: #2d1619;
+  --fw-row-danger-text: #fca5a5;
+  --fw-row-warn-bg: #2b2312;
+  --fw-row-warn-text: #fde68a;
+  --fw-row-success-bg: #13291d;
+  --fw-row-success-text: #86efac;
+  --fw-row-info-bg: #16293d;
+  --fw-row-info-text: #bae6fd;
+  --fw-row-purple-bg: #261930;
+  --fw-row-purple-text: #e9d5ff;
+  --fw-row-muted-bg: #1c2635;
+  --fw-row-muted-text: #cbd5e1;
 }

@@ -57,7 +57,7 @@ if not exist "src\frontend\dist\index.html" (
     goto :failed
 )
 
-set "COMMON_PYINSTALLER_ARGS=--noconfirm --clean --windowed --noupx --name FirewallMigrationTool --icon "%~dp0scripts\assets\app.ico" --splash "%~dp0scripts\assets\splash.png" --specpath build --add-data "%~dp0src\frontend\dist;frontend_dist" --collect-submodules fwmigrate --collect-data tzdata --collect-all webview --exclude-module gunicorn --exclude-module pytest --exclude-module _pytest --exclude-module pip --exclude-module setuptools --exclude-module wheel --exclude-module webview.platforms.cocoa --exclude-module webview.platforms.gtk --exclude-module webview.platforms.qt --exclude-module webview.platforms.android --exclude-module webview.platforms.cef"
+set "COMMON_PYINSTALLER_ARGS=--noconfirm --clean --windowed --noupx --name FirewallMigrationTool --icon "%~dp0scripts\assets\app.ico" --splash "%~dp0scripts\assets\splash.png" --specpath build --add-data "%~dp0src\frontend\dist;frontend_dist" --copy-metadata firewall-migration-tool --collect-submodules fwmigrate --collect-data tzdata --collect-all webview --exclude-module gunicorn --exclude-module pytest --exclude-module _pytest --exclude-module pip --exclude-module setuptools --exclude-module wheel --exclude-module webview.platforms.cocoa --exclude-module webview.platforms.gtk --exclude-module webview.platforms.qt --exclude-module webview.platforms.android --exclude-module webview.platforms.cef"
 
 if /i "%MODE%"=="portable" goto :build_portable
 if /i "%MODE%"=="all" goto :build_portable

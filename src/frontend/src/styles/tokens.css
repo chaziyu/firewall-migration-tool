@@ -1,26 +1,12 @@
-@font-face {
-  font-family: 'DM Sans';
-  src: url('/fonts/dm-sans.ttf') format('truetype');
-  font-weight: 100 1000;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: 'Space Grotesk';
-  src: url('/fonts/space-grotesk.ttf') format('truetype');
-  font-weight: 300 700;
-  font-display: swap;
-}
-
 :root {
   color-scheme: light;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  --font-ui: 'DM Sans', sans-serif;
-  --font-display: 'Space Grotesk', sans-serif;
-  --font-mono: ui-monospace, Consolas, monospace;
+  --font-ui: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-display: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-mono: 'Cascadia Mono', 'JetBrains Mono', ui-monospace, Consolas, monospace;
 
   /* Color Hunt palette: cream, soft sage, sage, and olive. */
   --palette-cream: #f8ede3;
@@ -75,18 +61,43 @@
   --space-5: 20px;
   --space-6: 24px;
   --space-8: 32px;
-  --control-height: 44px;
-  --control-height-compact: 36px;
+  --control-height: 36px;
+  --control-height-compact: 30px;
   --font-size-small: 13px;
-  --font-size-body: 15px;
-  --font-size-title: clamp(24px, 2.5vw, 32px);
-  --content-width: 1510px;
-  --page-gutter: clamp(16px, 3vw, 32px);
-  --panel-padding: clamp(16px, 2vw, 24px);
-  --panel-gap: var(--space-4);
+  --font-size-body: 14px;
+  --font-size-title: clamp(18px, 1.8vw, 22px);
+  --content-width: 100%;
+  --page-gutter: clamp(14px, 2vw, 24px);
+  --panel-padding: clamp(14px, 1.5vw, 18px);
+  --panel-gap: 14px;
 
-  --radius-sm: 9px;
-  --radius-md: 14px;
-  --radius-lg: 18px;
-  --sidebar-width: 242px;
+  --radius-sm: 7px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --sidebar-width: 248px;
+
+  /* Firewall Config Reader semantic badges & row highlight tokens (light) */
+  --fw-allow: #1a7f37;
+  --fw-allow-soft: rgba(26, 127, 55, 0.12);
+  --fw-warn: #9a6700;
+  --fw-warn-soft: rgba(154, 103, 0, 0.12);
+  --fw-deny: #cf222e;
+  --fw-deny-soft: rgba(207, 34, 46, 0.12);
+  --fw-info: #0969da;
+  --fw-info-soft: rgba(9, 105, 218, 0.11);
+  --fw-purple: #7c3aed;
+  --fw-purple-soft: rgba(124, 58, 237, 0.11);
+
+  --fw-row-danger-bg: #fdecea;
+  --fw-row-danger-text: #991b1b;
+  --fw-row-warn-bg: #fff3cd;
+  --fw-row-warn-text: #854d0e;
+  --fw-row-success-bg: #e8f8f0;
+  --fw-row-success-text: #166534;
+  --fw-row-info-bg: #eaf4fb;
+  --fw-row-info-text: #075985;
+  --fw-row-purple-bg: #f3e5f5;
+  --fw-row-purple-text: #6b21a8;
+  --fw-row-muted-bg: #e2e8f0;
+  --fw-row-muted-text: #1e293b;
 }
