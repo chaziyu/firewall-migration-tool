@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs'
 import ts from 'typescript'
 import * as jsxRuntime from 'react/jsx-runtime'
 import * as presentation from '../src/features/report/reportPresentation.ts'
-import { activeSubsection, interfaceTopologyRows, matchingSourceRows, reportSections, reportSectionRowCount, reportCounts, reportSearchText, compactValue, rowColumns, safeValue, defaultColumns, cellSummary, detailGroups, findingGroups, findingGroupKey, fieldLabel } from '../src/features/report/reportPresentation.ts'
+import { activeSubsection, interfaceTopologyRows, matchingSourceRows, reportSections, reportSectionRowCount, reportCounts, reportSearchText, compactValue, rowColumns, safeValue, defaultColumns, cellSummary, detailGroups, findingGroups, findingGroupKey, fieldLabel, systemOverviewItems } from '../src/features/report/reportPresentation.ts'
 
 test('configuration summary renders each count once, preserves missing and zero values, and keeps informational rows plain', async () => {
   const server = await createServer({ server: { middlewareMode: true }, appType: 'custom' })
@@ -495,4 +495,104 @@ test('extended FortiGate and PAN-OS subsections route properly and preserve safe
   assert.ok(extByLabel.Objects.includes('device_objects'))
   assert.ok(extByLabel.Objects.includes('user_id_settings'))
   assert.ok(extByLabel.Interfaces.includes('switch_port_policies'))
+})
+
+test('systemOverviewItems extracts FortiGate, PAN-OS, and missing system metadata without guessing', () => {
+  const fortigateData = {
+    vendor: 'fortigate',
+    summary: {
+      source_metadata: {
+        fortios_version: '7.2.13',
+        serial_number: 'FG100E4Q17003638',
+      },
+    },
+    sections: {
+      system_global: [{ hostname: 'myinfuatforti1' }],
+      system_dns: [{ primary: '1.1.1.1', secondary: '8.8.8.8' }],
+      interfaces: [
+        { name: 'port1', role: 'lan', ip: '192.168.1.99 255.255.255.0', status: 'up' },
+        { name: 'wan1', role: 'wan', ip: '103.230.127.147 255.255.255.0', status: 'up' },
+      ],
+    },
+  }
+  assert.deepEqual(systemOverviewItems(fortigateData), [
+    { label: 'Hostname', value: 'myinfuatforti1' },
+    { label: 'WAN IP / Netmask', value: '103.230.127.147/255.255.255.0', detail: null },
+    { label: 'Primary DNS', value: '1.1.1.1', detail: 'Secondary: 8.8.8.8' },
+    { label: 'Serial Number', value: 'FG100E4Q17003638' },
+    { label: 'Firmware Version', value: '7.2.13' },
+  ])
+
+  const multiWanFallback = {
+    vendor: 'fortigate',
+    sections: {
+      interfaces: [
+        { name: 'wan1', ip: '0.0.0.0 0.0.0.0', status: 'down' },
+        { name: 'wan2', ip: '198.51.100.2 255.255.255.252', status: 'up' },
+      ],
+    },
+  }
+  assert.equal(systemOverviewItems(multiWanFallback)[1].value, '198.51.100.2/255.255.255.252')
+
+  const panosData = {
+    vendor: 'palo_alto',
+    hostname: 'pa-edge',
+    source_version: '11.1.0',
+    scopes: [{ device_serial: '007200001234' }],
+    sections: {
+      system_settings: [{
+        hostname: 'pa-edge',
+        ip_address: '198.51.100.10',
+        netmask: '255.255.255.0',
+        dns_setting: { servers: { primary: '9.9.9.9', secondary: '1.0.0.1' } },
+      }],
+    },
+  }
+  assert.deepEqual(systemOverviewItems(panosData), [
+    { label: 'Hostname', value: 'pa-edge' },
+    { label: 'Mgmt IP / Netmask', value: '198.51.100.10/255.255.255.0' },
+    { label: 'Primary DNS', value: '9.9.9.9', detail: 'Secondary: 1.0.0.1' },
+    { label: 'Serial Number', value: '007200001234' },
+    { label: 'Firmware Version', value: '11.1.0' },
+  ])
+
+  assert.deepEqual(systemOverviewItems({ vendor: 'fortigate' }), [
+    { label: 'Hostname', value: null },
+    { label: 'WAN IP / Netmask', value: null },
+    { label: 'Primary DNS', value: null },
+    { label: 'Serial Number', value: null },
+    { label: 'Firmware Version', value: null },
+  ])
+})
+
+test('SourceReport Overview renders System Overview above Validation with key system cards', async () => {
+  const server = await createServer({ server: { middlewareMode: true }, appType: 'custom' })
+  try {
+    const { SourceReport } = await server.ssrLoadModule('/src/features/report/SourceReport.tsx')
+    const html = renderToStaticMarkup(createElement(SourceReport, {
+      data: {
+        vendor: 'fortigate',
+        summary: {
+          source_metadata: {
+            fortios_version: '7.2.13',
+            serial_number: 'FG100E4Q17003638',
+          },
+        },
+        sections: {
+          system_global: [{ hostname: 'myinfuatforti1' }],
+          system_dns: [{ primary: '1.1.1.1', secondary: '8.8.8.8' }],
+          interfaces: [{ name: 'wan1', role: 'wan', ip: '103.230.127.147 255.255.255.0' }],
+        },
+      },
+      excelProfile: 'fast', onExcelProfileChange() {}, exporting: false, exportStatus: '', onExport() {},
+    }))
+    const sysIndex = html.indexOf('id="system-overview-title"')
+    const valIndex = html.indexOf('Validation</h3>')
+    assert.ok(sysIndex > -1 && valIndex > sysIndex, 'System Overview must appear above Validation')
+    for (const expected of ['myinfuatforti1', '103.230.127.147/255.255.255.0', '1.1.1.1', 'Secondary: 8.8.8.8', 'FG100E4Q17003638', '7.2.13']) {
+      assert.ok(html.includes(expected), `Missing expected value: ${expected}`)
+    }
+  } finally {
+    await server.close()
+  }
 })

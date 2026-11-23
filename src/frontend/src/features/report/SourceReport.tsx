@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { SourcePreviewData } from '../source/types'
-import { activeSubsection, asRecord, asRows, cellBadgeVariant, compactValue, interfaceTopologyRows, isMonoColumn, matchingSourceRows, reportCounts, reportSections, reportSectionRowCount, reportSearchText, rowColumns, rowSemanticClass, safeValue, sectionLegend, defaultColumns, cellSummary, cellTooltip, columnWidth, fieldLabel, findingGroups, findingGroupKey } from './reportPresentation'
+import { activeSubsection, asRecord, asRows, cellBadgeVariant, compactValue, interfaceTopologyRows, isMonoColumn, matchingSourceRows, reportCounts, reportSections, reportSectionRowCount, reportSearchText, rowColumns, rowSemanticClass, safeValue, sectionLegend, defaultColumns, cellSummary, cellTooltip, columnWidth, fieldLabel, findingGroups, findingGroupKey, systemOverviewItems } from './reportPresentation'
 import { ReportDetails } from './ReportDetails'
 import { ExcelExportControls } from './ExcelExportControls'
 import { tabKeyboard } from '../../components/common/tabKeyboard'
@@ -571,6 +571,7 @@ export function SourceReport({ data, excelProfile, onExcelProfileChange, exporti
     [validationRows],
   )
   const exposureWarnings = useMemo(() => validationRows.filter((row) => row.domain === 'interface' && row.field === 'allowaccess'), [validationRows])
+  const systemItems = useMemo(() => systemOverviewItems(data), [data])
   const legendItems = useMemo(() => sectionLegend(activeObjectSection, subsectionRows), [activeObjectSection, subsectionRows])
 
   useEffect(() => {
@@ -660,6 +661,18 @@ export function SourceReport({ data, excelProfile, onExcelProfileChange, exporti
           </div>
         </div>
         <p className="preview-status" role="status" aria-live="polite">{exportStatus}</p>
+        <div className="system-overview-section">
+          <h3 className="report-overview-heading fw-section-header" id="system-overview-title"><span className="dot" aria-hidden="true" />System Overview</h3>
+          <dl className="system-overview-grid" aria-labelledby="system-overview-title">
+            {systemItems.map((item) => (
+              <div key={item.label} className="system-overview-card">
+                <dt>{item.label}</dt>
+                <dd className={item.value == null ? 'system-overview-missing' : undefined}>{item.value ?? 'Not reported'}</dd>
+                {item.detail && <dd className="system-overview-detail">{item.detail}</dd>}
+              </div>
+            ))}
+          </dl>
+        </div>
         <h3 className="report-overview-heading fw-section-header"><span className="dot" aria-hidden="true" />Validation</h3>
         <button type="button" className={`report-validation-attention${errorCount ? ' has-errors' : warningCount ? ' has-warnings' : ''}`} onClick={() => changeSection('Validation')}><div>{sectionsData.validation == null && asRecord(summary.validation).severity_counts == null ? 'Not reported' : <>{errorCount.toLocaleString()} {errorCount === 1 ? 'error' : 'errors'} · {warningCount.toLocaleString()} {warningCount === 1 ? 'warning' : 'warnings'} <small>{warningGroups.toLocaleString()} warning {warningGroups === 1 ? 'group' : 'groups'}</small></>}</div><span>Review findings →</span></button>
         {!!exposureWarnings.length && <div className="report-exposure-warning" role="status">

@@ -662,3 +662,165 @@ export function matchingSourceRows(rows: ReportRow[], finding: ReportRow) {
     return identityMatches && (scope == null || (row.scope ?? row.vdom) === scope)
   })
 }
+
+export type SystemOverviewItem = {
+  label: string
+  value: string | null
+  detail?: string | null
+}
+
+function nonEmptyText(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const trimmed = value.trim()
+  return trimmed || null
+}
+
+function firstText(...candidates: unknown[]): string | null {
+  for (const candidate of candidates) {
+    const text = nonEmptyText(candidate)
+    if (text) return text
+  }
+  return null
+}
+
+function isUnsetAddress(value: string): boolean {
+  return value === '0.0.0.0' || value === '0.0.0.0 0.0.0.0' || value === '0.0.0.0/0'
+}
+
+function formatIpMask(raw: unknown): string | null {
+  if (Array.isArray(raw)) {
+    for (const item of raw) {
+      const formatted = formatIpMask(item)
+      if (formatted) return formatted
+    }
+    return null
+  }
+  const text = nonEmptyText(raw)
+  if (!text || isUnsetAddress(text)) return null
+  if (/^\S+\s+\S+$/.test(text)) return text.replace(/\s+/, '/')
+  return text
+}
+
+function isInactiveInterface(row: ReportRow): boolean {
+  const status = String(row.status ?? '').trim().toLowerCase()
+  return row.status === false || status === 'down' || status === 'disable' || status === 'disabled' || status === 'inactive' || status === 'shutdown'
+}
+
+function extractSystemWan(sections: ReportRow): SystemOverviewItem {
+  const interfaces = asRows(sections.interfaces)
+  const candidates = interfaces.length ? interfaces : asRows(sections.interface_topology)
+  const byRole = candidates.filter((row) => String(row.role ?? '').trim().toLowerCase() === 'wan')
+  const wanRows = byRole.length ? byRole : candidates.filter((row) => {
+    const name = String(row.name ?? row.display_name ?? '').trim().toLowerCase()
+    const zones = Array.isArray(row.zone) ? row.zone.map((item) => String(item).trim().toLowerCase()) : []
+    return /^wan\d*$/.test(name) || name === 'outside' || zones.some((z) => z === 'wan' || z === 'untrust' || z === 'outside')
+  })
+  const withIp = wanRows
+    .map((row) => ({ name: nonEmptyText(row.name ?? row.display_name), ip: formatIpMask(row.ip), inactive: isInactiveInterface(row) }))
+    .filter((item): item is { name: string | null; ip: string; inactive: boolean } => item.ip !== null)
+    .sort((a, b) => Number(a.inactive) - Number(b.inactive))
+
+  if (withIp.length) {
+    const extras = withIp.slice(1, 3).map((item) => (item.name ? `${item.name}: ${item.ip}` : item.ip))
+    const detail = withIp.length > 3 ? `${extras.join(', ')} +${withIp.length - 3} more` : extras.join(', ') || null
+    return { label: 'WAN IP / Netmask', value: withIp[0].ip, detail }
+  }
+
+  const sysSettings = asRows(sections.system_settings).find((row) => nonEmptyText(row.ip_address))
+  if (sysSettings) {
+    const ip = nonEmptyText(sysSettings.ip_address)!
+    const mask = nonEmptyText(sysSettings.netmask)
+    return { label: 'Mgmt IP / Netmask', value: mask ? `${ip}/${mask}` : ip }
+  }
+  return { label: 'WAN IP / Netmask', value: null }
+}
+
+function extractSystemDns(data: ReportRow, sections: ReportRow): SystemOverviewItem {
+  for (const row of asRows(sections.system_dns)) {
+    const primary = nonEmptyText(row.primary)
+    const secondary = nonEmptyText(row.secondary)
+    const cleanPrimary = primary && !isUnsetAddress(primary) ? primary : null
+    const cleanSecondary = secondary && !isUnsetAddress(secondary) ? secondary : null
+    if (cleanPrimary || cleanSecondary) {
+      return {
+        label: 'Primary DNS',
+        value: cleanPrimary,
+        detail: cleanSecondary ? `Secondary: ${cleanSecondary}` : null,
+      }
+    }
+  }
+  for (const row of asRows(sections.system_settings)) {
+    const dns = asRecord(row.dns_setting)
+    const servers = asRecord(dns.servers)
+    const primary = firstText(servers.primary, dns.primary)
+    const secondary = firstText(servers.secondary, dns.secondary)
+    if (primary || secondary) {
+      return {
+        label: 'Primary DNS',
+        value: primary,
+        detail: secondary ? `Secondary: ${secondary}` : null,
+      }
+    }
+  }
+  const asaDns = asRecord(asRecord(asRecord(data.source).management).dns)
+  const asaPrimary = firstText(asaDns.primary, Array.isArray(asaDns.name_servers) ? asaDns.name_servers[0] : null)
+  const asaSecondary = firstText(asaDns.secondary, Array.isArray(asaDns.name_servers) ? asaDns.name_servers[1] : null)
+  if (asaPrimary || asaSecondary) {
+    return {
+      label: 'Primary DNS',
+      value: asaPrimary,
+      detail: asaSecondary ? `Secondary: ${asaSecondary}` : null,
+    }
+  }
+  return { label: 'Primary DNS', value: null }
+}
+
+export function systemOverviewItems(data: ReportRow): SystemOverviewItem[] {
+  const summary = asRecord(data.summary)
+  const sections = asRecord(data.sections)
+  const summaryMeta = asRecord(summary.source_metadata)
+  const rootMeta = asRecord(data.source_metadata)
+  const source = asRecord(data.source)
+  const asaSystem = asRecord(asRecord(source.management).system)
+  const systemGlobal = asRows(sections.system_global)
+  const systemSettings = asRows(sections.system_settings)
+  const scopes = Array.isArray(data.scopes) ? data.scopes.map((item) => asRecord(item)) : []
+
+  const hostname = firstText(
+    data.hostname,
+    summary.hostname,
+    summaryMeta.hostname,
+    rootMeta.hostname,
+    rootMeta.device_name,
+    ...systemGlobal.map((row) => row.hostname),
+    ...systemSettings.map((row) => row.hostname),
+    source.hostname,
+    asaSystem.hostname,
+  )
+
+  const serialNumber = firstText(
+    summaryMeta.serial_number,
+    rootMeta.serial_number,
+    rootMeta.serial,
+    ...systemSettings.map((row) => row.device_serial),
+    ...scopes.map((row) => row.device_serial),
+  )
+
+  const firmwareVersion = firstText(
+    summaryMeta.fortios_version,
+    data.source_version,
+    summary.source_version,
+    source.version,
+    rootMeta.version,
+    rootMeta.api_version,
+    asaSystem.version,
+  )
+
+  return [
+    { label: 'Hostname', value: hostname },
+    extractSystemWan(sections),
+    extractSystemDns(data, sections),
+    { label: 'Serial Number', value: serialNumber },
+    { label: 'Firmware Version', value: firmwareVersion },
+  ]
+}

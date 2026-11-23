@@ -42,7 +42,7 @@ def get_app_version() -> str:
     try:
         return metadata.version("firewall-migration-tool")
     except Exception:
-        return "0.2.4"
+        return "0.2.5"
 
 
 APP_VERSION = get_app_version()

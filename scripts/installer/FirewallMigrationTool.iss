@@ -2,7 +2,7 @@
 ; Builds a per-user (or optional all-users) Windows installer from the PyInstaller --onedir output.
 
 #ifndef AppVersion
-  #define AppVersion "0.2.4"
+  #define AppVersion "0.2.5"
 #endif
 
 #define AppName "Firewall Migration Tool"
