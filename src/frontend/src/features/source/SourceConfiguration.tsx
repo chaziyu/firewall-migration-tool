@@ -18,6 +18,7 @@ import { loadMigrationPairs } from '../migration/pairApi'
 import { MigrationPairWorkflow } from '../migration/MigrationPairWorkflow'
 import type { MigrationReviewTab } from '../migration/types'
 import type { MigrationStage, MigrationDecisionDocument } from '../migration/types'
+import { ConfigChatWidget } from '../chat/ConfigChatWidget'
 
 export type WorkflowView = 'report' | 'collect' | 'migration'
 
@@ -106,6 +107,43 @@ export function SourceConfiguration({ view, onViewChange, liveDeviceAccess }: {
   useEffect(() => {
     if (workspaceReady && !migrationPairsLoading) void saveWorkspace({ preview, decisionDocument, targetSource, targetDevice, migrationPairId: activeMigrationPairId }).catch((cause) => setError(`Workspace save failed: ${String(cause)}`))
   }, [workspaceReady, migrationPairsLoading, activeMigrationPairId, preview, decisionDocument, targetSource, targetDevice])
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.addEventListener !== 'function') return
+    const onSelectStage = (event: Event) => {
+      const nextStage = (event as CustomEvent<MigrationStage>).detail
+      if (nextStage) setMigrationView(nextStage)
+    }
+    window.addEventListener('fw-select-migration-stage', onSelectStage)
+    return () => window.removeEventListener('fw-select-migration-stage', onSelectStage)
+  }, [])
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.dispatchEvent !== 'function') return
+    if (!preview) {
+      window.dispatchEvent(new CustomEvent('fw-workspace-meta', { detail: null }))
+      return
+    }
+    if (view === 'report') return
+    const vName = vendors.find((v) => v.vendor_id === (preview.vendor || vendor))?.display_name || preview.vendor || vendor || 'Source'
+    const fName = preview.source_evidence?.source_name || file?.name || String(preview.acquisition ?? 'Configuration')
+    const stageDefinitions = offlineConversion
+      ? ([['load', 'Source'], ['review', 'Review conversion'], ['export', 'Download']] as const)
+      : ([['load', 'Source'], ['place', 'Target setup'], ['review', 'Review migration'], ['export', 'Download']] as const)
+    window.dispatchEvent(new CustomEvent('fw-workspace-meta', {
+      detail: {
+        vendorLabel: vName,
+        filename: fName,
+        activeSection: view === 'migration' ? (stageDefinitions.find(([id]) => id === migrationView)?.[1] ?? 'Migration') : 'Live collection',
+        migrationPairLabel: selectedMigrationPair?.display_name,
+        migrationStages: stageDefinitions.map(([id, label]) => ({
+          id,
+          label,
+          active: migrationView === id || (offlineConversion && id === 'review' && migrationView === 'place'),
+        })),
+      },
+    }))
+  }, [preview, view, vendor, vendors, file, offlineConversion, migrationView, selectedMigrationPair])
 
   async function analyse(sourceFile = file) {
     if (!sourceFile) return
@@ -197,11 +235,17 @@ export function SourceConfiguration({ view, onViewChange, liveDeviceAccess }: {
     try {
       const blob = await downloadSourceWorkbook(vendor, preview.source_evidence, excelProfile, controller.signal)
       if (!current()) return
-      const targetName = `${vendor}-source-report.xlsx`
+      const rawSource = String(preview.source_evidence.source_name || file?.name || '')
+      const stem = rawSource
+        .replace(/^.*[\\/]/, '')
+        .replace(/\.[^.]+$/, '')
+        .replace(/[^A-Za-z0-9._-]+/g, '_')
+        .replace(/^_+|_+$/g, '')
+      const targetName = stem ? `${stem}-${vendor}-report.xlsx` : `${vendor}-source-report.xlsx`
       const result = await saveBlobWithFallback(blob, targetName)
       if (!current()) return
       if (result.status === 'cancelled') setExportStatus('Workbook export cancelled.')
-      else if (result.status === 'saved') setExportStatus(`${vendor} ${excelProfile.toUpperCase()} workbook saved: ${result.filename}.`)
+      else if (result.status === 'saved') setExportStatus(`${vendor} ${excelProfile.toUpperCase()} workbook saved to Downloads: ${result.path || result.filename}.`)
       else setExportStatus(`${vendor} ${excelProfile.toUpperCase()} workbook ready. Download started: ${result.filename}.`)
     } catch (cause) {
       if (current() && !controller.signal.aborted) setExportError(cause instanceof Error ? cause.message : 'Workbook export failed')
@@ -235,10 +279,7 @@ export function SourceConfiguration({ view, onViewChange, liveDeviceAccess }: {
   if (!workspaceReady) return <LoadingState label="Restoring browser workspace…" />
   if (!liveDeviceAccess && view === 'collect') return <p role="status">Live device access is available only in the local application.</p>
   return <main className="feature-content">
-    <section id="source-configuration" className="panel source-configuration" hidden={view !== 'collect' && Boolean(preview) && !(view === 'migration' && migrationView === 'load')} aria-labelledby="source-title">
-      <div className="source-panel-heading">
-        <h2 id="source-title"><span className="step-num">01</span> Source configuration</h2>
-      </div>
+    <section id="source-configuration" className="panel source-configuration" hidden={view !== 'collect' && Boolean(preview) && !(view === 'migration' && migrationView === 'load')} aria-label="Source configuration">
       <div id="source-configuration-controls">
           <div className={`source-vendor-grid${view === 'migration' ? ' with-target' : ''}`}>
             <VendorSelect value={vendor} onChange={changeVendor} vendors={vendors} />
@@ -304,5 +345,12 @@ export function SourceConfiguration({ view, onViewChange, liveDeviceAccess }: {
       </div>}
     </div>
     {error && !(file && !preview && ingestMode === 'config' && view !== 'collect') && <ErrorBanner message={error} />}
+    {preview && (
+      <ConfigChatWidget
+        vendor={selectedVendor?.display_name || preview.vendor || vendor || 'Firewall'}
+        filename={String(preview.source_evidence?.source_name || file?.name || 'config')}
+        preview={preview}
+      />
+    )}
   </main>
 }

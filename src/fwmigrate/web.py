@@ -29,6 +29,8 @@ from fwmigrate.web_api.palo_alto_to_cisco_asa import register_palo_alto_to_cisco
 from fwmigrate.web_api.palo_alto_to_checkpoint import register_palo_alto_to_checkpoint_routes
 from fwmigrate.web_api.palo_alto_to_cisco_ftd import register_palo_alto_to_cisco_ftd_routes
 from fwmigrate.web_api.source import register_source_routes
+from fwmigrate.web_api.update import register_update_routes
+from fwmigrate.web_api.chat import register_chat_routes
 from fwmigrate.web_support.frontend import register_frontend_routes
 
 register_builtin_collectors()
@@ -171,6 +173,8 @@ def create_app(test_config=None):
 
     register_frontend_routes(app)
     register_source_routes(app, collector_registry=app.config.get('SOURCE_COLLECTOR_REGISTRY'))
+    register_update_routes(app)
+    register_chat_routes(app)
     register_migration_pair_routes(app)
     register_fortigate_to_juniper_srx_routes(app)
     register_fortigate_to_cisco_asa_routes(app)

@@ -148,13 +148,14 @@ def _make_record(
         object_name=object_name,
         parent_objects=parent_objects,
         values={
-            key: _safe_evidence_value(key, value)
+            key: "[REDACTED]" if source_path == "system snmp community" and key == "name"
+            else _safe_evidence_value(key, value)
             for key, value in settings.items()
         },
         explicit_fields=tuple(sorted(evaluation.explicit_fields)),
         unset_fields=tuple(sorted(evaluation.unset_fields)),
         commands=tuple(
-            _command_record(command)
+            _command_record(command, source_path=source_path)
             for command in commands
         ),
         start_line_number=start_line_number,
@@ -166,6 +167,8 @@ def _make_record(
 
 def _command_record(
     command: CommandNode | UnknownCommandNode,
+    *,
+    source_path: str = "",
 ) -> SourceCommandRecord:
     if isinstance(command, UnknownCommandNode):
         return SourceCommandRecord(
@@ -178,7 +181,8 @@ def _command_record(
     return SourceCommandRecord(
         operation=command.operation,
         key=command.key,
-        values=_safe_command_values(command.key, command.values),
+        values=("[REDACTED]",) if source_path == "system snmp community" and command.key == "name"
+        else _safe_command_values(command.key, command.values),
         line_number=command.line_number,
     )
 

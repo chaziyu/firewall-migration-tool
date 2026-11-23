@@ -432,6 +432,10 @@ def _build_fast_workbook(
     return workbook
 
 
+_TITLE_ALIGNMENT = Alignment(vertical="center")
+_BODY_ALIGNMENT = Alignment(wrap_text=True, vertical="top")
+
+
 def _fast_cell(
     sheet,
     value: Any,
@@ -570,17 +574,17 @@ def _write_table_sheet(
         ]
         if first_detail_col >= 0 and row.get("First Detail"):
             target_sheet, target_cell = row["First Detail"].split("!", 1)
-            link_cell = _fast_cell(sheet, "Open detail", font=_LINK_FONT)
+            link_cell = _fast_cell(sheet, "Open detail", font=_LINK_FONT, alignment=_BODY_ALIGNMENT)
             link_cell.hyperlink = f"#'{target_sheet}'!{target_cell}"
             values[first_detail_col] = link_cell
         elif raw_capture_col >= 0 and row.get("Raw Capture Location") == "FortiGate Source Inventory":
-            link_cell = _fast_cell(sheet, values[raw_capture_col], font=_LINK_FONT)
+            link_cell = _fast_cell(sheet, values[raw_capture_col], font=_LINK_FONT, alignment=_BODY_ALIGNMENT)
             link_cell.hyperlink = "#'FortiGate Source Inventory'!A1"
             values[raw_capture_col] = link_cell
         if severity_col >= 0:
             severity = str(values[severity_col] or "").lower()
             fill = _ERROR_FILL if severity == "error" else _REVIEW_FILL
-            values = [_fast_cell(sheet, val, fill=fill) for val in values]
+            values = [_fast_cell(sheet, val, fill=fill, alignment=_BODY_ALIGNMENT) for val in values]
         outline = row.get("__outline_level__")
         if isinstance(outline, int) and outline > 0:
             sheet.row_dimensions[row_number].outlineLevel = min(outline, 7)
@@ -647,13 +651,13 @@ def _write_table_sheet_fast(
                   for column, header in enumerate(headers, 1)]
         if first_detail_col >= 0 and row.get("First Detail"):
             target_sheet, target_cell = row["First Detail"].split("!", 1)
-            cell = _fast_cell(sheet, "Open detail", font=_LINK_FONT)
+            cell = _fast_cell(sheet, "Open detail", font=_LINK_FONT, alignment=_BODY_ALIGNMENT)
             cell.hyperlink = f"#'{target_sheet}'!{target_cell}"
             values[first_detail_col] = cell
         if severity_col >= 0:
             severity = str(values[severity_col] or "").lower()
             fill = _ERROR_FILL if severity == "error" else _REVIEW_FILL
-            values[severity_col] = _fast_cell(sheet, values[severity_col], fill=fill)
+            values[severity_col] = _fast_cell(sheet, values[severity_col], fill=fill, alignment=_BODY_ALIGNMENT)
         append_readable_report_row(sheet, row_number, values)
 
     if row_count:

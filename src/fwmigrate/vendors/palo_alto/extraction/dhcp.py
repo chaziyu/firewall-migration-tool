@@ -6,7 +6,8 @@ from typing import Any
 from ..model import PANDHCPIPPool, PANDHCPOption, PANDHCPReservation, PANDHCPServer
 from ..schema_registry import PANPathSpec
 from ..source_context import PANWalkContext
-from .common import raw_extra, source_fields
+from .common import raw_extra, source_fields, structured_xml_capture
+from ..sanitization import sanitize_panos_attributes
 
 
 def _text(element: ET.Element | None) -> str | None:
@@ -164,6 +165,13 @@ def extract_dhcp(
                 item = item.model_copy(update={"value_type": branch.tag, field: values, "explicit_fields": item.explicit_fields | {"value_type", field}})
             typed_options.append(item)
 
+    relay_el = element.find("relay")
+    relay_value: dict[str, Any] | None = None
+    if relay_el is not None:
+        captured = sanitize_panos_attributes(structured_xml_capture(relay_el))
+        relay_value = captured if isinstance(captured, dict) else {"value": captured}
+        explicit.add("relay")
+
     return PANDHCPServer(
         name=element.get("name"), source_path="/".join(path), scope=context.scope, source_order=source_order,
         interface=element.get("name") if selected else _value(element, "interface"), mode=_value(source, "mode"), probe_ip=_value(source, "probe-ip"),
@@ -178,5 +186,6 @@ def extract_dhcp(
         ip_pools=([PANDHCPIPPool(value=_text(member), explicit_fields={"value"}) for member in pool_members] if pool_members else [_pool(item) for item in pools] if pools is not None else None),
         reservations=[_reservation(item) for item in reservations] if reservations is not None else None,
         options=typed_options,
+        relay=relay_value,
         raw_extra=extra, explicit_fields=explicit,
     )

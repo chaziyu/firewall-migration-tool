@@ -3,9 +3,10 @@
 ![Python](https://img.shields.io/badge/python-3.14%2B-green.svg)
 ![Node.js](https://img.shields.io/badge/node-24.22.1%2B-green.svg)
 
-Vendor-native firewall configuration extraction, validation, Excel reporting, live collection, and deterministic pair-specific migration planning for Python 3.14+.
+Vendor-native firewall configuration extraction, validation, Excel reporting, live collection, AI config assistant, and deterministic pair-specific migration planning for Python 3.14+.
 
-Website: https://firewall-migration-tool.onrender.com/
+🌐 **Live Web App:** **[Firewall Migration Tool](https://firewall-migration-tool.onrender.com/)**  
+💻 **Windows Desktop App:** **[Download Latest Installer (`.exe`) & Portable `.exe`](https://github.com/chaziyu/firewall-migration-tool/releases/latest)**
 
 ---
 
@@ -22,7 +23,9 @@ Migration plan:    VendorConfig → DerivedViews → Pair Requirements → Targe
 ### Key Capabilities
 
 - **Vendor-native extraction & validation**: Preserves explicit source state (missing fields are never silently defaulted), resolves vendor-specific topology/references, and keeps unsupported configuration visible.
-- **Excel & web reporting**: Interactive web source preview and vendor-native Excel exports (`fast` and `full` profiles).
+- **Excel & web reporting**: Interactive web source preview and vendor-native Excel exports (`fast` and `full` profiles), saving directly to your Windows **Downloads** folder in Desktop mode.
+- **Floating AI Config Assistant (`gemini-flash-lite-latest`)**: Context-aware chat widget grounded in the active configuration summary with a **🔑 API Key Drawer** (keys are held strictly in per-session RAM; local `GEMINI_API_KEY` fallback applies only in loopback `local`/Desktop mode).
+- **Automatic Desktop & Local Updates**: Sidebar update checker monitors GitHub Releases and automatically installs verified updates in Desktop/local mode (hidden in `public` cloud deployments).
 - **Live source collection (`local` mode)**: Acquires sanitized configuration snapshots from Cisco ASA, Juniper SRX, Cisco FTD (FMC), and Check Point with explicit completeness states (`SUCCESS`, `PARTIAL`, `FAILED`).
 - **Pair-specific migration exports**: Deterministic, dependency-aware planning across **9 directional pairs** using `CREATE`, `CONFIGURE`, `REUSE`, and `BLOCK` dispositions, HMAC-signed web review approvals, and offline reviewed artifact bundles (`deployment_available=False` across all pairs).
 - **Secret redaction**: Strips passwords, hashes, PSKs, private keys, API tokens, and sensitive SNMP communities across previews, snapshots, workbooks, reports, and logs.
@@ -62,7 +65,19 @@ All pairs generate **reviewed offline artifacts** (`deployment_available=False`)
 
 ## Quickstart & Installation
 
-### Prerequisites
+### Option 1: Instant Online Web App (No Installation Required)
+
+Open **[Firewall Migration Tool](https://firewall-migration-tool.onrender.com/)** directly in your browser.
+- Uploaded configuration files are sanitized and processed in ephemeral session memory only.
+- To use the Floating AI Config Assistant online, click the **🔑 key icon** in the chatbox header to supply your own Gemini API key for your browser session.
+
+### Option 2: Download Windows Desktop App (`.exe`)
+
+Download **`FirewallMigrationTool-Setup-<version>.exe`** (installer) or **`FirewallMigrationTool.exe`** (portable standalone executable) from **[GitHub Releases](https://github.com/chaziyu/firewall-migration-tool/releases/latest)**.
+- Runs locally in a native desktop window with zero Python/Node setup required.
+- Includes automatic sidebar update checks & background upgrade handling for new releases, plus one-click native saving of Excel exports into Windows **Downloads**.
+
+### Prerequisites (Running or Building from Source)
 
 - **Python**: `>=3.14` (matching `.python-version`)
 - **Node.js**: `>=24.22.1` (matching `.node-version`)
@@ -185,6 +200,8 @@ Starter template: [`.env.example`](.env.example).
 | `FWMIGRATE_WEB_USERNAME` | `fwmigrate` | HTTP Basic Auth username when `FWMIGRATE_WEB_PASSWORD` is configured. |
 | `FWMIGRATE_WEB_PASSWORD` | Unset | Enables HTTP Basic Auth across web routes when set. |
 | `REQUESTS_CA_BUNDLE` | System / certifi | PEM CA bundle path for private CAs during FMC and Check Point HTTPS collection. |
+| `GEMINI_API_KEY` | Unset | Default Gemini API key for direct `local`/Desktop loopback sessions only (`public` visitors use per-session RAM keys via the UI). |
+| `FWMIGRATE_GITHUB_REPO` | `chaziyu/firewall-migration-tool` | Override GitHub repository (`owner/repo`) queried by the desktop/local update checker. |
 
 ---
 

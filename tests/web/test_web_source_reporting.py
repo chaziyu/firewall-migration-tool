@@ -576,7 +576,7 @@ def test_excel_selector_reaches_real_vendor_profiles(vendor, fixture, excluded, 
             }, content_type="multipart/form-data")
         assert response.status_code == 200, (vendor, profile, response.get_json())
         workbooks[profile] = load_workbook(io.BytesIO(response.data))
-    assert write_modes == [True, vendor == "palo_alto"]
+    assert write_modes == [True, vendor in {"fortigate", "palo_alto"}]
     fast, full = workbooks["fast"], workbooks["full"]
     if vendor in {"fortigate", "palo_alto"}:
         for workbook in (fast, full):
@@ -660,8 +660,9 @@ def test_api_preview_contract_covers_every_registered_vendor():
         reporter = source_reporters.get(vendor)
         analysis = reporter.analyze_source(path.read_text(encoding="utf-8"))
         before = deepcopy(analysis)
-        copied = normalize_web_report(reporter.build_preview(analysis), vendor)
-        owned = normalize_web_report(reporter.build_preview(analysis), vendor, copy=False)
+        preview_options = {"include_source_commands": False} if vendor == "fortigate" else {}
+        copied = normalize_web_report(reporter.build_preview(analysis, **preview_options), vendor)
+        owned = normalize_web_report(reporter.build_preview(analysis, **preview_options), vendor, copy=False)
         assert owned == copied, vendor
         assert json.loads(json.dumps(owned)) == {key: value for key, value in report.items() if key not in {"success", "source_evidence", "source_digest"}}, vendor
         assert analysis == before, vendor

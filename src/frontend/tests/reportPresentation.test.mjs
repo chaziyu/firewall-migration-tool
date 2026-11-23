@@ -419,3 +419,80 @@ test('FortiGate cli_vdom and cli_scope are omitted from interface table columns 
   const inventoryColumns = rowColumns([{ source_path: 'system interface', name: 'port1', vdom: 'corp', cli_scope: 'global' }], 'source_inventory', 'fortigate')
   assert.equal(inventoryColumns.includes('cli_scope'), true)
 })
+
+test('semantic badges, row classes, legends, and monospace column helpers classify firewall objects accurately', () => {
+  assert.equal(presentation.cellBadgeVariant('action', 'accept'), 'allow')
+  assert.equal(presentation.cellBadgeVariant('action', 'deny'), 'deny')
+  assert.equal(presentation.cellBadgeVariant('status', 'enable'), 'allow')
+  assert.equal(presentation.cellBadgeVariant('status', 'disable'), 'deny')
+  assert.equal(presentation.cellBadgeVariant('disabled', 'yes'), 'deny')
+  assert.equal(presentation.cellBadgeVariant('disabled', 'no'), 'allow')
+  assert.equal(presentation.cellBadgeVariant('kind', 'vlan'), 'purple')
+  assert.equal(presentation.cellBadgeVariant('kind', 'aggregate'), 'info')
+  assert.equal(presentation.cellBadgeVariant('kind', 'zone'), 'muted')
+  assert.equal(presentation.isMonoColumn('ip'), true)
+  assert.equal(presentation.isMonoColumn('destination'), true)
+  assert.equal(presentation.isMonoColumn('comments'), false)
+
+  assert.equal(presentation.rowSemanticClass({ status: 'disable', kind: 'physical' }, 'interfaces'), 'row-danger')
+  assert.equal(presentation.rowSemanticClass({ status: 'enable', kind: 'zone' }, 'interfaces'), 'row-zone')
+  assert.equal(presentation.rowSemanticClass({ status: 'enable', kind: 'aggregate' }, 'interfaces'), 'row-info')
+  assert.equal(presentation.rowSemanticClass({ status: 'enable', kind: 'vlan', vlanid: 10 }, 'interfaces'), 'row-sub')
+  assert.equal(presentation.rowSemanticClass({ action: 'accept' }, 'policies'), 'row-success')
+  assert.equal(presentation.rowSemanticClass({ action: 'deny' }, 'policies'), 'row-danger')
+
+  const ifaceLegend = presentation.sectionLegend('interfaces', [{ name: 'port1' }])
+  assert.equal(ifaceLegend.length, 5)
+  const policyLegend = presentation.sectionLegend('policies', [{ name: 'rule1' }])
+  assert.equal(policyLegend.length, 2)
+})
+
+test('extended FortiGate and PAN-OS subsections route properly and preserve safe auth metadata', () => {
+  const safe = safeValue({
+    fortitoken: 'FTKMOB123',
+    passwd_policy: 'strict-pw',
+    password_configured: true,
+    password: 'RAW_PASSWORD',
+    secret: 'RAW_SECRET',
+    token: 'RAW_TOKEN',
+  })
+  assert.equal(safe.fortitoken, 'FTKMOB123')
+  assert.equal(safe.passwd_policy, 'strict-pw')
+  assert.equal(safe.password_configured, true)
+  assert.equal(safe.password, undefined)
+  assert.equal(safe.secret, undefined)
+  assert.equal(safe.token, undefined)
+
+  const groups = reportSections({
+    proxy_policies: [{ policy_id: 1, name: 'proxy-1' }],
+    antivirus_profiles: [{ name: 'av-1', vdom: 'root' }],
+    router_bgp: [{ vdom: 'root', bgp_as: 65001 }],
+    virtual_servers: [{ name: 'vs-1', vdom: 'root' }],
+    system_global: [{ hostname: 'fg-1' }],
+    pbf_rules: [{ name: 'pbf-1', scope: 'vsys1' }],
+    management_profiles: [{ name: 'mgmt-1', scope: 'shared' }],
+    virtual_routers: [{ name: 'vr-1', scope: 'shared' }],
+  })
+  const byLabel = Object.fromEntries(groups.map((g) => [g.label, g.subsections.map((s) => s.key)]))
+  assert.ok(byLabel.Policies.includes('proxy_policies'))
+  assert.ok(byLabel.Policies.includes('pbf_rules'))
+  assert.ok(byLabel.Objects.includes('antivirus_profiles'))
+  assert.ok(byLabel.Routes.includes('router_bgp'))
+  assert.ok(byLabel.Routes.includes('virtual_routers'))
+  assert.ok(byLabel.NAT.includes('virtual_servers'))
+  assert.ok(byLabel.Interfaces.includes('management_profiles'))
+  assert.ok(byLabel['Additional sections'].includes('system_global'))
+  assert.ok(defaultColumns([{ name: 'port1', vdom: 'root', mtu: 1500 }], 'interfaces', 'fortigate').includes('mtu'))
+
+  const extGroups = reportSections({
+    guest_users: [{ id: '1', user_id: 'guest1' }],
+    switch_port_policies: [{ name: 'sp-1' }],
+    device_objects: [{ name: 'dev-1' }],
+    user_id_settings: [{ name: 'user-identification' }],
+  })
+  const extByLabel = Object.fromEntries(extGroups.map((g) => [g.label, g.subsections.map((s) => s.key)]))
+  assert.ok(extByLabel.Objects.includes('guest_users'))
+  assert.ok(extByLabel.Objects.includes('device_objects'))
+  assert.ok(extByLabel.Objects.includes('user_id_settings'))
+  assert.ok(extByLabel.Interfaces.includes('switch_port_policies'))
+})

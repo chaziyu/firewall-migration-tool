@@ -220,8 +220,12 @@ def _extract_virtual_router(element: ET.Element, path: tuple[str, ...], context:
         source_order_base=source_order,
     )
     redistribution_profiles = _extract_redistribution_profiles(element)
-    explicit.update(field for field, value_ in (("bgp", bgp), ("ospf", ospf), ("ospfv3", ospfv3), ("rip", rip), ("static_routes", static_routes), ("redistribution_profiles", redistribution_profiles)) if value_ is not None)
-    return PANVirtualRouter(name=element.get("name"), source_path="/".join(path), scope=context.scope, source_order=source_order, interfaces=values(element, "interface"), static_routes=static_routes, bgp=bgp, ospf=ospf, ospfv3=ospfv3, rip=rip, redistribution_profiles=redistribution_profiles, raw_extra=extra, explicit_fields=explicit)
+    ecmp_node = element.find("ecmp")
+    admin_dists_node = element.find("admin-dists")
+    ecmp = structured_xml_capture(ecmp_node) if ecmp_node is not None else None
+    admin_dists = structured_xml_capture(admin_dists_node) if admin_dists_node is not None else None
+    explicit.update(field for field, value_ in (("bgp", bgp), ("ospf", ospf), ("ospfv3", ospfv3), ("rip", rip), ("static_routes", static_routes), ("redistribution_profiles", redistribution_profiles), ("ecmp", ecmp), ("admin_dists", admin_dists)) if value_ is not None)
+    return PANVirtualRouter(name=element.get("name"), source_path="/".join(path), scope=context.scope, source_order=source_order, interfaces=values(element, "interface"), static_routes=static_routes, bgp=bgp, ospf=ospf, ospfv3=ospfv3, rip=rip, redistribution_profiles=redistribution_profiles, ecmp=ecmp, admin_dists=admin_dists, raw_extra=extra, explicit_fields=explicit)
 
 
 def _extract_logical_router(element: ET.Element, path: tuple[str, ...], context: PANWalkContext, source_order: int, spec: PANPathSpec) -> PANLogicalRouter:

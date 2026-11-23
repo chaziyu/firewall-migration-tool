@@ -45,6 +45,22 @@ class ReferenceKind(str, Enum):
     IPS_SENSOR = "ips_sensor"
     ADMIN_PROFILE = "admin_profile"
 
+    AV_PROFILE = "av_profile"
+    WEBFILTER_PROFILE = "webfilter_profile"
+    DNSFILTER_PROFILE = "dnsfilter_profile"
+    APPLICATION_LIST = "application_list"
+    SSL_SSH_PROFILE = "ssl_ssh_profile"
+    FILE_FILTER_PROFILE = "file_filter_profile"
+    EMAILFILTER_PROFILE = "emailfilter_profile"
+    VOIP_PROFILE = "voip_profile"
+    WAF_PROFILE = "waf_profile"
+    TRAFFIC_SHAPER = "traffic_shaper"
+    LDB_MONITOR = "ldb_monitor"
+
+    LDAP_SERVER = "ldap_server"
+    RADIUS_SERVER = "radius_server"
+    TACACS_SERVER = "tacacs_server"
+
     IPSEC_PHASE1 = "ipsec_phase1"
     IPSEC_POLICY_PHASE1 = "ipsec_policy_phase1"
 
@@ -300,6 +316,21 @@ def build_reference_index(
         ReferenceKind.IPS_SENSOR,
         config.ips_sensors,
     )
+
+    _add_named(index, ReferenceKind.AV_PROFILE, config.antivirus_profiles)
+    _add_named(index, ReferenceKind.WEBFILTER_PROFILE, config.webfilter_profiles)
+    _add_named(index, ReferenceKind.DNSFILTER_PROFILE, config.dnsfilter_profiles)
+    _add_named(index, ReferenceKind.APPLICATION_LIST, config.application_lists)
+    _add_named(index, ReferenceKind.SSL_SSH_PROFILE, config.ssl_ssh_profiles)
+    _add_named(index, ReferenceKind.FILE_FILTER_PROFILE, config.file_filter_profiles)
+    _add_named(index, ReferenceKind.EMAILFILTER_PROFILE, config.emailfilter_profiles)
+    _add_named(index, ReferenceKind.VOIP_PROFILE, config.voip_profiles)
+    _add_named(index, ReferenceKind.WAF_PROFILE, config.waf_profiles)
+    _add_named(index, ReferenceKind.TRAFFIC_SHAPER, config.traffic_shapers)
+    _add_named(index, ReferenceKind.LDB_MONITOR, config.ldb_monitors)
+    _add_named(index, ReferenceKind.LDAP_SERVER, config.ldap_servers)
+    _add_named(index, ReferenceKind.RADIUS_SERVER, config.radius_servers)
+    _add_named(index, ReferenceKind.TACACS_SERVER, config.tacacs_servers)
 
     _add_named(index, ReferenceKind.ADMIN_PROFILE, config.admin_profiles)
 
@@ -678,6 +709,146 @@ def collect_broken_references(
                 source_field="per_ip_shaper", names=(policy.per_ip_shaper,),
                 kinds=(ReferenceKind.PER_IP_SHAPER,),
             )
+        for field, kind in (
+            ("av_profile", ReferenceKind.AV_PROFILE),
+            ("webfilter_profile", ReferenceKind.WEBFILTER_PROFILE),
+            ("dnsfilter_profile", ReferenceKind.DNSFILTER_PROFILE),
+            ("application_list", ReferenceKind.APPLICATION_LIST),
+            ("ssl_ssh_profile", ReferenceKind.SSL_SSH_PROFILE),
+        ):
+            val = getattr(policy, field, None)
+            if val and index.objects.get(kind):
+                check(source_kind="policy", vdom=policy.vdom, source_name=source_name,
+                      source_field=field, names=(val,), kinds=(kind,))
+
+    for group in config.profile_groups:
+        if group.ips_sensor:
+            check(source_kind="profile_group", vdom=group.vdom, source_name=group.name,
+                  source_field="ips_sensor", names=(group.ips_sensor,), kinds=(ReferenceKind.IPS_SENSOR,))
+        if group.profile_protocol_options:
+            check(source_kind="profile_group", vdom=group.vdom, source_name=group.name,
+                  source_field="profile_protocol_options", names=(group.profile_protocol_options,), kinds=(ReferenceKind.PROTOCOL_OPTIONS,))
+        for field, kind in (
+            ("av_profile", ReferenceKind.AV_PROFILE),
+            ("webfilter_profile", ReferenceKind.WEBFILTER_PROFILE),
+            ("dnsfilter_profile", ReferenceKind.DNSFILTER_PROFILE),
+            ("application_list", ReferenceKind.APPLICATION_LIST),
+            ("ssl_ssh_profile", ReferenceKind.SSL_SSH_PROFILE),
+            ("file_filter_profile", ReferenceKind.FILE_FILTER_PROFILE),
+            ("emailfilter_profile", ReferenceKind.EMAILFILTER_PROFILE),
+            ("voip_profile", ReferenceKind.VOIP_PROFILE),
+            ("waf_profile", ReferenceKind.WAF_PROFILE),
+        ):
+            val = getattr(group, field, None)
+            if val and index.objects.get(kind):
+                check(source_kind="profile_group", vdom=group.vdom, source_name=group.name,
+                      source_field=field, names=(val,), kinds=(kind,))
+
+    for proxy in config.proxy_policies:
+        pname = proxy.name or (str(proxy.policy_id) if proxy.policy_id is not None else "<unnamed>")
+        for field, names, kinds in (
+            ("srcintf", proxy.srcintf, policy_interface_like),
+            ("dstintf", proxy.dstintf, policy_interface_like),
+            ("srcaddr", proxy.srcaddr, ipv4_address_like),
+            ("dstaddr", proxy.dstaddr, destination_address_like),
+            ("srcaddr6", proxy.srcaddr6, ipv6_address_like),
+            ("dstaddr6", proxy.dstaddr6, ipv6_address_like),
+            ("service", proxy.service, service_like),
+            ("users", proxy.users, (ReferenceKind.LOCAL_USER,)),
+            ("groups", proxy.groups, (ReferenceKind.USER_GROUP,)),
+            ("poolname", proxy.poolname, (ReferenceKind.IP_POOL,)),
+        ):
+            check(source_kind="proxy_policy", vdom=proxy.vdom, source_name=pname,
+                  source_field=field, names=names or (), kinds=kinds)
+        if proxy.schedule:
+            check(source_kind="proxy_policy", vdom=proxy.vdom, source_name=pname,
+                  source_field="schedule", names=(proxy.schedule,), kinds=schedule_like)
+        for field, kind, gated in (
+            ("profile_group", ReferenceKind.PROFILE_GROUP, False),
+            ("ips_sensor", ReferenceKind.IPS_SENSOR, False),
+            ("profile_protocol_options", ReferenceKind.PROTOCOL_OPTIONS, False),
+            ("av_profile", ReferenceKind.AV_PROFILE, True),
+            ("webfilter_profile", ReferenceKind.WEBFILTER_PROFILE, True),
+            ("application_list", ReferenceKind.APPLICATION_LIST, True),
+            ("ssl_ssh_profile", ReferenceKind.SSL_SSH_PROFILE, True),
+            ("file_filter_profile", ReferenceKind.FILE_FILTER_PROFILE, True),
+            ("emailfilter_profile", ReferenceKind.EMAILFILTER_PROFILE, True),
+            ("waf_profile", ReferenceKind.WAF_PROFILE, True),
+        ):
+            val = getattr(proxy, field, None)
+            if val and (not gated or index.objects.get(kind)):
+                check(source_kind="proxy_policy", vdom=proxy.vdom, source_name=pname,
+                      source_field=field, names=(val,), kinds=(kind,))
+
+    for auth in config.auth_policies:
+        aname = auth.name or (str(auth.policy_id) if auth.policy_id is not None else "<unnamed>")
+        for field, names, kinds in (
+            ("srcintf", auth.srcintf, policy_interface_like),
+            ("srcaddr", auth.srcaddr, ipv4_address_like),
+            ("dstaddr", auth.dstaddr, ipv4_address_like),
+            ("srcaddr6", auth.srcaddr6, ipv6_address_like),
+            ("dstaddr6", auth.dstaddr6, ipv6_address_like),
+            ("service", (auth.service,) if auth.service else (), service_like),
+            ("users", auth.users, (ReferenceKind.LOCAL_USER,)),
+            ("groups", auth.groups, (ReferenceKind.USER_GROUP,)),
+        ):
+            check(source_kind="auth_policy", vdom=auth.vdom, source_name=aname,
+                  source_field=field, names=names or (), kinds=kinds)
+
+    for proute in config.policy_routes:
+        rname = str(proute.seq_num) if proute.seq_num is not None else "<unnamed>"
+        rkind = "policy_route6" if proute.address_family == "ipv6" else "policy_route"
+        addr_kinds = ipv6_address_like if proute.address_family == "ipv6" else ipv4_address_like
+        check(source_kind=rkind, vdom=proute.vdom, source_name=rname,
+              source_field="input_device", names=proute.input_device, kinds=(ReferenceKind.INTERFACE,))
+        if proute.output_device:
+            check(source_kind=rkind, vdom=proute.vdom, source_name=rname,
+                  source_field="output_device", names=(proute.output_device,), kinds=(ReferenceKind.INTERFACE, ReferenceKind.IPSEC_PHASE1))
+        check(source_kind=rkind, vdom=proute.vdom, source_name=rname,
+              source_field="srcaddr", names=proute.srcaddr, kinds=addr_kinds)
+        check(source_kind=rkind, vdom=proute.vdom, source_name=rname,
+              source_field="dstaddr", names=proute.dstaddr, kinds=addr_kinds)
+
+    for luser in config.local_users:
+        for field, kind in (
+            ("ldap_server", ReferenceKind.LDAP_SERVER),
+            ("radius_server", ReferenceKind.RADIUS_SERVER),
+            ("tacacs_server", ReferenceKind.TACACS_SERVER),
+        ):
+            val = getattr(luser, field, None)
+            if val and index.objects.get(kind):
+                check(source_kind="local_user", vdom=luser.vdom, source_name=luser.name,
+                      source_field=field, names=(val,), kinds=(kind,))
+
+    auth_server_kinds = tuple(
+        k for k in (ReferenceKind.LDAP_SERVER, ReferenceKind.RADIUS_SERVER, ReferenceKind.TACACS_SERVER)
+        if index.objects.get(k)
+    )
+    if auth_server_kinds:
+        for ugroup in config.user_groups:
+            for match in ugroup.matches:
+                if match.server_name:
+                    check(source_kind="user_group", vdom=ugroup.vdom, source_name=ugroup.name,
+                          source_field="matches.server_name", names=(match.server_name,), kinds=auth_server_kinds)
+
+    for keytab in config.kerberos_keytabs:
+        if keytab.ldap_server and index.objects.get(ReferenceKind.LDAP_SERVER):
+            check(source_kind="kerberos_keytab", vdom=keytab.vdom, source_name=keytab.name,
+                  source_field="ldap_server", names=(keytab.ldap_server,), kinds=(ReferenceKind.LDAP_SERVER,))
+
+    for vap in config.wireless_vaps:
+        if index.objects.get(ReferenceKind.RADIUS_SERVER):
+            for field in ("radius_server", "radius_mac_auth_server"):
+                val = getattr(vap, field, None)
+                if val:
+                    check(source_kind="wireless_vap", vdom=vap.vdom, source_name=vap.name,
+                          source_field=field, names=(val,), kinds=(ReferenceKind.RADIUS_SERVER,))
+        check(source_kind="wireless_vap", vdom=vap.vdom, source_name=vap.name,
+              source_field="usergroup", names=vap.usergroup, kinds=(ReferenceKind.USER_GROUP,))
+        check(source_kind="wireless_vap", vdom=vap.vdom, source_name=vap.name,
+              source_field="selected_usergroups", names=vap.selected_usergroups, kinds=(ReferenceKind.USER_GROUP,))
+        check(source_kind="wireless_vap", vdom=vap.vdom, source_name=vap.name,
+              source_field="address_group", names=vap.address_group, kinds=(ReferenceKind.ADDRESS, ReferenceKind.ADDRESS_GROUP))
 
     for policy in config.nac_policies:
         if policy.firewall_address:
@@ -870,6 +1041,17 @@ def collect_broken_references(
                     source_field=f"realservers[{server.id}].address",
                     names=(server.address,), kinds=(ReferenceKind.ADDRESS,),
                 )
+            if server.monitor and index.objects.get(ReferenceKind.LDB_MONITOR):
+                check(
+                    source_kind="vip", vdom=vip.vdom, source_name=vip.name,
+                    source_field=f"realservers[{server.id}].monitor",
+                    names=server.monitor, kinds=(ReferenceKind.LDB_MONITOR,),
+                )
+        if vip.monitor and index.objects.get(ReferenceKind.LDB_MONITOR):
+            check(
+                source_kind="vip", vdom=vip.vdom, source_name=vip.name,
+                source_field="monitor", names=vip.monitor, kinds=(ReferenceKind.LDB_MONITOR,),
+            )
 
     for group in config.vip_groups:
         if group.interface:
@@ -900,12 +1082,41 @@ def _add_named(
         )
 
 
+_BUILTIN_PROFILE_KINDS = frozenset({
+    ReferenceKind.AV_PROFILE,
+    ReferenceKind.WEBFILTER_PROFILE,
+    ReferenceKind.DNSFILTER_PROFILE,
+    ReferenceKind.APPLICATION_LIST,
+    ReferenceKind.SSL_SSH_PROFILE,
+    ReferenceKind.FILE_FILTER_PROFILE,
+    ReferenceKind.EMAILFILTER_PROFILE,
+    ReferenceKind.VOIP_PROFILE,
+    ReferenceKind.WAF_PROFILE,
+})
+_BUILTIN_PROFILE_NAMES = frozenset({
+    "default", "all", "certificate-inspection", "no-inspection",
+    "deep-inspection", "custom-deep-inspection", "wifi-default",
+    "flow-monitor-default", "monitor-all", "sniffer-profile",
+    "g-default", "g-wifi-default", "read-only", "block-high-risk",
+    "g-block-high-risk", "scan", "av-monitor", "high-security",
+    "web-filter-flow",
+})
+_BUILTIN_MONITORS = frozenset({"ping", "tcp", "udp", "http", "https"})
+
+
 def _implicit_reference(
     name: str,
     kinds: tuple[ReferenceKind, ...],
 ) -> ReferenceKind | None:
     if ReferenceKind.ADMIN_PROFILE in kinds and name == "super_admin":
         return ReferenceKind.ADMIN_PROFILE
+
+    if ReferenceKind.LDB_MONITOR in kinds and name.lower() in _BUILTIN_MONITORS:
+        return ReferenceKind.LDB_MONITOR
+
+    for kind in kinds:
+        if kind in _BUILTIN_PROFILE_KINDS and name in _BUILTIN_PROFILE_NAMES:
+            return kind
 
     if (
         ReferenceKind.SERVICE in kinds

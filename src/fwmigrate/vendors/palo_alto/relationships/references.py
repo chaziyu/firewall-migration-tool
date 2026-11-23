@@ -14,6 +14,7 @@ from .scopes import PANDeviceGroupHierarchy, build_scope_hierarchy, visible_scop
 
 
 _PREDEFINED_SERVICES = {"service-http", "service-https"}
+_PREDEFINED_PROFILES = {"default", "strict", "best-practice", "basic-file-blocking", "Alert-Only", "Block-All"}
 _PREDEFINED_IP_EDLS = {"panw-highrisk-ip-list", "panw-known-ip-list", "panw-bulletproof-ip-list", "panw-torexit-ip-list"}
 _PREDEFINED_REGIONS = frozenset("""
 AD AE AF AG AI AL AM AO AQ AR AS AT AU AW AX AZ BA BB BD BE BF BG BH BI BJ BL BM BN BO BQ BR BS BT BV BW BY BZ
@@ -81,6 +82,26 @@ def _objects(config: PANOSConfig) -> Iterable[PANIndexedObject]:
         "virtual-router": config.virtual_routers, "logical-router": config.logical_routers,
         "globalprotect-gateway": config.globalprotect_gateways,
         "tag": config.tags, "zone": config.zones,
+        "application-group": config.application_groups,
+        "external-list": config.external_lists,
+        "custom-url-category": config.custom_url_categories,
+        "dynamic-user-group": config.dynamic_user_groups,
+        "antivirus-profile": config.antivirus_profiles,
+        "anti-spyware-profile": config.anti_spyware_profiles,
+        "url-filtering-profile": config.url_filtering_profiles,
+        "file-blocking-profile": config.file_blocking_profiles,
+        "wildfire-analysis-profile": config.wildfire_profiles,
+        "data-filtering-profile": config.data_filtering_profiles,
+        "dos-protection-profile": config.dos_protection_profiles,
+        "decryption-profile": config.decryption_profiles,
+        "log-setting": config.log_forwarding_profiles,
+        "authentication-profile": config.authentication_profiles,
+        "authentication-sequence": config.authentication_sequences,
+        "qos-profile": config.qos_profiles,
+        "zone-protection-profile": config.zone_protection_profiles,
+        "bfd-profile": config.bfd_profiles,
+        "certificate": config.certificates,
+        "ssl-tls-service-profile": config.ssl_tls_service_profiles,
     }
     for family, values in fields.items():
         for item in values:
@@ -134,8 +155,10 @@ def _resolve(index: ReferenceIndex, owner, field: str, name: str, families: tupl
         return resolution("SOURCE_ONLY", owner.name, field, name, "address", owner.scope, resolution_reason="PAN-OS address literal", owner_family=owner_family, owner_source_path=owner_path)
     if families[0] == "address" and name in _PREDEFINED_IP_EDLS:
         return resolution("SOURCE_ONLY", owner.name, field, name, "address", owner.scope, resolution_reason="PAN-OS predefined IP external dynamic list; version, content and license availability are unverified", owner_family=owner_family, owner_source_path=owner_path)
-    if families == ("vulnerability-profile",) and name in {"default", "strict"}:
+    if families[0] == "vulnerability-profile" and name in {"default", "strict"}:
         return resolution("SOURCE_ONLY", owner.name, field, name, "vulnerability-profile", owner.scope, resolution_reason="PAN-OS predefined vulnerability profile; effective content is not extracted", owner_family=owner_family, owner_source_path=owner_path)
+    if families[0].endswith("-profile") and name in _PREDEFINED_PROFILES:
+        return resolution("SOURCE_ONLY", owner.name, field, name, families[0], owner.scope, resolution_reason="PAN-OS predefined profile; effective content is not extracted", owner_family=owner_family, owner_source_path=owner_path)
     if families[0] == "address" and name in _PREDEFINED_REGIONS:
         return resolution("SOURCE_ONLY", owner.name, field, name, "region", owner.scope, resolution_reason="PAN-OS predefined country region", owner_family=owner_family, owner_source_path=owner_path)
     if families[0] == "service" and name in _PREDEFINED_SERVICES:
@@ -193,20 +216,27 @@ _PROFILE_FAMILIES = {
 }
 
 
-def _append_profile_setting_references(result: list[PANReferenceResolution], index: ReferenceIndex, owner, owner_family: str) -> None:
+def _append_profile_setting_references(
+    result: list[PANReferenceResolution],
+    index: ReferenceIndex,
+    owner,
+    owner_family: str,
+    present_families: set[str],
+) -> None:
     profile_setting = getattr(owner, "profile_setting", None)
     if profile_setting is None:
         return
     for name in profile_setting.groups or ():
         result.append(_resolve(index, owner, "profile_setting.groups", name, ("security-profile-group",), owner_family=owner_family))
     for profile_type, names in (profile_setting.profiles or {}).items():
-        family, source_only = _PROFILE_FAMILIES.get(profile_type, (f"{profile_type}-profile", True))
+        family, default_source_only = _PROFILE_FAMILIES.get(profile_type, (f"{profile_type}-profile", True))
+        source_only = default_source_only and family not in present_families
         for name in names or ():
             result.append(_resolve(index, owner, f"profile_setting.profiles.{profile_type}", name, (family,), owner_family=owner_family, source_only=source_only))
 
 
 def _append_user_reference(result: list[PANReferenceResolution], index: ReferenceIndex, owner, field: str, name: str, owner_family: str) -> None:
-    families = ("local-user", "local-user-group")
+    families = ("local-user", "local-user-group", "dynamic-user-group")
     if any(index.candidates(family, name, owner.scope) for family in families):
         result.append(_resolve(index, owner, field, name, families, owner_family=owner_family))
     else:
@@ -240,12 +270,22 @@ def _append_network_address_reference(result, index, owner, field, name, owner_f
 
 def resolve_references(config: PANOSConfig, index: ReferenceIndex | None = None) -> tuple[tuple[PANReferenceResolution, ...], tuple[PANShadowedObject, ...]]:
     index = index or build_reference_index(config)
+    present_families = {obj.family for obj in index.objects}
     result: list[PANReferenceResolution] = []
+    source_families = (
+        ("address", "address-group", "region", "external-list")
+        if "external-list" in present_families
+        else ("address", "address-group", "region")
+    )
     for group in config.address_groups:
         for name in group.static_members or ():
             result.append(_resolve(index, group, "static_members", name, ("address", "address-group"), owner_family="address-group"))
         for name in group.tags or ():
             result.append(_resolve(index, group, "tags", name, ("tag",), owner_family="address-group"))
+    for group in config.application_groups:
+        for name in group.members or ():
+            matched = bool(index.candidates("application-group", name, group.scope))
+            result.append(_resolve(index, group, "members", name, ("application-group",), owner_family="application-group", source_only=not matched))
     for address in config.addresses:
         for name in address.tags or ():
             result.append(_resolve(index, address, "tags", name, ("tag",), owner_family="address"))
@@ -260,23 +300,29 @@ def resolve_references(config: PANOSConfig, index: ReferenceIndex | None = None)
     for rule in config.security_rules:
         for field, names, families, source_only in (
             ("from_zones", rule.from_zones, ("zone",), False), ("to_zones", rule.to_zones, ("zone",), False),
-            ("source", rule.source, ("address", "address-group", "region"), False), ("destination", rule.destination, ("address", "address-group", "region"), False),
+            ("source", rule.source, source_families, False), ("destination", rule.destination, source_families, False),
             ("service", rule.service, ("service", "service-group"), False), ("schedule", (rule.schedule,) if rule.schedule else (), ("schedule",), False),
-            ("tags", rule.tags, ("tag",), False), ("application", rule.application, ("application",), True),
+            ("tags", rule.tags, ("tag",), False),
         ):
             for name in names or ():
                 result.append(_resolve(index, rule, field, name, families, owner_family="policy", source_only=source_only))
+        for name in rule.application or ():
+            matched = bool(index.candidates("application-group", name, rule.scope))
+            result.append(_resolve(index, rule, "application", name, ("application-group",) if matched else ("application",), owner_family="policy", source_only=not matched))
+        for name in rule.category or ():
+            if name != "any" and index.candidates("custom-url-category", name, rule.scope):
+                result.append(_resolve(index, rule, "category", name, ("custom-url-category",), owner_family="policy"))
         for name in rule.source_user or ():
             _append_user_reference(result, index, rule, "source_user", name, "policy")
         if rule.log_setting:
-            result.append(_resolve(index, rule, "log_setting", rule.log_setting, ("log-setting",), owner_family="policy", source_only=True))
-        _append_profile_setting_references(result, index, rule, "policy")
+            result.append(_resolve(index, rule, "log_setting", rule.log_setting, ("log-setting",), owner_family="policy", source_only="log-setting" not in present_families))
+        _append_profile_setting_references(result, index, rule, "policy", present_families)
     for rule in config.default_security_rules:
         for name in rule.tags or ():
             result.append(_resolve(index, rule, "tags", name, ("tag",), owner_family="default-security-rule"))
         if rule.log_setting:
-            result.append(_resolve(index, rule, "log_setting", rule.log_setting, ("log-setting",), owner_family="default-security-rule", source_only=True))
-        _append_profile_setting_references(result, index, rule, "default-security-rule")
+            result.append(_resolve(index, rule, "log_setting", rule.log_setting, ("log-setting",), owner_family="default-security-rule", source_only="log-setting" not in present_families))
+        _append_profile_setting_references(result, index, rule, "default-security-rule", present_families)
     for rule in config.nat_rules:
         for field, names, families in (("from_zones", rule.from_zones, ("zone",)), ("to_zones", rule.to_zones, ("zone",)), ("source", rule.source, ("address", "address-group")), ("destination", rule.destination, ("address", "address-group")), ("service", (rule.service,) if rule.service else (), ("service", "service-group")), ("tags", rule.tags, ("tag",))):
             for name in names or ():
@@ -299,20 +345,22 @@ def resolve_references(config: PANOSConfig, index: ReferenceIndex | None = None)
         for name in zone.members or ():
             result.append(_resolve_interface(index, zone, "members", name, owner_family="zone"))
         if zone.zone_protection_profile:
-            result.append(_resolve(index, zone, "zone_protection_profile", zone.zone_protection_profile, ("zone-protection-profile",), owner_family="zone", source_only=True))
+            result.append(_resolve(index, zone, "zone_protection_profile", zone.zone_protection_profile, ("zone-protection-profile",), owner_family="zone", source_only="zone-protection-profile" not in present_families))
         if zone.log_setting:
-            result.append(_resolve(index, zone, "log_setting", zone.log_setting, ("log-setting",), owner_family="zone", source_only=True))
+            result.append(_resolve(index, zone, "log_setting", zone.log_setting, ("log-setting",), owner_family="zone", source_only="log-setting" not in present_families))
     for group in config.security_profile_groups:
         for name in group.vulnerability or ():
             result.append(_resolve(index, group, "vulnerability", name, ("vulnerability-profile",), owner_family="security-profile-group"))
         for field in ("antivirus", "anti_spyware", "url_filtering", "file_blocking", "wildfire_analysis", "data_filtering", "gtp", "sctp", "ai_security"):
+            family = field.replace("_", "-") + "-profile"
+            source_only = family not in present_families
             for name in getattr(group, field) or ():
-                result.append(_resolve(index, group, field, name, (field.replace("_", "-") + "-profile",), owner_family="security-profile-group", source_only=True))
+                result.append(_resolve(index, group, field, name, (family,), owner_family="security-profile-group", source_only=source_only))
     for administrator in config.administrators:
         if administrator.custom_admin_role:
             result.append(_resolve(index, administrator, "custom_admin_role", administrator.custom_admin_role, ("admin-role",), owner_family="administrator"))
         if administrator.authentication_profile:
-            result.append(_resolve(index, administrator, "authentication_profile", administrator.authentication_profile, ("authentication-profile",), owner_family="administrator", source_only=True))
+            result.append(_resolve(index, administrator, "authentication_profile", administrator.authentication_profile, ("authentication-profile",), owner_family="administrator", source_only="authentication-profile" not in present_families))
     for tunnel in config.ipsec_tunnels:
         if tunnel.tunnel_interface:
             result.append(_resolve_interface(index, tunnel, "tunnel_interface", tunnel.tunnel_interface, owner_family="ipsec-tunnel"))
@@ -354,7 +402,7 @@ def resolve_references(config: PANOSConfig, index: ReferenceIndex | None = None)
         if route.interface:
             result.append(_resolve_interface(index, route, "interface", route.interface, owner_family="static-route"))
         if route.bfd_profile:
-            result.append(_resolve(index, route, "bfd_profile", route.bfd_profile, ("bfd-profile",), owner_family="static-route", source_only=True))
+            result.append(_resolve(index, route, "bfd_profile", route.bfd_profile, ("bfd-profile",), owner_family="static-route", source_only="bfd-profile" not in present_families))
         if route.nexthop and route.nexthop_type == "next-vr":
             result.append(_resolve(index, route, "nexthop", route.nexthop, ("virtual-router",), owner_family="static-route"))
         elif route.nexthop and route.nexthop_type == "next-lr":
@@ -369,13 +417,68 @@ def resolve_references(config: PANOSConfig, index: ReferenceIndex | None = None)
             for field in ("authentication_profile", "certificate_profile", "ssl_tls_service_profile"):
                 name = getattr(owner, field, None)
                 if name:
-                    result.append(_resolve(index, owner, field, name, (field.replace("_", "-"),), owner_family=owner_family, source_only=True))
+                    family = field.replace("_", "-")
+                    result.append(_resolve(index, owner, field, name, (family,), owner_family=owner_family, source_only=family not in present_families))
             if owner_family == "globalprotect-gateway":
                 if owner.local_interface:
                     result.append(_resolve_interface(index, owner, "local_interface", owner.local_interface, owner_family=owner_family))
                 for client_auth in owner.client_authentication or ():
                     if client_auth.authentication_profile:
-                        result.append(_resolve(index, owner, "client_authentication.authentication_profile", client_auth.authentication_profile, ("authentication-profile",), owner_family=owner_family, source_only=True))
+                        result.append(_resolve(index, owner, "client_authentication.authentication_profile", client_auth.authentication_profile, ("authentication-profile",), owner_family=owner_family, source_only="authentication-profile" not in present_families))
+    for ext_owner_family, rules in (
+        ("qos-rule", config.qos_rules),
+        ("pbf-rule", config.pbf_rules),
+        ("decryption-rule", config.decryption_rules),
+        ("tunnel-inspect-rule", config.tunnel_inspect_rules),
+        ("app-override-rule", config.app_override_rules),
+        ("authentication-rule", config.authentication_rules),
+        ("dos-rule", config.dos_rules),
+    ):
+        for rule in rules:
+            for field, names, families in (
+                ("from_zones", getattr(rule, "from_zones", None), ("zone",)),
+                ("to_zones", getattr(rule, "to_zones", None), ("zone",)),
+                ("source", getattr(rule, "source", None), source_families),
+                ("destination", getattr(rule, "destination", None), source_families),
+                ("service", getattr(rule, "service", None), ("service", "service-group")),
+                ("schedule", (rule.schedule,) if getattr(rule, "schedule", None) else (), ("schedule",)),
+                ("tags", getattr(rule, "tags", None), ("tag",)),
+            ):
+                for name in names or ():
+                    result.append(_resolve(index, rule, field, name, families, owner_family=ext_owner_family))
+            for iface_name in getattr(rule, "from_interfaces", None) or ():
+                result.append(_resolve_interface(index, rule, "from_interfaces", iface_name, owner_family=ext_owner_family))
+            if getattr(rule, "egress_interface", None):
+                result.append(_resolve_interface(index, rule, "egress_interface", rule.egress_interface, owner_family=ext_owner_family))
+            for name in getattr(rule, "source_user", None) or ():
+                _append_user_reference(result, index, rule, "source_user", name, ext_owner_family)
+            if getattr(rule, "log_setting", None):
+                result.append(_resolve(index, rule, "log_setting", rule.log_setting, ("log-setting",), owner_family=ext_owner_family, source_only="log-setting" not in present_families))
+            if getattr(rule, "profile", None):
+                prof_family = "decryption-profile" if ext_owner_family == "decryption-rule" else f"{ext_owner_family}-profile"
+                result.append(_resolve(index, rule, "profile", rule.profile, (prof_family,), owner_family=ext_owner_family, source_only=prof_family not in present_families))
+    for profile in config.ssl_tls_service_profiles:
+        if profile.certificate:
+            result.append(_resolve(index, profile, "certificate", profile.certificate, ("certificate",), owner_family="ssl-tls-service-profile", source_only="certificate" not in present_families))
+    for profile in config.saml_idp_server_profiles:
+        if profile.certificate:
+            result.append(_resolve(index, profile, "certificate", profile.certificate, ("certificate",), owner_family="saml-idp-server-profile", source_only="certificate" not in present_families))
+    for vlan in config.vlans:
+        if vlan.virtual_interface:
+            result.append(_resolve_interface(index, vlan, "virtual_interface", vlan.virtual_interface, owner_family="vlan"))
+        for iface in vlan.interfaces or ():
+            result.append(_resolve_interface(index, vlan, "interfaces", iface, owner_family="vlan"))
+    for vwire in config.virtual_wires:
+        for field in ("interface1", "interface2"):
+            iface = getattr(vwire, field, None)
+            if iface:
+                result.append(_resolve_interface(index, vwire, field, iface, owner_family="virtual-wire"))
+    for gre in config.gre_tunnels:
+        if gre.tunnel_interface:
+            result.append(_resolve_interface(index, gre, "tunnel_interface", gre.tunnel_interface, owner_family="gre-tunnel"))
+    for proxy in config.dns_proxies:
+        for iface in proxy.interfaces or ():
+            result.append(_resolve_interface(index, proxy, "interfaces", iface, owner_family="dns-proxy"))
     shadowing: list[PANShadowedObject] = []
     for obj in index.objects:
         candidates = index.candidates(obj.family, obj.name, obj.scope)

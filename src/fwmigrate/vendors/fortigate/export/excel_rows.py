@@ -97,6 +97,34 @@ def rows_for_sheet(
         "IPS Sensor Entries": _ips_entry_rows,
         "IPS Exempt IPs": _ips_exempt_rows,
         "Security Profiles": _security_profile_rows,
+        "Antivirus Profiles": _av_profile_rows,
+        "Web Filter Profiles": _webfilter_profile_rows,
+        "DNS Filter Profiles": _dnsfilter_profile_rows,
+        "Application Lists": _application_list_rows,
+        "File Filter Profiles": _file_filter_profile_rows,
+        "Email Filter Profiles": _emailfilter_profile_rows,
+        "VoIP Profiles": _voip_profile_rows,
+        "WAF Profiles": _waf_profile_rows,
+        "SSL-SSH Profiles": _ssl_ssh_profile_rows,
+        "Proxy Policies": _proxy_policy_rows,
+        "Auth Policies": _auth_policy_rows,
+        "Traffic Shapers": _traffic_shaper_rows,
+        "LDB Monitors": _ldb_monitor_rows,
+        "High Availability": _ha_rows,
+        "SNMP Communities": _snmp_community_rows,
+        "SNMP Users": _snmp_user_rows,
+        "FortiGuard": _fortiguard_rows,
+        "BGP Configuration": _bgp_rows,
+        "OSPF Configuration": _ospf_rows,
+        "Prefix Lists": _prefix_list_rows,
+        "Route Maps": _route_map_rows,
+        "Password Policies": _password_policy_rows,
+        "Guest Users": _guest_user_rows,
+        "WiFi SSIDs": _wifi_ssid_rows,
+        "Managed FortiAPs": _managed_fortiap_rows,
+        "Managed Switches": _managed_switch_rows,
+        "Switch Port Policies": _switch_port_policy_rows,
+        "Syslog Settings": _syslog_setting_rows,
         "External Resources": _external_resource_rows,
         "Unresolved References": _unresolved_reference_rows,
         "Unsupported": _unsupported_rows,
@@ -1559,6 +1587,230 @@ def _security_profile_rows(
             "VDOM": "vdom",
         },
         domains=('profile_group',),
+    )
+
+
+def _av_profile_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str, Any]]:
+    return _model_rows(
+        context, context.config.antivirus_profiles, headers,
+        {"Name": "name", "Feature Set": "feature_set", "Inspection Mode": "inspection_mode", "Scan Mode": "scan_mode", "AV Virus Log": "av_virus_log", "AV Block Log": "av_block_log", "Extended Log": "extended_log", "Comments": "comment", "VDOM": "vdom"},
+        domains=("antivirus_profile",),
+    )
+
+
+def _webfilter_profile_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str, Any]]:
+    return _model_rows(
+        context, context.config.webfilter_profiles, headers,
+        {"Name": "name", "Feature Set": "feature_set", "Inspection Mode": "inspection_mode", "URL Filter Table": "urlfilter_table", "Log All URL": "log_all_url", "Extended Log": "extended_log", "Safe Search": "safe_search", "Comments": "comment", "VDOM": "vdom"},
+        domains=("webfilter_profile",),
+    )
+
+
+def _dnsfilter_profile_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str, Any]]:
+    return _model_rows(
+        context, context.config.dnsfilter_profiles, headers,
+        {"Name": "name", "Block Action": "block_action", "Redirect Portal": "redirect_portal", "Block Botnet": "block_botnet", "Safe Search": "safe_search", "Log All Domain": "log_all_domain", "Domain Filter Table": "domain_filter_table", "Comments": "comment", "VDOM": "vdom"},
+        domains=("dnsfilter_profile",),
+    )
+
+
+def _application_list_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str, Any]]:
+    return _model_rows(
+        context, context.config.application_lists, headers,
+        {"Name": "name", "Other Application Action": "other_application_action", "Other Application Log": "other_application_log", "Unknown Application Action": "unknown_application_action", "Deep App Inspection": "deep_app_inspection", "Extended Log": "extended_log", "Entry Count": lambda item: len(item.entries), "Comments": "comment", "VDOM": "vdom"},
+        domains=("application_list",),
+    )
+
+
+def _file_filter_profile_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str, Any]]:
+    return _model_rows(
+        context, context.config.file_filter_profiles, headers,
+        {"Name": "name", "Feature Set": "feature_set", "Log": "log", "Extended Log": "extended_log", "Scan Archive Contents": "scan_archive_contents", "Rule Count": lambda item: len(item.rules), "Comments": "comment", "VDOM": "vdom"},
+        domains=("file_filter_profile",),
+    )
+
+
+def _emailfilter_profile_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str, Any]]:
+    return _model_rows(
+        context, context.config.emailfilter_profiles, headers,
+        {"Name": "name", "Feature Set": "feature_set", "Spam Filtering": "spam_filtering", "Spam Log": "spam_log", "External": "external", "Comments": "comment", "VDOM": "vdom"},
+        domains=("emailfilter_profile",),
+    )
+
+
+def _voip_profile_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str, Any]]:
+    return _model_rows(
+        context, context.config.voip_profiles, headers,
+        {"Name": "name", "Feature Set": "feature_set", "SIP Status": "sip_status", "SIP RTP": "sip_rtp", "SIP Strict Register": "sip_strict_register", "SIP Invite Rate": "sip_invite_rate", "SIP Register Rate": "sip_register_rate", "Comments": "comment", "VDOM": "vdom"},
+        domains=("voip_profile",),
+    )
+
+
+def _waf_profile_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str, Any]]:
+    return _model_rows(
+        context, context.config.waf_profiles, headers,
+        {"Name": "name", "Extended Log": "extended_log", "External": "external", "Replacement Message Group": "replacemsg_group", "Comments": "comment", "VDOM": "vdom"},
+        domains=("waf_profile",),
+    )
+
+
+def _ssl_ssh_profile_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str, Any]]:
+    return _model_rows(
+        context, context.config.ssl_ssh_profiles, headers,
+        {"Name": "name", "CA Name": "caname", "Server Cert Mode": "server_cert_mode", "Server Cert": "server_cert", "Use SSL Server": "use_ssl_server", "Supported ALPN": "supported_alpn", "Comments": "comment", "VDOM": "vdom"},
+        domains=("ssl_ssh_profile",),
+    )
+
+
+def _proxy_policy_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str, Any]]:
+    return _model_rows(
+        context, context.config.proxy_policies, headers,
+        {"Policy ID": "policy_id", "Name": "name", "Proxy Type": "proxy", "Status": "status", "Source Interface": "srcintf", "Destination Interface": "dstintf", "Source Addresses": "srcaddr", "Destination Addresses": "dstaddr", "Services": "service", "Action": "action", "Schedule": "schedule", "Profile Group": "profile_group", "Web Filter": "webfilter_profile", "AV Profile": "av_profile", "SSL/SSH Profile": "ssl_ssh_profile", "Comments": "comments", "VDOM": "vdom"},
+        domains=("proxy_policy",),
+    )
+
+
+def _auth_policy_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str, Any]]:
+    return _model_rows(
+        context, context.config.auth_policies, headers,
+        {"Policy ID": "policy_id", "Name": "name", "Status": "status", "Source Interface": "srcintf", "Source Addresses": "srcaddr", "Destination Addresses": "dstaddr", "Services": "service", "Users": "users", "User Groups": "groups", "Active Auth Method": "active_auth_method", "SSO Auth Method": "sso_auth_method", "Comments": "comments", "VDOM": "vdom"},
+        domains=("auth_policy",),
+    )
+
+
+def _traffic_shaper_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str, Any]]:
+    return _model_rows(
+        context, context.config.traffic_shapers, headers,
+        {"Name": "name", "Guaranteed Bandwidth": "guaranteed_bandwidth", "Maximum Bandwidth": "maximum_bandwidth", "Bandwidth Unit": "bandwidth_unit", "Priority": "priority", "Per-Policy": "per_policy", "DiffServ": "diffserv", "DSCP Marking Method": "dscp_marking_method", "VDOM": "vdom"},
+        domains=("traffic_shaper",),
+    )
+
+
+def _ldb_monitor_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str, Any]]:
+    return _model_rows(
+        context, context.config.ldb_monitors, headers,
+        {"Name": "name", "Type": "type", "Interval": "interval", "Timeout": "timeout", "Retry": "retry", "Port": "port", "Source IP": "src_ip", "HTTP Get": "http_get", "HTTP Match": "http_match", "VDOM": "vdom"},
+        domains=("ldb_monitor",),
+    )
+
+
+def _ha_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str, Any]]:
+    return _model_rows(
+        context, context.config.ha_config, headers,
+        {"Mode": "mode", "Group ID": "group_id", "Group Name": "group_name", "Priority": "priority", "Heartbeat Interfaces": "hbdev", "Session Pickup": "session_pickup", "Override": "override", "Schedule": "schedule", "Monitors": "monitor", "Password Configured": "password_configured", "VDOM": "vdom"},
+        domains=("ha",),
+    )
+
+
+def _snmp_community_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str, Any]]:
+    return _model_rows(
+        context, context.config.snmp_communities, headers,
+        {"ID": "id", "Name": "name", "Status": "status", "Query V1 Status": "query_v1_status", "Query V2c Status": "query_v2c_status", "Trap V1 Status": "trap_v1_status", "Trap V2c Status": "trap_v2c_status", "Host Count": lambda item: len(item.hosts), "VDOM": "vdom"},
+        domains=("snmp_community",),
+    )
+
+
+def _snmp_user_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str, Any]]:
+    return _model_rows(
+        context, context.config.snmp_users, headers,
+        {"Name": "name", "Status": "status", "Security Level": "security_level", "Auth Proto": "auth_proto", "Priv Proto": "priv_proto", "Queries": "queries", "Trap Status": "trap_status", "Notify Hosts": "notify_hosts", "VDOM": "vdom"},
+        domains=("snmp_user",),
+    )
+
+
+def _fortiguard_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str, Any]]:
+    return _model_rows(
+        context, context.config.fortiguard, headers,
+        {"FortiGuard Anycast": "fortiguard_anycast", "Protocol": "protocol", "Port": "port", "Webfilter Cache": "webfilter_cache", "Antispam Cache": "antispam_cache", "Update Server Location": "update_server_location", "DDNS Enable": "ddns_enable", "VDOM": "vdom"},
+        domains=("fortiguard",),
+    )
+
+
+def _bgp_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str, Any]]:
+    return _model_rows(
+        context, context.config.router_bgp, headers,
+        {"BGP AS": "bgp_as", "Router ID": "router_id", "Keepalive Timer": "keepalive_timer", "Holdtime Timer": "holdtime_timer", "eBGP Multipath": "ebgp_multipath", "iBGP Multipath": "ibgp_multipath", "Graceful Restart": "graceful_restart", "Neighbor Count": lambda item: len(item.neighbors), "Network Count": lambda item: len(item.networks) + len(item.networks6), "VDOM": "vdom"},
+        domains=("router_bgp",),
+    )
+
+
+def _ospf_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str, Any]]:
+    return _model_rows(
+        context, context.config.router_ospf, headers,
+        {"Router ID": "router_id", "Default Information Originate": "default_information_originate", "ABR Type": "abr_type", "RFC1583 Compatible": "rfc1583_compatible", "Distance": "distance", "BFD": "bfd", "Area Count": lambda item: len(item.areas), "Interface Count": lambda item: len(item.ospf_interfaces), "Network Count": lambda item: len(item.networks), "VDOM": "vdom"},
+        domains=("router_ospf",),
+    )
+
+
+def _prefix_list_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str, Any]]:
+    return _model_rows(
+        context, context.config.prefix_lists, headers,
+        {"Name": "name", "Address Family": "address_family", "Rule Count": lambda item: len(item.rules), "Comments": "comments", "VDOM": "vdom"},
+        domains=("prefix_list",),
+    )
+
+
+def _route_map_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str, Any]]:
+    return _model_rows(
+        context, context.config.route_maps, headers,
+        {"Name": "name", "Rule Count": lambda item: len(item.rules), "Comments": "comments", "VDOM": "vdom"},
+        domains=("route_map",),
+    )
+
+
+def _password_policy_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str, Any]]:
+    return _model_rows(
+        context, context.config.password_policies, headers,
+        {"Name": "name", "Expire Status": "expire_status", "Expire Days": "expire_days", "Minimum Length": "minimum_length", "Min Lowercase": "min_lower_case_letter", "Min Uppercase": "min_upper_case_letter", "Min Non-Alphanumeric": "min_non_alphanumeric", "Min Number": "min_number", "Reuse Password": "reuse_password", "VDOM": "vdom"},
+        domains=("password_policy",),
+    )
+
+
+def _guest_user_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str, Any]]:
+    return _model_rows(
+        context, context.config.guest_users, headers,
+        {"ID": "id", "User ID": "user_id", "Type": "type", "Sponsor": "sponsor", "Company": "company", "Email": "email", "Mobile Phone": "mobile_phone", "Expiration": "expiration", "Password Configured": "password_configured", "Comments": "comment", "VDOM": "vdom"},
+        domains=("guest_user",),
+    )
+
+
+def _wifi_ssid_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str, Any]]:
+    return _model_rows(
+        context, context.config.wireless_vaps, headers,
+        {"Name": "name", "SSID": "ssid", "Status": "status", "Security": "security", "Encrypt": "encrypt", "Auth": "auth", "Passphrase Configured": "passphrase_configured", "RADIUS Server": "radius_server", "User Groups": "usergroup", "VLAN ID": "vlanid", "VDOM": "vdom"},
+        domains=("wireless_vap",),
+    )
+
+
+def _managed_fortiap_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str, Any]]:
+    return _model_rows(
+        context, context.config.wireless_wtps, headers,
+        {"WTP ID": "wtp_id", "Name": "name", "WTP Profile": "wtp_profile", "Admin": "admin", "WAN Port Mode": "wan_port_mode", "Override Allowaccess": "override_allowaccess", "Comments": "comment", "VDOM": "vdom"},
+        domains=("wireless_wtp",),
+    )
+
+
+def _managed_switch_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str, Any]]:
+    return _model_rows(
+        context, context.config.managed_switches, headers,
+        {"Switch ID": "switch_id", "Name": "name", "Serial": "sn", "Version": "version", "Directly Connected": "directly_connected", "Switch Profile": "switch_profile", "Port Count": lambda item: len(item.ports), "Description": "description", "VDOM": "vdom"},
+        domains=("managed_switch",),
+    )
+
+
+def _switch_port_policy_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str, Any]]:
+    return _model_rows(
+        context, context.config.switch_port_policies, headers,
+        {"Name": "name", "FortiLink": "fortilink", "QoS Policy": "qos_policy", "VLAN Policy": "vlan_policy", "Bounce Port Link": "bounce_port_link", "Description": "description", "VDOM": "vdom"},
+        domains=("switch_port_policy",),
+    )
+
+
+def _syslog_setting_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str, Any]]:
+    return _model_rows(
+        context, context.config.syslog_settings, headers,
+        {"Syslog Name": "syslog_name", "Status": "status", "Server": "server", "Mode": "mode", "Port": "port", "Facility": "facility", "Source IP": "source_ip", "Format": "format", "Interface": "interface", "VDOM": "vdom"},
+        domains=("syslog_setting",),
     )
 def _external_resource_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str, Any]]:
     return _model_rows(

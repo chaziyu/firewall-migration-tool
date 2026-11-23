@@ -58,3 +58,37 @@ test('saveBlobWithFallback returns cancelled when desktop save dialog is cancell
     globalThis.window = originalWindow
   }
 })
+
+test('saveBlobWithFallback prefers pywebview.api.download_file for native Downloads without dialog', async () => {
+  const { saveBlobWithFallback } = loadDesktopUtils()
+  const originalWindow = globalThis.window
+  const downloadCalls = []
+  let saveFileCalled = false
+  globalThis.window = {
+    pywebview: {
+      api: {
+        async download_file(filename, contentBase64) {
+          downloadCalls.push({ filename, contentBase64 })
+          return { saved: true, cancelled: false, filename: 'edge-fortigate-report-1.xlsx', path: 'C:\\Users\\demo\\Downloads\\edge-fortigate-report-1.xlsx' }
+        },
+        async save_file() {
+          saveFileCalled = true
+          return { saved: true, cancelled: false }
+        },
+      },
+    },
+  }
+  try {
+    const blob = new Blob(['xlsx-bytes'])
+    const result = await saveBlobWithFallback(blob, 'edge-fortigate-report.xlsx')
+    assert.equal(saveFileCalled, false)
+    assert.equal(downloadCalls.length, 1)
+    assert.deepEqual(result, {
+      status: 'saved',
+      filename: 'edge-fortigate-report-1.xlsx',
+      path: 'C:\\Users\\demo\\Downloads\\edge-fortigate-report-1.xlsx',
+    })
+  } finally {
+    globalThis.window = originalWindow
+  }
+})

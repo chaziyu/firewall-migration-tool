@@ -185,6 +185,8 @@ function component(file, name, modules, { strictEffectReplay = false } = {}) {
     if (key === './components/MigrationSetUpload') return { MigrationSetUpload: 'SetUpload' }
     if (key === './components/MigrationConversionSettings') return { MigrationConversionSettings: 'ConversionSettings' }
     if (key === './components/MigrationIssueWorkspace') return { MigrationIssueWorkspace: 'IssueWorkspace' }
+    if (key === './UpdateChecker') return { UpdateChecker: 'UpdateChecker' }
+    if (key === '../chat/ConfigChatWidget') return { ConfigChatWidget: 'ConfigChatWidget' }
     if (key === '../migration/fortigateToJuniperSrx/MigrationWorkflow') return { JuniperSRXMigrationWorkflow: 'JuniperSRX' }
     if (key === '../migration/fortigateToCiscoAsa/MigrationWorkflow') return { CiscoAsaMigrationWorkflow: 'CiscoAsa' }
     if (key.endsWith('/utils/desktop')) {
