@@ -1,1 +1,0 @@
-"""Reverse-pair integration tests."""

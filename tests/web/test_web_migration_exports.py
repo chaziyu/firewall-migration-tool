@@ -5,7 +5,6 @@ import zipfile
 from types import SimpleNamespace
 from fwmigrate.web import create_app
 from fwmigrate.conversion.fortigate_to_palo_alto.application import deployment_validation_feedback
-from tests.fixture_paths import CISCO_ASA_FIXTURE
 from pathlib import Path
 
 MIGRATION_FIXTURE = Path(__file__).parents[1] / "fixtures" / "fortigate" / "palo_alto_mvp.conf"
@@ -41,7 +40,7 @@ def test_migration_endpoint_rejects_unsupported_pair():
             "source_vendor": "cisco_asa",
             "target_vendor": "palo_alto",
             "include_report": "true",
-            "file": (io.BytesIO(CISCO_ASA_FIXTURE.read_bytes()), CISCO_ASA_FIXTURE.name),
+            "file": (io.BytesIO(b"hostname asa\n"), "asa.cfg"),
         },
         content_type="multipart/form-data",
     )

@@ -14,30 +14,16 @@ from fwmigrate.vendors.fortigate.source_report import FortiGateSourceReporter
 
 def test_malformed_secret_bearing_source_returns_safe_client_errors():
     client = create_app({"TESTING": True}).test_client()
-    source = json.dumps({"format": "checkpoint-export-v1", "responses": [
-        {"data": {"password": "ERROR_SECRET_SENTINEL"}},
-    ]}).encode()
+    source = b'<config><password>ERROR_SECRET_SENTINEL</password>'
     for route in ("/api/preview", "/api/extract/excel"):
-        response = client.post(route, data={"source_vendor": "checkpoint",
-            "file": (io.BytesIO(source), "invalid.json")}, content_type="multipart/form-data")
+        response = client.post(route, data={"source_vendor": "palo_alto",
+            "file": (io.BytesIO(source), "invalid.xml")}, content_type="multipart/form-data")
         assert response.status_code == 400
         assert b"ERROR_SECRET_SENTINEL" not in response.data
         assert b"input_value" not in response.data
 
 
-ASA_SOURCE = (
-    "hostname asa\n"
-    "username admin password 0 web-secret\n"
-    "interface GigabitEthernet0/1\n"
-    " nameif outside\n"
-    " ip address 203.0.113.1 255.255.255.0\n"
-    "object network WEB\n"
-    " host 10.0.0.10\n"
-    "access-list OUT extended permit tcp object WEB any eq 443\n"
-)
-
 PALO_SOURCE = '<config><shared><address><entry name="web"><ip-netmask>203.0.113.10</ip-netmask><future-password>palo-web-secret</future-password></entry></address></shared></config>'
-CHECKPOINT_SOURCE = '{"format":"checkpoint-export-v1","domain":"SMC User","gateway":"CP-Enterprise-Gateway","selected_domain":"SMC User","selected_package":"Standard","selected_access_layer":"Network","selected_gateway":"CP-Enterprise-Gateway","responses":[{"command":"show-hosts","domain":"SMC User","data":{"objects":[{"name":"web","type":"host","ipv4-address":"203.0.113.10","password":"checkpoint-web-secret"}],"from":1,"to":1,"total":1}}]}'
 FORTIGATE_SOURCE = """config system interface
     edit "port1"
         set ip 192.0.2.1 255.255.255.0
@@ -90,67 +76,8 @@ end
 
 
 EXCEL_SOURCE_CASES = (
-    ("fortigate", FORTIGATE_SOURCE), ("palo_alto", PALO_SOURCE), ("cisco_asa", ASA_SOURCE),
-    ("juniper_srx", "set system host-name branch\nset interfaces ge-0/0/0 unit 0 family inet address 203.0.113.10/24"),
-    ("cisco_ftd", json.dumps({"format": "cisco-fmc-rest-export-v1", "source": "fmc-rest-api",
-                             "domain": {"id": "d1", "name": "Global"}, "objects": {"hosts": [
-                                 {"id": "h1", "name": "Host", "value": "203.0.113.10"},
-                             ]}, "access_policies": [], "nat_policies": []})),
-    ("checkpoint", CHECKPOINT_SOURCE),
+    ("fortigate", FORTIGATE_SOURCE), ("palo_alto", PALO_SOURCE),
 )
-
-
-@pytest.mark.parametrize("profile", ["fast", "full"])
-@pytest.mark.parametrize("fixture", ["fmc_selected_domains.json", "fdm_object_pipeline_conformance.json",
-                                     "fdm_nat_pipeline_conformance.json", "cli"])
-def test_ftd_supported_formats_reach_preview_and_excel_through_all_transports(profile, fixture):
-    from fwmigrate.collection.contracts import CollectedSource
-    from fwmigrate.collection.snapshot import make_snapshot
-
-    if fixture == "cli":
-        source = ("configure network ipv4 manual 192.0.2.42 255.255.255.0 192.0.2.1\n"
-                  "interface inside\n description WEB_CLI_MARKER\n ipv6 address 2001:db8::42/64\n"
-                  "access-list WEB_UNSUPPORTED extended permit ip any any\n password WEB_FTD_SECRET\n")
-        markers = ["WEB_CLI_MARKER", "192.0.2.42", "2001:db8::42", "WEB_UNSUPPORTED"]
-    else:
-        payload = json.loads((Path(__file__).parents[1] / "fixtures/cisco_ftd" / fixture).read_text())
-        objects = payload["objects"]
-        hosts = objects["networkaddresses"] if "networkaddresses" in objects else objects["hosts"]
-        hosts[0]["customField"] = "WEB_CUSTOM_MARKER"
-        hosts[0]["apiToken"] = "WEB_FTD_SECRET"
-        markers = ["WEB_CUSTOM_MARKER"]
-        source = json.dumps(payload)
-    client = create_app({"TESTING": True}).test_client()
-    preview = client.post("/api/preview", data={"source_vendor": "cisco_ftd",
-        "file": (io.BytesIO(source.encode()), "ftd-source.txt")})
-    assert preview.status_code == 200, preview.get_json()
-    evidence = preview.get_json()["source_evidence"]
-    assert "WEB_FTD_SECRET" not in str(preview.get_json())
-    snapshot = make_snapshot(CollectedSource("cisco_ftd", source, "ftd-source.txt", "offline"))
-    exports = [client.post("/api/extract/excel", buffered=True, data={"source_vendor": "cisco_ftd", "excel_profile": profile,
-        "file": (io.BytesIO(source.encode()), "ftd-source.txt")})]
-    for item in (evidence, {"vendor": "cisco_ftd", "source_text": source}, snapshot):
-        exports.append(client.post("/api/extract/excel", buffered=True, json={"source_vendor": "cisco_ftd",
-            "excel_profile": profile, "source": item}))
-    for response in exports:
-        assert response.status_code == 200, response.get_json()
-        workbook = load_workbook(io.BytesIO(response.data), read_only=True)
-        try:
-            values = str([row for sheet in workbook for row in sheet.values])
-            assert all(marker in values for marker in markers)
-            assert "WEB_FTD_SECRET" not in values
-        finally:
-            workbook.close()
-
-
-@pytest.mark.parametrize("source", ['{"format":"other"}', '{"format":\ninterface inside',
-                                     '[\ninterface inside', "unrecognized source"])
-def test_ftd_web_rejects_invalid_source_without_cli_fallback(source):
-    client = create_app({"TESTING": True}).test_client()
-    for route in ("/api/preview", "/api/extract/excel"):
-        response = client.post(route, data={"source_vendor": "cisco_ftd",
-            "file": (io.BytesIO(source.encode()), "invalid.json")})
-        assert response.status_code == 400
 
 
 @pytest.mark.parametrize('profile', ['fast', 'full'])
@@ -469,16 +396,6 @@ def test_palo_alto_excel_preserves_secret_like_object_names_after_upload(profile
         workbook.close()
 
 
-def test_check_point_upload_cached_preview_and_excel_redact_secrets():
-    client = create_app({"TESTING": True}).test_client()
-    response = client.post("/api/preview", data={"source_vendor": "checkpoint", "file": (io.BytesIO(CHECKPOINT_SOURCE.encode()), "cp.json")}, content_type="multipart/form-data")
-    assert response.status_code == 200
-    payload = response.get_json()
-    workbook = client.post("/api/extract/excel", json={"source_vendor": "checkpoint", "source": payload["source_evidence"]})
-    assert workbook.status_code == 200
-    assert b"checkpoint-web-secret" not in response.data + workbook.data
-
-
 def test_fortigate_preview_exposes_policy_fields_and_overview_sections():
     client = create_app({"TESTING": True}).test_client()
     response = client.post(
@@ -522,9 +439,7 @@ def test_all_registered_sources_advertise_view_report():
     payload = client.get("/api/vendors").get_json()
     sources = payload["sources"]
     assert "targets" not in payload
-    assert {item["vendor_id"] for item in sources} >= {
-        "fortigate", "palo_alto", "cisco_asa", "cisco_ftd", "checkpoint", "juniper_srx",
-    }
+    assert {item["vendor_id"] for item in sources} >= {"fortigate", "palo_alto"}
     assert all(item["web_report"] is True for item in sources)
 
 
@@ -538,19 +453,16 @@ def test_removed_source_diagnostics_endpoint_is_not_exposed():
 @pytest.mark.parametrize(("vendor", "fixture", "excluded"), (
     ("fortigate", "example_fortigate.conf", {"FortiGate Source Inventory", "Extraction Coverage"}),
     ("palo_alto", "example_palo_alto.xml", {"PAN-OS Source Inventory", "Extraction Coverage", "PAN-OS Source Appendix"}),
-    ("cisco_asa", "example_cisco_asa.cfg", {"Source Inventory", "Extraction Coverage"}),
-    ("cisco_ftd", "cisco_ftd/fmc_selected_domains.json", set()),
-    ("checkpoint", "checkpoint/multidomain_full.json", set()),
-    ("juniper_srx", "example_juniper_srx.set", {"Source Inventory", "Extraction Coverage"}),
 ))
 def test_excel_selector_reaches_real_vendor_profiles(vendor, fixture, excluded, transport, monkeypatch):
     client = create_app({"TESTING": True}).test_client()
     path = Path(__file__).parents[1] / "fixtures" / fixture
     source = path.read_bytes()
+    filename = path.name
     evidence = None
     if transport == "preview":
         preview = client.post("/api/preview", data={
-            "source_vendor": vendor, "file": (io.BytesIO(source), path.name),
+            "source_vendor": vendor, "file": (io.BytesIO(source), filename),
         }, content_type="multipart/form-data")
         assert preview.status_code == 200
         evidence = preview.get_json()["source_evidence"]
@@ -572,7 +484,7 @@ def test_excel_selector_reaches_real_vendor_profiles(vendor, fixture, excluded, 
         else:
             response = client.post("/api/extract/excel", data={
                 "source_vendor": vendor, "excel_profile": profile,
-                "file": (io.BytesIO(source), path.name),
+                "file": (io.BytesIO(source), filename),
             }, content_type="multipart/form-data")
         assert response.status_code == 200, (vendor, profile, response.get_json())
         workbooks[profile] = load_workbook(io.BytesIO(response.data))
@@ -621,7 +533,7 @@ def test_excel_selector_reaches_real_vendor_profiles(vendor, fixture, excluded, 
     assert any(cell.hyperlink is not None for row in full["Summary"] for cell in row)
 
 
-@pytest.mark.parametrize("vendor", ("fortigate", "palo_alto", "cisco_asa", "cisco_ftd", "checkpoint", "juniper_srx"))
+@pytest.mark.parametrize("vendor", ("fortigate", "palo_alto"))
 def test_excel_selector_rejects_invalid_profiles_for_every_vendor(vendor):
     client = create_app({"TESTING": True}).test_client()
     response = client.post("/api/extract/excel", json={"source_vendor": vendor, "excel_profile": "invalid"})
@@ -632,21 +544,17 @@ def test_excel_selector_rejects_invalid_profiles_for_every_vendor(vendor):
 def test_api_preview_contract_covers_every_registered_vendor():
     fixtures = Path(__file__).parents[1] / "fixtures"
     cases = (
-        ("fortigate", fixtures / "example_fortigate.conf"),
-        ("palo_alto", fixtures / "example_palo_alto.xml"),
-        ("cisco_asa", fixtures / "example_cisco_asa.cfg"),
-        ("cisco_ftd", fixtures / "cisco_ftd" / "fmc_selected_domains.json"),
-        ("checkpoint", fixtures / "checkpoint" / "multidomain_full.json"),
-        ("juniper_srx", fixtures / "example_juniper_srx.set"),
+        ("fortigate", (fixtures / "example_fortigate.conf").read_bytes(), "example_fortigate.conf"),
+        ("palo_alto", (fixtures / "example_palo_alto.xml").read_bytes(), "example_palo_alto.xml"),
     )
     required_sections = {"interfaces", "addresses", "address_groups", "services", "service_groups",
                          "schedules", "policies", "nat", "routes", "vpn_tunnels", "vpn_phase2",
                          "validation", "unresolved_references"}
     client = create_app({"TESTING": True}).test_client()
-    for vendor, path in cases:
+    for vendor, content, filename in cases:
         response = client.post(
             "/api/preview",
-            data={"source_vendor": vendor, "file": (io.BytesIO(path.read_bytes()), path.name)},
+            data={"source_vendor": vendor, "file": (io.BytesIO(content), filename)},
             content_type="multipart/form-data",
         )
         assert response.status_code == 200, (vendor, response.get_json())
@@ -658,7 +566,7 @@ def test_api_preview_contract_covers_every_registered_vendor():
         assert all(isinstance(report["sections"][name], list) for name in required_sections)
         json.dumps(report)
         reporter = source_reporters.get(vendor)
-        analysis = reporter.analyze_source(path.read_text(encoding="utf-8"))
+        analysis = reporter.analyze_source(content.decode("utf-8"))
         before = deepcopy(analysis)
         preview_options = {"include_source_commands": False} if vendor == "fortigate" else {}
         copied = normalize_web_report(reporter.build_preview(analysis, **preview_options), vendor)

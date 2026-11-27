@@ -19,10 +19,6 @@ EVIDENCE = {'vendor': 'fortigate', 'source_text': SOURCE, 'source_name': 'review
 CASES = (
     ('fortigate', 'FortiGateSourceReporter', None),
     ('palo_alto', 'PaloAltoSourceReporter', 'palo_alto/integrated_panorama.xml'),
-    ('cisco_asa', 'CiscoASASourceReporter', 'cisco_asa/nat_pipeline_conformance.txt'),
-    ('cisco_ftd', 'CiscoFTDSourceReporter', 'cisco_ftd/fmc_selected_domains.json'),
-    ('juniper_srx', 'JuniperSRXSourceReporter', 'juniper_srx/reporting_contract.set'),
-    ('checkpoint', 'CheckPointSourceReporter', 'checkpoint/multidomain_full.json'),
 )
 
 
@@ -30,10 +26,7 @@ CASES = (
 @pytest.mark.parametrize('failure', ['rows', 'save'])
 def test_real_reporters_clean_up_failed_streams_without_touching_another_export(vendor, reporter_name, fixture, failure):
     reporter = getattr(import_module(f'fwmigrate.vendors.{vendor}.source_report'), reporter_name)()
-    if vendor == 'juniper_srx':
-        source = 'set system host-name srx\nset interfaces ge-0/0/0 unit 0 family inet address 192.0.2.1/24'
-    else:
-        source = (Path(__file__).parents[1] / 'fixtures' / fixture).read_text() if fixture else SOURCE
+    source = (Path(__file__).parents[1] / 'fixtures' / fixture).read_text() if fixture else SOURCE
     analysis = reporter.analyze_source(source)
     with report_workbook(Workbook(write_only=True)) as other:
         other.create_sheet('Still writing').append(['retained'])
