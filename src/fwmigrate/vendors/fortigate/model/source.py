@@ -58,7 +58,7 @@ from .selected_sections import (
     FGDNSFilterProfile, FGApplicationList, FGFileFilterProfile,
     FGEmailFilterProfile, FGVoIPProfile, FGWAFProfile, FGSSLSSHProfile,
     FGLDAPServer, FGRADIUSServer, FGTACACSServer, FGFSSOServer, FGFSSOPolling,
-    FGFortiToken, FGUserSetting, FGPasswordPolicy,
+    FGFortiToken, FGUserSetting, FGPasswordPolicy, FGSystemPasswordPolicy,
     FGWirelessVAP, FGWirelessWTP, FGWirelessWTPProfile, FGWirelessWIDSProfile,
     FGManagedSwitch, FGSyslogSetting, FGLogMemorySetting, FGLogDiskSetting,
     FGLogSetting, FGLogThreatWeight,
@@ -203,6 +203,7 @@ class FGConfig(BaseModel):
     fortitokens: list[FGFortiToken] = Field(default_factory=list)
     user_settings: list[FGUserSetting] = Field(default_factory=list)
     password_policies: list[FGPasswordPolicy] = Field(default_factory=list)
+    system_password_policies: list[FGSystemPasswordPolicy] = Field(default_factory=list)
 
     # WiFi, Switch & Logging
     wireless_vaps: list[FGWirelessVAP] = Field(default_factory=list)

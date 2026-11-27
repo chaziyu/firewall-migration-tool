@@ -19,6 +19,7 @@ export type SidebarWorkspaceMeta = {
 const SECTION_ICON_PATHS: Record<string, string> = {
   Overview: 'M4 5h6v6H4zM14 5h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z',
   'Security & Health': 'M12 3 5 6v6c0 4.5 3 7.8 7 9 4-1.2 7-4.5 7-9V6l-7-3Zm-2.5 9 1.8 1.8 3.5-3.6',
+  'PM Lookup': 'M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2M9 5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v0a2 2 0 0 1-2 2h-2a2 2 0 0 1-2-2Zm0 9 2 2 4-4',
   'Policies & NAT': 'M4 6h16M4 12h16M4 18h10M17 16l3 2-3 2',
   Objects: 'M12 3 4 7.5 12 12l8-4.5L12 3ZM4 12l8 4.5 8-4.5M4 16.5 12 21l8-4.5',
   'Interfaces & Network': 'M4 6h5v4H4zM15 6h5v4h-5zM9.5 14h5v4h-5zM6.5 10v2h11v-2M12 12v2',

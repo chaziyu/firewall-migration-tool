@@ -1556,6 +1556,23 @@ class FGPasswordPolicy(BaseModel):
     explicit_fields: set[str] = Field(default_factory=set)
 
 
+class FGSystemPasswordPolicy(BaseModel):
+    vdom: str | None = "root"
+    status: str | None = None
+    apply_to: list[str] = Field(default_factory=list)
+    minimum_length: int | None = None
+    min_lower_case_letter: int | None = None
+    min_upper_case_letter: int | None = None
+    min_non_alphanumeric: int | None = None
+    min_number: int | None = None
+    min_change_characters: int | None = None
+    expire_status: str | None = None
+    expire_day: int | None = None
+    reuse_password: str | None = None
+    raw_extra: dict[str, Any] = Field(default_factory=dict)
+    explicit_fields: set[str] = Field(default_factory=set)
+
+
 # ----------------------------------------------------------------------
 # WiFi, Switch & Logging
 # ----------------------------------------------------------------------
@@ -1838,8 +1855,59 @@ class FGLogSetting(BaseModel):
     rest_api_set: str | None = None
     rest_api_get: str | None = None
     custom_log_fields: list[str] = Field(default_factory=list)
-    brief_traffic_format: int | None = None
+    brief_traffic_format: str | None = None
     user_anonymize: str | None = None
+    raw_extra: dict[str, Any] = Field(default_factory=dict)
+    explicit_fields: set[str] = Field(default_factory=set)
+
+
+class FGThreatWeightLevel(BaseModel):
+    low: int | None = None
+    medium: int | None = None
+    high: int | None = None
+    critical: int | None = None
+    raw_extra: dict[str, Any] = Field(default_factory=dict)
+    explicit_fields: set[str] = Field(default_factory=set)
+
+
+class FGThreatWeightIPS(BaseModel):
+    info_severity: str | None = None
+    low_severity: str | None = None
+    medium_severity: str | None = None
+    high_severity: str | None = None
+    critical_severity: str | None = None
+    raw_extra: dict[str, Any] = Field(default_factory=dict)
+    explicit_fields: set[str] = Field(default_factory=set)
+
+
+class FGThreatWeightMalware(BaseModel):
+    virus_infected: str | None = None
+    virus_file_type_executable: str | None = None
+    virus_outbreak_prevention: str | None = None
+    virus_scan_error: str | None = None
+    botnet_connection: str | None = None
+    command_blocked: str | None = None
+    file_blocked: str | None = None
+    oversize: str | None = None
+    switch_proto: str | None = None
+    mimefragmented: str | None = None
+    content_disarm: str | None = None
+    fortisandbox: str | None = None
+    fortindr: str | None = None
+    malware_list: str | None = None
+    ems_threat_feed: str | None = None
+    fsa_malicious: str | None = None
+    fsa_high_risk: str | None = None
+    fsa_medium_risk: str | None = None
+    inline_block: str | None = None
+    raw_extra: dict[str, Any] = Field(default_factory=dict)
+    explicit_fields: set[str] = Field(default_factory=set)
+
+
+class FGThreatWeightCategoryEntry(BaseModel):
+    id: int | None = None
+    category: int | None = None
+    level: str | None = None
     raw_extra: dict[str, Any] = Field(default_factory=dict)
     explicit_fields: set[str] = Field(default_factory=set)
 
@@ -1850,7 +1918,13 @@ class FGLogThreatWeight(BaseModel):
     blocked_connection: str | None = None
     failed_connection: str | None = None
     url_block_detected: str | None = None
+    url_block_detect: str | None = None
     botnet_connection_detected: str | None = None
+    level: FGThreatWeightLevel | None = None
+    ips: FGThreatWeightIPS | None = None
+    malware: FGThreatWeightMalware | None = None
+    web: list[FGThreatWeightCategoryEntry] = Field(default_factory=list)
+    application: list[FGThreatWeightCategoryEntry] = Field(default_factory=list)
     raw_extra: dict[str, Any] = Field(default_factory=dict)
     explicit_fields: set[str] = Field(default_factory=set)
 
@@ -1959,6 +2033,7 @@ class FGLocalInPolicy(BaseModel):
 
 
 class FGFortiAnalyzerSetting(BaseModel):
+    target_name: str = "fortianalyzer"
     vdom: str | None = "root"
     status: str | None = None
     server: str | None = None

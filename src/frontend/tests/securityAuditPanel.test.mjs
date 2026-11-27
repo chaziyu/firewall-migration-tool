@@ -90,6 +90,7 @@ test('SecurityAuditPanel gates live exposure probe on liveDeviceAccess and rende
       'react/jsx-runtime': jsxRuntime,
       './reportPresentation': presentation,
       '../source/sourceApi': { fetchSecurityAudit: async () => SAMPLE_AUDIT },
+      './PmLookupPanel': { PmLookupPanel: 'PmLookupPanel' },
       './ReportDetails': {},
       './ExcelExportControls': { ExcelExportControls: 'ExcelExportControls' },
       './LifecycleCard': { LifecycleCard: 'LifecycleCard' },

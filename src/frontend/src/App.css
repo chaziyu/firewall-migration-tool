@@ -5563,3 +5563,56 @@ body:has(.finding-inspector[open]) {
   color: var(--text-muted);
 }
 
+/* PM Lookup Panel */
+.fw-pm-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.fw-pm-note {
+  margin: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-muted);
+  color: var(--text-muted);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.fw-pm-filter-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.fw-pm-filter-btn {
+  padding: 5px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.fw-pm-filter-btn:hover {
+  border-color: var(--line-strong);
+  color: var(--text-heading);
+}
+
+.fw-pm-filter-btn.active {
+  border-color: var(--color-primary);
+  background: var(--color-primary-subtle);
+  color: var(--color-primary);
+}
+
+.fw-pm-table td,
+.fw-pm-table th {
+  white-space: normal;
+  vertical-align: top;
+}
+

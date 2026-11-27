@@ -3,6 +3,7 @@ import type {
   ExposureProbeResponse,
   LifecycleCardData,
   LifecycleRefreshParams,
+  PmChecklistResponse,
   SecurityAuditResponse,
   SourcePreviewData,
   SourceVendor,
@@ -122,6 +123,31 @@ export function downloadSecurityAuditReport(
   }, {
     signal,
     contentTypes: ['text/html'],
+    requireNonEmpty: true,
+  })
+}
+
+export function fetchPmLookup(
+  vendor: SourceVendor,
+  source: import('../../storage/workspaceTypes').SourceEvidence,
+): Promise<PmChecklistResponse> {
+  return postJson<PmChecklistResponse>('/api/source/pm-lookup', {
+    source_vendor: vendor,
+    source,
+  })
+}
+
+export function downloadPmLookupExcel(
+  vendor: SourceVendor,
+  source: import('../../storage/workspaceTypes').SourceEvidence,
+  signal?: AbortSignal,
+): Promise<Blob> {
+  return postBlob('/api/source/pm-lookup/export', {
+    source_vendor: vendor,
+    source,
+  }, {
+    signal,
+    contentTypes: ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/octet-stream'],
     requireNonEmpty: true,
   })
 }

@@ -127,7 +127,7 @@ test('switching from scoped inventory to aggregate coverage does not filter away
     { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText
   const exports = {}
   const modules = { react: hooks, 'react/jsx-runtime': jsxRuntime, './reportPresentation': presentation,
-    './ReportDetails': {}, './ExcelExportControls': {}, './LifecycleCard': { isLifecycleCardData: () => false, LifecycleCard: 'LifecycleCard' }, '../../components/common/tabKeyboard': {}, '../../components/common/ErrorBanner': {} }
+    './PmLookupPanel': { PmLookupPanel: 'PmLookupPanel' }, './ReportDetails': {}, './ExcelExportControls': {}, './LifecycleCard': { isLifecycleCardData: () => false, LifecycleCard: 'LifecycleCard' }, '../../components/common/tabKeyboard': {}, '../../components/common/ErrorBanner': {} }
   new Function('require', 'exports', compiled)((name) => modules[name], exports)
   function nodes(node) {
     if (Array.isArray(node)) return node.flatMap(nodes)

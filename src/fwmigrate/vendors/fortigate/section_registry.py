@@ -157,12 +157,32 @@ register_section(
             "description",
             "status",
             "role",
+            "dedicated-to",
+            "mtu-override",
+            "dhcp-relay-service",
             "defaultgw",
             "lacp-mode",
             "lacp-speed",
             "aggregate-type",
             "management-ip",
             "dhcp-relay-ip",
+        ),
+    )
+)
+
+register_section(
+    SectionSpec(
+        source_path="system interface ipv6",
+        list_fields=_fields("ip6-allowaccess"),
+        integer_fields=_fields("ip6-default-life"),
+        scalar_fields=_fields(
+            "ip6-mode",
+            "ip6-address",
+            "ip6-send-adv",
+            "ip6-manage-flag",
+            "ip6-other-flag",
+            "ip6-dns-server-override",
+            "dhcp6-prefix-delegation",
         ),
     )
 )
@@ -2308,6 +2328,15 @@ register_section(
     )
 )
 
+register_section(
+    SectionSpec(
+        source_path="system password-policy",
+        list_fields=_fields("apply-to"),
+        integer_fields=_fields("minimum-length", "min-lower-case-letter", "min-upper-case-letter", "min-non-alphanumeric", "min-number", "min-change-characters", "expire-day"),
+        scalar_fields=_fields("status", "expire-status", "reuse-password"),
+    )
+)
+
 
 # ----------------------------------------------------------------------
 # WiFi, Switch & Logging
@@ -2447,15 +2476,14 @@ register_section(
     SectionSpec(
         source_path="log setting",
         list_fields=_fields("custom-log-fields"),
-        integer_fields=_fields("brief-traffic-format"),
         scalar_fields=_fields(
             "resolve-ip", "resolve-port", "log-user-in-upper", "fwpolicy-implicit-log",
             "fwpolicy6-implicit-log", "log-invalid-packet", "local-in-allow",
             "local-in-deny-unicast", "local-in-deny-broadcast", "local-out",
-            " local-out-ioc-detection", "local-out-ioc-detection", "daemon-log",
+            "local-out-ioc-detection", "daemon-log",
             "neighbor-event", "expolicy-implicit-log", "faz-override",
             "syslog-override", "rest-api-set", "rest-api-get", "anonymization-hash",
-            "user-anonymize",
+            "brief-traffic-format", "user-anonymize",
         ),
     )
 )
@@ -2463,9 +2491,52 @@ register_section(
 register_section(
     SectionSpec(
         source_path="log threat-weight",
-        scalar_fields=_fields("status", "blocked-connection", "failed-connection", "url-block-detected", "botnet-connection-detected"),
+        scalar_fields=_fields(
+            "status", "blocked-connection", "failed-connection",
+            "url-block-detected", "url-block-detect", "botnet-connection-detected",
+        ),
     )
 )
+
+register_section(
+    SectionSpec(
+        source_path="log threat-weight level",
+        integer_fields=_fields("low", "medium", "high", "critical"),
+    )
+)
+
+register_section(
+    SectionSpec(
+        source_path="log threat-weight ips",
+        scalar_fields=_fields(
+            "info-severity", "low-severity", "medium-severity",
+            "high-severity", "critical-severity",
+        ),
+    )
+)
+
+register_section(
+    SectionSpec(
+        source_path="log threat-weight malware",
+        scalar_fields=_fields(
+            "virus-infected", "virus-file-type-executable", "virus-outbreak-prevention",
+            "virus-scan-error", "botnet-connection", "command-blocked",
+            "file-blocked", "oversize", "switch-proto", "mimefragmented",
+            "content-disarm", "fortisandbox", "fortindr", "malware-list",
+            "ems-threat-feed", "fsa-malicious", "fsa-high-risk", "fsa-medium-risk",
+            "inline-block",
+        ),
+    )
+)
+
+for _tw_cat_path in ("log threat-weight web", "log threat-weight application"):
+    register_section(
+        SectionSpec(
+            source_path=_tw_cat_path,
+            integer_fields=_fields("category"),
+            scalar_fields=_fields("level"),
+        )
+    )
 
 register_section(
     SectionSpec(
@@ -2530,16 +2601,21 @@ for _local_in_path in ("firewall local-in-policy", "firewall local-in-policy6"):
         )
     )
 
-register_section(
-    SectionSpec(
-        source_path="log fortianalyzer setting",
-        scalar_fields=_fields(
-            "status", "server", "source-ip", "upload-option", "reliable",
-            "enc-algorithm", "ssl-min-proto-version", "certificate",
-            "interface", "interface-select-method",
-        ),
+for _faz_path in (
+    "log fortianalyzer setting",
+    "log fortianalyzer2 setting",
+    "log fortianalyzer3 setting",
+):
+    register_section(
+        SectionSpec(
+            source_path=_faz_path,
+            scalar_fields=_fields(
+                "status", "server", "source-ip", "upload-option", "reliable",
+                "enc-algorithm", "ssl-min-proto-version", "certificate",
+                "interface", "interface-select-method",
+            ),
+        )
     )
-)
 
 register_section(
     SectionSpec(

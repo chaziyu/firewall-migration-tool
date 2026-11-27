@@ -16,6 +16,21 @@ class FGInterfaceSecondaryIP(BaseModel):
     explicit_fields: set[str] = Field(default_factory=set)
 
 
+class FGInterfaceIPv6(BaseModel):
+    ip6_mode: str | None = None
+    ip6_address: str | None = None
+    ip6_allowaccess: list[str] = Field(default_factory=list)
+    ip6_send_adv: str | None = None
+    ip6_manage_flag: str | None = None
+    ip6_other_flag: str | None = None
+    ip6_default_life: int | None = None
+    ip6_dns_server_override: str | None = None
+    dhcp6_prefix_delegation: str | None = None
+
+    raw_extra: dict[str, Any] = Field(default_factory=dict)
+    explicit_fields: set[str] = Field(default_factory=set)
+
+
 class FGInterface(BaseModel):
     """
     Small FortiGate source interface model.
@@ -37,14 +52,18 @@ class FGInterface(BaseModel):
     # Source interface characteristics
     type: str | None = None
     role: str | None = None
+    dedicated_to: str | None = None
     mode: str | None = None
     status: str | None = None
+    mtu_override: str | None = None
+    dhcp_relay_service: str | None = None
 
     # Addressing
     ip: str | None = None
     secondary_ips: list[FGInterfaceSecondaryIP] = Field(
         default_factory=list
     )
+    ipv6: FGInterfaceIPv6 | None = None
 
     # Administrative access
     allowaccess: list[str] = Field(default_factory=list)

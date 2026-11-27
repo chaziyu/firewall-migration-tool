@@ -64,7 +64,7 @@ const SECTION_KEYS: Record<string, string[]> = {
   'Policies & NAT': [
     'policies', 'security_policies', 'security_rules', 'default_security_rules',
     'nat', 'nat_rules', 'translations', 'central_snat', 'vips', 'vip_groups', 'ip_pools',
-    'proxy_policies', 'auth_policies', 'access_control_policies', 'access_rules',
+    'proxy_policies', 'auth_policies', 'local_in_policies', 'access_control_policies', 'access_rules',
     'nac_policies', 'sdwan_rules', 'qos_rules', 'pbf_rules', 'decryption_rules',
     'tunnel_inspect_rules', 'app_override_rules', 'authentication_rules', 'dos_rules',
   ],
@@ -111,14 +111,23 @@ const SECTION_KEYS: Record<string, string[]> = {
     'kerberos_server_profiles', 'saml_idp_server_profiles', 'mfa_server_profiles',
     'authentication_profiles', 'authentication_sequences', 'certificates', 'ssl_tls_service_profiles',
     'password_complexities', 'password_profiles', 'user_id_agents', 'user_id_settings',
-    'administrators', 'admin_roles', 'admin_profiles', 'kerberos_keytabs',
+    'administrators', 'admin_roles', 'admin_profiles', 'kerberos_keytabs', 'saml_servers',
   ],
   'WiFi & Switch': [
     'wireless_vaps', 'wireless_wtps', 'wtp_profiles',
     'managed_switches', 'switch_port_policies', 'switch_lldp_profiles', 'switch_qos_policies', 'switch_vlan_policies',
   ],
   'Diagnostics & Coverage': ['unresolved_references', 'references', 'relationships', 'extraction_coverage', 'source_inventory'],
-  'System & Logs': ['system_global', 'system_dns', 'system_ntp', 'system_settings', 'ha_config', 'snmp_communities', 'snmp_users', 'syslog_settings'],
+  'System & Logs': [
+    'system_global', 'system_dns', 'system_ntp', 'system_settings', 'device_setup_settings',
+    'ha_config', 'ha_configs', 'system_password_policies', 'system_storages',
+    'snmp_sysinfo', 'snmp_communities', 'snmp_users', 'fortiguard',
+    'syslog_settings', 'fortianalyzer_settings', 'log_fortiguard_settings',
+    'log_memory_settings', 'log_disk_settings', 'log_settings', 'log_threat_weights',
+    'log_forwarding_profiles', 'log_setting_categories',
+    'syslog_server_profiles', 'email_server_profiles', 'snmptrap_server_profiles',
+    'http_server_profiles', 'netflow_server_profiles', 'scp_server_profiles', 'ssh_server_profiles',
+  ],
 }
 
 export type SubtypeFilter = {
@@ -362,6 +371,15 @@ const FORTIGATE_COLUMNS: Record<string, string[]> = {
   snmp_communities: ['id', 'vdom', 'status', 'community_configured', 'events', 'vdoms'],
   snmp_users: ['name', 'vdom', 'status', 'security_level', 'auth_proto', 'auth_pwd_configured', 'priv_proto', 'priv_pwd_configured'],
   syslog_settings: ['syslog_name', 'vdom', 'status', 'server', 'mode', 'port', 'facility', 'format'],
+  fortianalyzer_settings: ['target_name', 'vdom', 'status', 'server', 'source_ip', 'upload_option', 'reliable', 'enc_algorithm'],
+  log_fortiguard_settings: ['vdom', 'status', 'upload_option', 'upload_interval', 'enc_algorithm', 'interface'],
+  log_settings: ['vdom', 'fwpolicy_implicit_log', 'fwpolicy6_implicit_log', 'local_in_allow', 'local_in_deny_unicast', 'local_out', 'brief_traffic_format'],
+  log_threat_weights: ['vdom', 'status', 'blocked_connection', 'failed_connection', 'url_block_detected', 'botnet_connection_detected'],
+  system_password_policies: ['vdom', 'status', 'apply_to', 'minimum_length', 'expire_status', 'expire_day', 'reuse_password'],
+  system_storages: ['name', 'vdom', 'status', 'media_status', 'device', 'partition', 'size', 'usage'],
+  local_in_policies: ['policy_id', 'vdom', 'address_family', 'intf', 'srcaddr', 'dstaddr', 'service', 'action', 'status'],
+  certificates: ['name', 'store', 'vdom', 'source', 'ca_identifier', 'private_key_configured', 'password_configured', 'comments'],
+  saml_servers: ['name', 'vdom', 'cert', 'entity_id', 'idp_entity_id', 'idp_cert', 'user_name', 'group_name'],
   dhcp_servers: ['id', 'vdom', 'interface', 'status', 'default_gateway', 'netmask', 'lease_time'],
   vpn_tunnels: ['name', 'vdom', 'interface', 'remote_gateway', 'ike_version', 'proposal'],
   vpn_inspector: ['health', 'name', 'vdom', 'remote_gateway', 'ike_version', 'tunnel_interface', 'zones', 'phase2_count', 'route_count', 'policy_count', 'finding_count'],
@@ -473,6 +491,11 @@ export function fieldLabel(key: string) {
     tacacs_servers: 'TACACS+ servers', fsso_servers: 'FSSO servers', fsso_pollings: 'FSSO polling', fortitokens: 'FortiTokens',
     wireless_vaps: 'WiFi SSIDs (VAP)', wireless_wtps: 'Managed FortiAPs', wtp_profiles: 'FortiAP profiles', wids_profiles: 'WIDS profiles',
     managed_switches: 'Managed FortiSwitches', syslog_settings: 'Syslog settings', log_settings: 'Log settings',
+    fortianalyzer_settings: 'FortiAnalyzer settings', log_fortiguard_settings: 'FortiCloud log settings',
+    log_threat_weights: 'Threat weight settings', system_password_policies: 'System password policy',
+    system_storages: 'System storage', local_in_policies: 'Local-in policies',
+    saml_servers: 'SAML servers', dedicated_to: 'Dedicated to', ipv6_address: 'IPv6 address',
+    device_setup_settings: 'Device setup', ha_configs: 'HA configuration',
     qos_rules: 'QoS policies', pbf_rules: 'PBF rules', decryption_rules: 'Decryption policies',
     tunnel_inspect_rules: 'Tunnel inspection', app_override_rules: 'Application override', authentication_rules: 'Authentication policies', dos_rules: 'DoS policies',
     dynamic_user_groups: 'Dynamic user groups', external_lists: 'External dynamic lists', custom_url_categories: 'Custom URL categories',
@@ -987,12 +1010,57 @@ export function systemOverviewItems(data: ReportRow): SystemOverviewItem[] {
 
 function extractFortiGateMgmtIp(sections: ReportRow): SystemOverviewItem {
   const interfaces = asRows(sections.interfaces)
+  const activeInterfaces = interfaces.filter((row) => !isInactiveInterface(row))
+
+  // 1. HA dedicated management reservation
+  const ha = asRows(sections.ha_config)[0]
+  if (ha && String(ha.ha_mgmt_status ?? '').trim().toLowerCase() === 'enable' && Array.isArray(ha.ha_mgmt_interfaces)) {
+    const haIfNames = new Set(
+      ha.ha_mgmt_interfaces
+        .map((entry) => nonEmptyText(asRecord(entry).interface))
+        .filter((name): name is string => Boolean(name)),
+    )
+    const haIps: string[] = []
+    const matchedNames: string[] = []
+    for (const row of activeInterfaces) {
+      const name = nonEmptyText(row.name)
+      const ip = formatIpMask(row.ip)
+      if (name && haIfNames.has(name) && ip) {
+        haIps.push(ip)
+        matchedNames.push(name)
+      }
+    }
+    if (haIps.length) {
+      return {
+        label: 'Management IP',
+        value: haIps.join(', '),
+        detail: `HA Mgmt (${matchedNames.join(', ')})`,
+      }
+    }
+  }
+
+  // 2. Interface explicitly marked `set dedicated-to management`
+  for (const row of activeInterfaces) {
+    if (String(row.dedicated_to ?? '').trim().toLowerCase() === 'management') {
+      const ip = formatIpMask(row.ip)
+      if (ip) {
+        return {
+          label: 'Management IP',
+          value: ip,
+          detail: nonEmptyText(row.name) ? `Dedicated (${row.name})` : null,
+        }
+      }
+    }
+  }
+
+  // 3. Interface with role=mgmt or name=mgmt*
   const mgmtRows = interfaces.filter((row) => {
     const role = String(row.role ?? '').trim().toLowerCase()
     const name = String(row.name ?? '').trim().toLowerCase()
     return role === 'mgmt' || name === 'mgmt' || name.startsWith('mgmt')
   })
-  for (const row of mgmtRows) {
+  const orderedMgmt = [...mgmtRows.filter((row) => !isInactiveInterface(row)), ...mgmtRows.filter((row) => isInactiveInterface(row))]
+  for (const row of orderedMgmt) {
     const ip = formatIpMask(row.ip)
     if (ip) {
       return {
@@ -1002,6 +1070,8 @@ function extractFortiGateMgmtIp(sections: ReportRow): SystemOverviewItem {
       }
     }
   }
+
+  // 4. system.global management_ip fallback
   const sysGlobal = asRows(sections.system_global)[0]
   if (sysGlobal && nonEmptyText(sysGlobal.management_ip)) {
     return { label: 'Management IP', value: nonEmptyText(sysGlobal.management_ip) }
@@ -1070,28 +1140,36 @@ export function haOverviewInfo(data: ReportRow): HaOverviewInfo | null {
         items: [],
       }
     }
-    const modeObj = asRecord(ha.mode)
+    const groupObj = asRecord(ha.group)
+    const groupModeObj = asRecord(groupObj.mode)
+    const topModeObj = asRecord(ha.mode)
+    const modeObj = Object.keys(groupModeObj).length ? groupModeObj : topModeObj
     const modeKey = Object.keys(modeObj)[0] ?? 'active-passive'
     const modeLabel = modeKey === 'active-active' ? 'Active-Active' : 'Active-Passive'
-    const groupObj = asRecord(ha.group)
     const groupId = firstStringFromRecord(groupObj, 'group-id', 'group_id') ?? '—'
     const peerIp = firstStringFromRecord(groupObj, 'peer-ip', 'peer_ip') ?? '—'
     const ifaceObj = asRecord(ha.interface)
     const ha1Obj = asRecord(ifaceObj.ha1)
     const ha1Port = firstStringFromRecord(ha1Obj, 'port') ?? '—'
     const ha1Ip = firstStringFromRecord(ha1Obj, 'ip-address', 'ip_address') ?? '—'
+    const ha2Obj = asRecord(ifaceObj.ha2)
+    const ha2Ip = firstStringFromRecord(ha2Obj, 'ip-address', 'ip_address')
+    const items: SystemOverviewItem[] = [
+      { label: 'Local State', value: modeKey === 'active-active' ? 'Active-Primary' : 'Active' },
+      { label: 'Peer IP', value: peerIp },
+      { label: 'HA1 Interface', value: ha1Port },
+      { label: 'HA1 IP', value: ha1Ip },
+    ]
+    if (ha2Ip) {
+      items.push({ label: 'HA2 IP', value: ha2Ip })
+    }
     return {
       enabled: true,
       title: `${modeLabel} Cluster`,
       subtitle: `Group ID: ${groupId}`,
       badgeText: 'HA Enabled',
       badgeVariant: modeKey === 'active-active' ? 'info' : 'allow',
-      items: [
-        { label: 'Local State', value: modeKey === 'active-active' ? 'Active-Primary' : 'Active' },
-        { label: 'Peer IP', value: peerIp },
-        { label: 'HA1 Interface', value: ha1Port },
-        { label: 'HA1 IP', value: ha1Ip },
-      ],
+      items,
     }
   }
 
@@ -1152,7 +1230,14 @@ export function extendedSystemOverviewItems(
   const sysSettings = asRows(sections.system_settings)[0] ?? {}
   const mgmtIp = nonEmptyText(sysSettings.ip_address)
   const netmask = nonEmptyText(sysSettings.netmask)
-  const defaultGw = nonEmptyText(sysSettings.default_gateway)
+  const routeNode = asRecord(sysSettings.route)
+  const routeEntry = Array.isArray(routeNode.entry) ? asRecord(routeNode.entry[0]) : asRecord(routeNode.entry)
+  const routeNexthop = asRecord(routeEntry.nexthop)
+  const defaultGw = firstText(
+    nonEmptyText(sysSettings.default_gateway) !== '-' ? sysSettings.default_gateway : null,
+    routeNexthop['ip-address'],
+    routeNexthop.ip_address,
+  )
   const ipv6Addr = nonEmptyText(sysSettings.ipv6_address)
   const ipv6Gw = nonEmptyText(sysSettings.ipv6_default_gateway)
   const timezone = nonEmptyText(sysSettings.timezone)
@@ -1238,10 +1323,18 @@ export function applianceHeroInfo(
   }
   if (vendor === 'palo_alto') {
     const sysSettings = asRows(sections.system_settings)[0] ?? {}
-    const advRouting = nonEmptyText(sysSettings.advanced_routing)
+    const deviceSetup = asRows(sections.device_setup_settings)[0] ?? {}
+    const advNode = asRecord(deviceSetup.advanced_routing)
+    const advRouting = firstText(sysSettings.advanced_routing, advNode.enable)
     if (advRouting) {
       const isOn = advRouting.toLowerCase() === 'on' || advRouting.toLowerCase() === 'yes'
       badges.push({ text: `Advanced Routing: ${isOn ? 'On' : 'Off'}`, variant: isOn ? 'allow' : 'muted' })
+    }
+    const mgmtSetup = asRecord(deviceSetup.management)
+    const dupMac = nonEmptyText(mgmtSetup['enable-duplicate-mac-detect'] ?? mgmtSetup.enable_duplicate_mac_detect)
+    if (dupMac) {
+      const enabled = dupMac.toLowerCase() === 'yes'
+      badges.push({ text: `Duplicate IP: ${enabled ? 'Enable' : 'Disable'}`, variant: enabled ? 'info' : 'muted' })
     }
   }
   if (lifecycle?.badge) {

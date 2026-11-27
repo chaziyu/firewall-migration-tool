@@ -28,10 +28,12 @@ from ..model.selected_sections import (
     FGEmailFilterProfile, FGVoIPProfile, FGWAFProfile,
     FGSSLSSHProfile, FGSSLSSHProtocolConfig,
     FGLDAPServer, FGRADIUSServer, FGTACACSServer, FGFSSOServer, FGFSSOPolling,
-    FGFortiToken, FGUserSetting, FGPasswordPolicy,
+    FGFortiToken, FGUserSetting, FGPasswordPolicy, FGSystemPasswordPolicy,
     FGWirelessVAP, FGWirelessWTP, FGWirelessWTPProfile, FGWirelessWIDSProfile,
     FGManagedSwitch, FGManagedSwitchPort,
-    FGSyslogSetting, FGLogMemorySetting, FGLogDiskSetting, FGLogSetting, FGLogThreatWeight,
+    FGSyslogSetting, FGLogMemorySetting, FGLogDiskSetting, FGLogSetting,
+    FGLogThreatWeight, FGThreatWeightLevel, FGThreatWeightIPS,
+    FGThreatWeightMalware, FGThreatWeightCategoryEntry,
     FGUserGuest, FGSwitchPortPolicy, FGSwitchLLDPProfile, FGSwitchQoSPolicy, FGSwitchVLANPolicy,
     FGCertificate, FGLocalInPolicy, FGFortiAnalyzerSetting, FGLogFortiGuardSetting,
     FGSystemStorage, FGSAMLServer,
@@ -129,6 +131,7 @@ def extract_selected_sections(tree: SectionIndex, config: Config) -> None:
     _extract_fortitokens(tree, config)
     _extract_config_settings(tree, config, "user setting", "user_settings", FGUserSetting)
     _simple_edits(tree, config, "user password-policy", "password_policies", FGPasswordPolicy)
+    _extract_config_settings(tree, config, "system password-policy", "system_password_policies", FGSystemPasswordPolicy)
 
     # WiFi, Switch & Logging
     _extract_wireless_vaps(tree, config)
@@ -146,7 +149,7 @@ def extract_selected_sections(tree: SectionIndex, config: Config) -> None:
     _extract_config_settings(tree, config, "log memory setting", "log_memory_settings", FGLogMemorySetting)
     _extract_log_disk_settings(tree, config)
     _extract_config_settings(tree, config, "log setting", "log_settings", FGLogSetting)
-    _extract_config_settings(tree, config, "log threat-weight", "log_threat_weights", FGLogThreatWeight)
+    _extract_log_threat_weight(tree, config)
     _extract_guest_users(tree, config)
     _simple_edits(tree, config, "switch-controller port-policy", "switch_port_policies", FGSwitchPortPolicy)
     _simple_edits(tree, config, "switch-controller lldp-profile", "switch_lldp_profiles", FGSwitchLLDPProfile)
@@ -157,7 +160,12 @@ def extract_selected_sections(tree: SectionIndex, config: Config) -> None:
         _extract_certificates(tree, config, store)
     _extract_local_in_policies(tree, config, "firewall local-in-policy", "ipv4")
     _extract_local_in_policies(tree, config, "firewall local-in-policy6", "ipv6")
-    _extract_config_settings(tree, config, "log fortianalyzer setting", "fortianalyzer_settings", FGFortiAnalyzerSetting)
+    for target_name, path in (
+        ("fortianalyzer", "log fortianalyzer setting"),
+        ("fortianalyzer2", "log fortianalyzer2 setting"),
+        ("fortianalyzer3", "log fortianalyzer3 setting"),
+    ):
+        _extract_fortianalyzer_setting(tree, config, path, target_name)
     _extract_config_settings(tree, config, "log fortiguard setting", "log_fortiguard_settings", FGLogFortiGuardSetting)
     _simple_edits(tree, config, "system storage", "system_storages", FGSystemStorage)
     _simple_edits(tree, config, "user saml", "saml_servers", FGSAMLServer)
@@ -888,6 +896,41 @@ def _extract_certificates(tree, config, store: str):
         for secret_key in ("private-key", "password", "passphrase"):
             values["raw_extra"].pop(secret_key, None)
         config.certificates.append(FGCertificate(**values))
+
+
+def _extract_fortianalyzer_setting(tree, config, path: str, target_name: str):
+    for source in iter_section_configs(tree, path):
+        evaluation = evaluate_config(path, source.config)
+        values = source_model_kwargs(evaluation, model_type=FGFortiAnalyzerSetting, vdom=source.vdom)
+        values["target_name"] = target_name
+        config.fortianalyzer_settings.append(FGFortiAnalyzerSetting(**values))
+
+
+def _extract_log_threat_weight(tree, config):
+    path = "log threat-weight"
+    for source in iter_section_configs(tree, path):
+        evaluation = evaluate_config(path, source.config)
+        values = source_model_kwargs(evaluation, model_type=FGLogThreatWeight, vdom=source.vdom)
+        for child_name, model_cls in (
+            ("level", FGThreatWeightLevel),
+            ("ips", FGThreatWeightIPS),
+            ("malware", FGThreatWeightMalware),
+        ):
+            child_cfg = get_child_config(source.config, child_name)
+            if child_cfg is not None:
+                child_eval = evaluate_config(f"{path} {child_name}", child_cfg)
+                values[child_name] = model_cls(**source_model_kwargs(child_eval, model_type=model_cls))
+        for cat_name in ("web", "application"):
+            cat_cfg = get_child_config(source.config, cat_name)
+            if cat_cfg is not None:
+                entries = []
+                for edit in cat_cfg.edits:
+                    edit_eval = evaluate_edit(f"{path} {cat_name}", edit)
+                    edit_vals = source_model_kwargs(edit_eval, model_type=FGThreatWeightCategoryEntry)
+                    _assign_numeric_id(edit_vals, edit.name)
+                    entries.append(FGThreatWeightCategoryEntry(**edit_vals))
+                values[cat_name] = entries
+        config.log_threat_weights.append(FGLogThreatWeight(**values))
 
 
 def _extract_local_in_policies(tree, config, path: str, address_family: str):

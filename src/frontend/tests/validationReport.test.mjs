@@ -82,7 +82,7 @@ test('warning group selection settles and retains the matching findings', () => 
   }).outputText
   const exports = {}
   const modules = { react: hooks, 'react/jsx-runtime': jsxRuntime, './reportPresentation': presentation, '../source/sourceApi': { fetchSecurityAudit: async () => null },
-    './ReportDetails': {}, './ExcelExportControls': {}, './LifecycleCard': { isLifecycleCardData: () => false, LifecycleCard: 'LifecycleCard' }, './WhereUsedPanel': { WhereUsedPanel: 'WhereUsedPanel' }, './VpnInspectorView': { VpnInspectorView: 'VpnInspectorView' }, './SecurityAuditPanel': { SecurityAuditPanel: 'SecurityAuditPanel' }, '../../components/common/tabKeyboard': {}, '../../components/common/ErrorBanner': {} }
+    './PmLookupPanel': { PmLookupPanel: 'PmLookupPanel' }, './ReportDetails': {}, './ExcelExportControls': {}, './LifecycleCard': { isLifecycleCardData: () => false, LifecycleCard: 'LifecycleCard' }, './WhereUsedPanel': { WhereUsedPanel: 'WhereUsedPanel' }, './VpnInspectorView': { VpnInspectorView: 'VpnInspectorView' }, './SecurityAuditPanel': { SecurityAuditPanel: 'SecurityAuditPanel' }, '../../components/common/tabKeyboard': {}, '../../components/common/ErrorBanner': {} }
   new Function('require', 'exports', compiled)((name) => {
     assert.ok(name in modules, `Unexpected import: ${name}`)
     return modules[name]

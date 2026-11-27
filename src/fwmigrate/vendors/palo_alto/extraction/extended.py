@@ -756,7 +756,7 @@ EXTRACTORS = {
     "globalprotect_gateway_selected": ("globalprotect_gateways", extract_gateway),
     "system_settings": ("system_settings", extract_system_settings),
     "ha_config": ("ha_configs", extract_structured(PANHAConfig, default_name="high-availability", dict_fields={"mode": "mode", "group": "group", "interface": "interface", "election-option": "election_option", "state-synchronization": "state_synchronization", "monitoring": "monitoring"})),
-    "device_setup_setting": ("device_setup_settings", extract_structured(PANDeviceSetupSetting, default_name="setting", dict_fields={"config": "config", "management": "management", "wildfire": "wildfire", "tcp": "tcp", "session": "session", "logging": "logging", "ctd": "ctd", "application": "application", "alarm": "alarm", "user-id-collector": "user_id_collector"})),
+    "device_setup_setting": ("device_setup_settings", extract_structured(PANDeviceSetupSetting, default_name="setting", dict_fields={"config": "config", "management": "management", "wildfire": "wildfire", "tcp": "tcp", "session": "session", "logging": "logging", "ctd": "ctd", "application": "application", "alarm": "alarm", "user-id-collector": "user_id_collector", "advanced-routing": "advanced_routing"})),
     "qos_rule": ("qos_rules", extract_qos_rule),
     "pbf_rule": ("pbf_rules", extract_pbf_rule),
     "decryption_rule": ("decryption_rules", extract_structured(PANDecryptionRule, rulebase=True, dict_fields={"type": "type"})),

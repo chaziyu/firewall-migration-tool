@@ -15,6 +15,11 @@ from fwmigrate.source_reporting.lifecycle import (
     evaluate_fortigate_lifecycle,
     evaluate_paloalto_lifecycle,
 )
+from fwmigrate.source_reporting.pm_checklist import (
+    evaluate_fortigate_pm_checklist,
+    evaluate_paloalto_pm_checklist,
+    export_pm_checklist_excel,
+)
 from fwmigrate.vendors.fortigate.security_audit import (
     build_fortigate_security_audit,
     export_fortigate_audit_html,
@@ -159,3 +164,68 @@ def register_diagnostic_routes(app) -> None:
         except Exception:
             _LOGGER.exception("Audit report export failed")
             return jsonify({"success": False, "error": "Security audit report export failed"}), 500
+
+    @app.route("/api/source/pm-lookup", methods=["POST"])
+    def source_pm_lookup():
+        """Run backup-config Preventive Maintenance (PM) Lookup for FortiGate or Palo Alto."""
+        try:
+            vendor, entry = _parse_audit_request()
+            if vendor == "fortigate":
+                result = evaluate_fortigate_pm_checklist(
+                    entry.analysis.extracted.config,
+                    entry.analysis.derived,
+                    metadata=entry.analysis.extracted.source_metadata,
+                )
+            else:
+                result = evaluate_paloalto_pm_checklist(
+                    entry.analysis.config,
+                    entry.analysis.derived,
+                )
+            return jsonify({"success": True, **result})
+        except ConfigurationDecodeError:
+            return jsonify({"success": False, "error": "Configuration file is not valid UTF-8."}), 400
+        except SourceSizeError:
+            raise
+        except ValueError as exc:
+            return jsonify({"success": False, "error": safe_validation_message(exc, "Invalid PM Lookup request")}), 400
+        except HTTPException:
+            raise
+        except Exception:
+            _LOGGER.exception("PM Lookup failed")
+            return jsonify({"success": False, "error": "PM Lookup failed"}), 500
+
+    @app.route("/api/source/pm-lookup/export", methods=["POST"])
+    @limit_export_response
+    def source_pm_lookup_export():
+        """Export PM Lookup checklist evaluation to a formatted single-sheet Excel workbook."""
+        try:
+            vendor, entry = _parse_audit_request()
+            if vendor == "fortigate":
+                result = evaluate_fortigate_pm_checklist(
+                    entry.analysis.extracted.config,
+                    entry.analysis.derived,
+                    metadata=entry.analysis.extracted.source_metadata,
+                )
+            else:
+                result = evaluate_paloalto_pm_checklist(
+                    entry.analysis.config,
+                    entry.analysis.derived,
+                )
+            xlsx_bytes = export_pm_checklist_excel(result)
+            return send_file(
+                io.BytesIO(xlsx_bytes),
+                mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                as_attachment=True,
+                download_name=f"{_safe_vendor_filename(vendor)}_pm_lookup.xlsx",
+            )
+        except ConfigurationDecodeError:
+            return jsonify({"success": False, "error": "Configuration file is not valid UTF-8."}), 400
+        except SourceSizeError:
+            raise
+        except ValueError as exc:
+            return jsonify({"success": False, "error": safe_validation_message(exc, "Invalid PM Lookup export request")}), 400
+        except HTTPException:
+            raise
+        except Exception:
+            _LOGGER.exception("PM Lookup Excel export failed")
+            return jsonify({"success": False, "error": "PM Lookup Excel export failed"}), 500

@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { LifecycleCardData, SecurityAuditResponse, SourcePreviewData } from '../source/types'
+import type { LifecycleCardData, PmChecklistResponse, SecurityAuditResponse, SourcePreviewData } from '../source/types'
 import { fetchSecurityAudit } from '../source/sourceApi'
 import { activeSubsection, applianceHeroInfo, asRecord, asRows, cellBadgeVariant, compactValue, downloadCsvRows, extendedSystemOverviewItems, haOverviewInfo, interfaceTopologyRows, isLifecycleCardData, isMonoColumn, matchingSourceRows, reportCounts, reportSections, reportSectionRowCount, reportSearchText, rowColumns, rowSemanticClass, rowSubtypeId, safeValue, sectionLegend, subtypeFilterTabs, defaultColumns, cellSummary, cellTooltip, columnWidth, fieldLabel, findingGroups, findingGroupKey } from './reportPresentation'
+import { PmLookupPanel } from './PmLookupPanel'
 import { ReportDetails } from './ReportDetails'
 import { SecurityAuditPanel } from './SecurityAuditPanel'
 import { VpnInspectorView } from './VpnInspectorView'
@@ -456,6 +457,11 @@ export function SourceReport({
     data: SecurityAuditResponse | null
     error: string | null
   } | null>(null)
+  const [pmState, setPmState] = useState<{
+    vendor: string
+    sourceEvidence: NonNullable<SourcePreviewData['source_evidence']>
+    data: PmChecklistResponse
+  } | null>(null)
   const [resolvedLifecycle, setResolvedLifecycle] = useState<LifecycleCardData | null>(null)
   const [views, setViews] = useState<Record<string, SectionViewState>>({})
   const [scope, setScope] = useState('')
@@ -577,6 +583,11 @@ export function SourceReport({
   const auditData = matchingAuditState?.data ?? null
   const auditLoading = supportsSecurityAudit && Boolean(data.source_evidence) && !matchingAuditState
   const auditError = matchingAuditState?.error ?? null
+  const matchingPmData =
+    supportsSecurityAudit && data.source_evidence && pmState
+    && pmState.vendor === data.vendor && pmState.sourceEvidence === data.source_evidence
+      ? pmState.data
+      : null
   const initialLifecycle = isLifecycleCardData(summary.lifecycle) ? summary.lifecycle : null
   const activeLifecycle = resolvedLifecycle ?? initialLifecycle
 
@@ -607,6 +618,7 @@ export function SourceReport({
       return [
         'Overview',
         'Security & Health',
+        ...(supportsSecurityAudit ? ['PM Lookup'] : []),
         'Policies & NAT',
         'Objects',
         'Interfaces & Network',
@@ -619,7 +631,7 @@ export function SourceReport({
         ...(sections.some((item) => item.label === 'Additional sections') ? ['Additional sections'] : []),
       ]
     },
-    [sections],
+    [sections, supportsSecurityAudit],
   )
   const objectTabs = sourceSections.filter((key) => key === activeObjectSection || active?.subsections.find((item) => item.key === key)?.rows.length)
   const subsectionLabel = (key: string) => (
@@ -674,6 +686,15 @@ export function SourceReport({
           tone: errorCount > 0 ? ('danger' as const) : warningCount > 0 ? ('warning' as const) : undefined,
         }
       }
+      if (label === 'PM Lookup') {
+        if (!matchingPmData) return { label, count: null }
+        const { fail, warn } = matchingPmData.summary
+        return {
+          label,
+          count: fail + warn,
+          tone: fail > 0 ? ('danger' as const) : warn > 0 ? ('warning' as const) : undefined,
+        }
+      }
       const grp = sections.find((s) => s.label === label)
       return { label, count: reportSectionRowCount(grp) }
     })
@@ -688,7 +709,7 @@ export function SourceReport({
         reportSections: sidebarSections,
       },
     }))
-  }, [data.vendor, data.source_evidence, data.acquisition, activeSection, activeObjectSection, unifiedInterfaces, counts, errorCount, warningCount, sections, reportTabs])
+  }, [data.vendor, data.source_evidence, data.acquisition, activeSection, activeObjectSection, unifiedInterfaces, counts, errorCount, warningCount, sections, reportTabs, matchingPmData])
 
   function renderOverviewMetric(item: OverviewMetric) {
     return <tr key={item.label} className={item.tone ? `configuration-summary-${item.tone}` : undefined}>
@@ -864,6 +885,17 @@ export function SourceReport({
             />
           ) : null}
         </>
+      ) : activeSection === 'PM Lookup' && supportsSecurityAudit && data.source_evidence ? (
+        <PmLookupPanel
+          vendor={data.vendor ?? ''}
+          sourceEvidence={data.source_evidence}
+          initialData={matchingPmData}
+          onLoaded={(res) => {
+            if (data.vendor && data.source_evidence) {
+              setPmState({ vendor: data.vendor, sourceEvidence: data.source_evidence, data: res })
+            }
+          }}
+        />
       ) : <>
         {!!objectTabs.length && <nav className="report-object-tabs fw-tablist" role="tablist" aria-label="Source subsections" onKeyDown={tabKeyboard}>
           {objectTabs.map((item) => (

@@ -230,3 +230,38 @@ export type SecurityAuditResponse = {
   hygiene: HygieneAnalysis
   quick_audit: QuickAuditSummary
 }
+
+export type PmStatus = 'Pass' | 'Warn' | 'Fail' | 'Info' | string
+
+export type PmChecklistRow = {
+  no: string
+  category: string
+  task: string
+  status: PmStatus
+  finding: string
+  guidance: string
+}
+
+export type PmChecklistSummary = {
+  pass: number
+  warn: number
+  fail: number
+  info: number
+  total: number
+}
+
+export type PmLegendItem = {
+  label: string
+  variant: 'success' | 'info' | 'warn' | 'danger' | string
+}
+
+export type PmChecklistResponse = {
+  success?: boolean
+  vendor: string
+  vendor_label: string
+  hostname: string
+  subtitle: string
+  rows: PmChecklistRow[]
+  summary: PmChecklistSummary
+  legend?: PmLegendItem[]
+}
