@@ -14,7 +14,7 @@ test('configuration summary renders each count once, preserves missing and zero 
   try {
     const { SourceReport } = await server.ssrLoadModule('/src/features/report/SourceReport.tsx')
     const render = (data) => renderToStaticMarkup(createElement(SourceReport, {
-      data, excelProfile: 'fast', onExcelProfileChange() {}, exporting: false, exportStatus: '', onExport() {},
+      data, excelProfile: 'fast', onExcelProfileChange() { }, exporting: false, exportStatus: '', onExport() { },
     }))
     const data = { vendor: 'fortigate', summary: { objects: { policies: 1724, interfaces: 83, addresses: 6000, address_groups: 100, services: 100, service_groups: 56 }, unsupported_count: 2 }, sections: { schedules: [], nat: [{}, {}], routes: [{}], vpn_tunnels: [{}], unresolved_references: [] } }
     const before = structuredClone(data)
@@ -66,25 +66,25 @@ test('summary buttons retain their section and subsection destinations', () => {
     },
     useMemo: (factory) => factory(),
     useRef: () => ({ current: null }),
-    useEffect() {},
+    useEffect() { },
   }
   const source = readFileSync(new URL('../src/features/report/SourceReport.tsx', import.meta.url), 'utf8')
   const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText
   const exports = {}
-  const modules = { react: hooks, 'react/jsx-runtime': jsxRuntime, './reportPresentation': presentation, './ReportDetails': {}, './ExcelExportControls': {}, '../../components/common/tabKeyboard': {}, '../../components/common/ErrorBanner': {} }
+  const modules = { react: hooks, 'react/jsx-runtime': jsxRuntime, './reportPresentation': presentation, '../source/sourceApi': { fetchSecurityAudit: async () => null }, './ReportDetails': {}, './ExcelExportControls': {}, './LifecycleCard': { isLifecycleCardData: () => false, LifecycleCard: 'LifecycleCard' }, './WhereUsedPanel': { WhereUsedPanel: 'WhereUsedPanel' }, './VpnInspectorView': { VpnInspectorView: 'VpnInspectorView' }, './SecurityAuditPanel': { SecurityAuditPanel: 'SecurityAuditPanel' }, '../../components/common/tabKeyboard': {}, '../../components/common/ErrorBanner': {} }
   new Function('require', 'exports', compiled)((name) => { assert.ok(name in modules); return modules[name] }, exports)
   function nodes(node) {
     if (Array.isArray(node)) return node.flatMap(nodes)
     return node && typeof node === 'object' ? [node, ...nodes(node.props?.children)] : []
   }
-  const data = { sections: { addresses: [], address_groups: [{}], interfaces: [{}], unresolved_references: [] } }
+  const data = { sections: { policies: [], addresses: [], address_groups: [{}], interfaces: [{}], schedules: [], nat: [], routes: [], unresolved_references: [] } }
   function render() {
     cursor = 0
-    return nodes(exports.SourceReport({ data, excelProfile: 'fast', onExcelProfileChange() {}, exporting: false, exportStatus: '', onExport() {} }))
+    return nodes(exports.SourceReport({ data, excelProfile: 'fast', onExcelProfileChange() { }, exporting: false, exportStatus: '', onExport() { } }))
   }
   for (const [label, section, subsection] of [
-    ['Policies', 'Policies'], ['Address/service objects', 'Objects', 'addresses'], ['Interfaces', 'Interfaces', 'interface_topology'],
-    ['Schedules', 'Schedules'], ['NAT', 'NAT'], ['Routes', 'Routes'], ['VPN', 'VPN'], ['Unresolved references', 'References'],
+    ['Policies', 'Policies & NAT', 'policies'], ['Address/service objects', 'Objects', 'addresses'], ['Interfaces', 'Interfaces & Network', 'interfaces'],
+    ['Schedules', 'Objects', 'schedules'], ['NAT', 'Policies & NAT', 'nat'], ['Routes', 'Interfaces & Network', 'routes'], ['VPN', 'VPN'], ['Unresolved references', 'Diagnostics & Coverage', 'unresolved_references'],
   ]) {
     const tree = render()
     tree.find((node) => node.type === 'button' && node.props.children === label).props.onClick()
@@ -99,23 +99,23 @@ test('each section is reachable once; inventory, topology, plural policies, and 
   const sections = { policies: [{ policy_id: 1 }, { policy_id: 1 }], security_policies: [], interfaces: [{ name: 'same', vdom: 'a' }, { name: 'same', vdom: 'b' }], interface_topology: [{ name: 'same' }], policy_vpn_phase1: [{}], unknown_section: [null, 'unsupported', { unknown: [] }], metadata: { complete: false }, validation: [] }
   const groups = reportSections(sections)
   assert.deepEqual(groups.flatMap((group) => group.subsections.map((section) => section.key)).sort(), Object.keys(sections).filter((key) => key !== 'validation').sort())
-  assert.equal(groups.find((group) => group.label === 'Policies').rows.length, 2)
-  const interfaces = groups.find((group) => group.label === 'Interfaces')
+  assert.equal(groups.find((group) => group.label === 'Policies & NAT').rows.length, 2)
+  const interfaces = groups.find((group) => group.label === 'Interfaces & Network')
   assert.equal(reportSectionRowCount(interfaces), 2)
   assert.deepEqual(interfaces.subsections.map((item) => item.key), ['interfaces', 'interface_topology'])
   assert.equal(interfaces.subsections[1].rows.length, 1)
   assert.equal(groups.some((group) => group.label === 'Topology'), false)
   assert.equal(groups.find((group) => group.label === 'VPN').rows.length, 1)
   assert.equal(groups.find((group) => group.label === 'Additional sections').rows.length, 4)
-  assert.equal(groups.find((group) => group.label === 'Interfaces').rows[1].vdom, 'b')
-  assert.deepEqual(reportSections({ 'Security Policies': [] })[0].label, 'Policies')
+  assert.equal(groups.find((group) => group.label === 'Interfaces & Network').rows[1].vdom, 'b')
+  assert.deepEqual(reportSections({ 'Security Policies': [] })[0].label, 'Policies & NAT')
 })
 
 test('combined interface views retain separate rows and counts, including empty and missing inventory', () => {
   const sections = { interface_topology: [{ name: 'same', kind: 'physical', vdom: 'a' }, { name: 'vpn', kind: 'vpn', vdom: 'a' }], interfaces: [{ name: 'same', vdom: 'a', status: false }] }
   const before = structuredClone(sections)
   const [group] = reportSections(sections)
-  assert.equal(group.label, 'Interfaces')
+  assert.equal(group.label, 'Interfaces & Network')
   assert.equal(reportSectionRowCount(group), 1)
   assert.equal(group.subsections[1].rows.length, 2)
   assert.equal(activeSubsection(group.subsections, '').key, 'interfaces')
@@ -143,9 +143,9 @@ test('FortiGate source sections are reachable with useful columns and preserve s
   const before = structuredClone(sections)
   const groups = reportSections(sections)
   for (const [key, label, column] of [
-    ['vips', 'NAT', 'extip'], ['vip_groups', 'NAT', 'members'], ['ip_pools', 'NAT', 'startip'],
-    ['wildcard_fqdns', 'Objects', 'wildcard_fqdn'], ['local_users', 'Objects', 'status'],
-    ['administrators', 'Objects', 'vdoms'], ['dhcp_servers', 'Additional sections', 'lease_time'],
+    ['vips', 'Policies & NAT', 'extip'], ['vip_groups', 'Policies & NAT', 'members'], ['ip_pools', 'Policies & NAT', 'startip'],
+    ['wildcard_fqdns', 'Objects', 'wildcard_fqdn'], ['local_users', 'Users & Auth', 'status'],
+    ['administrators', 'Users & Auth', 'vdoms'], ['dhcp_servers', 'Interfaces & Network', 'lease_time'],
     ['ssl_vpn_portals', 'VPN', 'ip_pools'],
   ]) {
     const subsection = groups.find((group) => group.label === label).subsections.find((item) => item.key === key)
@@ -217,7 +217,7 @@ test('object subsections pin top 4 pills and place remaining types in a More men
           local_users: [{ name: 'u1' }],
         },
       },
-      excelProfile: 'fast', onExcelProfileChange() {}, exporting: false, exportStatus: '', onExport() {},
+      excelProfile: 'fast', onExcelProfileChange() { }, exporting: false, exportStatus: '', onExport() { },
     }))
     assert.ok(html.includes('Overview'))
   } finally { await server.close() }
@@ -372,8 +372,10 @@ test('finding navigation prefers stable Cisco FTD source IDs over duplicate name
 })
 
 test('Check Point addresses show explicit IPv4 and IPv6 definitions', () => {
-  const row = { name: 'Dual', scope: 'Domain A', type: 'hosts', address_family: 'Dual Stack',
-    ipv4_value: '192.0.2.4', ipv6_value: '2001:db8::4', value: '192.0.2.4' }
+  const row = {
+    name: 'Dual', scope: 'Domain A', type: 'hosts', address_family: 'Dual Stack',
+    ipv4_value: '192.0.2.4', ipv6_value: '2001:db8::4', value: '192.0.2.4'
+  }
   assert.deepEqual(defaultColumns([row], 'addresses', 'checkpoint'), [
     'name', 'scope', 'type', 'address_family', 'ipv4_value', 'ipv6_value', 'value',
   ])
@@ -392,17 +394,24 @@ test('native finding identity matches the exact rulebase owner without name fall
 })
 
 test('FortiGate restored sections and inspection details retain full nested source data', () => {
-  const policy = { name: 'review', vdom: 'branch', groups: ['staff'], logtraffic: 'all', comments: 'original',
-    ips_sensor: 'sensor', source_addresses: null, services: [], additional_settings: { unknown: 0, password: 'SECRET_SENTINEL' } }
+  const policy = {
+    name: 'review', vdom: 'branch', groups: ['staff'], logtraffic: 'all', comments: 'original',
+    ips_sensor: 'sensor', source_addresses: null, services: [], additional_settings: { unknown: 0, password: 'SECRET_SENTINEL' }
+  }
   const fields = detailGroups(policy, 'policies', 'fortigate').flatMap((group) => group.fields)
   assert.equal(fields.find(([key]) => key === 'logtraffic')[1], 'all')
   assert.deepEqual(fields.find(([key]) => key === 'groups')[1], ['staff'])
   assert.equal(fields.find(([key]) => key === 'source_addresses')[1], null)
   assert.deepEqual(fields.find(([key]) => key === 'services')[1], [])
   assert.ok(!JSON.stringify(fields).includes('SECRET_SENTINEL'))
-  const sections = reportSections({ zones: [{}], user_groups: [{}], admin_profiles: [{}], ips_sensors: [{}],
-    external_resources: [{}], ssl_vpn_settings: [{ authentication_rules: [{ id: 1, groups: ['staff'] }] }] })
-  assert.equal(sections.find((group) => group.label === 'Objects').rows.length, 5)
+  const sections = reportSections({
+    zones: [{}], user_groups: [{}], admin_profiles: [{}], ips_sensors: [{}],
+    external_resources: [{}], ssl_vpn_settings: [{ authentication_rules: [{ id: 1, groups: ['staff'] }] }]
+  })
+  assert.equal(sections.find((group) => group.label === 'Interfaces & Network').rows.length, 1)
+  assert.equal(sections.find((group) => group.label === 'Users & Auth').rows.length, 2)
+  assert.equal(sections.find((group) => group.label === 'Security Profiles').rows.length, 1)
+  assert.equal(sections.find((group) => group.label === 'Objects').rows.length, 1)
   assert.deepEqual(sections.find((group) => group.label === 'VPN').rows[0].authentication_rules[0].groups, ['staff'])
 })
 
@@ -474,14 +483,14 @@ test('extended FortiGate and PAN-OS subsections route properly and preserve safe
     virtual_routers: [{ name: 'vr-1', scope: 'shared' }],
   })
   const byLabel = Object.fromEntries(groups.map((g) => [g.label, g.subsections.map((s) => s.key)]))
-  assert.ok(byLabel.Policies.includes('proxy_policies'))
-  assert.ok(byLabel.Policies.includes('pbf_rules'))
-  assert.ok(byLabel.Objects.includes('antivirus_profiles'))
-  assert.ok(byLabel.Routes.includes('router_bgp'))
-  assert.ok(byLabel.Routes.includes('virtual_routers'))
-  assert.ok(byLabel.NAT.includes('virtual_servers'))
-  assert.ok(byLabel.Interfaces.includes('management_profiles'))
-  assert.ok(byLabel['Additional sections'].includes('system_global'))
+  assert.ok(byLabel['Policies & NAT'].includes('proxy_policies'))
+  assert.ok(byLabel['Policies & NAT'].includes('pbf_rules'))
+  assert.ok(byLabel['Security Profiles'].includes('antivirus_profiles'))
+  assert.ok(byLabel['Interfaces & Network'].includes('router_bgp'))
+  assert.ok(byLabel['Interfaces & Network'].includes('virtual_routers'))
+  assert.ok(byLabel.Objects.includes('virtual_servers'))
+  assert.ok(byLabel['Interfaces & Network'].includes('management_profiles'))
+  assert.ok(byLabel['System & Logs'].includes('system_global'))
   assert.ok(defaultColumns([{ name: 'port1', vdom: 'root', mtu: 1500 }], 'interfaces', 'fortigate').includes('mtu'))
 
   const extGroups = reportSections({
@@ -491,10 +500,17 @@ test('extended FortiGate and PAN-OS subsections route properly and preserve safe
     user_id_settings: [{ name: 'user-identification' }],
   })
   const extByLabel = Object.fromEntries(extGroups.map((g) => [g.label, g.subsections.map((s) => s.key)]))
-  assert.ok(extByLabel.Objects.includes('guest_users'))
+  assert.ok(extByLabel['Users & Auth'].includes('guest_users'))
   assert.ok(extByLabel.Objects.includes('device_objects'))
-  assert.ok(extByLabel.Objects.includes('user_id_settings'))
-  assert.ok(extByLabel.Interfaces.includes('switch_port_policies'))
+  assert.ok(extByLabel['Users & Auth'].includes('user_id_settings'))
+  assert.ok(extByLabel['WiFi & Switch'].includes('switch_port_policies'))
+
+  const addrTabs = presentation.subtypeFilterTabs('addresses', [
+    { name: 'net1', type: 'ipmask' },
+    { name: 'rng1', type: 'iprange' },
+    { name: 'fqdn1', type: 'fqdn' },
+  ])
+  assert.deepEqual(addrTabs.map((t) => t.id), ['all', 'subnet', 'range', 'fqdn'])
 })
 
 test('systemOverviewItems extracts FortiGate, PAN-OS, and missing system metadata without guessing', () => {
@@ -584,7 +600,7 @@ test('SourceReport Overview renders System Overview above Validation with key sy
           interfaces: [{ name: 'wan1', role: 'wan', ip: '103.230.127.147 255.255.255.0' }],
         },
       },
-      excelProfile: 'fast', onExcelProfileChange() {}, exporting: false, exportStatus: '', onExport() {},
+      excelProfile: 'fast', onExcelProfileChange() { }, exporting: false, exportStatus: '', onExport() { },
     }))
     const sysIndex = html.indexOf('id="system-overview-title"')
     const valIndex = html.indexOf('Validation</h3>')
@@ -592,6 +608,63 @@ test('SourceReport Overview renders System Overview above Validation with key sy
     for (const expected of ['myinfuatforti1', '103.230.127.147/255.255.255.0', '1.1.1.1', 'Secondary: 8.8.8.8', 'FG100E4Q17003638', '7.2.13']) {
       assert.ok(html.includes(expected), `Missing expected value: ${expected}`)
     }
+    assert.ok(html.includes('fw-hero-card'), 'Overview renders Appliance Hero banner')
+    assert.ok(html.includes('id="ha-overview-title"'), 'Overview renders High Availability section')
+  } finally {
+    await server.close()
+  }
+})
+
+test('Overview omits LifecycleCard and renders HA details; extendedSystemOverviewItems includes posture and admin ports', async () => {
+  const server = await createServer({ server: { middlewareMode: true }, appType: 'custom' })
+  try {
+    const { SourceReport } = await server.ssrLoadModule('/src/features/report/SourceReport.tsx')
+    const { extendedSystemOverviewItems, haOverviewInfo } = await server.ssrLoadModule('/src/features/report/reportPresentation.ts')
+
+    const fgData = {
+      vendor: 'fortigate',
+      source_evidence: { vendor: 'fortigate', source_text: '' },
+      summary: {
+        source_metadata: { hardware_model: 'FG-60F', fortios_version: '7.4.4', serial_number: 'FGT60F123' },
+        lifecycle: {
+          id: 'fg_lifecycle_card',
+          vendor: 'fortigate',
+          title: 'Lifecycle & Firmware',
+          subtitle: 'Snapshot',
+          source_label: 'Offline snapshot',
+          needs_live_refresh: false,
+          badge: { id: 'fg_lifecycle_badge', text: 'Lifecycle OK · Up to Date', variant: 'allow' },
+          rows: [{ label: 'Hardware Model', value: 'FortiGate-60F' }],
+        },
+      },
+      sections: {
+        system_global: [{ hostname: 'fg-ha', admin_port: 8080, admin_sport: 8443, admin_ssh_port: 2222 }],
+        ha_config: [{ mode: 'a-p', group_name: 'PROD-HA', priority: 200, session_pickup: 'enable', hbdev: 'port7' }],
+        interfaces: [{ name: 'mgmt', role: 'mgmt', ip: '192.168.10.1/24' }],
+      },
+    }
+
+    const ha = haOverviewInfo(fgData)
+    assert.equal(ha.enabled, true)
+    assert.equal(ha.title, 'a-p Cluster')
+    assert.equal(ha.items.find((i) => i.label === 'Heartbeat Interfaces').value, 'port7')
+
+    const extItems = extendedSystemOverviewItems(fgData, {
+      posture: { internet: 'Connected (Direct Public IP)', internet_sub: '0.0.0.0/0 route', disk: 'Yes (Onboard SSD)', disk_sub: 'Disk logging enabled' },
+    }, fgData.summary.lifecycle)
+    assert.equal(extItems.find((i) => i.label === 'Model').value, 'FortiGate-60F')
+    assert.equal(extItems.find((i) => i.label === 'Admin Ports').value, 'HTTPS 8443 · SSH 2222')
+    assert.equal(extItems.find((i) => i.label === 'Internet Connectivity').value, 'Connected (Direct Public IP)')
+    assert.equal(extItems.find((i) => i.label === 'Local Hard Disk').value, 'Yes (Onboard SSD)')
+
+    const html = renderToStaticMarkup(createElement(SourceReport, {
+      data: fgData,
+      excelProfile: 'fast', onExcelProfileChange() {}, exporting: false, exportStatus: '', onExport() {},
+    }))
+    assert.ok(!html.includes('id="fg_lifecycle_card"'), 'LifecycleCard must not render inside Overview')
+    assert.ok(html.includes('id="fg_lifecycle_badge"'), 'Overview Hero shows lifecycle badge')
+    assert.ok(html.includes('PROD-HA'), 'Overview renders HA cluster info')
+    assert.ok(html.includes('Global IP / Object'), 'Overview renders Where-Used expander')
   } finally {
     await server.close()
   }

@@ -3,9 +3,15 @@
 from __future__ import annotations
 
 import base64
+import sys
+import threading
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
+from fwmigrate.web_support.chat_service import chat_store
+from scripts import desktop_launcher
 from scripts.desktop_launcher import DesktopApi
 
 
@@ -75,3 +81,68 @@ def test_desktop_api_save_file_cancelled(tmp_path: Path) -> None:
     result = api.save_file("fortigate-source-report.xlsx", base64.b64encode(b"abc").decode("ascii"))
     assert result == {"saved": False, "cancelled": True}
     assert list(tmp_path.iterdir()) == []
+
+
+class _FakeEvent:
+    def __init__(self) -> None:
+        self.handlers: list[object] = []
+
+    def __iadd__(self, handler: object) -> _FakeEvent:
+        self.handlers.append(handler)
+        return self
+
+
+@pytest.mark.parametrize("with_events", [True, False])
+def test_desktop_launcher_uses_private_mode_and_clears_chat_store(
+    monkeypatch: pytest.MonkeyPatch, with_events: bool
+) -> None:
+    start_calls: list[dict[str, object]] = []
+    shutdown_calls: list[bool] = []
+
+    class _FakeServer:
+        def serve_forever(self) -> None:
+            return None
+
+        def shutdown(self) -> None:
+            shutdown_calls.append(True)
+
+    def _fake_start_backend() -> tuple[threading.Event, dict[str, object]]:
+        ready = threading.Event()
+        ready.set()
+        return ready, {"server": _FakeServer(), "url": "http://127.0.0.1:5000/"}
+
+    def _create_window(*_args: object, **_kwargs: object) -> object:
+        if with_events:
+            return SimpleNamespace(events=SimpleNamespace(shown=_FakeEvent()))
+        return SimpleNamespace()
+
+    def _start(*_args: object, **kwargs: object) -> None:
+        start_calls.append(kwargs)
+
+    fake_webview = SimpleNamespace(
+        settings={},
+        screens=[],
+        create_window=_create_window,
+        start=_start,
+    )
+
+    chat_store.clear_all()
+    sess, _ = chat_store.get_or_create(None)
+    sess.gemini_api_key = "synthetic-key"
+    assert chat_store.get(sess.session_id) is not None
+
+    monkeypatch.setenv("FWMIGRATE_WEB_MODE", "local")
+    monkeypatch.setenv("FWMIGRATE_FRONTEND_DIST_DIR", str(desktop_launcher._resolve_frontend_dist()))
+    monkeypatch.setitem(sys.modules, "webview", fake_webview)
+    monkeypatch.setattr(desktop_launcher, "_start_backend_async", _fake_start_backend)
+
+    try:
+        assert desktop_launcher.main([]) == 0
+        assert len(start_calls) == 1
+        assert start_calls[0]["private_mode"] is True
+        if not with_events:
+            assert start_calls[0]["func"] is desktop_launcher._close_splash
+        assert shutdown_calls == [True]
+        assert chat_store.get(sess.session_id) is None
+    finally:
+        chat_store.clear_all()

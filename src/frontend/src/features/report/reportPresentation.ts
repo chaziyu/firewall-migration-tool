@@ -61,54 +61,134 @@ export function reportSearchText(row: ReportRow): string {
 }
 
 const SECTION_KEYS: Record<string, string[]> = {
-  Interfaces: ['interfaces', 'interface_topology', 'interface_imports', 'management_profiles', 'vlans', 'virtual_wires', 'dns_proxies', 'qos_interfaces', 'qos_profiles', 'zone_protection_profiles', 'monitor_profiles', 'lldp_profiles', 'bfd_profiles', 'switch_port_policies', 'switch_lldp_profiles', 'switch_qos_policies', 'switch_vlan_policies'],
+  'Policies & NAT': [
+    'policies', 'security_policies', 'security_rules', 'default_security_rules',
+    'nat', 'nat_rules', 'translations', 'central_snat', 'vips', 'vip_groups', 'ip_pools',
+    'proxy_policies', 'auth_policies', 'access_control_policies', 'access_rules',
+    'nac_policies', 'sdwan_rules', 'qos_rules', 'pbf_rules', 'decryption_rules',
+    'tunnel_inspect_rules', 'app_override_rules', 'authentication_rules', 'dos_rules',
+  ],
   Objects: [
     'addresses', 'addresses_ipv6', 'address_groups', 'address6_templates', 'wildcard_fqdns',
     'services', 'service_groups', 'service_categories',
+    'schedules', 'schedule_groups', 'time_ranges',
     'network_objects', 'network_groups', 'protocol_port_objects',
-    'applications', 'application_groups', 'regions', 'dynamic_user_groups', 'device_objects',
-    'hip_objects', 'hip_profiles', 'external_lists', 'custom_url_categories', 'data_patterns', 'custom_threats',
-    'zones', 'tags',
-    'security_profile_groups', 'profile_groups', 'vulnerability_profiles', 'ips_sensors',
+    'protocol_options', 'per_ip_shapers', 'traffic_shapers', 'virtual_servers', 'ldb_monitors',
+    'applications', 'application_groups', 'regions', 'external_lists', 'custom_url_categories',
+    'data_patterns', 'custom_threats', 'tags', 'device_objects', 'hip_objects', 'hip_profiles',
+    'session_helpers', 'external_resources', 'firewall_regions', 'vendor_macs',
+  ],
+  'Interfaces & Network': [
+    'interfaces', 'interface_topology', 'interface_imports', 'zones', 'vlans', 'virtual_wires',
+    'routes', 'static_routes', 'routing_instances', 'virtual_routers', 'logical_routers',
+    'router_settings', 'router_bgp', 'router_ospf', 'router_ospf6', 'router_rip',
+    'policy_routes', 'prefix_lists', 'route_maps', 'aspath_lists', 'community_lists', 'router_multicast',
+    'dhcp_servers', 'dns_proxies', 'management_profiles', 'qos_interfaces', 'qos_profiles',
+    'zone_protection_profiles', 'monitor_profiles', 'lldp_profiles', 'bfd_profiles',
+  ],
+  'Security Profiles': [
+    'security_profile_groups', 'profile_groups', 'vulnerability_profiles', 'ips_sensors', 'ips_settings',
     'antivirus_profiles', 'anti_spyware_profiles', 'webfilter_profiles', 'urlfilter_tables',
     'webfilter_local_categories', 'webfilter_local_ratings', 'webfilter_overrides',
     'dnsfilter_profiles', 'application_lists', 'file_filter_profiles', 'emailfilter_profiles',
     'voip_profiles', 'waf_profiles', 'ssl_ssh_profiles',
     'url_filtering_profiles', 'file_blocking_profiles', 'wildfire_profiles', 'data_filtering_profiles',
-    'dos_protection_profiles', 'decryption_profiles', 'protocol_options', 'per_ip_shapers',
-    'traffic_shapers', 'session_helpers', 'ips_settings', 'external_resources',
-    'local_users', 'guest_users', 'local_user_groups', 'user_groups', 'group_mappings',
+    'dos_protection_profiles', 'decryption_profiles',
+  ],
+  VPN: [
+    'vpn_inspector', 'vpn_tunnels', 'vpn_phase2', 'policy_vpn_phase1', 'policy_vpn_phase2',
+    'ssl_vpn_settings', 'ssl_vpn_realms', 'ssl_vpn_bookmarks', 'ssl_vpn_portals',
+    'ssl_vpn_clients', 'ssl_vpn_host_check_software',
+    'ike_gateways', 'ike_crypto_profiles', 'ipsec_crypto_profiles', 'ipsec_tunnels', 'gre_tunnels',
+    'globalprotect_portals', 'globalprotect_gateways', 'gp_clientless_apps', 'gp_clientless_app_groups', 'gp_mdms',
+    'kmip_servers',
+  ],
+  'Users & Auth': [
+    'local_users', 'guest_users', 'local_user_groups', 'user_groups', 'dynamic_user_groups', 'group_mappings',
     'ldap_servers', 'radius_servers', 'tacacs_servers', 'fsso_servers', 'fsso_pollings',
     'fortitokens', 'user_settings', 'password_policies',
     'radius_server_profiles', 'ldap_server_profiles', 'tacplus_server_profiles',
     'kerberos_server_profiles', 'saml_idp_server_profiles', 'mfa_server_profiles',
     'authentication_profiles', 'authentication_sequences', 'certificates', 'ssl_tls_service_profiles',
     'password_complexities', 'password_profiles', 'user_id_agents', 'user_id_settings',
-    'administrators', 'admin_roles', 'admin_profiles', 'firewall_regions', 'vendor_macs',
+    'administrators', 'admin_roles', 'admin_profiles', 'kerberos_keytabs',
   ],
-  Schedules: ['schedules', 'schedule_groups', 'time_ranges'],
-  Policies: [
-    'policies', 'security_policies', 'security_rules', 'default_security_rules',
-    'proxy_policies', 'auth_policies', 'access_control_policies', 'access_rules',
-    'nac_policies', 'sdwan_rules', 'qos_rules', 'pbf_rules', 'decryption_rules',
-    'tunnel_inspect_rules', 'app_override_rules', 'authentication_rules', 'dos_rules',
+  'WiFi & Switch': [
+    'wireless_vaps', 'wireless_wtps', 'wtp_profiles',
+    'managed_switches', 'switch_port_policies', 'switch_lldp_profiles', 'switch_qos_policies', 'switch_vlan_policies',
   ],
-  NAT: ['nat', 'nat_rules', 'translations', 'central_snat', 'vips', 'vip_groups', 'virtual_servers', 'ldb_monitors', 'ip_pools'],
-  Routes: [
-    'routes', 'static_routes', 'routing_instances', 'virtual_routers', 'logical_routers',
-    'router_settings', 'router_bgp', 'router_ospf', 'router_ospf6', 'router_rip',
-    'policy_routes', 'prefix_lists', 'route_maps', 'aspath_lists', 'community_lists', 'router_multicast',
-  ],
-  VPN: [
-    'vpn_tunnels', 'vpn_phase2', 'policy_vpn_phase1', 'policy_vpn_phase2',
-    'ssl_vpn_settings', 'ssl_vpn_realms', 'ssl_vpn_bookmarks', 'ssl_vpn_portals',
-    'ssl_vpn_clients', 'ssl_vpn_host_check_software',
-    'ike_gateways', 'ike_crypto_profiles', 'ipsec_crypto_profiles', 'ipsec_tunnels', 'gre_tunnels',
-    'globalprotect_portals', 'globalprotect_gateways', 'gp_clientless_apps', 'gp_clientless_app_groups', 'gp_mdms',
-    'kmip_servers', 'kerberos_keytabs',
-  ],
-  References: ['unresolved_references', 'references', 'relationships'],
-  Extraction: ['extraction_coverage', 'source_inventory'],
+  'Diagnostics & Coverage': ['unresolved_references', 'references', 'relationships', 'extraction_coverage', 'source_inventory'],
+  'System & Logs': ['system_global', 'system_dns', 'system_ntp', 'system_settings', 'ha_config', 'snmp_communities', 'snmp_users', 'syslog_settings'],
+}
+
+export type SubtypeFilter = {
+  id: string
+  label: string
+  count: number
+}
+
+function addressSubtype(row: ReportRow): string {
+  const raw = String(row.type ?? row.address_type ?? '').trim().toLowerCase()
+  if (!raw) return 'other'
+  if (/^(ipmask|subnet|ip-netmask|netmask|cidr|host|ip|ip4|ip6|ip-prefix)$/.test(raw)) return 'subnet'
+  if (/^(iprange|ip-range|range)$/.test(raw)) return 'range'
+  if (raw === 'fqdn') return 'fqdn'
+  if (/^(interface-subnet|interface_subnet)$/.test(raw)) return 'interface_subnet'
+  if (/^(wildcard|wildcard-fqdn|ip-wildcard|host-regex)$/.test(raw)) return 'wildcard'
+  return 'other'
+}
+
+function serviceSubtype(row: ReportRow): string {
+  const raw = String(row.protocol ?? row.type ?? '').trim().toLowerCase()
+  if (!raw) return 'other'
+  if (raw.includes('icmp')) return 'icmp'
+  if (/(tcp|udp|sctp)/.test(raw)) return 'tcp_udp'
+  return 'other'
+}
+
+export function rowSubtypeId(subsectionKey: string, row: ReportRow): string {
+  if (subsectionKey === 'addresses' || subsectionKey === 'addresses_ipv6') return addressSubtype(row)
+  if (subsectionKey === 'services') return serviceSubtype(row)
+  return 'all'
+}
+
+export function subtypeFilterTabs(subsectionKey: string, rows: ReportRow[]): SubtypeFilter[] {
+  if (!rows.length) return []
+  const labels: Record<string, Record<string, string>> = {
+    addresses: {
+      subnet: 'Subnet / IP Mask',
+      range: 'IP Range',
+      fqdn: 'FQDN',
+      interface_subnet: 'Interface Subnet',
+      wildcard: 'Wildcard / Regex',
+      other: 'Other',
+    },
+    addresses_ipv6: {
+      subnet: 'Subnet / Prefix',
+      range: 'IP Range',
+      fqdn: 'FQDN',
+      interface_subnet: 'Interface Subnet',
+      wildcard: 'Wildcard / Regex',
+      other: 'Other',
+    },
+    services: {
+      tcp_udp: 'TCP / UDP',
+      icmp: 'ICMP',
+      other: 'Other',
+    },
+  }
+  const map = labels[subsectionKey]
+  if (!map) return []
+  const counts = new Map<string, number>()
+  for (const row of rows) {
+    const id = rowSubtypeId(subsectionKey, row)
+    counts.set(id, (counts.get(id) ?? 0) + 1)
+  }
+  const buckets = Object.entries(map)
+    .filter(([id]) => (counts.get(id) ?? 0) > 0)
+    .map(([id, label]) => ({ id, label, count: counts.get(id) ?? 0 }))
+  if (buckets.length < 2) return []
+  return [{ id: 'all', label: 'All', count: rows.length }, ...buckets]
 }
 
 export function reportSections(sections: ReportRow) {
@@ -136,7 +216,11 @@ export function reportSections(sections: ReportRow) {
 
 export function reportSectionRowCount(section: ReturnType<typeof reportSections>[number] | undefined) {
   if (!section) return null
-  if (section.label === 'Interfaces') return section.subsections.find((item) => item.key.toLowerCase().replace(/[ -]/g, '_') === 'interfaces')?.rows.length ?? null
+  if (section.label === 'Interfaces & Network') {
+    const iface = section.subsections.find((item) => item.key.toLowerCase().replace(/[ -]/g, '_') === 'interfaces')
+    if (iface) return iface.rows.length
+    if (section.subsections.some((item) => item.key.toLowerCase().replace(/[ -]/g, '_') === 'interface_topology')) return null
+  }
   return section.rows.length
 }
 
@@ -280,6 +364,7 @@ const FORTIGATE_COLUMNS: Record<string, string[]> = {
   syslog_settings: ['syslog_name', 'vdom', 'status', 'server', 'mode', 'port', 'facility', 'format'],
   dhcp_servers: ['id', 'vdom', 'interface', 'status', 'default_gateway', 'netmask', 'lease_time'],
   vpn_tunnels: ['name', 'vdom', 'interface', 'remote_gateway', 'ike_version', 'proposal'],
+  vpn_inspector: ['health', 'name', 'vdom', 'remote_gateway', 'ike_version', 'tunnel_interface', 'zones', 'phase2_count', 'route_count', 'policy_count', 'finding_count'],
   vpn_phase2: ['name', 'vdom', 'phase1', 'source_range', 'destination_range', 'proposal', 'pfs'],
   ssl_vpn_bookmarks: ['name', 'vdom', 'owner_name', 'apptype', 'host', 'url'],
   ssl_vpn_portals: ['name', 'vdom', 'tunnel_mode', 'web_mode', 'ip_pools', 'split_tunneling'],
@@ -347,6 +432,7 @@ const PANOS_COLUMNS: Record<string, string[]> = {
   service_groups: ['name', 'scope', 'members'],
   schedules: ['name', 'scope', 'recurring', 'non_recurring'],
   vpn_tunnels: ['name', 'scope', 'interface', 'ike_gateways', 'ipsec_crypto_profile', 'tunnel_monitor'],
+  vpn_inspector: ['health', 'name', 'scope', 'remote_gateway', 'ike_version', 'tunnel_interface', 'zones', 'virtual_router', 'phase2_count', 'route_count', 'policy_count', 'finding_count'],
   ipsec_tunnels: ['name', 'scope', 'tunnel_interface', 'ike_gateways', 'ipsec_crypto_profile', 'tunnel_monitor'],
   vpn_phase2: ['name', 'tunnel', 'scope', 'address_family', 'local', 'remote', 'protocol', 'local_port', 'remote_port'],
   ike_gateways: ['name', 'scope', 'local_interface', 'peer_address', 'ike_version', 'authentication_method', 'pre_shared_key_configured'],
@@ -354,10 +440,12 @@ const PANOS_COLUMNS: Record<string, string[]> = {
   source_inventory: ['name', 'scope', 'kind', 'source_path', 'source_order', 'extraction_status', 'values'],
 }
 export function fieldLabel(key: string) {
-  const labels: Record<string, string> = { policy_id: 'Policy ID', rule_id: 'Rule ID', route_id: 'Route ID',
+  const labels: Record<string, string> = {
+    policy_id: 'Policy ID', rule_id: 'Rule ID', route_id: 'Route ID',
     domain_id: 'Domain ID', device_id: 'Device ID', device_name: 'Device', virtual_router_name: 'Virtual Router',
     parent_policy_name: 'Parent Policy', vdom: 'VDOM', ip: 'IP / prefix', nat: 'NAT',
-    ike_version: 'IKE version', vpn_tunnels: 'VPN tunnels', vpn_phase2: 'VPN phase 2',
+    ike_version: 'IKE version', vpn_inspector: 'Site-to-Site Inspector', vpn_tunnels: 'VPN tunnels', vpn_phase2: 'VPN phase 2',
+    tunnel_interface: 'Tunnel interface', virtual_router: 'Virtual router', phase2_count: 'Phase 2', route_count: 'Routes', policy_count: 'Policies', finding_count: 'Checks',
     ssl_vpn_bookmarks: 'SSL VPN bookmarks', status: 'Reported status', review: 'Review',
     vips: 'Virtual IPs', vip_groups: 'VIP groups', ip_pools: 'IP pools', wildcard_fqdns: 'Wildcard FQDNs',
     dhcp_servers: 'DHCP servers', ssl_vpn_portals: 'SSL VPN portals',
@@ -396,7 +484,8 @@ export function fieldLabel(key: string) {
     ssl_tls_service_profiles: 'SSL/TLS service profiles', radius_server_profiles: 'RADIUS server profiles', ldap_server_profiles: 'LDAP server profiles',
     tacplus_server_profiles: ['TACACS+ server profiles'][0], syslog_server_profiles: 'Syslog server profiles',
     email_server_profiles: 'Email server profiles', snmptrap_server_profiles: 'SNMP trap profiles', http_server_profiles: 'HTTP server profiles',
-    extraction_coverage: 'Extraction coverage', source_inventory: 'Source inventory' }
+    extraction_coverage: 'Extraction coverage', source_inventory: 'Source inventory'
+  }
   return labels[key] ?? key.replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())
 }
 export function columnWidth(key: string) {
@@ -524,9 +613,9 @@ export function rowColumns(rows: ReportRow[], subsection = '', vendor = '') {
   const identity = vendor === 'palo_alto' && PANOS_COLUMNS[subsection] || (subsection === 'interface_topology'
     ? ['name', 'display_name', 'vdom', 'domain_id', 'device_name', 'device_id', 'scope', 'kind', 'role', 'ip', 'vlanid', 'zone', 'virtual_routers', 'vrf', 'status', 'issues', 'prefix', 'parent', 'members', 'aggregate', 'physical_interfaces', 'path', 'topology_path']
     : vendor === 'fortigate' && FORTIGATE_COLUMNS[subsection]
-      || vendor === 'cisco_ftd' && CISCO_FTD_COLUMNS[subsection]
-      || vendor === 'checkpoint' && CHECKPOINT_COLUMNS[subsection]
-      || ['name', 'policy_id', 'rule_id', 'route_id', 'display_name', 'policy_name', 'domain_id', 'device_name', 'device_id', 'vdom', 'scope'])
+    || vendor === 'cisco_ftd' && CISCO_FTD_COLUMNS[subsection]
+    || vendor === 'checkpoint' && CHECKPOINT_COLUMNS[subsection]
+    || ['name', 'policy_id', 'rule_id', 'route_id', 'display_name', 'policy_name', 'domain_id', 'device_name', 'device_id', 'vdom', 'scope'])
   return [...identity.filter((key) => keys.includes(key)), ...keys.filter((key) => !identity.includes(key))]
 }
 const INTERFACE_DEFAULT_COLUMNS = new Set([
@@ -539,8 +628,8 @@ export function defaultColumns(rows: ReportRow[], subsection = '', vendor = '', 
   if (subsection === 'interface_topology') return columns.filter((key) => INTERFACE_DEFAULT_COLUMNS.has(key))
   const preferred = vendor === 'fortigate' ? FORTIGATE_COLUMNS[subsection]
     : vendor === 'cisco_ftd' ? CISCO_FTD_COLUMNS[subsection]
-    : vendor === 'checkpoint' ? CHECKPOINT_COLUMNS[subsection]
-    : undefined
+      : vendor === 'checkpoint' ? CHECKPOINT_COLUMNS[subsection]
+        : undefined
   const selected = preferred ? columns.filter((key) => preferred.includes(key)) : []
   return selected.length ? selected : columns.slice(0, 8)
 }
@@ -608,19 +697,21 @@ export function detailGroups(row: ReportRow, subsection = '', vendor = '') {
   const definitions: Array<[string, string[]]> = [
     ['Identity', ['name', 'policy_id', 'rule_id', 'rule_uuid', 'rule_order', 'source_order', 'source_id', 'route_id', 'policy_name', 'display_name', 'object_name', 'source_name', 'vdom', 'scope', 'Source section']],
     ...(vendor === 'cisco_ftd' ? [['Source scope', ['source_context', 'domain_id', 'device_id', 'device_name',
-        'virtual_router_id', 'virtual_router_name', 'parent_policy_id', 'parent_policy_name']]] as Array<[string, string[]]> : []),
+      'virtual_router_id', 'virtual_router_name', 'parent_policy_id', 'parent_policy_name']]] as Array<[string, string[]]> : []),
     ...(vendor === 'fortigate' && FORTIGATE_DETAILS[subsection] || [['Reported fields', defaultColumns([row], subsection, vendor)]] as Array<[string, string[]]>),
     ['Additional fields', Object.keys(row)],
   ]
   const used = new Set<string>()
   const empty: Array<[string, unknown]> = []
-  const groups = definitions.map(([title, keys]) => ({ title, fields: keys.flatMap((key): Array<[string, unknown]> => {
-    if (used.has(key) || !Object.hasOwn(row, key) || sensitiveKey(key, row[key]) || (vendor === 'palo_alto' && key === 'policy_id')) return []
-    used.add(key)
-    const value = safeValue(row[key], key)
-    if (value == null || value === '' || (typeof value === 'object' && Object.keys(value).length === 0)) { empty.push([key, value]); return [] }
-    return [[key, value]]
-  }) })).filter((group) => group.fields.length)
+  const groups = definitions.map(([title, keys]) => ({
+    title, fields: keys.flatMap((key): Array<[string, unknown]> => {
+      if (used.has(key) || !Object.hasOwn(row, key) || sensitiveKey(key, row[key]) || (vendor === 'palo_alto' && key === 'policy_id')) return []
+      used.add(key)
+      const value = safeValue(row[key], key)
+      if (value == null || value === '' || (typeof value === 'object' && Object.keys(value).length === 0)) { empty.push([key, value]); return [] }
+      return [[key, value]]
+    })
+  })).filter((group) => group.fields.length)
   if (empty.length) groups.push({ title: 'Empty / not reported fields', fields: empty })
   return groups
 }
@@ -651,11 +742,11 @@ export function matchingSourceRows(rows: ReportRow[], finding: ReportRow) {
   const scope = finding.scope ?? finding.vdom
   const stableIds = [finding.source_id, finding.rule_id].filter((value) => value != null).map(String)
   const findingNames = [finding.object_name, finding.policy_id,
-    String(finding.object_name ?? '').replace(/^policy\s+/i, '')].filter((value) => value != null).map(String)
+  String(finding.object_name ?? '').replace(/^policy\s+/i, '')].filter((value) => value != null).map(String)
   return rows.filter((row) => {
     const rowIds = [row.source_id, row.rule_id].filter((value) => value != null).map(String)
     const names = [row.name, row.display_name, row.object_name, row.policy_name, row.policy_id,
-      row.source_policy_id, row.route_id].filter((value) => value != null).map(String)
+    row.source_policy_id, row.route_id].filter((value) => value != null).map(String)
     const identityMatches = stableIds.length
       ? stableIds.some((id) => rowIds.includes(id))
       : findingNames.some((name) => names.includes(name))
@@ -667,6 +758,30 @@ export type SystemOverviewItem = {
   label: string
   value: string | null
   detail?: string | null
+}
+
+export type HeroBadgeItem = {
+  id?: string
+  text: string
+  variant: 'allow' | 'warn' | 'deny' | 'info' | 'muted'
+  targetSection?: 'Security & Health'
+  targetHealthTab?: 'audit' | 'validation'
+}
+
+export type HaOverviewInfo = {
+  enabled: boolean
+  title: string
+  subtitle: string
+  badgeText: string
+  badgeVariant: 'allow' | 'info' | 'muted'
+  items: SystemOverviewItem[]
+}
+
+export type ApplianceHeroInfo = {
+  eyebrow: string
+  title: string
+  subtitle: string
+  badges: HeroBadgeItem[]
 }
 
 function nonEmptyText(value: unknown): string | null {
@@ -775,6 +890,51 @@ function extractSystemDns(data: ReportRow, sections: ReportRow): SystemOverviewI
   return { label: 'Primary DNS', value: null }
 }
 
+export function isLifecycleCardData(value: unknown): value is import('../source/types').LifecycleCardData {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
+  const candidate = value as Partial<import('../source/types').LifecycleCardData>
+  return (
+    typeof candidate.id === 'string'
+    && typeof candidate.title === 'string'
+    && typeof candidate.subtitle === 'string'
+    && typeof candidate.badge === 'object'
+    && candidate.badge !== null
+    && typeof candidate.badge.text === 'string'
+    && typeof candidate.badge.variant === 'string'
+    && Array.isArray(candidate.rows)
+  )
+}
+
+export function csvEscape(val: unknown): string {
+  const s = val == null ? '' : typeof val === 'object' ? cellSummary(val) : String(val)
+  if (/[",\n\r]/.test(s)) {
+    return '"' + s.replace(/"/g, '""') + '"'
+  }
+  return s
+}
+
+export function downloadCsvRows(
+  columns: string[],
+  rows: ReportRow[],
+  filename: string,
+  headerLookup: (col: string) => string = fieldLabel,
+) {
+  if (typeof document === 'undefined' || typeof Blob === 'undefined') return
+  const lines = [columns.map((c) => csvEscape(headerLookup(c))).join(',')]
+  for (const r of rows) {
+    lines.push(columns.map((c) => csvEscape(r[c])).join(','))
+  }
+  const blob = new Blob([lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename || 'export.csv'
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+
 export function systemOverviewItems(data: ReportRow): SystemOverviewItem[] {
   const summary = asRecord(data.summary)
   const sections = asRecord(data.sections)
@@ -823,4 +983,309 @@ export function systemOverviewItems(data: ReportRow): SystemOverviewItem[] {
     { label: 'Serial Number', value: serialNumber },
     { label: 'Firmware Version', value: firmwareVersion },
   ]
+}
+
+function extractFortiGateMgmtIp(sections: ReportRow): SystemOverviewItem {
+  const interfaces = asRows(sections.interfaces)
+  const mgmtRows = interfaces.filter((row) => {
+    const role = String(row.role ?? '').trim().toLowerCase()
+    const name = String(row.name ?? '').trim().toLowerCase()
+    return role === 'mgmt' || name === 'mgmt' || name.startsWith('mgmt')
+  })
+  for (const row of mgmtRows) {
+    const ip = formatIpMask(row.ip)
+    if (ip) {
+      return {
+        label: 'Management IP',
+        value: ip,
+        detail: nonEmptyText(row.name) ? `Interface: ${row.name}` : null,
+      }
+    }
+  }
+  const sysGlobal = asRows(sections.system_global)[0]
+  if (sysGlobal && nonEmptyText(sysGlobal.management_ip)) {
+    return { label: 'Management IP', value: nonEmptyText(sysGlobal.management_ip) }
+  }
+  return { label: 'Management IP', value: null }
+}
+
+function firstStringFromRecord(rec: ReportRow, ...keys: string[]): string | null {
+  for (const key of keys) {
+    const val = rec[key]
+    if (typeof val === 'string' && val.trim()) return val.trim()
+    if (typeof val === 'number') return String(val)
+  }
+  return null
+}
+
+export function haOverviewInfo(data: ReportRow): HaOverviewInfo | null {
+  const vendor = String(data.vendor ?? '').toLowerCase()
+  const sections = asRecord(data.sections)
+
+  if (vendor === 'fortigate') {
+    const ha = asRows(sections.ha_config)[0]
+    const mode = ha ? firstStringFromRecord(ha, 'mode') : null
+    const enabled = Boolean(ha && mode && mode.toLowerCase() !== 'standalone')
+    if (!enabled || !ha) {
+      return {
+        enabled: false,
+        title: 'Standalone Mode',
+        subtitle: 'High Availability is not enabled in this FortiOS configuration.',
+        badgeText: 'Not Enabled',
+        badgeVariant: 'muted',
+        items: [],
+      }
+    }
+    const groupName = firstStringFromRecord(ha, 'group_name') ?? '—'
+    const hb = firstStringFromRecord(ha, 'hbdev')
+      || (Array.isArray(ha.monitor) && ha.monitor.length ? ha.monitor.map(String).join(', ') : null)
+      || '—'
+    return {
+      enabled: true,
+      title: `${mode} Cluster`,
+      subtitle: `Group: ${groupName}`,
+      badgeText: 'HA Enabled',
+      badgeVariant: 'allow',
+      items: [
+        { label: 'Mode', value: mode },
+        { label: 'Group Name', value: groupName },
+        { label: 'Priority', value: firstStringFromRecord(ha, 'priority') ?? '—' },
+        { label: 'Session Pickup', value: firstStringFromRecord(ha, 'session_pickup') ?? 'disable' },
+        { label: 'Heartbeat Interfaces', value: hb },
+      ],
+    }
+  }
+
+  if (vendor === 'palo_alto') {
+    const ha = asRows(sections.ha_configs)[0]
+    const enabledFlag = ha ? String(ha.enabled ?? '').trim().toLowerCase() : ''
+    const enabled = enabledFlag === 'yes' || enabledFlag === 'true' || enabledFlag === 'enable' || enabledFlag === '1'
+    if (!enabled || !ha) {
+      return {
+        enabled: false,
+        title: 'Standalone Mode',
+        subtitle: 'High Availability is not enabled in this PAN-OS configuration.',
+        badgeText: 'Not Enabled',
+        badgeVariant: 'muted',
+        items: [],
+      }
+    }
+    const modeObj = asRecord(ha.mode)
+    const modeKey = Object.keys(modeObj)[0] ?? 'active-passive'
+    const modeLabel = modeKey === 'active-active' ? 'Active-Active' : 'Active-Passive'
+    const groupObj = asRecord(ha.group)
+    const groupId = firstStringFromRecord(groupObj, 'group-id', 'group_id') ?? '—'
+    const peerIp = firstStringFromRecord(groupObj, 'peer-ip', 'peer_ip') ?? '—'
+    const ifaceObj = asRecord(ha.interface)
+    const ha1Obj = asRecord(ifaceObj.ha1)
+    const ha1Port = firstStringFromRecord(ha1Obj, 'port') ?? '—'
+    const ha1Ip = firstStringFromRecord(ha1Obj, 'ip-address', 'ip_address') ?? '—'
+    return {
+      enabled: true,
+      title: `${modeLabel} Cluster`,
+      subtitle: `Group ID: ${groupId}`,
+      badgeText: 'HA Enabled',
+      badgeVariant: modeKey === 'active-active' ? 'info' : 'allow',
+      items: [
+        { label: 'Local State', value: modeKey === 'active-active' ? 'Active-Primary' : 'Active' },
+        { label: 'Peer IP', value: peerIp },
+        { label: 'HA1 Interface', value: ha1Port },
+        { label: 'HA1 IP', value: ha1Ip },
+      ],
+    }
+  }
+
+  return null
+}
+
+export function extendedSystemOverviewItems(
+  data: ReportRow,
+  audit?: import('../source/types').SecurityAuditResponse | null,
+  lifecycle?: import('../source/types').LifecycleCardData | null,
+): SystemOverviewItem[] {
+  const vendor = String(data.vendor ?? '').toLowerCase()
+  const base = systemOverviewItems(data)
+  if (vendor !== 'fortigate' && vendor !== 'palo_alto') {
+    return base
+  }
+
+  const summary = asRecord(data.summary)
+  const sections = asRecord(data.sections)
+  const summaryMeta = asRecord(summary.source_metadata)
+
+  if (vendor === 'fortigate') {
+    const sysGlobal = asRows(sections.system_global)[0] ?? {}
+    const modelFromLifecycle = lifecycle?.rows.find((row) => row.label === 'Hardware Model')?.value
+    const model = firstText(modelFromLifecycle, summaryMeta.hardware_model)
+    const httpPort = firstStringFromRecord(sysGlobal, 'admin_port') ?? '80'
+    const httpsPort = firstStringFromRecord(sysGlobal, 'admin_sport') ?? '443'
+    const sshPort = firstStringFromRecord(sysGlobal, 'admin_ssh_port') ?? '22'
+    const hasGlobal = asRows(sections.system_global).length > 0
+
+    return [
+      base[0], // Hostname
+      { label: 'Model', value: model && model !== 'Unknown' ? model : null },
+      extractFortiGateMgmtIp(sections),
+      base[1], // WAN IP / Netmask
+      {
+        label: 'Admin Ports',
+        value: hasGlobal ? `HTTPS ${httpsPort} · SSH ${sshPort}` : null,
+        detail: hasGlobal ? `HTTP ${httpPort}` : null,
+      },
+      base[2], // Primary DNS
+      base[3], // Serial Number
+      base[4], // Firmware Version
+      {
+        label: 'Internet Connectivity',
+        value: audit?.posture?.internet ?? null,
+        detail: audit?.posture?.internet_sub || null,
+      },
+      {
+        label: 'Local Hard Disk',
+        value: audit?.posture?.disk ?? null,
+        detail: audit?.posture?.disk_sub || null,
+      },
+    ]
+  }
+
+  // Palo Alto PAN-OS
+  const sysSettings = asRows(sections.system_settings)[0] ?? {}
+  const mgmtIp = nonEmptyText(sysSettings.ip_address)
+  const netmask = nonEmptyText(sysSettings.netmask)
+  const defaultGw = nonEmptyText(sysSettings.default_gateway)
+  const ipv6Addr = nonEmptyText(sysSettings.ipv6_address)
+  const ipv6Gw = nonEmptyText(sysSettings.ipv6_default_gateway)
+  const timezone = nonEmptyText(sysSettings.timezone)
+  const swVersion = firstText(data.detail_version, data.source_version, summary.source_version)
+
+  return [
+    base[0], // Hostname
+    { label: 'Management IP', value: mgmtIp, detail: netmask ? `Netmask: ${netmask}` : null },
+    { label: 'Default Gateway', value: defaultGw },
+    { label: 'IPv6 Address', value: ipv6Addr, detail: ipv6Gw ? `Default GW: ${ipv6Gw}` : null },
+    { label: 'Software Version', value: swVersion },
+    { label: 'Timezone', value: timezone },
+    base[2], // Primary DNS
+    base[3], // Serial Number
+    {
+      label: 'Internet Connectivity',
+      value: audit?.posture?.internet ?? null,
+      detail: audit?.posture?.internet_sub || null,
+    },
+    {
+      label: 'Local Hard Disk',
+      value: audit?.posture?.disk ?? null,
+      detail: audit?.posture?.disk_sub || null,
+    },
+  ]
+}
+
+export function applianceHeroInfo(
+  data: ReportRow,
+  vendorDisplayName: string,
+  lifecycle?: import('../source/types').LifecycleCardData | null,
+  audit?: import('../source/types').SecurityAuditResponse | null,
+): ApplianceHeroInfo {
+  const vendor = String(data.vendor ?? '').toLowerCase()
+  const summary = asRecord(data.summary)
+  const sections = asRecord(data.sections)
+  const summaryMeta = asRecord(summary.source_metadata)
+  const base = systemOverviewItems(data)
+  const hostname = base[0]?.value ?? 'Unknown'
+  const serial = base[3]?.value
+  const firmware = base[4]?.value
+
+  const eyebrow = vendor === 'fortigate'
+    ? 'FortiGate Appliance'
+    : vendor === 'palo_alto'
+      ? 'PAN-OS Appliance'
+      : `${vendorDisplayName} Configuration`
+
+  let subtitle = vendorDisplayName
+  if (vendor === 'fortigate') {
+    const model = firstText(
+      lifecycle?.rows.find((row) => row.label === 'Hardware Model')?.value,
+      summaryMeta.hardware_model,
+    )
+    const parts = [
+      model && model !== 'Unknown' ? model : null,
+      firmware ? `Firmware ${firmware}` : null,
+      serial ? `S/N ${serial}` : null,
+    ].filter(Boolean)
+    if (parts.length) subtitle = parts.join(' · ')
+  } else if (vendor === 'palo_alto') {
+    const sysSettings = asRows(sections.system_settings)[0] ?? {}
+    const swVersion = firstText(data.detail_version, data.source_version, summary.source_version)
+    const timezone = nonEmptyText(sysSettings.timezone)
+    const parts = [
+      swVersion ? `PAN-OS ${swVersion}` : null,
+      timezone,
+      serial ? `S/N ${serial}` : null,
+    ].filter(Boolean)
+    if (parts.length) subtitle = parts.join(' · ')
+  } else {
+    const parts = [firmware ? `Version ${firmware}` : null, serial ? `S/N ${serial}` : null].filter(Boolean)
+    if (parts.length) subtitle = parts.join(' · ')
+  }
+
+  const badges: HeroBadgeItem[] = []
+  const ha = haOverviewInfo(data)
+  if (ha) {
+    badges.push({
+      text: ha.enabled ? `HA Enabled · ${ha.title.replace(' Cluster', '')}` : 'Standalone',
+      variant: ha.enabled ? 'allow' : 'muted',
+    })
+  }
+  if (vendor === 'palo_alto') {
+    const sysSettings = asRows(sections.system_settings)[0] ?? {}
+    const advRouting = nonEmptyText(sysSettings.advanced_routing)
+    if (advRouting) {
+      const isOn = advRouting.toLowerCase() === 'on' || advRouting.toLowerCase() === 'yes'
+      badges.push({ text: `Advanced Routing: ${isOn ? 'On' : 'Off'}`, variant: isOn ? 'allow' : 'muted' })
+    }
+  }
+  if (lifecycle?.badge) {
+    badges.push({
+      id: lifecycle.badge.id,
+      text: lifecycle.badge.text,
+      variant: lifecycle.badge.variant,
+      targetSection: 'Security & Health',
+      targetHealthTab: 'audit',
+    })
+  }
+  if (audit) {
+    const expCrit = audit.exposure.filter((item) => item.severity === 'critical').length
+    badges.push({
+      text: audit.exposure.length > 0
+        ? `Public Mgmt Exposed (${audit.exposure.length})`
+        : 'No Public Mgmt Exposure',
+      variant: expCrit > 0 ? 'deny' : audit.exposure.length > 0 ? 'warn' : 'allow',
+      targetSection: 'Security & Health',
+      targetHealthTab: 'audit',
+    })
+    const actionable = audit.quick_audit.high_count + audit.quick_audit.med_count
+    badges.push({
+      text: actionable > 0 ? `Audit: ${actionable} Findings` : 'Audit: Clean',
+      variant: audit.quick_audit.high_count > 0 ? 'deny' : audit.quick_audit.med_count > 0 ? 'warn' : 'allow',
+      targetSection: 'Security & Health',
+      targetHealthTab: 'audit',
+    })
+    if (audit.certificate_summary.expired > 0) {
+      badges.push({
+        text: `Expired Certs (${audit.certificate_summary.expired})`,
+        variant: 'deny',
+        targetSection: 'Security & Health',
+        targetHealthTab: 'audit',
+      })
+    } else if (audit.certificate_summary.expiring_soon > 0) {
+      badges.push({
+        text: `Certs Expiring Soon (${audit.certificate_summary.expiring_soon})`,
+        variant: 'warn',
+        targetSection: 'Security & Health',
+        targetHealthTab: 'audit',
+      })
+    }
+  }
+
+  return { eyebrow, title: hostname, subtitle, badges }
 }

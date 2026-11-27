@@ -11,6 +11,7 @@ class PANSourceDocument:
     root: ET.Element
     hostname: Optional[str] = None
     source_version: Optional[str] = None
+    detail_version: Optional[str] = None
 
 class PANScope(BaseModel):
     kind: str

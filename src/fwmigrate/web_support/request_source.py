@@ -4,7 +4,7 @@ import hashlib
 import json
 import os
 
-from flask import request
+from flask import current_app, has_app_context, request
 from fwmigrate.collection import CollectionStatus
 from fwmigrate.collection.snapshot import FORMAT, MAX_BYTES, parse_snapshot, sanitize_source, make_snapshot
 from fwmigrate.source_reporting import source_reporters
@@ -34,7 +34,7 @@ def _read_uploaded_source(uploaded) -> str:
     return _decode_configuration(raw)
 
 
-def analyze_request_source(payload, vendor, *, target=False, metrics=None):
+def analyze_request_source(payload, vendor, *, target=False, metrics=None, use_cache=False):
     if not isinstance(payload, dict):
         raise ValueError('Source request must be an object')
     evidence = payload.get('target_source' if target else 'source')
@@ -77,7 +77,11 @@ def analyze_request_source(payload, vendor, *, target=False, metrics=None):
     hasher.update(vendor.encode('utf-8'))
     digest = hasher.hexdigest()
     options = {'metrics': metrics} if metrics is not None else {}
-    analysis = _timed(metrics, 'source analysis', lambda: source_reporters.get(vendor).analyze_source(text, **options))
+    cache = current_app.extensions.get('analysis_cache') if (use_cache and metrics is None and has_app_context()) else None
+    if cache is not None:
+        analysis = cache.get_or_load(vendor, digest, lambda: source_reporters.get(vendor).analyze_source(text, **options))
+    else:
+        analysis = _timed(metrics, 'source analysis', lambda: source_reporters.get(vendor).analyze_source(text, **options))
     return RequestSource(vendor, digest, analysis, name, status, evidence)
 
 

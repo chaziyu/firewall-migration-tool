@@ -715,6 +715,9 @@ def collect_broken_references(
             ("dnsfilter_profile", ReferenceKind.DNSFILTER_PROFILE),
             ("application_list", ReferenceKind.APPLICATION_LIST),
             ("ssl_ssh_profile", ReferenceKind.SSL_SSH_PROFILE),
+            ("file_filter_profile", ReferenceKind.FILE_FILTER_PROFILE),
+            ("emailfilter_profile", ReferenceKind.EMAILFILTER_PROFILE),
+            ("waf_profile", ReferenceKind.WAF_PROFILE),
         ):
             val = getattr(policy, field, None)
             if val and index.objects.get(kind):

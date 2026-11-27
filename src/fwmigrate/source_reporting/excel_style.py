@@ -96,7 +96,7 @@ def report_column_width(header) -> int:
 
 
 def write_report_summary(
-    sheet, *, title, metadata, profile, validation, inventory, coverage=(), indicators=(),
+    sheet, *, title, metadata, profile, validation, inventory, coverage=(), indicators=(), lifecycle=(),
 ) -> None:
     """Present vendor-owned metrics without inferring source state or sheet availability."""
     sheet._report_summary_written = True
@@ -162,6 +162,10 @@ def write_report_summary(
     append(["SOURCE DETAILS"], heading=True)
     pairs((*metadata, ("Export Profile", profile),
            ("Generated UTC", datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"))))
+    if lifecycle:
+        append(["LIFECYCLE & FIRMWARE"], heading=True)
+        for label, value in lifecycle:
+            append([label, value], labels=(0,))
     append(["VALIDATION"], heading=True)
     pairs(validation)
     append(["CONFIGURATION INVENTORY"], heading=True)

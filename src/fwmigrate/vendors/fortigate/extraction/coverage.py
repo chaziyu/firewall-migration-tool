@@ -207,6 +207,15 @@ _SPECS = (
     TypedSourceSpec("switch-controller lldp-profile", "switch_lldp_profiles"),
     TypedSourceSpec("switch-controller qos qos-policy", "switch_qos_policies"),
     TypedSourceSpec("switch-controller vlan-policy", "switch_vlan_policies"),
+    TypedSourceSpec("vpn certificate local", "certificates", filter_field="store", filter_value="local"),
+    TypedSourceSpec("vpn certificate ca", "certificates", filter_field="store", filter_value="ca"),
+    TypedSourceSpec("vpn certificate remote", "certificates", filter_field="store", filter_value="remote"),
+    TypedSourceSpec("firewall local-in-policy", "local_in_policies", object_field="policy_id", filter_field="address_family", filter_value="ipv4"),
+    TypedSourceSpec("firewall local-in-policy6", "local_in_policies", object_field="policy_id", filter_field="address_family", filter_value="ipv6"),
+    TypedSourceSpec("log fortianalyzer setting", "fortianalyzer_settings", object_field=None),
+    TypedSourceSpec("log fortiguard setting", "log_fortiguard_settings", object_field=None),
+    TypedSourceSpec("system storage", "system_storages"),
+    TypedSourceSpec("user saml", "saml_servers"),
 )
 
 _SPEC_BY_PATH = {spec.source_path: spec for spec in _SPECS}

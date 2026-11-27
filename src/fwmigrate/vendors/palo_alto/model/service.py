@@ -31,6 +31,7 @@ class PANService(BaseModel):
     source_order: int | None = None
     tcp: PANServiceProtocol | None = None
     udp: PANServiceProtocol | None = None
+    sctp: PANServiceProtocol | None = None
     description: str | None = None
     tags: list[str] | None = None
     raw_extra: dict[str, Any] = Field(default_factory=dict)

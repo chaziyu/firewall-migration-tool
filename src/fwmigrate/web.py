@@ -9,6 +9,7 @@ from flask import Flask, Request as FlaskRequest, jsonify, request
 from werkzeug.exceptions import HTTPException
 from werkzeug.middleware.proxy_fix import ProxyFix
 
+from fwmigrate.web_support.analysis_cache import AnalysisCache, SealedSourceStore, cache_settings_from_app
 from fwmigrate.web_support.request_controls import register_request_controls
 from fwmigrate.web_support.public_errors import safe_validation_message
 
@@ -29,6 +30,7 @@ from fwmigrate.web_api.palo_alto_to_cisco_asa import register_palo_alto_to_cisco
 from fwmigrate.web_api.palo_alto_to_checkpoint import register_palo_alto_to_checkpoint_routes
 from fwmigrate.web_api.palo_alto_to_cisco_ftd import register_palo_alto_to_cisco_ftd_routes
 from fwmigrate.web_api.source import register_source_routes
+from fwmigrate.web_api.diagnostics import register_diagnostic_routes
 from fwmigrate.web_api.update import register_update_routes
 from fwmigrate.web_api.chat import register_chat_routes
 from fwmigrate.web_support.frontend import register_frontend_routes
@@ -104,6 +106,9 @@ def create_app(test_config=None):
     app.config.setdefault('MAX_CONCURRENT_EXPORTS', int(os.environ.get('FWMIGRATE_MAX_CONCURRENT_EXPORTS', '2')))
     app.config.setdefault('MAX_CONTENT_LENGTH', 2 * MAX_BYTES + 5_000_000)
     register_request_controls(app)
+    cache_max, cache_ttl = cache_settings_from_app(app)
+    app.extensions['analysis_cache'] = AnalysisCache(max_entries=cache_max, ttl_seconds=cache_ttl)
+    app.extensions['sealed_source_store'] = SealedSourceStore(max_entries=cache_max, ttl_seconds=cache_ttl)
 
     require_web_auth = app.config.get('REQUIRE_WEB_AUTH')
     if require_web_auth is None:
@@ -173,6 +178,7 @@ def create_app(test_config=None):
 
     register_frontend_routes(app)
     register_source_routes(app, collector_registry=app.config.get('SOURCE_COLLECTOR_REGISTRY'))
+    register_diagnostic_routes(app)
     register_update_routes(app)
     register_chat_routes(app)
     register_migration_pair_routes(app)

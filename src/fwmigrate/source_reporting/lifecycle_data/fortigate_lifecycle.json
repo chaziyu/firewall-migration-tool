@@ -1,0 +1,463 @@
+{
+  "updated_at": "2026-11-24",
+  "branches": {
+    "8.0": {
+      "release_date": "2026-04-21",
+      "eoes": "2029-04-21",
+      "eos": "2030-10-21",
+      "latest": "8.0.2"
+    },
+    "7.6": {
+      "release_date": "2024-07-25",
+      "eoes": "2028-07-25",
+      "eos": "2030-01-25",
+      "latest": "7.6.8"
+    },
+    "7.4": {
+      "release_date": "2023-05-11",
+      "eoes": "2027-05-11",
+      "eos": "2028-11-11",
+      "latest": "7.4.13"
+    },
+    "7.2": {
+      "release_date": "2022-03-31",
+      "eoes": "2025-03-31",
+      "eos": "2026-09-30",
+      "latest": "7.2.14"
+    },
+    "7.0": {
+      "release_date": "2021-03-30",
+      "eoes": "2024-03-30",
+      "eos": "2025-09-30",
+      "latest": "7.0.19"
+    },
+    "6.4": {
+      "release_date": "2020-03-31",
+      "eoes": "2023-03-31",
+      "eos": "2024-09-30",
+      "latest": "6.4.16"
+    },
+    "6.2": {
+      "release_date": "2019-03-28",
+      "eoes": "2022-03-28",
+      "eos": "2023-09-28",
+      "latest": "6.2.16"
+    },
+    "6.0": {
+      "release_date": "2018-03-29",
+      "eoes": "2021-03-29",
+      "eos": "2022-09-29",
+      "latest": "6.0.18"
+    }
+  },
+  "models": {
+    "FG-VM": {
+      "display_name": "FortiGate-VM (Virtual Appliance)",
+      "eoo": null,
+      "lsed": null,
+      "eos": null,
+      "last_supported_firmware": "Active",
+      "is_vm": true
+    },
+    "FG-60D": {
+      "display_name": "FortiGate-60D",
+      "eoo": "2018-09-23",
+      "lsed": "2022-09-23",
+      "eos": "2023-09-23",
+      "last_supported_firmware": "6.0.x",
+      "is_vm": false
+    },
+    "FG-90D": {
+      "display_name": "FortiGate-90D",
+      "eoo": "2018-09-23",
+      "lsed": "2022-09-23",
+      "eos": "2023-09-23",
+      "last_supported_firmware": "6.0.x",
+      "is_vm": false
+    },
+    "FG-100D": {
+      "display_name": "FortiGate-100D",
+      "eoo": "2018-07-26",
+      "lsed": "2022-07-26",
+      "eos": "2023-07-26",
+      "last_supported_firmware": "6.2.x",
+      "is_vm": false
+    },
+    "FG-200D": {
+      "display_name": "FortiGate-200D",
+      "eoo": "2018-07-26",
+      "lsed": "2022-07-26",
+      "eos": "2023-07-26",
+      "last_supported_firmware": "6.2.x",
+      "is_vm": false
+    },
+    "FG-300D": {
+      "display_name": "FortiGate-300D",
+      "eoo": "2019-06-21",
+      "lsed": "2023-06-21",
+      "eos": "2024-06-21",
+      "last_supported_firmware": "6.2.x",
+      "is_vm": false
+    },
+    "FG-500D": {
+      "display_name": "FortiGate-500D",
+      "eoo": "2019-06-21",
+      "lsed": "2023-06-21",
+      "eos": "2024-06-21",
+      "last_supported_firmware": "6.2.x",
+      "is_vm": false
+    },
+    "FG-1000D": {
+      "display_name": "FortiGate-1000D",
+      "eoo": "2020-07-15",
+      "lsed": "2024-07-15",
+      "eos": "2025-07-15",
+      "last_supported_firmware": "7.0.x",
+      "is_vm": false
+    },
+    "FG-1500D": {
+      "display_name": "FortiGate-1500D",
+      "eoo": "2020-07-15",
+      "lsed": "2024-07-15",
+      "eos": "2025-07-15",
+      "last_supported_firmware": "7.0.x",
+      "is_vm": false
+    },
+    "FG-3000D": {
+      "display_name": "FortiGate-3000D",
+      "eoo": "2020-07-15",
+      "lsed": "2024-07-15",
+      "eos": "2025-07-15",
+      "last_supported_firmware": "7.0.x",
+      "is_vm": false
+    },
+    "FG-3200D": {
+      "display_name": "FortiGate-3200D",
+      "eoo": "2020-07-15",
+      "lsed": "2024-07-15",
+      "eos": "2025-07-15",
+      "last_supported_firmware": "7.0.x",
+      "is_vm": false
+    },
+    "FG-3700D": {
+      "display_name": "FortiGate-3700D",
+      "eoo": "2020-07-15",
+      "lsed": "2024-07-15",
+      "eos": "2025-07-15",
+      "last_supported_firmware": "7.0.x",
+      "is_vm": false
+    },
+    "FG-60E": {
+      "display_name": "FortiGate-60E",
+      "eoo": "2021-12-29",
+      "lsed": "2025-12-29",
+      "eos": "2026-12-29",
+      "last_supported_firmware": "7.4.x",
+      "is_vm": false
+    },
+    "FG-60E-POE": {
+      "display_name": "FortiGate-60E-POE",
+      "eoo": "2021-12-29",
+      "lsed": "2025-12-29",
+      "eos": "2026-12-29",
+      "last_supported_firmware": "7.4.x",
+      "is_vm": false
+    },
+    "FG-60E-DSL": {
+      "display_name": "FortiGate-60E-DSL",
+      "eoo": "2021-12-29",
+      "lsed": "2025-12-29",
+      "eos": "2026-12-29",
+      "last_supported_firmware": "7.4.x",
+      "is_vm": false
+    },
+    "FG-61E": {
+      "display_name": "FortiGate-61E",
+      "eoo": "2021-12-29",
+      "lsed": "2025-12-29",
+      "eos": "2026-12-29",
+      "last_supported_firmware": "7.4.x",
+      "is_vm": false
+    },
+    "FG-80E": {
+      "display_name": "FortiGate-80E",
+      "eoo": "2021-12-29",
+      "lsed": "2025-12-29",
+      "eos": "2026-12-29",
+      "last_supported_firmware": "7.4.x",
+      "is_vm": false
+    },
+    "FG-90E": {
+      "display_name": "FortiGate-90E",
+      "eoo": "2021-12-29",
+      "lsed": "2025-12-29",
+      "eos": "2026-12-29",
+      "last_supported_firmware": "7.4.x",
+      "is_vm": false
+    },
+    "FG-100E": {
+      "display_name": "FortiGate-100E",
+      "eoo": "2021-08-17",
+      "lsed": "2025-08-17",
+      "eos": "2026-08-17",
+      "last_supported_firmware": "7.2.x",
+      "is_vm": false
+    },
+    "FG-101E": {
+      "display_name": "FortiGate-101E",
+      "eoo": "2021-08-17",
+      "lsed": "2025-08-17",
+      "eos": "2026-08-17",
+      "last_supported_firmware": "7.2.x",
+      "is_vm": false
+    },
+    "FG-200E": {
+      "display_name": "FortiGate-200E",
+      "eoo": "2025-10-13",
+      "lsed": "2029-10-13",
+      "eos": "2030-10-13",
+      "last_supported_firmware": "7.6.x",
+      "is_vm": false
+    },
+    "FG-201E": {
+      "display_name": "FortiGate-201E",
+      "eoo": "2025-10-13",
+      "lsed": "2029-10-13",
+      "eos": "2030-10-13",
+      "last_supported_firmware": "7.6.x",
+      "is_vm": false
+    },
+    "FG-300E": {
+      "display_name": "FortiGate-300E",
+      "eoo": "2021-07-15",
+      "lsed": "2025-07-15",
+      "eos": "2026-07-15",
+      "last_supported_firmware": "7.4.x",
+      "is_vm": false
+    },
+    "FG-400E": {
+      "display_name": "FortiGate-400E",
+      "eoo": null,
+      "lsed": null,
+      "eos": null,
+      "last_supported_firmware": "Active",
+      "is_vm": false
+    },
+    "FG-500E": {
+      "display_name": "FortiGate-500E",
+      "eoo": "2021-07-15",
+      "lsed": "2025-07-15",
+      "eos": "2026-07-15",
+      "last_supported_firmware": "7.4.x",
+      "is_vm": false
+    },
+    "FG-600E": {
+      "display_name": "FortiGate-600E",
+      "eoo": "2027-02-13",
+      "lsed": "2031-02-13",
+      "eos": "2032-02-13",
+      "last_supported_firmware": "Active",
+      "is_vm": false
+    },
+    "FG-1100E": {
+      "display_name": "FortiGate-1100E",
+      "eoo": "2026-09-13",
+      "lsed": "2030-09-13",
+      "eos": "2031-09-13",
+      "last_supported_firmware": "Active",
+      "is_vm": false
+    },
+    "FG-2000E": {
+      "display_name": "FortiGate-2000E",
+      "eoo": null,
+      "lsed": null,
+      "eos": null,
+      "last_supported_firmware": "Active",
+      "is_vm": false
+    },
+    "FG-3400E": {
+      "display_name": "FortiGate-3400E",
+      "eoo": null,
+      "lsed": null,
+      "eos": null,
+      "last_supported_firmware": "Active",
+      "is_vm": false
+    },
+    "FG-40F": {
+      "display_name": "FortiGate-40F",
+      "eoo": null,
+      "lsed": null,
+      "eos": null,
+      "last_supported_firmware": "Active",
+      "is_vm": false
+    },
+    "FG-60F": {
+      "display_name": "FortiGate-60F",
+      "eoo": null,
+      "lsed": null,
+      "eos": null,
+      "last_supported_firmware": "Active",
+      "is_vm": false
+    },
+    "FG-61F": {
+      "display_name": "FortiGate-61F",
+      "eoo": null,
+      "lsed": null,
+      "eos": null,
+      "last_supported_firmware": "Active",
+      "is_vm": false
+    },
+    "FG-70F": {
+      "display_name": "FortiGate-70F",
+      "eoo": null,
+      "lsed": null,
+      "eos": null,
+      "last_supported_firmware": "Active",
+      "is_vm": false
+    },
+    "FG-80F": {
+      "display_name": "FortiGate-80F",
+      "eoo": null,
+      "lsed": null,
+      "eos": null,
+      "last_supported_firmware": "Active",
+      "is_vm": false
+    },
+    "FG-100F": {
+      "display_name": "FortiGate-100F",
+      "eoo": null,
+      "lsed": null,
+      "eos": null,
+      "last_supported_firmware": "Active",
+      "is_vm": false
+    },
+    "FG-101F": {
+      "display_name": "FortiGate-101F",
+      "eoo": null,
+      "lsed": null,
+      "eos": null,
+      "last_supported_firmware": "Active",
+      "is_vm": false
+    },
+    "FG-200F": {
+      "display_name": "FortiGate-200F",
+      "eoo": null,
+      "lsed": null,
+      "eos": null,
+      "last_supported_firmware": "Active",
+      "is_vm": false
+    },
+    "FG-201F": {
+      "display_name": "FortiGate-201F",
+      "eoo": null,
+      "lsed": null,
+      "eos": null,
+      "last_supported_firmware": "Active",
+      "is_vm": false
+    },
+    "FG-400F": {
+      "display_name": "FortiGate-400F",
+      "eoo": null,
+      "lsed": null,
+      "eos": null,
+      "last_supported_firmware": "Active",
+      "is_vm": false
+    },
+    "FG-600F": {
+      "display_name": "FortiGate-600F",
+      "eoo": null,
+      "lsed": null,
+      "eos": null,
+      "last_supported_firmware": "Active",
+      "is_vm": false
+    },
+    "FG-1000F": {
+      "display_name": "FortiGate-1000F",
+      "eoo": null,
+      "lsed": null,
+      "eos": null,
+      "last_supported_firmware": "Active",
+      "is_vm": false
+    },
+    "FG-1800F": {
+      "display_name": "FortiGate-1800F",
+      "eoo": null,
+      "lsed": null,
+      "eos": null,
+      "last_supported_firmware": "Active",
+      "is_vm": false
+    },
+    "FG-2600F": {
+      "display_name": "FortiGate-2600F",
+      "eoo": null,
+      "lsed": null,
+      "eos": null,
+      "last_supported_firmware": "Active",
+      "is_vm": false
+    },
+    "FG-3000F": {
+      "display_name": "FortiGate-3000F",
+      "eoo": null,
+      "lsed": null,
+      "eos": null,
+      "last_supported_firmware": "Active",
+      "is_vm": false
+    },
+    "FG-3500F": {
+      "display_name": "FortiGate-3500F",
+      "eoo": null,
+      "lsed": null,
+      "eos": null,
+      "last_supported_firmware": "Active",
+      "is_vm": false
+    },
+    "FG-4200F": {
+      "display_name": "FortiGate-4200F",
+      "eoo": null,
+      "lsed": null,
+      "eos": null,
+      "last_supported_firmware": "Active",
+      "is_vm": false
+    },
+    "FG-4400F": {
+      "display_name": "FortiGate-4400F",
+      "eoo": null,
+      "lsed": null,
+      "eos": null,
+      "last_supported_firmware": "Active",
+      "is_vm": false
+    },
+    "FG-90G": {
+      "display_name": "FortiGate-90G",
+      "eoo": null,
+      "lsed": null,
+      "eos": null,
+      "last_supported_firmware": "Active",
+      "is_vm": false
+    },
+    "FG-120G": {
+      "display_name": "FortiGate-120G",
+      "eoo": null,
+      "lsed": null,
+      "eos": null,
+      "last_supported_firmware": "Active",
+      "is_vm": false
+    },
+    "FG-200G": {
+      "display_name": "FortiGate-200G",
+      "eoo": null,
+      "lsed": null,
+      "eos": null,
+      "last_supported_firmware": "Active",
+      "is_vm": false
+    },
+    "FG-900G": {
+      "display_name": "FortiGate-900G",
+      "eoo": null,
+      "lsed": null,
+      "eos": null,
+      "last_supported_firmware": "Active",
+      "is_vm": false
+    }
+  }
+}

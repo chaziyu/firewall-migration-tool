@@ -8,6 +8,11 @@ from typing import Any
 
 from .source_model import PANScope, pan_scope_identity
 from .source_report import PaloAltoSourceResult
+from ...source_reporting.lifecycle import (
+    build_paloalto_lifecycle_card,
+    evaluate_paloalto_lifecycle,
+)
+from .vpn_inspector import build_paloalto_vpn_inspector
 
 
 _PREVIEW_RECORD_LIMIT = 200
@@ -324,12 +329,19 @@ def build_panos_preview(analysis: PaloAltoSourceResult) -> dict[str, Any]:
     coverage = [_jsonable(item) for item in analysis.accounting.coverage]
     source_only_count = sum(status == "SOURCE_ONLY" for status in analysis.accounting.record_statuses.values())
     unsupported_count = sum(status == "UNSUPPORTED" for status in analysis.accounting.record_statuses.values())
+    lifecycle_result = evaluate_paloalto_lifecycle(
+        config.detail_version or config.source_version,
+        is_exact_version=bool(config.detail_version),
+        cache_only=True,
+    )
     return {
         "vendor": "palo_alto",
         "hostname": config.hostname,
         "source_version": config.source_version,
+        "detail_version": config.detail_version,
         "summary": {
             "objects": object_counts,
+            "lifecycle": build_paloalto_lifecycle_card(lifecycle_result),
             "vdoms": vdoms,
             "scopes": vdoms,
             "scope_identities": list(analysis.derived.scope_identities),
@@ -451,6 +463,7 @@ def build_panos_preview(analysis: PaloAltoSourceResult) -> dict[str, Any]:
             "policies": policies,
             "nat": nat_rows,
             "routes": routes,
+            "vpn_inspector": build_paloalto_vpn_inspector(config, analysis.derived),
             "vpn_tunnels": vpn_tunnels,
             "vpn_phase2": [{**proxy.model_dump(mode="json", exclude={"raw_extra", "explicit_fields"}),
                             "tunnel": tunnel.name, "additional_settings": proxy.raw_extra, **scope_fields(tunnel)}

@@ -40,8 +40,8 @@ test('topology rows render without load-more truncation, reset on filters, and k
   const source = readFileSync(new URL('../src/features/report/SourceReport.tsx', import.meta.url), 'utf8')
   const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText
   const exports = {}
-  const modules = { react: hooks, 'react/jsx-runtime': jsxRuntime, './reportPresentation': presentation,
-    './ReportDetails': { ReportDetails: 'ReportDetails' }, './ExcelExportControls': {}, '../../components/common/tabKeyboard': {}, '../../components/common/ErrorBanner': {} }
+  const modules = { react: hooks, 'react/jsx-runtime': jsxRuntime, './reportPresentation': presentation, '../source/sourceApi': { fetchSecurityAudit: async () => null },
+    './ReportDetails': { ReportDetails: 'ReportDetails' }, './ExcelExportControls': {}, './LifecycleCard': { isLifecycleCardData: () => false, LifecycleCard: 'LifecycleCard' }, './WhereUsedPanel': { WhereUsedPanel: 'WhereUsedPanel' }, './VpnInspectorView': { VpnInspectorView: 'VpnInspectorView' }, './SecurityAuditPanel': { SecurityAuditPanel: 'SecurityAuditPanel' }, '../../components/common/tabKeyboard': {}, '../../components/common/ErrorBanner': {} }
   new Function('require', 'exports', compiled)((name) => { assert.ok(name in modules); return modules[name] }, exports)
   const rows = Array.from({ length: 450 }, (_, index) => ({ name: `port-${index}`, vdom: index % 2 ? 'branch' : 'root', ip: Array.from({ length: 12 }, (_, i) => `192.0.${index % 256}.${i}/24`), enabled: false, metric: 0 }))
   const data = { vendor: 'fortigate', sections: { interface_topology: rows } }
@@ -58,7 +58,7 @@ test('topology rows render without load-more truncation, reset on filters, and k
     return nodes(tree)
   }
   let tree = render()
-  tree.find((node) => node.props.role === 'tab' && node.props.children === 'Interfaces').props.onClick()
+  tree.find((node) => node.props.role === 'tab' && node.props.children === 'Interfaces & Network').props.onClick()
   tree = render()
   const table = () => tree.find((node) => node.type?.name === 'SourceRowsTable')
   assert.equal(table().props.rows.length, 450)
@@ -128,7 +128,7 @@ test('report table keeps a stable scroll viewport and row details', () => {
     const compiled = ts.transpileModule(`${source}\nexport { SourceRowsTable }`, { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText
     const exports = {}
     const hooks = { useRef: () => ({ current: table }), useState: () => [undefined, () => {}], useEffect: (callback) => callback() }
-    const modules = { react: hooks, 'react/jsx-runtime': jsxRuntime, './reportPresentation': presentation, './ReportDetails': {}, './ExcelExportControls': {}, '../../components/common/tabKeyboard': {}, '../../components/common/ErrorBanner': {} }
+    const modules = { react: hooks, 'react/jsx-runtime': jsxRuntime, './reportPresentation': presentation, '../source/sourceApi': { fetchSecurityAudit: async () => null }, './ReportDetails': {}, './ExcelExportControls': {}, './LifecycleCard': { isLifecycleCardData: () => false, LifecycleCard: 'LifecycleCard' }, './WhereUsedPanel': { WhereUsedPanel: 'WhereUsedPanel' }, './VpnInspectorView': { VpnInspectorView: 'VpnInspectorView' }, './SecurityAuditPanel': { SecurityAuditPanel: 'SecurityAuditPanel' }, '../../components/common/tabKeyboard': {}, '../../components/common/ErrorBanner': {} }
     new Function('require', 'exports', compiled)((name) => modules[name], exports)
     const tree = exports.SourceRowsTable({ rows: [{ name: 'port1' }], columns: ['name'], onSelect(row) { selected = row } })
     const rendered = nodes(tree)
@@ -166,7 +166,7 @@ test('large report tables virtualize on initial mount before viewport measuremen
     useState: (initial) => [initial, () => {}],
     useEffect: () => {},
   }
-  const modules = { react: hooks, 'react/jsx-runtime': jsxRuntime, './reportPresentation': presentation, './ReportDetails': {}, './ExcelExportControls': {}, '../../components/common/tabKeyboard': {}, '../../components/common/ErrorBanner': {} }
+  const modules = { react: hooks, 'react/jsx-runtime': jsxRuntime, './reportPresentation': presentation, './ReportDetails': {}, './ExcelExportControls': {}, './LifecycleCard': { isLifecycleCardData: () => false, LifecycleCard: 'LifecycleCard' }, '../../components/common/tabKeyboard': {}, '../../components/common/ErrorBanner': {} }
   new Function('require', 'exports', compiled)((name) => modules[name], exports)
   const rows = Array.from({ length: 5209 }, (_, index) => ({ name: `addr-${index}`, vdom: 'root' }))
   const tree = exports.SourceRowsTable({ rows, columns: ['name', 'vdom'], selected: null, hasSource: true, topology: false, onSelect() {} })

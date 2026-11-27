@@ -188,3 +188,23 @@ def test_serve_selects_mode_from_bind_address(host, mode, monkeypatch):
 def test_invalid_web_mode_fails_closed():
     with pytest.raises(ValueError, match='WEB_MODE'):
         create_app({'TESTING': True, 'WEB_MODE': 'typo'})
+
+
+@pytest.mark.parametrize('path', ['/api/chat', '/api/vendors'])
+@pytest.mark.parametrize('headers', [
+    {'Origin': 'http://attacker.example'},
+    {'Origin': 'null'},
+    {'Sec-Fetch-Site': 'cross-site'},
+])
+def test_cross_origin_api_reads_are_rejected(path, headers):
+    client = create_app({'TESTING': True, 'WEB_MODE': 'local'}).test_client()
+    response = client.get(path, headers=headers)
+    assert response.status_code == 403
+    assert response.headers['Cache-Control'] == 'no-store, private'
+
+
+@pytest.mark.parametrize('path', ['/api/chat', '/api/vendors'])
+def test_same_origin_api_reads_succeed(path):
+    client = create_app({'TESTING': True, 'WEB_MODE': 'local'}).test_client()
+    assert client.get(path).status_code == 200
+    assert client.get(path, headers={'Origin': 'http://localhost', 'Sec-Fetch-Site': 'same-origin'}).status_code == 200

@@ -1,5 +1,14 @@
-import { apiFetch, postBlob, postForm } from '../../api/client'
-import type { SourcePreviewData, SourceVendor, SourceVendorOption } from './types'
+import { apiFetch, postBlob, postForm, postJson } from '../../api/client'
+import type {
+  ExposureProbeResponse,
+  LifecycleCardData,
+  LifecycleRefreshParams,
+  SecurityAuditResponse,
+  SourcePreviewData,
+  SourceVendor,
+  SourceVendorOption,
+  WhereUsedResponse,
+} from './types'
 export { loadMigrationPairs } from '../migration/pairApi'
 
 export async function loadSourceVendors(): Promise<SourceVendorOption[]> {
@@ -47,4 +56,72 @@ export function importCollectionSnapshot(file: File) {
     preview: SourcePreviewData
     collection: { status: string; warnings: string[] }
   }>('/api/collection/snapshot/import', formData)
+}
+
+export async function fetchLifecycleStatus(
+  params: LifecycleRefreshParams,
+  signal?: AbortSignal,
+): Promise<LifecycleCardData> {
+  const query = new URLSearchParams()
+  query.set('vendor', params.vendor)
+  if (params.vendor === 'fortigate') {
+    if (params.model) query.set('model', params.model)
+    if (params.firmware) query.set('firmware', params.firmware)
+  } else {
+    if (params.version) query.set('version', params.version)
+    if (typeof params.exact === 'boolean') query.set('exact', params.exact ? 'true' : 'false')
+  }
+  const response = await apiFetch(`/api/lifecycle?${query.toString()}`, { signal })
+  const data = (await response.json()) as { success?: boolean; error?: string; lifecycle?: LifecycleCardData }
+  if (!response.ok || data.success === false || !data.lifecycle) {
+    throw new Error(data.error || 'Could not refresh lifecycle status')
+  }
+  return data.lifecycle
+}
+
+export function searchWhereUsed(
+  vendor: SourceVendor,
+  source: import('../../storage/workspaceTypes').SourceEvidence,
+  query: string,
+): Promise<WhereUsedResponse> {
+  return postJson<WhereUsedResponse>('/api/source/where-used', {
+    source_vendor: vendor,
+    source,
+    query,
+  })
+}
+
+export function fetchSecurityAudit(
+  vendor: SourceVendor,
+  source: import('../../storage/workspaceTypes').SourceEvidence,
+): Promise<SecurityAuditResponse> {
+  return postJson<SecurityAuditResponse>('/api/source/audit', {
+    source_vendor: vendor,
+    source,
+  })
+}
+
+export function probePublicExposure(
+  vendor: SourceVendor,
+  source: import('../../storage/workspaceTypes').SourceEvidence,
+): Promise<ExposureProbeResponse> {
+  return postJson<ExposureProbeResponse>('/api/source/exposure-probe', {
+    source_vendor: vendor,
+    source,
+  })
+}
+
+export function downloadSecurityAuditReport(
+  vendor: SourceVendor,
+  source: import('../../storage/workspaceTypes').SourceEvidence,
+  signal?: AbortSignal,
+): Promise<Blob> {
+  return postBlob('/api/source/audit-report', {
+    source_vendor: vendor,
+    source,
+  }, {
+    signal,
+    contentTypes: ['text/html'],
+    requireNonEmpty: true,
+  })
 }

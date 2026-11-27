@@ -182,6 +182,8 @@ class PANDoSRule(PANNamedSourceModel):
     rulebase_position: str | None = None
     from_zones: list[str] | None = None
     to_zones: list[str] | None = None
+    from_interfaces: list[str] | None = None
+    to_interfaces: list[str] | None = None
     source: list[str] | None = None
     destination: list[str] | None = None
     source_user: list[str] | None = None

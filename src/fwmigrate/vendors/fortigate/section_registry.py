@@ -552,6 +552,9 @@ register_section(
             "webfilter-profile",
             "dnsfilter-profile",
             "ssl-ssh-profile",
+            "file-filter-profile",
+            "emailfilter-profile",
+            "waf-profile",
 
             "logtraffic",
             "comments",
@@ -2501,5 +2504,68 @@ register_section(
         source_path="switch-controller vlan-policy",
         list_fields=_fields("allowed-vlans", "untagged-vlans"),
         scalar_fields=_fields("description", "fortilink", "vlan", "allowed-vlans-all", "discard-mode"),
+    )
+)
+
+for _cert_store in ("local", "ca", "remote"):
+    register_section(
+        SectionSpec(
+            source_path=f"vpn certificate {_cert_store}",
+            scalar_fields=_fields(
+                "certificate", "ca-identifier", "comments",
+                "source", "source-ip", "range", "scep-url",
+            ),
+        )
+    )
+
+for _local_in_path in ("firewall local-in-policy", "firewall local-in-policy6"):
+    register_section(
+        SectionSpec(
+            source_path=_local_in_path,
+            list_fields=_fields("intf", "srcaddr", "dstaddr", "service"),
+            scalar_fields=_fields(
+                "uuid", "srcaddr-negate", "dstaddr-negate", "action",
+                "service-negate", "schedule", "status", "comments", "virtual-patch",
+            ),
+        )
+    )
+
+register_section(
+    SectionSpec(
+        source_path="log fortianalyzer setting",
+        scalar_fields=_fields(
+            "status", "server", "source-ip", "upload-option", "reliable",
+            "enc-algorithm", "ssl-min-proto-version", "certificate",
+            "interface", "interface-select-method",
+        ),
+    )
+)
+
+register_section(
+    SectionSpec(
+        source_path="log fortiguard setting",
+        scalar_fields=_fields(
+            "status", "upload-option", "upload-interval", "upload-day",
+            "upload-time", "enc-algorithm", "interface", "interface-select-method",
+        ),
+    )
+)
+
+register_section(
+    SectionSpec(
+        source_path="system storage",
+        integer_fields=_fields("order", "size"),
+        scalar_fields=_fields("status", "media-status", "partition", "device", "usage", "wanopt-mode"),
+    )
+)
+
+register_section(
+    SectionSpec(
+        source_path="user saml",
+        scalar_fields=_fields(
+            "cert", "entity-id", "single-sign-on-url", "single-logout-url",
+            "idp-entity-id", "idp-single-sign-on-url", "idp-single-logout-url",
+            "idp-cert", "user-name", "group-name", "digest-method",
+        ),
     )
 )

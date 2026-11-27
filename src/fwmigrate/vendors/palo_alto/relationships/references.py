@@ -448,6 +448,8 @@ def resolve_references(config: PANOSConfig, index: ReferenceIndex | None = None)
                     result.append(_resolve(index, rule, field, name, families, owner_family=ext_owner_family))
             for iface_name in getattr(rule, "from_interfaces", None) or ():
                 result.append(_resolve_interface(index, rule, "from_interfaces", iface_name, owner_family=ext_owner_family))
+            for iface_name in getattr(rule, "to_interfaces", None) or ():
+                result.append(_resolve_interface(index, rule, "to_interfaces", iface_name, owner_family=ext_owner_family))
             if getattr(rule, "egress_interface", None):
                 result.append(_resolve_interface(index, rule, "egress_interface", rule.egress_interface, owner_family=ext_owner_family))
             for name in getattr(rule, "source_user", None) or ():

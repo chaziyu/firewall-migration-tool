@@ -63,4 +63,5 @@ def load_pan_source(content: str) -> PANSourceDocument:
         root=root,
         hostname=hostname,
         source_version=root.get("version"),
+        detail_version=(root.get("detail-version") or "").strip() or None,
     )

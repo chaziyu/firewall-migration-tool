@@ -13,7 +13,7 @@ test('validation count labels distinguish zero, one and multiple findings', () =
   }).outputText
   const exports = {}
   const modules = { react: {}, 'react/jsx-runtime': jsxRuntime, './reportPresentation': presentation,
-    './ReportDetails': {}, './ExcelExportControls': {}, '../../components/common/tabKeyboard': {}, '../../components/common/ErrorBanner': {} }
+    './ReportDetails': {}, './ExcelExportControls': {}, './LifecycleCard': { isLifecycleCardData: () => false, LifecycleCard: 'LifecycleCard' }, '../../components/common/tabKeyboard': {}, '../../components/common/ErrorBanner': {} }
   new Function('require', 'exports', compiled)((name) => modules[name], exports)
   for (const severity of ['error', 'warning']) {
     for (const count of [0, 1, 2]) {
@@ -35,7 +35,7 @@ test('native IPsec and static-route reference findings have source-object links'
   }).outputText
   const exports = {}
   const modules = { react: {}, 'react/jsx-runtime': jsxRuntime, './reportPresentation': presentation,
-    './ReportDetails': {}, './ExcelExportControls': {}, '../../components/common/tabKeyboard': {}, '../../components/common/ErrorBanner': {} }
+    './ReportDetails': {}, './ExcelExportControls': {}, './LifecycleCard': { isLifecycleCardData: () => false, LifecycleCard: 'LifecycleCard' }, '../../components/common/tabKeyboard': {}, '../../components/common/ErrorBanner': {} }
   new Function('require', 'exports', compiled)((name) => modules[name], exports)
   for (const object_type of ['ipsec-tunnel', 'static-route', 'route']) {
     const row = { domain: 'reference', object_type, object_name: 'owner', severity: 'warning' }
@@ -81,8 +81,8 @@ test('warning group selection settles and retains the matching findings', () => 
     compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX },
   }).outputText
   const exports = {}
-  const modules = { react: hooks, 'react/jsx-runtime': jsxRuntime, './reportPresentation': presentation,
-    './ReportDetails': {}, './ExcelExportControls': {}, '../../components/common/tabKeyboard': {}, '../../components/common/ErrorBanner': {} }
+  const modules = { react: hooks, 'react/jsx-runtime': jsxRuntime, './reportPresentation': presentation, '../source/sourceApi': { fetchSecurityAudit: async () => null },
+    './ReportDetails': {}, './ExcelExportControls': {}, './LifecycleCard': { isLifecycleCardData: () => false, LifecycleCard: 'LifecycleCard' }, './WhereUsedPanel': { WhereUsedPanel: 'WhereUsedPanel' }, './VpnInspectorView': { VpnInspectorView: 'VpnInspectorView' }, './SecurityAuditPanel': { SecurityAuditPanel: 'SecurityAuditPanel' }, '../../components/common/tabKeyboard': {}, '../../components/common/ErrorBanner': {} }
   new Function('require', 'exports', compiled)((name) => {
     assert.ok(name in modules, `Unexpected import: ${name}`)
     return modules[name]

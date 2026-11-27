@@ -304,6 +304,7 @@ export function SourceConfiguration({ view, onViewChange, liveDeviceAccess }: {
 
     <div className="workflow-panel" hidden={view !== 'report'}>
       {preview && <SourceReport key={previewId} data={preview}
+        liveDeviceAccess={liveDeviceAccess}
         excelProfile={excelProfile}
         onExcelProfileChange={(value) => setExcelProfile(value)}
         exporting={exporting}

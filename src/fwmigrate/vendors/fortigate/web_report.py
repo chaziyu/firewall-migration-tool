@@ -17,6 +17,11 @@ from .extraction.coverage import (
     build_typed_source_inventory, build_typed_source_identity_index,
     find_typed_source_object, extraction_status, supports_path,
 )
+from ...source_reporting.lifecycle import (
+    build_fortigate_lifecycle_card,
+    evaluate_fortigate_lifecycle,
+)
+from .vpn_inspector import build_fortigate_vpn_inspector
 
 
 def _source_evidence(
@@ -985,11 +990,18 @@ def build_web_report(
         if meta is not None
         else {}
     )
+    lifecycle_result = evaluate_fortigate_lifecycle(
+        meta.hardware_model if meta is not None else None,
+        meta.fortios_version if meta is not None else None,
+        serial_raw=meta.serial_number if meta is not None else None,
+        cache_only=True,
+    )
     return {
         "vendor": "fortigate",
         "summary": {
             **evidence_summary,
             "source_metadata": source_meta_dict,
+            "lifecycle": build_fortigate_lifecycle_card(lifecycle_result),
             "top_level_sections": top_level_sections,
             "objects": _object_counts(config),
             "validation": {
@@ -1020,6 +1032,7 @@ def build_web_report(
             "per_ip_shapers": per_ip_shapers,
             "nat": nat_rows,
             "routes": routes,
+            "vpn_inspector": build_fortigate_vpn_inspector(config, derived),
             "vpn_tunnels": vpn_tunnels,
             "vpn_phase2": vpn_phase2_rows,
             "policy_vpn_phase1": policy_vpn_phase1_rows,

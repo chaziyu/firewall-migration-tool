@@ -154,3 +154,23 @@ def test_chat_endpoints_key_isolation_summary_and_history(monkeypatch):
     del_res = public_client.delete("/api/chat")
     assert del_res.status_code == 200
     assert public_client.get("/api/chat").get_json()["history"] == []
+
+
+def test_chat_session_store_ttl_and_clear_all(monkeypatch):
+    assert chat_service.SESSION_TTL_SECONDS == 1800
+
+    now = [1000.0]
+    monkeypatch.setattr(chat_service.time, "time", lambda: now[0])
+
+    store = chat_service.ChatSessionStore(ttl_seconds=chat_service.SESSION_TTL_SECONDS)
+    sess, created = store.get_or_create(None)
+    assert created is True
+    assert store.get(sess.session_id) is sess
+
+    now[0] += chat_service.SESSION_TTL_SECONDS + 1
+    assert store.get(sess.session_id) is None
+
+    sess2, _ = store.get_or_create(None)
+    sess2.gemini_api_key = "synthetic-key"
+    store.clear_all()
+    assert store.get(sess2.session_id) is None

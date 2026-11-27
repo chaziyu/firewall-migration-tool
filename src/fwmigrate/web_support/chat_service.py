@@ -21,7 +21,7 @@ MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
 MAX_SUMMARY_CHARS = 250_000
 TEMPERATURE = 0.1
 MAX_OUTPUT_TOKENS = 2048
-SESSION_TTL_SECONDS = 2 * 3600
+SESSION_TTL_SECONDS = 30 * 60
 MAX_SESSIONS = 32
 ROOT_DIR = Path(__file__).resolve().parents[3]
 
@@ -85,6 +85,11 @@ class ChatSessionStore:
             self._sessions[new_id] = sess
             self._prune(now)
             return sess, True
+
+    def clear_all(self) -> None:
+        """Remove all in-memory chat sessions immediately."""
+        with self._lock:
+            self._sessions.clear()
 
 
 chat_store = ChatSessionStore()

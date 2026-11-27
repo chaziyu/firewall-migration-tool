@@ -33,6 +33,8 @@ from ..model.selected_sections import (
     FGManagedSwitch, FGManagedSwitchPort,
     FGSyslogSetting, FGLogMemorySetting, FGLogDiskSetting, FGLogSetting, FGLogThreatWeight,
     FGUserGuest, FGSwitchPortPolicy, FGSwitchLLDPProfile, FGSwitchQoSPolicy, FGSwitchVLANPolicy,
+    FGCertificate, FGLocalInPolicy, FGFortiAnalyzerSetting, FGLogFortiGuardSetting,
+    FGSystemStorage, FGSAMLServer,
 )
 from ..nodes import CommandNode
 from .common import (
@@ -150,6 +152,15 @@ def extract_selected_sections(tree: SectionIndex, config: Config) -> None:
     _simple_edits(tree, config, "switch-controller lldp-profile", "switch_lldp_profiles", FGSwitchLLDPProfile)
     _simple_edits(tree, config, "switch-controller qos qos-policy", "switch_qos_policies", FGSwitchQoSPolicy)
     _simple_edits(tree, config, "switch-controller vlan-policy", "switch_vlan_policies", FGSwitchVLANPolicy)
+
+    for store in ("local", "ca", "remote"):
+        _extract_certificates(tree, config, store)
+    _extract_local_in_policies(tree, config, "firewall local-in-policy", "ipv4")
+    _extract_local_in_policies(tree, config, "firewall local-in-policy6", "ipv6")
+    _extract_config_settings(tree, config, "log fortianalyzer setting", "fortianalyzer_settings", FGFortiAnalyzerSetting)
+    _extract_config_settings(tree, config, "log fortiguard setting", "log_fortiguard_settings", FGLogFortiGuardSetting)
+    _simple_edits(tree, config, "system storage", "system_storages", FGSystemStorage)
+    _simple_edits(tree, config, "user saml", "saml_servers", FGSAMLServer)
 
 
 def _assign_numeric_id(values, raw_name: str, field_name: str = "id") -> None:
@@ -864,3 +875,25 @@ def _extract_guest_users(tree, config):
         values["password_configured"] = _secret_present(source.edit, "password")
         values["raw_extra"].pop("password", None)
         config.guest_users.append(FGUserGuest(**values))
+
+
+def _extract_certificates(tree, config, store: str):
+    path = f"vpn certificate {store}"
+    for source in iter_section_edits(tree, path):
+        evaluation = evaluate_edit(path, source.edit)
+        values = source_model_kwargs(evaluation, model_type=FGCertificate, name=source.edit.name, vdom=source.vdom)
+        values["store"] = store
+        values["private_key_configured"] = _secret_present(source.edit, "private-key")
+        values["password_configured"] = _secret_present(source.edit, "password") or _secret_present(source.edit, "passphrase")
+        for secret_key in ("private-key", "password", "passphrase"):
+            values["raw_extra"].pop(secret_key, None)
+        config.certificates.append(FGCertificate(**values))
+
+
+def _extract_local_in_policies(tree, config, path: str, address_family: str):
+    for source in iter_section_edits(tree, path):
+        evaluation = evaluate_edit(path, source.edit)
+        values = source_model_kwargs(evaluation, model_type=FGLocalInPolicy, vdom=source.vdom)
+        values["address_family"] = address_family
+        _assign_numeric_id(values, source.edit.name, "policy_id")
+        config.local_in_policies.append(FGLocalInPolicy(**values))

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -1914,5 +1914,108 @@ class FGSwitchVLANPolicy(BaseModel):
     untagged_vlans: list[str] = Field(default_factory=list)
     allowed_vlans_all: str | None = None
     discard_mode: str | None = None
+    raw_extra: dict[str, Any] = Field(default_factory=dict)
+    explicit_fields: set[str] = Field(default_factory=set)
+
+
+class FGCertificate(BaseModel):
+    """Public X.509 certificate metadata from vpn certificate {local,ca,remote}; private keys are never stored."""
+
+    name: str
+    store: Literal["local", "ca", "remote"]
+    vdom: str | None = "root"
+    certificate: str | None = None
+    private_key_configured: bool = False
+    password_configured: bool = False
+    ca_identifier: str | None = None
+    comments: str | None = None
+    source: str | None = None
+    source_ip: str | None = None
+    range: str | None = None
+    scep_url: str | None = None
+    raw_extra: dict[str, Any] = Field(default_factory=dict)
+    explicit_fields: set[str] = Field(default_factory=set)
+
+
+class FGLocalInPolicy(BaseModel):
+    policy_id: int | None = None
+    vdom: str | None = "root"
+    address_family: Literal["ipv4", "ipv6"] = "ipv4"
+    uuid: str | None = None
+    intf: list[str] = Field(default_factory=list)
+    srcaddr: list[str] = Field(default_factory=list)
+    dstaddr: list[str] = Field(default_factory=list)
+    srcaddr_negate: str | None = None
+    dstaddr_negate: str | None = None
+    action: str | None = None
+    service: list[str] = Field(default_factory=list)
+    service_negate: str | None = None
+    schedule: str | None = None
+    status: str | None = None
+    comments: str | None = None
+    virtual_patch: str | None = None
+    raw_extra: dict[str, Any] = Field(default_factory=dict)
+    explicit_fields: set[str] = Field(default_factory=set)
+
+
+class FGFortiAnalyzerSetting(BaseModel):
+    vdom: str | None = "root"
+    status: str | None = None
+    server: str | None = None
+    source_ip: str | None = None
+    upload_option: str | None = None
+    reliable: str | None = None
+    enc_algorithm: str | None = None
+    ssl_min_proto_version: str | None = None
+    certificate: str | None = None
+    interface: str | None = None
+    interface_select_method: str | None = None
+    raw_extra: dict[str, Any] = Field(default_factory=dict)
+    explicit_fields: set[str] = Field(default_factory=set)
+
+
+class FGLogFortiGuardSetting(BaseModel):
+    vdom: str | None = "root"
+    status: str | None = None
+    upload_option: str | None = None
+    upload_interval: str | None = None
+    upload_day: str | None = None
+    upload_time: str | None = None
+    enc_algorithm: str | None = None
+    interface: str | None = None
+    interface_select_method: str | None = None
+    raw_extra: dict[str, Any] = Field(default_factory=dict)
+    explicit_fields: set[str] = Field(default_factory=set)
+
+
+class FGSystemStorage(BaseModel):
+    name: str
+    vdom: str | None = "root"
+    status: str | None = None
+    media_status: str | None = None
+    order: int | None = None
+    partition: str | None = None
+    device: str | None = None
+    size: int | None = None
+    usage: str | None = None
+    wanopt_mode: str | None = None
+    raw_extra: dict[str, Any] = Field(default_factory=dict)
+    explicit_fields: set[str] = Field(default_factory=set)
+
+
+class FGSAMLServer(BaseModel):
+    name: str
+    vdom: str | None = "root"
+    cert: str | None = None
+    entity_id: str | None = None
+    single_sign_on_url: str | None = None
+    single_logout_url: str | None = None
+    idp_entity_id: str | None = None
+    idp_single_sign_on_url: str | None = None
+    idp_single_logout_url: str | None = None
+    idp_cert: str | None = None
+    user_name: str | None = None
+    group_name: str | None = None
+    digest_method: str | None = None
     raw_extra: dict[str, Any] = Field(default_factory=dict)
     explicit_fields: set[str] = Field(default_factory=set)

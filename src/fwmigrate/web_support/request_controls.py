@@ -76,7 +76,7 @@ def register_request_controls(app):
         hostname = urlsplit('//' + get_host(request.environ)).hostname
         if hostname not in app.config['ALLOWED_HOSTS']:
             return jsonify({'success': False, 'error': 'Host is not allowed'}), 400
-        if not request.path.startswith('/api/') or request.method in {'GET', 'HEAD', 'OPTIONS'}:
+        if not request.path.startswith('/api/') or request.method == 'OPTIONS':
             return None
         origins = {request.host_url.rstrip('/')}
         if app.config['WEB_MODE'] == 'local':

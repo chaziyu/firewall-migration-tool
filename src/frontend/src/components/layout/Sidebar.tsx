@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react'
 import type { WorkflowView } from '../../features/source/SourceConfiguration'
 import { UpdateChecker } from './UpdateChecker'
 
@@ -33,20 +34,91 @@ const navIcons: Record<WorkflowView, string> = {
 
 const sectionIcons: Record<string, string> = {
   Overview: '📊',
-  Interfaces: '🔌',
+  'Security & Health': '🩺',
+  'Policies & NAT': '🛡',
   Objects: '📦',
-  Schedules: '🕒',
-  Policies: '🛡',
-  NAT: '⇄',
-  Routes: '🌐',
+  'Interfaces & Network': '🔌',
+  'Security Profiles': '🔒',
   VPN: '🔑',
-  References: '🔗',
-  Extraction: '📋',
+  'Users & Auth': '👥',
+  'WiFi & Switch': '📶',
+  'Diagnostics & Coverage': '📋',
   'Additional sections': '🧩',
-  Validation: '✓',
 }
 
-function renderSidebarBody({ view, liveDeviceAccess, collapsed, onSelect, workspaceMeta, onSelectReportSection, onSelectMigrationStage }: {
+function renderModeSelector({
+  view,
+  liveDeviceAccess,
+  collapsed,
+  onSelect,
+  open,
+  setOpen,
+  containerRef,
+}: {
+  view: WorkflowView
+  liveDeviceAccess: boolean
+  collapsed: boolean
+  onSelect: (view: WorkflowView) => void
+  open: boolean
+  setOpen: (next: boolean | ((current: boolean) => boolean)) => void
+  containerRef: React.RefObject<HTMLDivElement | null>
+}) {
+  const items = navigation.filter((item) => liveDeviceAccess || item.id !== 'collect')
+  const activeItem = items.find((item) => item.id === view) ?? items[0]
+
+  return (
+    <div className="fw-nav-group fw-mode-selector" ref={containerRef}>
+      {!collapsed && <div className="fw-nav-label">Mode</div>}
+      <button
+        type="button"
+        className={`fw-mode-trigger${open ? ' open' : ''}`}
+        title={collapsed ? `Mode: ${activeItem.label}` : undefined}
+        aria-label={`Mode: ${activeItem.label}`}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+      >
+        <svg className="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d={navIcons[activeItem.id]} />
+        </svg>
+        {!collapsed && (
+          <>
+            <span className="fw-mode-trigger-label">{activeItem.label}</span>
+            <span className="fw-mode-chevron" aria-hidden="true">▾</span>
+          </>
+        )}
+      </button>
+      {open && (
+        <div className={`fw-mode-menu${collapsed ? ' collapsed' : ''}`} role="menu" aria-label="Workflow modes">
+          {items.map((item) => {
+            const selected = view === item.id
+            return (
+              <button
+                key={item.id}
+                type="button"
+                role="menuitemradio"
+                aria-checked={selected}
+                className={`fw-mode-option${selected ? ' active' : ''}`}
+                onClick={() => {
+                  onSelect(item.id)
+                  setOpen(false)
+                }}
+              >
+                <svg className="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d={navIcons[item.id]} />
+                </svg>
+                <span>{item.label}</span>
+                {selected && <span className="fw-mode-check" aria-hidden="true">✓</span>}
+              </button>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function renderSidebarBody({ view, liveDeviceAccess, collapsed, onSelect, workspaceMeta, onSelectReportSection, onSelectMigrationStage, modeOpen, setModeOpen, modeContainerRef }: {
   view: WorkflowView
   liveDeviceAccess: boolean
   collapsed: boolean
@@ -54,6 +126,9 @@ function renderSidebarBody({ view, liveDeviceAccess, collapsed, onSelect, worksp
   workspaceMeta?: SidebarWorkspaceMeta | null
   onSelectReportSection?: (section: string) => void
   onSelectMigrationStage?: (stage: string) => void
+  modeOpen: boolean
+  setModeOpen: (next: boolean | ((current: boolean) => boolean)) => void
+  modeContainerRef: React.RefObject<HTMLDivElement | null>
 }) {
   return (
     <>
@@ -62,19 +137,7 @@ function renderSidebarBody({ view, liveDeviceAccess, collapsed, onSelect, worksp
         {!collapsed && <span className="brand-wordmark"><span>Firewall</span><small>MIGRATION TOOL</small></span>}
       </a>
 
-      <div className="fw-nav-group">
-        {!collapsed && <div className="fw-nav-label">Mode</div>}
-        <nav className="workflow-nav" aria-label="Workflow">
-          {navigation.filter((item) => liveDeviceAccess || item.id !== 'collect').map((item) => <button
-            key={item.id}
-            type="button"
-            title={collapsed ? item.label : undefined}
-            aria-label={item.label}
-            aria-current={view === item.id ? 'page' : undefined}
-            onClick={() => onSelect(item.id)}
-          ><svg className="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={navIcons[item.id]} /></svg>{!collapsed && <span>{item.label}</span>}</button>)}
-        </nav>
-      </div>
+      {renderModeSelector({ view, liveDeviceAccess, collapsed, onSelect, open: modeOpen, setOpen: setModeOpen, containerRef: modeContainerRef })}
 
       {!collapsed && view === 'report' && workspaceMeta?.reportSections && workspaceMeta.reportSections.length > 0 && (
         <div className="fw-nav-group fw-nav-group-sections">
@@ -149,6 +212,27 @@ export function Sidebar({ view, onViewChange, liveDeviceAccess, collapsed = fals
   onSelectReportSection?: (section: string) => void
   onSelectMigrationStage?: (stage: string) => void
 }) {
+  const [modeOpen, setModeOpen] = useState(false)
+  const modeContainerRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!modeOpen || typeof document === 'undefined') return
+    const onPointerDown = (event: MouseEvent) => {
+      if (modeContainerRef.current && !modeContainerRef.current.contains(event.target as Node)) {
+        setModeOpen(false)
+      }
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setModeOpen(false)
+    }
+    document.addEventListener('mousedown', onPointerDown)
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown)
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [modeOpen])
+
   return (
     <>
       <aside className={collapsed ? 'sidebar collapsed' : 'sidebar'} aria-label="Main navigation">
@@ -160,6 +244,9 @@ export function Sidebar({ view, onViewChange, liveDeviceAccess, collapsed = fals
           workspaceMeta,
           onSelectReportSection,
           onSelectMigrationStage,
+          modeOpen,
+          setModeOpen,
+          modeContainerRef,
         })}
       </aside>
       {mobileOpen && (
@@ -183,6 +270,9 @@ export function Sidebar({ view, onViewChange, liveDeviceAccess, collapsed = fals
                 onSelectMigrationStage?.(stg)
                 onClose?.()
               },
+              modeOpen,
+              setModeOpen,
+              modeContainerRef,
             })}
           </aside>
         </div>

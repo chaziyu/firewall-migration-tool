@@ -69,6 +69,8 @@ EXPECTED_PATHS = {
     "certificate", "ssl_tls_service_profile",
     "syslog_server_profile", "email_server_profile", "snmptrap_server_profile",
     "http_server_profile", "netflow_server_profile",
+    "syslog_server_profile_compat", "email_server_profile_compat",
+    "snmptrap_server_profile_compat", "http_server_profile_compat",
     "password_complexity", "password_profile", "user_id_agent",
     "device_object_shared", "device_object_vsys",
     "scp_server_profile", "ssh_server_profile",

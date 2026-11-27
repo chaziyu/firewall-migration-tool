@@ -21,9 +21,18 @@ from fwmigrate.source_reporting import (
     source_reporters,
 )
 from fwmigrate.source_reporting.web_report import normalize_web_report
+from fwmigrate.source_reporting.lifecycle import (
+    build_fortigate_lifecycle_card,
+    build_paloalto_lifecycle_card,
+    evaluate_fortigate_lifecycle,
+    evaluate_paloalto_lifecycle,
+)
 from fwmigrate.source_reporting.options import ExcelReportLimitError
+from fwmigrate.vendors.fortigate.where_used import search_fortigate_where_used
+from fwmigrate.vendors.palo_alto.where_used import search_paloalto_where_used
 from fwmigrate.web_support.request_source import analyze_request_source
 from fwmigrate.web_support.request_controls import limit_export_response, live_device_access_allowed
+from fwmigrate.web_support.public_errors import safe_validation_message
 from fwmigrate.web_support.reporting import (
     ConfigurationDecodeError,
     SourceSizeError,
@@ -120,6 +129,27 @@ def register_source_routes(app, collector_registry=None) -> None:
             raise
         except Exception:
             return jsonify({'success': False, 'error': 'Source preview failed'}), 500
+
+    @app.route('/api/lifecycle', methods=['GET'])
+    def evaluate_lifecycle():
+        """Evaluate live hardware/firmware lifecycle status for FortiGate or PAN-OS."""
+        vendor = (request.args.get('vendor') or '').strip().lower()
+        if vendor == 'fortigate':
+            model = (request.args.get('model') or '').strip()
+            firmware = (request.args.get('firmware') or '').strip()
+            result = evaluate_fortigate_lifecycle(model, firmware, cache_only=False)
+            return jsonify({'success': True, 'lifecycle': build_fortigate_lifecycle_card(result)})
+        if vendor == 'palo_alto':
+            version = (request.args.get('version') or '').strip()
+            exact_param = request.args.get('exact')
+            is_exact = True if exact_param is None else _parse_bool(exact_param)
+            result = evaluate_paloalto_lifecycle(
+                version,
+                is_exact_version=is_exact,
+                cache_only=False,
+            )
+            return jsonify({'success': True, 'lifecycle': build_paloalto_lifecycle_card(result)})
+        return jsonify({'success': False, 'error': 'Unsupported lifecycle vendor'}), 400
 
     def collection_options():
         if not live_collection_allowed():
@@ -290,4 +320,47 @@ def register_source_routes(app, collector_registry=None) -> None:
             raise
         except Exception:
             return jsonify({'error': 'Source Excel export failed'}), 500
+
+    def _run_where_used(forced_vendor: str | None = None):
+        try:
+            payload = request.get_json(silent=True, cache=False)
+            if not isinstance(payload, dict):
+                return jsonify({'success': False, 'error': 'Where-used request must be a JSON object'}), 400
+            vendor = (forced_vendor or payload.get('source_vendor') or '').strip().lower()
+            if vendor not in {'fortigate', 'palo_alto'}:
+                return jsonify({'success': False, 'error': 'Where-used search supports fortigate and palo_alto only'}), 400
+            query = payload.get('query')
+            if not isinstance(query, str) or not query.strip():
+                return jsonify({'success': False, 'error': 'Search query is required'}), 400
+            entry = analyze_request_source(payload, vendor)
+            if vendor == 'fortigate':
+                result = search_fortigate_where_used(entry.analysis.extracted.config, query)
+            else:
+                result = search_paloalto_where_used(entry.analysis.config, query)
+            return jsonify({'success': True, **result})
+        except ConfigurationDecodeError:
+            return jsonify({'success': False, 'error': 'Configuration file is not valid UTF-8.'}), 400
+        except SourceSizeError:
+            raise
+        except ValueError as exc:
+            return jsonify({'success': False, 'error': safe_validation_message(exc, 'Invalid where-used request')}), 400
+        except HTTPException:
+            raise
+        except Exception:
+            return jsonify({'success': False, 'error': 'Where-used search failed'}), 500
+
+    @app.route('/api/source/where-used', methods=['POST'])
+    def source_where_used():
+        """Search IPv4/CIDR/object references across FortiGate or PAN-OS source state."""
+        return _run_where_used()
+
+    @app.route('/api/fg/where-used', methods=['POST'])
+    def fg_where_used():
+        """Search IPv4/CIDR/object references across FortiGate source state."""
+        return _run_where_used('fortigate')
+
+    @app.route('/api/pa/where-used', methods=['POST'])
+    def pa_where_used():
+        """Search IPv4/CIDR/object references across PAN-OS source state."""
+        return _run_where_used('palo_alto')
 

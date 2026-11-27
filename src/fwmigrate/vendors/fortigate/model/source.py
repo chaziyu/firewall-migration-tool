@@ -63,6 +63,8 @@ from .selected_sections import (
     FGManagedSwitch, FGSyslogSetting, FGLogMemorySetting, FGLogDiskSetting,
     FGLogSetting, FGLogThreatWeight,
     FGUserGuest, FGSwitchPortPolicy, FGSwitchLLDPProfile, FGSwitchQoSPolicy, FGSwitchVLANPolicy,
+    FGCertificate, FGLocalInPolicy, FGFortiAnalyzerSetting, FGLogFortiGuardSetting,
+    FGSystemStorage, FGSAMLServer,
 )
 
 
@@ -218,3 +220,9 @@ class FGConfig(BaseModel):
     switch_lldp_profiles: list[FGSwitchLLDPProfile] = Field(default_factory=list)
     switch_qos_policies: list[FGSwitchQoSPolicy] = Field(default_factory=list)
     switch_vlan_policies: list[FGSwitchVLANPolicy] = Field(default_factory=list)
+    certificates: list[FGCertificate] = Field(default_factory=list)
+    local_in_policies: list[FGLocalInPolicy] = Field(default_factory=list)
+    fortianalyzer_settings: list[FGFortiAnalyzerSetting] = Field(default_factory=list)
+    log_fortiguard_settings: list[FGLogFortiGuardSetting] = Field(default_factory=list)
+    system_storages: list[FGSystemStorage] = Field(default_factory=list)
+    saml_servers: list[FGSAMLServer] = Field(default_factory=list)

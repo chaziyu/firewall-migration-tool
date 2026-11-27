@@ -56,9 +56,9 @@ test('PAN-OS parsed collections, proxy IDs and every source inventory record sta
     source_inventory: inventory, extraction_coverage: [{ domain: 'application', status: 'SOURCE_ONLY' }] })
   const section = (key) => groups.find((group) => group.subsections.some((item) => item.key === key))
   assert.equal(section('tags').label, 'Objects')
-  assert.equal(section('default_security_rules').label, 'Policies')
+  assert.equal(section('default_security_rules').label, 'Policies & NAT')
   assert.equal(section('ike_crypto_profiles').label, 'VPN')
-  assert.equal(section('source_inventory').label, 'Extraction')
+  assert.equal(section('source_inventory').label, 'Diagnostics & Coverage')
   const rows = section('source_inventory').subsections.find((item) => item.key === 'source_inventory').rows
   assert.equal(rows.length, 205)
   assert.equal(rows.at(-1).values.setting, 204)
@@ -108,7 +108,7 @@ test('PAN-OS overview links to extraction without repeating its coverage banner'
     const text = html.replace(/<!-- -->/g, '')
     assert.doesNotMatch(text, /2 source-only records|3 partial records|Review Extraction for/)
     assert.match(text, /PAN-OS Source Appendix/)
-    assert.match(text, /<option[^>]*>Extraction<\/option>/)
+    assert.match(text, /<option[^>]*>Diagnostics &amp; Coverage<\/option>/)
     assert.match(text, /Unsupported \/ source-only/)
   } finally { await server.close() }
 })
@@ -128,7 +128,7 @@ test('switching from scoped inventory to aggregate coverage does not filter away
     { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText
   const exports = {}
   const modules = { react: hooks, 'react/jsx-runtime': jsxRuntime, './reportPresentation': presentation,
-    './ReportDetails': {}, './ExcelExportControls': {}, '../../components/common/tabKeyboard': {}, '../../components/common/ErrorBanner': {} }
+    './ReportDetails': {}, './ExcelExportControls': {}, './LifecycleCard': { isLifecycleCardData: () => false, LifecycleCard: 'LifecycleCard' }, '../../components/common/tabKeyboard': {}, '../../components/common/ErrorBanner': {} }
   new Function('require', 'exports', compiled)((name) => modules[name], exports)
   function nodes(node) {
     if (Array.isArray(node)) return node.flatMap(nodes)
@@ -140,7 +140,7 @@ test('switching from scoped inventory to aggregate coverage does not filter away
     cursor = 0
     return nodes(exports.SourceReport({ data, excelProfile: 'full', onExcelProfileChange() {}, exporting: false, exportStatus: '', onExport() {} }))
   }
-  render().find((node) => node.props.role === 'tab' && node.props.children === 'Extraction').props.onClick()
+  render().find((node) => node.props.role === 'tab' && node.props.children === 'Diagnostics & Coverage').props.onClick()
   render().find((node) => node.props.id === 'subsection-tab-source_inventory').props.onClick()
   render().find((node) => node.props['aria-label'] === 'Filter report scope').props.onChange({ target: { value: 'device:fw' } })
   render().find((node) => node.props.id === 'subsection-tab-extraction_coverage').props.onClick()

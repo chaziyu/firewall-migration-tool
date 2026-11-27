@@ -26,6 +26,7 @@ _SAFE_VALIDATION_MESSAGES = frozenset({
     'Migration requires a complete live collection; this source is PARTIAL or FAILED.',
     'Review and approve the deterministic draft before building an artifact',
     'Select unique current proposal groups',
+    'Search query is required',
     'Selected target device is not in the uploaded PAN-OS configuration',
     'Service name overrides must select current supported services',
     'Snapshot vendor does not match the requested vendor',

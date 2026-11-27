@@ -57,7 +57,13 @@ if not exist "src\frontend\dist\index.html" (
     goto :failed
 )
 
-set "COMMON_PYINSTALLER_ARGS=--noconfirm --clean --windowed --noupx --name FirewallMigrationTool --icon "%~dp0scripts\assets\app.ico" --splash "%~dp0scripts\assets\splash.png" --specpath build --add-data "%~dp0src\frontend\dist;frontend_dist" --copy-metadata firewall-migration-tool --collect-submodules fwmigrate --collect-data tzdata --collect-all webview --exclude-module gunicorn --exclude-module pytest --exclude-module _pytest --exclude-module pip --exclude-module setuptools --exclude-module wheel --exclude-module webview.platforms.cocoa --exclude-module webview.platforms.gtk --exclude-module webview.platforms.qt --exclude-module webview.platforms.android --exclude-module webview.platforms.cef"
+set "EXTRA_PYINSTALLER_ARGS="
+for /f "usebackq delims=" %%D in (`"%PYTHON%" -c "import pathlib, sys; p = pathlib.Path(sys.base_prefix) / 'abi3t-compat' / 'python3t.dll'; print(p if p.is_file() else '')"`) do set "PYTHON3T_DLL=%%D"
+if defined PYTHON3T_DLL (
+    set "EXTRA_PYINSTALLER_ARGS=--add-binary "%PYTHON3T_DLL%;.""
+)
+
+set "COMMON_PYINSTALLER_ARGS=--noconfirm --clean --windowed --noupx --name FirewallMigrationTool --icon "%~dp0scripts\assets\app.ico" --splash "%~dp0scripts\assets\splash.png" --specpath build --add-data "%~dp0src\frontend\dist;frontend_dist" %EXTRA_PYINSTALLER_ARGS% --copy-metadata firewall-migration-tool --collect-submodules fwmigrate --collect-data fwmigrate --collect-data tzdata --collect-all webview --exclude-module gunicorn --exclude-module pytest --exclude-module _pytest --exclude-module pip --exclude-module setuptools --exclude-module wheel --exclude-module webview.platforms.cocoa --exclude-module webview.platforms.gtk --exclude-module webview.platforms.qt --exclude-module webview.platforms.android --exclude-module webview.platforms.cef"
 
 if /i "%MODE%"=="portable" goto :build_portable
 if /i "%MODE%"=="all" goto :build_portable

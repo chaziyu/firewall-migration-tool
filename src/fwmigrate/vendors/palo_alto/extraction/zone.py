@@ -43,7 +43,7 @@ def extract_zone(element: ET.Element, path: tuple[str, ...], context: PANWalkCon
     device_identification = device_identification or value(element, "device-identification")
 
     if network is not None:
-        branch = next((child for child in network if child.tag in {"tap", "virtual-wire", "layer2", "layer3", "tunnel"}), None)
+        branch = next((child for child in network if child.tag in {"tap", "virtual-wire", "layer2", "layer3", "tunnel", "external"}), None)
         if branch is not None:
             network_type = branch.tag
             explicit.update({"network_type", "members"})
@@ -56,7 +56,7 @@ def extract_zone(element: ET.Element, path: tuple[str, ...], context: PANWalkCon
             for tag, field in pre_nat_fields.items():
                 if prenat.find(tag) is not None:
                     explicit.add(field)
-        known = set(network_fields) | {"prenat-identification", "tap", "virtual-wire", "layer2", "layer3", "tunnel"}
+        known = set(network_fields) | {"prenat-identification", "tap", "virtual-wire", "layer2", "layer3", "tunnel", "external"}
         nested_extra = raw_extra(network, known)
         if branch is not None:
             branch_extra = raw_extra(branch, {"member"})
