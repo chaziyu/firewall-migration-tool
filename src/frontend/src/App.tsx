@@ -4,22 +4,22 @@ import { ErrorBanner } from './components/common/ErrorBanner'
 import { apiFetch } from './api/client'
 import './App.css'
 import { AppLayout } from './components/layout/AppLayout'
+import type { WorkspaceTopbarActions } from './components/layout/PageHeader'
 import type { SidebarWorkspaceMeta } from './components/layout/Sidebar'
-import { SourceConfiguration, type WorkflowView } from './features/source/SourceConfiguration'
+import { SourceConfiguration } from './features/source/SourceConfiguration'
 
-const pages: Record<WorkflowView, { title: string; description: string }> = {
-  report: { title: 'Configuration Report', description: 'Review reported source state, validation findings, and inventory.' },
-  collect: { title: 'Live Collection', description: 'Collect configuration directly from a supported device.' },
-  migration: { title: 'Plan migration', description: 'Review the proposed conversion, resolve remaining choices, and generate supported target commands.' },
+const landingPage = {
+  title: 'Firewall Config Reader',
+  description: 'Inspect FortiGate and Palo Alto PAN-OS configurations.',
 }
 
 export default function App() {
-  const [view, setView] = useState<WorkflowView>('report')
   const [workspace, setWorkspace] = useState(0)
   const [resetting, setResetting] = useState(false)
   const [workspaceError, setWorkspaceError] = useState<string | null>(null)
   const [liveDeviceAccess, setLiveDeviceAccess] = useState(false)
   const [workspaceMeta, setWorkspaceMeta] = useState<SidebarWorkspaceMeta | null>(null)
+  const [workspaceActions, setWorkspaceActions] = useState<WorkspaceTopbarActions | null>(null)
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     try { return localStorage.getItem('fwmigrate-theme') === 'dark' ? 'dark' : 'light' }
     catch { return 'light' }
@@ -57,10 +57,10 @@ export default function App() {
     setResetting(true)
     setWorkspaceError(null)
     setWorkspaceMeta(null)
+    setWorkspaceActions(null)
     try {
       await clearWorkspace()
       setWorkspace((value) => value + 1)
-      setView('report')
     } catch (cause) {
       setWorkspaceError(`Could not clear browser workspace: ${String(cause)}`)
     } finally { setResetting(false) }
@@ -77,29 +77,25 @@ export default function App() {
     }
   }, [])
 
-  const handleSelectMigrationStage = useCallback((stage: string) => {
-    if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
-      window.dispatchEvent(new CustomEvent('fw-select-migration-stage', { detail: stage }))
-    }
-  }, [])
-
   return (
     <AppLayout
-      view={view}
-      liveDeviceAccess={liveDeviceAccess}
-      onViewChange={setView}
-      page={pages[view]}
+      page={landingPage}
       theme={theme}
       defaultCollapsed={false}
       workspaceMeta={workspaceMeta}
+      workspaceActions={workspaceActions}
       onSelectReportSection={handleSelectReportSection}
-      onSelectMigrationStage={handleSelectMigrationStage}
       onNewWorkspace={() => void newWorkspace()}
       onToggleTheme={() => setTheme((current) => current === 'light' ? 'dark' : 'light')}
     >
       {workspaceError && <ErrorBanner message={workspaceError} />}
-      {!resetting && <SourceConfiguration key={workspace} view={view} onViewChange={setView} liveDeviceAccess={liveDeviceAccess} />}
+      {!resetting && (
+        <SourceConfiguration
+          key={workspace}
+          liveDeviceAccess={liveDeviceAccess}
+          onWorkspaceActionsChange={setWorkspaceActions}
+        />
+      )}
     </AppLayout>
   )
 }
-

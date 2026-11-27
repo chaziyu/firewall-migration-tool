@@ -26,29 +26,28 @@ test('VIP destination-zone choices retain scoped values and remain editable afte
   assert.equal(input.props.disabled, true)
 })
 
-test('public navigation hides device access while local navigation exposes it', async () => {
+test('sidebar renders monochrome sections when loaded and hides wordmark when collapsed', async () => {
   const harness = component('../src/components/layout/Sidebar.tsx', 'Sidebar', {})
-  const props = { view: 'report', onViewChange: () => { } }
-  const publicTree = await harness.render({ ...props, liveDeviceAccess: false })
-  const publicTrigger = elements(publicTree).find((node) => node.type === 'button' && node.props['aria-haspopup'] === 'menu')
-  assert.ok(publicTrigger)
-  assert.ok(!JSON.stringify(publicTree).includes('Live collection'))
-  assert.ok(!JSON.stringify(publicTree).includes('Live migration'))
-  publicTrigger.props.onClick()
-  const publicOpenTree = await harness.render({ ...props, liveDeviceAccess: false })
-  assert.equal(elements(publicOpenTree).filter((node) => node.props?.role === 'menuitemradio').length, 2)
-  assert.ok(!JSON.stringify(publicOpenTree).includes('Live collection'))
+  const landingTree = await harness.render({ collapsed: false, workspaceMeta: null })
+  assert.ok(!JSON.stringify(landingTree).includes('fw-mode-selector'))
+  assert.ok(!JSON.stringify(landingTree).includes('Load new config'))
 
-  const localHarness = component('../src/components/layout/Sidebar.tsx', 'Sidebar', {})
-  const localClosedTree = await localHarness.render({ ...props, liveDeviceAccess: true })
-  elements(localClosedTree).find((node) => node.type === 'button' && node.props['aria-haspopup'] === 'menu').props.onClick()
-  const localOpenTree = await localHarness.render({ ...props, liveDeviceAccess: true })
-  assert.equal(elements(localOpenTree).filter((node) => node.props?.role === 'menuitemradio').length, 3)
-  assert.ok(JSON.stringify(localOpenTree).includes('Live collection'))
+  const loadedTree = await harness.render({
+    collapsed: false,
+    onNewWorkspace: () => { },
+    workspaceMeta: {
+      vendorLabel: 'FortiGate FortiOS',
+      filename: 'edge.conf',
+      activeSection: 'Overview',
+      reportSections: [{ label: 'Overview', count: null }, { label: 'Policies & NAT', count: 5 }],
+    },
+  })
+  assert.ok(JSON.stringify(loadedTree).includes('Load new config'))
+  assert.ok(JSON.stringify(loadedTree).includes('Policies & NAT'))
 
-  const collapsedTree = await harness.render({ ...props, liveDeviceAccess: true, collapsed: true })
+  const collapsedTree = await harness.render({ collapsed: true, workspaceMeta: null })
   assert.equal(elements(collapsedTree).find((node) => node.type === 'aside').props.className, 'sidebar collapsed')
-  assert.ok(!JSON.stringify(collapsedTree).includes('MIGRATION TOOL'))
+  assert.ok(!JSON.stringify(collapsedTree).includes('CONFIG READER'))
 })
 
 test('layout starts with sidebar collapsed and toggles desktop collapse and mobile drawer', async () => {
@@ -127,7 +126,6 @@ test('device controls stay unavailable when server capabilities cannot be loaded
       })
       const tree = await harness.render({})
       const expected = allowed === true
-      assert.equal(tree.props.liveDeviceAccess, expected)
       assert.equal(elements(tree).find((node) => node.type === 'SourceConfiguration').props.liveDeviceAccess, expected)
     }
   } finally {
@@ -397,121 +395,82 @@ test('offline setup removes duplicate tools and moves exceptions to review; dest
   assert.ok(elements(tree).some((node) => node.type === 'Decisions'))
 })
 
-test('source panel collapses after successful analysis and preserves manual expansion until the source changes', async () => {
+test('landing upload auto-detects FG/PA configs, shows Phase 5 message for TSF zip, and restores saved workspace', async () => {
   let completePreview
   let rejectPreview
-  let completeSnapshot
   const modules = {
     '../../storage/workspaceStore': { restoreWorkspace: async () => ({}), saveWorkspace: async () => { } },
     '../../components/common/ErrorBanner': { ErrorBanner: 'ErrorBanner' }, '../../components/common/LoadingState': { LoadingState: 'LoadingState' },
     './FileUpload': { FileUpload: 'FileUpload' }, '../report/SourceReport': { SourceReport: 'SourceReport' },
-    '../report/ExcelExportControls': { ExcelExportControls: 'ExcelExportControls' },
+    '../report/QuickSearchModal': { QuickSearchModal: 'QuickSearchModal' },
+    './autoDetect': { detectUploadKind: (name) => (name.endsWith('.xml') ? 'palo_alto' : name.endsWith('.zip') ? 'tsf' : 'fortigate') },
+    '../../utils/desktop': { saveBlobWithFallback: async (_b, filename) => ({ status: 'downloaded', filename }) },
     './sourceApi': {
-      loadMigrationPairs: async () => [{ pair_id: 'fortigate_to_palo_alto', source_vendor: 'fortigate', target_vendor: 'palo_alto', display_name: 'FortiGate → PAN-OS', export_available: true }],
-      loadSourceVendors: async () => [{ vendor_id: 'fortigate', display_name: 'FortiGate', file_extensions: ['.conf'] }],
+      downloadSecurityAuditReport: async () => new Blob(['<html></html>']),
+      downloadSourceWorkbook: async () => new Blob(['xlsx']),
       previewSource: () => new Promise((resolve, reject) => { completePreview = resolve; rejectPreview = reject }),
-      importCollectionSnapshot: () => new Promise((resolve) => { completeSnapshot = resolve }),
     },
-    './SourceOverview': { SourceOverview: 'SourceOverview' }, './VendorSelect': { VendorSelect: 'VendorSelect' }, './LiveCollection': { LiveCollection: 'LiveCollection' },
-    '../migration/MigrationWorkflow': { MigrationWorkflow: 'MigrationWorkflow' }, '../migration/MigrationReview': { MigrationReview: 'MigrationReview' },
-    '../migration/paloAltoToFortigate/MigrationWorkflow': { FortiGateMigrationWorkflow: 'FortiGateMigrationWorkflow' },
-    '../migration/MigrationPairWorkflow': { MigrationPairWorkflow: 'MigrationPairWorkflow' },
-    '../migration/pairApi': {
-      loadMigrationPairs: async () => [
-        { pair_id: 'fortigate_to_palo_alto', source_vendor: 'fortigate', target_vendor: 'palo_alto', display_name: 'FortiGate → PAN-OS', export_available: true },
-        { pair_id: 'fortigate_to_juniper_srx', source_vendor: 'fortigate', target_vendor: 'juniper_srx', display_name: 'FortiGate → Juniper SRX', export_available: true },
-      ]
-    },
-    '../report/reportPresentation': { asRecord: (value) => value ?? {} },
   }
   const harness = component('../src/features/source/SourceConfiguration.tsx', 'SourceConfiguration', modules)
-  const props = { view: 'report', onViewChange: () => { }, liveDeviceAccess: false }
-  const section = (tree) => elements(tree).find((node) => node.props.id === 'source-configuration')
+  const props = { liveDeviceAccess: false }
+  const section = (tree) => elements(tree).find((node) => node.props?.id === 'source-configuration')
   const upload = (tree) => elements(tree).find((node) => node.type === 'FileUpload')
   let tree = await harness.render(props)
-  assert.equal(section(tree).props.hidden, false)
+  assert.ok(section(tree))
   upload(tree).props.onChange({ name: 'bad.conf', size: 10 })
   tree = await harness.render(props)
-  assert.equal(section(tree).props.hidden, false, 'Loading never hides the source panel')
+  assert.ok(section(tree), 'Loading never hides the landing panel')
   rejectPreview(new Error('Invalid configuration'))
   tree = await harness.render(props)
-  assert.equal(section(tree).props.hidden, false)
+  assert.ok(section(tree))
   assert.equal(elements(tree).find((node) => node.type === 'SourceReport'), undefined)
   assert.ok(JSON.stringify(tree).includes('Invalid configuration'))
+
+  upload(tree).props.onChange({ name: 'techsupport.zip', size: 1024 })
+  tree = await harness.render(props)
+  assert.ok(JSON.stringify(tree).includes('Phase 5'))
+  assert.equal(elements(tree).find((node) => node.type === 'SourceReport'), undefined)
+
   upload(tree).props.onChange({ name: 'first.conf', size: 2048 })
   tree = await harness.render(props)
-  completePreview({ source_digest: 'first', source_evidence: { source_name: 'first.conf' } })
+  completePreview({ vendor: 'fortigate', source_digest: 'first', source_evidence: { vendor: 'fortigate', source_name: 'first.conf', source_text: 'cfg' } })
   tree = await harness.render(props)
-  assert.equal(section(tree).props.hidden, true)
-  assert.equal(elements(tree).find((node) => node.props['aria-controls'] === 'source-configuration-controls'), undefined)
+  assert.equal(section(tree), undefined)
+  assert.ok(elements(tree).find((node) => node.type === 'SourceReport'))
+
   modules['../../storage/workspaceStore'].restoreWorkspace = async () => ({
     preview: {
-      vendor: 'palo_alto', source_digest: 'restored', source_evidence: { source_name: 'restored.xml' },
+      vendor: 'palo_alto', source_digest: 'restored', source_evidence: { vendor: 'palo_alto', source_name: 'restored.xml', source_text: '<config/>' },
     }
   })
   const restored = component('../src/features/source/SourceConfiguration.tsx', 'SourceConfiguration', modules)
   tree = await restored.render(props)
-  assert.equal(section(tree).props.hidden, true)
+  assert.equal(section(tree), undefined)
   assert.equal(elements(tree).find((node) => node.type === 'SourceReport').props.excelProfile, 'full')
 })
 
-test('a new source analysis opens conversion review and keeps source settings reachable', async () => {
+test('SourceConfiguration opens top-right QuickSearchModal when topbar Search action is clicked', async () => {
+  let latestActions = null
   const harness = component('../src/features/source/SourceConfiguration.tsx', 'SourceConfiguration', {
-    '../../storage/workspaceStore': { restoreWorkspace: async () => ({}), saveWorkspace: async () => { } },
+    '../../storage/workspaceStore': {
+      restoreWorkspace: async () => ({
+        preview: { vendor: 'fortigate', source_digest: 'fg', source_evidence: { vendor: 'fortigate', source_name: 'fg.conf', source_text: 'cfg' } },
+      }),
+      saveWorkspace: async () => { },
+    },
     '../../components/common/Button': { Button: 'Button' }, '../../components/common/ErrorBanner': { ErrorBanner: 'ErrorBanner' },
     '../../components/common/LoadingState': { LoadingState: 'LoadingState' }, './FileUpload': { FileUpload: 'FileUpload' },
     '../report/SourceReport': { SourceReport: 'SourceReport' },
-    '../report/ExcelExportControls': { ExcelExportControls: 'ExcelExportControls' },
-    './sourceApi': { loadMigrationPairs: async () => [{ pair_id: 'fortigate_to_palo_alto', source_vendor: 'fortigate', target_vendor: 'palo_alto', display_name: 'FortiGate → PAN-OS', export_available: true }], loadSourceVendors: async () => [{ vendor_id: 'fortigate', display_name: 'FortiGate', file_extensions: ['.conf'] }], previewSource: async () => ({ source_digest: 'source', source_evidence: {} }), downloadSourceWorkbook: async () => { }, importCollectionSnapshot: async () => { } },
-    './SourceOverview': { SourceOverview: 'SourceOverview' }, './VendorSelect': { VendorSelect: 'VendorSelect' }, './LiveCollection': { LiveCollection: 'LiveCollection' },
-    '../migration/MigrationWorkflow': { MigrationWorkflow: 'MigrationWorkflow' }, '../migration/MigrationReview': { MigrationReview: 'MigrationReview' },
-    '../migration/paloAltoToFortigate/MigrationWorkflow': { FortiGateMigrationWorkflow: 'FortiGateMigrationWorkflow' },
-    '../migration/MigrationPairWorkflow': { MigrationPairWorkflow: 'MigrationPairWorkflow' },
-    '../migration/pairApi': {
-      loadMigrationPairs: async () => [
-        { pair_id: 'fortigate_to_palo_alto', source_vendor: 'fortigate', target_vendor: 'palo_alto', display_name: 'FortiGate → PAN-OS', export_available: true },
-        { pair_id: 'fortigate_to_juniper_srx', source_vendor: 'fortigate', target_vendor: 'juniper_srx', display_name: 'FortiGate → Juniper SRX', export_available: true },
-      ]
-    },
-    '../report/reportPresentation': { asRecord: (value) => value ?? {} },
+    '../report/QuickSearchModal': { QuickSearchModal: 'QuickSearchModal' },
+    './autoDetect': { detectUploadKind: () => 'fortigate' },
+    '../../utils/desktop': { saveBlobWithFallback: async (_b, filename) => ({ status: 'downloaded', filename }) },
+    './sourceApi': { downloadSecurityAuditReport: async () => new Blob(['<html></html>']), downloadSourceWorkbook: async () => new Blob(['xlsx']), previewSource: async () => ({}) },
   })
-  let tree = await harness.render({ view: 'migration', onViewChange: () => { } })
-  assert.ok(!JSON.stringify(tree).includes('Download project'))
-  assert.ok(!JSON.stringify(tree).includes('Resume project'))
-  const upload = elements(tree).find((node) => node.type === 'FileUpload')
-  upload.props.onChange(new Blob(['config']))
-  tree = await harness.render({ view: 'migration', onViewChange: () => { } })
-  assert.ok(!JSON.stringify(tree).includes('Migration project files'))
-  assert.equal(elements(tree).find((node) => node.type === 'MigrationReview').props.stage, 'review')
-  let migration = elements(tree).find((node) => node.type === 'MigrationReview')
-  assert.equal(migration.props.reviewTab, 'changes')
-  migration.props.onReviewTabChange('manual')
-  tree = await harness.render({ view: 'migration', onViewChange: () => { } })
-  migration = elements(tree).find((node) => node.type === 'MigrationReview')
-  assert.equal(migration.props.reviewTab, 'manual')
-  migration.props.onContextChange({ source_text: '<config />' }, 'PA1')
-  tree = await harness.render({ view: 'migration', onViewChange: () => { } })
-  assert.equal(elements(tree).find((node) => node.type === 'MigrationReview').props.reviewTab, 'changes')
-  const labels = ['Source', 'Review conversion', 'Download']
-  const stages = ['load', 'review', 'export']
-  const nav = elements(tree).find((node) => node.props['aria-label'] === 'Migration workspace')
-  assert.equal(elements(nav.props.children).filter((node) => node.type === 'button').length, 3)
-  for (const index of [1, 2, 0]) {
-    const button = elements(tree).find((node) => node.type === 'button' && node.props.children?.[2] === labels[index])
-    button.props.onClick()
-    tree = await harness.render({ view: 'migration', onViewChange: () => { } })
-    assert.equal(elements(tree).find((node) => node.type === 'MigrationReview').props.stage, stages[index])
-  }
-  elements(tree).find((node) => node.type === 'MigrationReview').props.onWorkflowModeChange('destination')
-  tree = await harness.render({ view: 'migration', onViewChange: () => { } })
-  assert.equal(elements(elements(tree).find((node) => node.props['aria-label'] === 'Migration workspace')).filter((node) => node.type === 'button').length, 4)
-  elements(tree).find((node) => node.type === 'MigrationReview').props.onWorkflowModeChange('offline')
-  tree = await harness.render({ view: 'migration', onViewChange: () => { } })
-  const target = elements(tree).find((node) => node.type === 'select' && node.props.value === 'fortigate_to_palo_alto')
-  target.props.onChange({ target: { value: 'fortigate_to_juniper_srx' } })
-  tree = await harness.render({ view: 'migration', onViewChange: () => { } })
-  assert.equal(elements(tree).find((node) => node.type === 'MigrationPairWorkflow').props.pairId, 'fortigate_to_juniper_srx')
-  assert.equal(elements(elements(tree).find((node) => node.props['aria-label'] === 'Migration workspace')).filter((node) => node.type === 'button').length, 3)
+  let tree = await harness.render({ onWorkspaceActionsChange(actions) { latestActions = actions } })
+  assert.equal(elements(tree).find((node) => node.type === 'QuickSearchModal').props.open, false)
+  latestActions.onOpenSearch()
+  tree = await harness.render({ onWorkspaceActionsChange(actions) { latestActions = actions } })
+  assert.equal(elements(tree).find((node) => node.type === 'QuickSearchModal').props.open, true)
 })
 
 function elements(tree) {
@@ -2242,75 +2201,63 @@ test('offline review proposes all ready configuration immediately and keeps sear
 })
 
 function sourceExportComponent(api = {}, vendor = 'fortigate', savedPreview = { vendor, source_digest: 'saved', source_evidence: { vendor, source_text: 'saved' } }) {
-  const vendors = ['fortigate', 'palo_alto'].map((vendor_id) => ({ vendor_id, display_name: vendor_id, file_extensions: ['.conf'], live_collection: true }))
   return component('../src/features/source/SourceConfiguration.tsx', 'SourceConfiguration', {
     '../../storage/workspaceStore': { restoreWorkspace: async () => (savedPreview ? { preview: savedPreview } : {}), saveWorkspace: async () => { } },
-    './sourceApi': { loadSourceVendors: async () => vendors, ...api },
-    '../migration/pairApi': { loadMigrationPairs: async () => [] },
-    './FileUpload': { FileUpload: 'FileUpload' }, './SourceOverview': { SourceOverview: 'SourceOverview' },
-    './VendorSelect': { VendorSelect: 'VendorSelect' }, './LiveCollection': { LiveCollection: 'LiveCollection' },
-    '../report/SourceReport': { SourceReport: 'SourceReport' }, '../report/ExcelExportControls': { ExcelExportControls: 'ExcelExportControls' },
-    '../migration/MigrationWorkflow': { MigrationWorkflow: 'MigrationWorkflow' }, '../migration/MigrationReview': { MigrationReview: 'MigrationReview' },
-    '../migration/MigrationPairWorkflow': { MigrationPairWorkflow: 'MigrationPairWorkflow' },
+    './sourceApi': { downloadSecurityAuditReport: async () => new Blob(['<html></html>']), downloadSourceWorkbook: async () => new Blob(['xlsx']), previewSource: async () => ({ vendor, source_digest: 'uploaded', source_evidence: { vendor, source_text: 'uploaded' } }), ...api },
+    './autoDetect': { detectUploadKind: (name) => (name.endsWith('.xml') ? 'palo_alto' : name.endsWith('.zip') ? 'tsf' : 'fortigate') },
+    './FileUpload': { FileUpload: 'FileUpload' },
+    '../report/SourceReport': { SourceReport: 'SourceReport' },
+    '../report/QuickSearchModal': { QuickSearchModal: 'QuickSearchModal' },
+    '../chat/ConfigChatWidget': { ConfigChatWidget: 'ConfigChatWidget' },
+    '../../utils/desktop': { saveBlobWithFallback: async (_blob, filename) => ({ status: 'downloaded', filename }) },
   })
 }
-const sourceProps = { view: 'report', onViewChange() { }, liveDeviceAccess: true }
 const report = (tree) => elements(tree).find((node) => node.type === 'SourceReport').props
 
-async function collectSource(harness, vendorId, sourceName = vendorId) {
-  const tree = await harness.render({ ...sourceProps, view: 'collect' })
-  elements(tree).find((node) => node.type === 'LiveCollection').props.onCollected({
-    vendor_id: vendorId,
-    snapshot: { vendor_id: vendorId, source_text: sourceName },
-    collection: {},
-    preview: { source_digest: sourceName },
+test('auto-detect source acceptance uses vendor defaults and retains deliberate per-vendor profiles', async () => {
+  let latestActions = null
+  const props = { liveDeviceAccess: true, onWorkspaceActionsChange(actions) { latestActions = actions } }
+  const harness = sourceExportComponent({
+    previewSource: async (file) => {
+      const nextVendor = file.name.endsWith('.xml') ? 'palo_alto' : 'fortigate'
+      return { vendor: nextVendor, source_digest: file.name, source_evidence: { vendor: nextVendor, source_name: file.name, source_text: file.name } }
+    },
   })
-  return harness.render(sourceProps)
-}
-
-test('snapshot and live source acceptance use vendor defaults and retain deliberate per-vendor profiles', async () => {
-  const harness = sourceExportComponent()
-  assert.equal(report(await harness.render(sourceProps)).excelProfile, 'fast')
-  let tree = await collectSource(harness, 'palo_alto')
-  assert.equal(report(tree).data.vendor, 'palo_alto')
-  assert.equal(report(tree).excelProfile, 'full')
-  report(tree).onExcelProfileChange('fast')
-  tree = await collectSource(harness, 'fortigate')
+  let tree = await harness.render(props)
   assert.equal(report(tree).excelProfile, 'fast')
-  report(tree).onExcelProfileChange('full')
-  tree = await collectSource(harness, 'palo_alto')
-  assert.equal(report(tree).excelProfile, 'fast', 'Explicit PAN-OS selection persists within this session')
-  tree = await collectSource(harness, 'fortigate')
-  assert.equal(report(tree).excelProfile, 'full', 'Explicit FortiGate selection is independent')
-  const snapshotHarness = sourceExportComponent({
-    importCollectionSnapshot: async () => ({ vendor_id: 'palo_alto', snapshot: { vendor_id: 'palo_alto', source_text: 'snap' }, preview: { source_digest: 'snap' } }),
-  }, 'fortigate', null)
-  let snapTree = await snapshotHarness.render(sourceProps)
-  elements(snapTree).find((node) => node.props.role === 'tab' && String(node.props.children).includes('Upload Snapshot')).props.onClick()
-  snapTree = await snapshotHarness.render(sourceProps)
-  elements(snapTree).find((node) => node.type === 'FileUpload' && node.props.title?.includes('snapshot')).props.onChange({ name: 'snapshot.json' })
-  snapTree = await snapshotHarness.render(sourceProps)
-  assert.equal(report(snapTree).excelProfile, 'full')
+  assert.equal(latestActions.excelProfile, 'fast')
+  latestActions.onExcelProfileChange('full')
+  tree = await harness.render(props)
+  assert.equal(report(tree).excelProfile, 'full')
+
+  const paHarness = sourceExportComponent({
+    previewSource: async (file) => ({ vendor: 'palo_alto', source_digest: file.name, source_evidence: { vendor: 'palo_alto', source_name: file.name, source_text: file.name } }),
+  }, 'palo_alto', null)
+  let paTree = await paHarness.render(props)
+  elements(paTree).find((node) => node.type === 'FileUpload').props.onChange({ name: 'panorama.xml', size: 100 })
+  paTree = await paHarness.render(props)
+  assert.equal(report(paTree).data.vendor, 'palo_alto')
+  assert.equal(report(paTree).excelProfile, 'full')
+  latestActions.onExcelProfileChange('fast')
+  paTree = await paHarness.render(props)
+  assert.equal(report(paTree).excelProfile, 'fast', 'Explicit PAN-OS selection persists within this session')
 })
 
-test('replacement and unmount abort exports and ignore stale completion', async () => {
+test('unmount aborts in-flight exports and ignores stale completion', async () => {
   const pending = []
+  let latestActions = null
+  const props = { liveDeviceAccess: true, onWorkspaceActionsChange(actions) { latestActions = actions } }
   const harness = sourceExportComponent({
     downloadSourceWorkbook: (_vendor, _source, _profile, signal) => new Promise((resolve, reject) => pending.push({ signal, resolve, reject })),
   })
-  let tree = await harness.render(sourceProps)
-  report(tree).onExport()
-  tree = await collectSource(harness, 'palo_alto', 'new')
-  assert.equal(pending[0].signal.aborted, true)
-  pending[0].reject(new DOMException('Aborted', 'AbortError'))
-  tree = await harness.render(sourceProps)
-  assert.equal(report(tree).exporting, false)
-  assert.equal(report(tree).exportError, null)
-  report(tree).onExport()
-  await harness.render(sourceProps)
+  await harness.render(props)
+  latestActions.onExportExcel()
+  await harness.render(props)
+  assert.equal(pending.length, 1)
+  assert.equal(pending[0].signal.aborted, false)
   harness.unmount()
-  assert.equal(pending[1].signal.aborted, true)
-  pending[1].resolve(new Blob(['unmounted workbook']))
+  assert.equal(pending[0].signal.aborted, true)
+  pending[0].resolve(new Blob(['unmounted workbook']))
   await new Promise((resolve) => setImmediate(resolve))
 })
 

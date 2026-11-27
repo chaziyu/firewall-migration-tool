@@ -102,13 +102,19 @@ test('SecurityAuditPanel gates live exposure probe on liveDeviceAccess and rende
     new Function('require', 'exports', compiled)((name) => modules[name], modExports)
     const nodes = (node) => (Array.isArray(node) ? node.flatMap(nodes) : node && typeof node === 'object' ? [node, ...nodes(node.props?.children)] : [])
     const fgData = { ...reportProps('fortigate').data, summary: { ...reportProps('fortigate').data.summary, lifecycle: SAMPLE_LIFECYCLE } }
+    let activeSection = 'Overview'
     const renderTree = () => {
       cursor = 0
-      return nodes(modExports.SourceReport({ ...reportProps('fortigate'), data: fgData }))
+      return nodes(modExports.SourceReport({
+        ...reportProps('fortigate'),
+        data: fgData,
+        activeSection,
+        onSectionChange(next) { activeSection = next },
+      }))
     }
     let tree = renderTree()
     assert.equal(tree.some((n) => n.type === 'LifecycleCard'), false, 'Overview must not render LifecycleCard')
-    tree.find((n) => n.props.role === 'tab' && n.props.children === 'Security & Health').props.onClick()
+    activeSection = 'Security & Health'
     tree = renderTree()
     const auditTab = tree.find((n) => n.props.role === 'tab' && n.props.children === 'Security Audit')
     assert.ok(auditTab && auditTab.props['aria-selected'] === true, 'Security & Health defaults to Security Audit tab')

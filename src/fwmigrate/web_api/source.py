@@ -43,6 +43,53 @@ from fwmigrate.web_support.reporting import (
 
 _LOGGER = logging.getLogger(__name__)
 
+_FORTIGATE_HEADER_MARKERS = (
+    '#config-version=',
+    'config system global',
+    'config system interface',
+    'config system vdom',
+    'config vdom',
+    'config firewall ',
+    'config router ',
+)
+
+
+class _VendorAutoDetectError(ValueError):
+    """Safe, user-facing vendor auto-detection error."""
+
+
+def _detect_source_vendor(uploaded) -> str:
+    """Resolve FortiGate or Palo Alto vendor from uploaded filename/header."""
+    filename = (getattr(uploaded, 'filename', None) or '').strip().lower()
+    if filename.endswith('.xml'):
+        return 'palo_alto'
+    if filename.endswith(('.conf', '.cfg')):
+        return 'fortigate'
+    if filename.endswith('.txt'):
+        stream = getattr(uploaded, 'stream', None)
+        sample = ''
+        if stream is not None and hasattr(stream, 'read'):
+            pos = stream.tell() if hasattr(stream, 'tell') else 0
+            try:
+                raw = stream.read(8192)
+                if isinstance(raw, (bytes, bytearray)):
+                    sample = raw.decode('utf-8', errors='replace')
+                elif isinstance(raw, str):
+                    sample = raw
+            finally:
+                if hasattr(stream, 'seek'):
+                    stream.seek(pos)
+        stripped = sample.lstrip().lower()
+        if stripped.startswith('<?xml') or '<config' in stripped[:512]:
+            return 'palo_alto'
+        if any(marker in stripped for marker in _FORTIGATE_HEADER_MARKERS):
+            return 'fortigate'
+        return 'fortigate'
+    raise _VendorAutoDetectError(
+        'Could not auto-detect firewall vendor. Upload a FortiGate (.conf/.cfg/.txt) '
+        'or Palo Alto PAN-OS (.xml) configuration.'
+    )
+
 
 def register_source_routes(app, collector_registry=None) -> None:
     def collectors():
@@ -99,6 +146,9 @@ def register_source_routes(app, collector_registry=None) -> None:
             if 'file' not in request.files or request.files['file'].filename == '':
                 return jsonify({'success': False, 'error': 'A configuration file is required'}), 400
 
+            if source_vendor.strip().lower() == 'auto':
+                source_vendor = _detect_source_vendor(request.files['file'])
+
             metrics = SourceReportMetrics() if _parse_bool(request.form.get('collect_metrics')) else None
             started = perf_counter()
             reporter = source_reporters.get(source_vendor)
@@ -119,6 +169,8 @@ def register_source_routes(app, collector_registry=None) -> None:
             return jsonify(response)
         except ConfigurationDecodeError:
             return jsonify({'success': False, 'error': 'Configuration file is not valid UTF-8.', 'stage': 'decode'}), 400
+        except _VendorAutoDetectError as exc:
+            return jsonify({'success': False, 'error': str(exc)}), 400
         except KeyError:
             return jsonify({'success': False, 'error': 'Unsupported source vendor'}), 400
         except SourceSizeError:

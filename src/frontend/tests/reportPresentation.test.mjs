@@ -78,9 +78,19 @@ test('summary buttons retain their section and subsection destinations', () => {
     return node && typeof node === 'object' ? [node, ...nodes(node.props?.children)] : []
   }
   const data = { sections: { policies: [], addresses: [], address_groups: [{}], interfaces: [{}], schedules: [], nat: [], routes: [], unresolved_references: [] } }
+  let activeSection = 'Overview'
   function render() {
     cursor = 0
-    return nodes(exports.SourceReport({ data, excelProfile: 'fast', onExcelProfileChange() { }, exporting: false, exportStatus: '', onExport() { } }))
+    return nodes(exports.SourceReport({
+      data,
+      activeSection,
+      onSectionChange(next) { activeSection = next },
+      excelProfile: 'fast',
+      onExcelProfileChange() { },
+      exporting: false,
+      exportStatus: '',
+      onExport() { },
+    }))
   }
   for (const [label, section, subsection] of [
     ['Policies', 'Policies & NAT', 'policies'], ['Address/service objects', 'Objects', 'addresses'], ['Interfaces', 'Interfaces & Network', 'interfaces'],
@@ -88,10 +98,11 @@ test('summary buttons retain their section and subsection destinations', () => {
   ]) {
     const tree = render()
     tree.find((node) => node.type === 'button' && node.props.children === label).props.onClick()
+    assert.equal(activeSection, section)
     const next = render()
-    assert.ok(next.some((node) => node.props.role === 'tab' && node.props.children === section && node.props['aria-selected']))
+    assert.ok(next.some((node) => node.props.role === 'tabpanel' && node.props['aria-label'] === section))
     if (subsection) assert.ok(next.some((node) => node.props.id === `subsection-tab-${subsection}` && node.props['aria-selected']))
-    next.find((node) => node.props.role === 'tab' && node.props.children === 'Overview').props.onClick()
+    activeSection = 'Overview'
   }
 })
 
@@ -664,7 +675,7 @@ test('Overview omits LifecycleCard and renders HA details; extendedSystemOvervie
     assert.ok(!html.includes('id="fg_lifecycle_card"'), 'LifecycleCard must not render inside Overview')
     assert.ok(html.includes('id="fg_lifecycle_badge"'), 'Overview Hero shows lifecycle badge')
     assert.ok(html.includes('PROD-HA'), 'Overview renders HA cluster info')
-    assert.ok(html.includes('Global IP / Object'), 'Overview renders Where-Used expander')
+    assert.ok(!html.includes('Global IP / Object'), 'Inline Where-Used expander moved to top-right Ctrl+K modal')
   } finally {
     await server.close()
   }

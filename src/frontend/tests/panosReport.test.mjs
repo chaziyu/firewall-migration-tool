@@ -94,7 +94,7 @@ test('report preserves safe authentication metadata while hiding credential valu
   assert.ok(!JSON.stringify(nested).includes('SENTINEL'))
 })
 
-test('PAN-OS overview links to extraction without repeating its coverage banner', async () => {
+test('PAN-OS overview stays clean without repeating extraction coverage banners', async () => {
   const server = await createServer({ server: { middlewareMode: true }, appType: 'custom' })
   try {
     const { SourceReport } = await server.ssrLoadModule('/src/features/report/SourceReport.tsx')
@@ -107,8 +107,7 @@ test('PAN-OS overview links to extraction without repeating its coverage banner'
     }))
     const text = html.replace(/<!-- -->/g, '')
     assert.doesNotMatch(text, /2 source-only records|3 partial records|Review Extraction for/)
-    assert.match(text, /PAN-OS Source Appendix/)
-    assert.match(text, /<option[^>]*>Diagnostics &amp; Coverage<\/option>/)
+    assert.doesNotMatch(text, /report-tabs/)
     assert.match(text, /Unsupported \/ source-only/)
   } finally { await server.close() }
 })
@@ -138,9 +137,8 @@ test('switching from scoped inventory to aggregate coverage does not filter away
     source_inventory: [{ name: 'a', scope: 'device:fw' }] } }
   const render = () => {
     cursor = 0
-    return nodes(exports.SourceReport({ data, excelProfile: 'full', onExcelProfileChange() {}, exporting: false, exportStatus: '', onExport() {} }))
+    return nodes(exports.SourceReport({ data, activeSection: 'Diagnostics & Coverage', excelProfile: 'full', onExcelProfileChange() {}, exporting: false, exportStatus: '', onExport() {} }))
   }
-  render().find((node) => node.props.role === 'tab' && node.props.children === 'Diagnostics & Coverage').props.onClick()
   render().find((node) => node.props.id === 'subsection-tab-source_inventory').props.onClick()
   render().find((node) => node.props['aria-label'] === 'Filter report scope').props.onChange({ target: { value: 'device:fw' } })
   render().find((node) => node.props.id === 'subsection-tab-extraction_coverage').props.onClick()

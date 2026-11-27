@@ -46,6 +46,7 @@ test('topology rows render without load-more truncation, reset on filters, and k
   const rows = Array.from({ length: 450 }, (_, index) => ({ name: `port-${index}`, vdom: index % 2 ? 'branch' : 'root', ip: Array.from({ length: 12 }, (_, i) => `192.0.${index % 256}.${i}/24`), enabled: false, metric: 0 }))
   const data = { vendor: 'fortigate', sections: { interface_topology: rows } }
   const before = structuredClone(data)
+  let activeSection = 'Overview'
   function render() {
     let tree
     let attempts = 0
@@ -53,12 +54,21 @@ test('topology rows render without load-more truncation, reset on filters, and k
       assert.ok(++attempts < 25, 'Report entered a render loop')
       pending = false
       cursor = 0
-      tree = exports.SourceReport({ data, excelProfile: 'fast', onExcelProfileChange() {}, exporting: false, exportStatus: '', onExport() {} })
+      tree = exports.SourceReport({
+        data,
+        activeSection,
+        onSectionChange(next) { activeSection = next },
+        excelProfile: 'fast',
+        onExcelProfileChange() {},
+        exporting: false,
+        exportStatus: '',
+        onExport() {},
+      })
     } while (pending)
     return nodes(tree)
   }
   let tree = render()
-  tree.find((node) => node.props.role === 'tab' && node.props.children === 'Interfaces & Network').props.onClick()
+  activeSection = 'Interfaces & Network'
   tree = render()
   const table = () => tree.find((node) => node.type?.name === 'SourceRowsTable')
   assert.equal(table().props.rows.length, 450)

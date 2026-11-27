@@ -3,9 +3,7 @@ import type { LifecycleCardData, SecurityAuditResponse, SourcePreviewData } from
 import { fetchSecurityAudit } from '../source/sourceApi'
 import { activeSubsection, applianceHeroInfo, asRecord, asRows, cellBadgeVariant, compactValue, downloadCsvRows, extendedSystemOverviewItems, haOverviewInfo, interfaceTopologyRows, isLifecycleCardData, isMonoColumn, matchingSourceRows, reportCounts, reportSections, reportSectionRowCount, reportSearchText, rowColumns, rowSemanticClass, rowSubtypeId, safeValue, sectionLegend, subtypeFilterTabs, defaultColumns, cellSummary, cellTooltip, columnWidth, fieldLabel, findingGroups, findingGroupKey } from './reportPresentation'
 import { ReportDetails } from './ReportDetails'
-import { ExcelExportControls } from './ExcelExportControls'
 import { SecurityAuditPanel } from './SecurityAuditPanel'
-import { WhereUsedPanel } from './WhereUsedPanel'
 import { VpnInspectorView } from './VpnInspectorView'
 import { tabKeyboard } from '../../components/common/tabKeyboard'
 import { ErrorBanner } from '../../components/common/ErrorBanner'
@@ -426,21 +424,31 @@ const VENDOR_DISPLAY_NAMES: Record<string, string> = {
   checkpoint: 'Check Point',
 }
 
-export function SourceReport({ data, excelProfile, onExcelProfileChange, exporting, exportStatus, exportError, onExport, liveDeviceAccess = false }: {
+export function SourceReport({
+  data,
+  activeSection: controlledActiveSection,
+  onSectionChange,
+  exportStatus,
+  exportError,
+  liveDeviceAccess = false,
+}: {
   data: SourcePreviewData
-  excelProfile: 'fast' | 'full'
-  onExcelProfileChange: (value: 'fast' | 'full') => void
-  exporting: boolean
+  activeSection?: string
+  onSectionChange?: (section: string) => void
+  excelProfile?: 'fast' | 'full'
+  onExcelProfileChange?: (value: 'fast' | 'full') => void
+  exporting?: boolean
   exportStatus: string
   exportError?: string | null
-  onExport: () => void
+  onExport?: () => void
   liveDeviceAccess?: boolean
 }) {
   const sectionsData = asRecord(data.sections)
   const sections = useMemo(() => reportSections(asRecord(data.sections)), [data.sections])
   const summary = asRecord(data.summary)
   const supportsSecurityAudit = (data.vendor === 'fortigate' || data.vendor === 'palo_alto') && Boolean(data.source_evidence)
-  const [activeSection, setActiveSection] = useState('Overview')
+  const [internalActiveSection, setInternalActiveSection] = useState('Overview')
+  const activeSection = controlledActiveSection ?? internalActiveSection
   const [healthTab, setHealthTab] = useState<'audit' | 'validation'>(() => (supportsSecurityAudit ? 'audit' : 'validation'))
   const [auditState, setAuditState] = useState<{
     vendor: string
@@ -524,7 +532,11 @@ export function SourceReport({ data, excelProfile, onExcelProfileChange, exporti
     }
   }
   function setSourceSection(value: string, section = activeSection) { setSubsectionChoices((current) => ({ ...current, [section]: value })); setSelectedRow(null) }
-  function changeSection(value: string) { setActiveSection(value); setSelectedRow(null) }
+  function changeSection(value: string) {
+    if (onSectionChange) onSectionChange(value)
+    else setInternalActiveSection(value)
+    setSelectedRow(null)
+  }
   function changeScope(value: string) { setScope(value); setSelectedRow(null) }
   const filteredRows = useMemo(() => {
     const query = search.toLowerCase()
@@ -626,12 +638,9 @@ export function SourceReport({ data, excelProfile, onExcelProfileChange, exporti
   )
   const exposureWarnings = useMemo(() => validationRows.filter((row) => row.domain === 'interface' && row.field === 'allowaccess'), [validationRows])
   const vendorDisplayName = VENDOR_DISPLAY_NAMES[String(data.vendor ?? '')] || String(data.vendor || 'Configuration')
-  const systemItems = useMemo(() => extendedSystemOverviewItems(data, auditData, activeLifecycle), [data, auditData, activeLifecycle])
+  const systemItems = extendedSystemOverviewItems(data, auditData, activeLifecycle)
   const haInfo = useMemo(() => haOverviewInfo(data), [data])
-  const heroInfo = useMemo(
-    () => applianceHeroInfo(data, vendorDisplayName, activeLifecycle, auditData),
-    [data, vendorDisplayName, activeLifecycle, auditData],
-  )
+  const heroInfo = applianceHeroInfo(data, vendorDisplayName, activeLifecycle, auditData)
   const legendItems = useMemo(() => sectionLegend(activeObjectSection, subsectionRows), [activeObjectSection, subsectionRows])
 
   useEffect(() => {
@@ -639,7 +648,8 @@ export function SourceReport({ data, excelProfile, onExcelProfileChange, exporti
     const onSelectSection = (event: Event) => {
       const next = (event as CustomEvent<string>).detail
       if (next && reportTabs.includes(next)) {
-        setActiveSection(next)
+        if (onSectionChange) onSectionChange(next)
+        else setInternalActiveSection(next)
         setSelectedRow(null)
       }
     }
@@ -689,38 +699,26 @@ export function SourceReport({ data, excelProfile, onExcelProfileChange, exporti
   }
 
   return <section className="panel source-report" aria-labelledby="report-title">
-    <div className="report-sticky-header">
-      <h2 id="report-title" className="visually-hidden">Source inventory</h2>
-      {exportError && <ErrorBanner message={exportError} />}
-      <label className="report-section-select">Report section<select value={activeSection} onChange={(event) => changeSection(event.target.value)}>{reportTabs.map((name) => <option key={name}>{name}</option>)}</select></label>
-      <nav className="report-tabs fw-tablist" role="tablist" aria-label="Report sections" onKeyDown={tabKeyboard}>
-        {reportTabs.map((sectionLabel) => (
-          <button key={sectionLabel} id={`report-tab-${encodeURIComponent(sectionLabel)}`} aria-controls={`report-panel-${encodeURIComponent(sectionLabel)}`} tabIndex={activeSection === sectionLabel ? 0 : -1} type="button" role="tab" aria-selected={activeSection === sectionLabel} className={`report-tab fw-tab-btn${activeSection === sectionLabel ? ' active' : ''}`} onClick={() => changeSection(sectionLabel)}>
-            {sectionLabel}
-          </button>
-        ))}
-      </nav>
-    </div>
-    {reportTabs.filter((item) => item !== activeSection).map((item) => <div key={item} hidden role="tabpanel" id={`report-panel-${encodeURIComponent(item)}`} aria-labelledby={`report-tab-${encodeURIComponent(item)}`} />)}
-    <div role="tabpanel" id={`report-panel-${encodeURIComponent(activeSection)}`} aria-labelledby={`report-tab-${encodeURIComponent(activeSection)}`} tabIndex={0}>
+    <h2 id="report-title" className="visually-hidden">Source inventory</h2>
+    {exportError && <ErrorBanner message={exportError} />}
+    {exportStatus && <p className="preview-status" role="status" aria-live="polite">{exportStatus}</p>}
+    <div role="tabpanel" id={`report-panel-${encodeURIComponent(activeSection)}`} aria-label={activeSection} tabIndex={0}>
       {activeSection === 'Overview' ? <>
-        <div className="fw-overview-top-bar">
-          <div className="fw-overview-meta">
-            {Array.isArray(summary.scopes) && summary.scopes.length > 0 && (
-              <p className="report-scope-summary">Scopes: {summary.scopes.join(', ')}</p>
-            )}
-            {data.collection != null && (
-              <div className="report-count-note">
-                <p>Collection: {String(asRecord(data.collection).status ?? 'Unknown')} · Method: {String(asRecord(data.collection).method ?? 'Not reported')}</p>
-                {Array.isArray(asRecord(data.collection).warnings) && <ul>{(asRecord(data.collection).warnings as unknown[]).map((warning, index) => <li key={index}>{String(safeValue(warning))}</li>)}</ul>}
-              </div>
-            )}
+        {(Array.isArray(summary.scopes) && summary.scopes.length > 0) || data.collection != null ? (
+          <div className="fw-overview-top-bar">
+            <div className="fw-overview-meta">
+              {Array.isArray(summary.scopes) && summary.scopes.length > 0 && (
+                <p className="report-scope-summary">Scopes: {summary.scopes.join(', ')}</p>
+              )}
+              {data.collection != null && (
+                <div className="report-count-note">
+                  <p>Collection: {String(asRecord(data.collection).status ?? 'Unknown')} · Method: {String(asRecord(data.collection).method ?? 'Not reported')}</p>
+                  {Array.isArray(asRecord(data.collection).warnings) && <ul>{(asRecord(data.collection).warnings as unknown[]).map((warning, index) => <li key={index}>{String(safeValue(warning))}</li>)}</ul>}
+                </div>
+              )}
+            </div>
           </div>
-          <div className="report-header-actions">
-            <ExcelExportControls vendor={data.vendor ?? ''} profile={excelProfile} onProfileChange={onExcelProfileChange} exporting={exporting} onExport={onExport} />
-          </div>
-        </div>
-        <p className="preview-status" role="status" aria-live="polite">{exportStatus}</p>
+        ) : null}
 
         <section className="fw-card fw-card-flex fw-hero-card" aria-label="Appliance overview">
           <div className="fw-hero-heading">
@@ -755,7 +753,7 @@ export function SourceReport({ data, excelProfile, onExcelProfileChange, exporti
         </section>
 
         <div className="system-overview-section">
-          <h3 className="report-overview-heading fw-section-header" id="system-overview-title"><span className="dot" aria-hidden="true" />System Overview</h3>
+          <h3 className="report-overview-heading fw-section-header" id="system-overview-title">System Overview</h3>
           <dl className="system-overview-grid" aria-labelledby="system-overview-title">
             {systemItems.map((item) => (
               <div key={item.label} className="system-overview-card">
@@ -769,7 +767,7 @@ export function SourceReport({ data, excelProfile, onExcelProfileChange, exporti
 
         {haInfo && (
           <section className="fw-ha-section" aria-labelledby="ha-overview-title">
-            <h3 className="report-overview-heading fw-section-header" id="ha-overview-title"><span className="dot" aria-hidden="true" />High Availability</h3>
+            <h3 className="report-overview-heading fw-section-header" id="ha-overview-title">High Availability</h3>
             <div className="fw-card fw-card-flex fw-ha-card">
               <div>
                 <div className="fw-ha-title">{haInfo.title}</div>
@@ -790,7 +788,7 @@ export function SourceReport({ data, excelProfile, onExcelProfileChange, exporti
           </section>
         )}
 
-        <h3 className="report-overview-heading fw-section-header"><span className="dot" aria-hidden="true" />Validation</h3>
+        <h3 className="report-overview-heading fw-section-header">Validation</h3>
         <button type="button" className={`report-validation-attention${errorCount ? ' has-errors' : warningCount ? ' has-warnings' : ''}`} onClick={() => { changeSection('Security & Health'); setHealthTab('validation') }}><div>{sectionsData.validation == null && asRecord(summary.validation).severity_counts == null ? 'Not reported' : <>{errorCount.toLocaleString()} {errorCount === 1 ? 'error' : 'errors'} · {warningCount.toLocaleString()} {warningCount === 1 ? 'warning' : 'warnings'} <small>{warningGroups.toLocaleString()} warning {warningGroups === 1 ? 'group' : 'groups'}</small></>}</div><span>Review findings →</span></button>
         {!!exposureWarnings.length && <div className="report-exposure-warning" role="status">
           <div>
@@ -800,7 +798,7 @@ export function SourceReport({ data, excelProfile, onExcelProfileChange, exporti
           <button type="button" className="secondary-button" onClick={() => { changeSection('Security & Health'); setHealthTab('validation') }}>Inspect in Validation →</button>
         </div>}
         <div className="report-overview-group">
-          <h3 className="report-overview-heading fw-section-header" id="configuration-summary-title"><span className="dot" aria-hidden="true" />Configuration summary</h3>
+          <h3 className="report-overview-heading fw-section-header" id="configuration-summary-title">Configuration summary</h3>
           <div className="configuration-summary-wrap">
             <table className="configuration-summary" aria-labelledby="configuration-summary-title">
               <thead><tr><th scope="col">Section</th><th scope="col">Count</th><th scope="col"><span className="visually-hidden">Navigation</span></th></tr></thead>
@@ -808,14 +806,6 @@ export function SourceReport({ data, excelProfile, onExcelProfileChange, exporti
             </table>
           </div>
         </div>
-        {supportsSecurityAudit && data.source_evidence && (
-          <details className="fw-lookup-bar">
-            <summary>🔎 Global IP / Object &quot;Where-Used&quot; Search</summary>
-            <div className="fw-lookup-bar-body">
-              <WhereUsedPanel vendor={data.vendor!} sourceEvidence={data.source_evidence} />
-            </div>
-          </details>
-        )}
       </> : activeSection === 'Security & Health' ? (
         <>
           <section className="fw-card fw-card-flex fw-hero-card" aria-label="Security and health summary">
@@ -912,14 +902,6 @@ export function SourceReport({ data, excelProfile, onExcelProfileChange, exporti
                 </button>
               ))}
             </nav>
-          )}
-          {(activeSection === 'Objects' || activeSection === 'Policies & NAT') && (data.vendor === 'fortigate' || data.vendor === 'palo_alto') && data.source_evidence && (
-            <details className="fw-lookup-bar">
-              <summary>Where-Used &amp; Object Lookup</summary>
-              <div className="fw-lookup-bar-body">
-                <WhereUsedPanel vendor={data.vendor} sourceEvidence={data.source_evidence} />
-              </div>
-            </details>
           )}
           {legendItems.length > 0 && (
             <div className="fw-legend" aria-label="Table color legend">
