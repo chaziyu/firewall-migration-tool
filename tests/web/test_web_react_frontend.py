@@ -17,8 +17,15 @@ def test_react_build_is_served(tmp_path: Path):
     client = create_app({"TESTING": True, "FRONTEND_DIST_DIR": str(dist)}).test_client()
 
     assert b'<div id="root"></div>' in client.get("/").data
-    assert client.get("/assets/app.js").data == b"React app"
-    assert client.get("/fonts/dm-sans.ttf").data == b"font data"
+    assert "immutable" not in client.get("/").headers.get("Cache-Control", "")
+    asset_resp = client.get("/assets/app.js")
+    assert asset_resp.data == b"React app"
+    assert "max-age=31536000" in asset_resp.headers.get("Cache-Control", "")
+    assert "immutable" in asset_resp.headers.get("Cache-Control", "")
+    font_resp = client.get("/fonts/dm-sans.ttf")
+    assert font_resp.data == b"font data"
+    assert "max-age=31536000" in font_resp.headers.get("Cache-Control", "")
+    assert "immutable" in font_resp.headers.get("Cache-Control", "")
     assert client.get("/fonts/missing.ttf").status_code == 404
     assert client.get("/fonts/../index.html").status_code == 404
     assert client.get("/fonts/%2e%2e/index.html").status_code == 404

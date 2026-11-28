@@ -28,11 +28,15 @@ from ..model.selected_sections import (
     FGEmailFilterProfile, FGVoIPProfile, FGWAFProfile,
     FGSSLSSHProfile, FGSSLSSHProtocolConfig,
     FGLDAPServer, FGRADIUSServer, FGTACACSServer, FGFSSOServer, FGFSSOPolling,
-    FGFortiToken, FGUserSetting, FGPasswordPolicy,
-    FGWirelessVAP, FGWirelessWTP, FGWirelessWTPProfile, FGWirelessWIDSProfile,
+    FGFortiToken, FGUserSetting, FGPasswordPolicy, FGSystemPasswordPolicy,
+    FGWirelessVAP, FGWirelessWTP, FGWirelessWTPProfile, FGWirelessWTPProfilePlatform, FGWirelessWIDSProfile,
     FGManagedSwitch, FGManagedSwitchPort,
-    FGSyslogSetting, FGLogMemorySetting, FGLogDiskSetting, FGLogSetting, FGLogThreatWeight,
+    FGSyslogSetting, FGLogMemorySetting, FGLogDiskSetting, FGLogSetting,
+    FGLogThreatWeight, FGThreatWeightLevel, FGThreatWeightIPS,
+    FGThreatWeightMalware, FGThreatWeightCategoryEntry,
     FGUserGuest, FGSwitchPortPolicy, FGSwitchLLDPProfile, FGSwitchQoSPolicy, FGSwitchVLANPolicy,
+    FGCertificate, FGLocalInPolicy, FGFortiAnalyzerSetting, FGLogFortiGuardSetting,
+    FGSystemStorage, FGSAMLServer,
 )
 from ..nodes import CommandNode
 from .common import (
@@ -59,6 +63,7 @@ class Config(Protocol):
 
 def extract_selected_sections(tree: SectionIndex, config: Config) -> None:
     _simple_edits(tree, config, "user nac-policy", "nac_policies", FGNACPolicy)
+    _extract_nac_settings(tree, config)
     _extract_address6_templates(tree, config)
     _extract_config_settings(tree, config, "ips settings", "ips_settings", FGIPSSettings)
     _extract_kmip(tree, config)
@@ -127,6 +132,7 @@ def extract_selected_sections(tree: SectionIndex, config: Config) -> None:
     _extract_fortitokens(tree, config)
     _extract_config_settings(tree, config, "user setting", "user_settings", FGUserSetting)
     _simple_edits(tree, config, "user password-policy", "password_policies", FGPasswordPolicy)
+    _extract_config_settings(tree, config, "system password-policy", "system_password_policies", FGSystemPasswordPolicy)
 
     # WiFi, Switch & Logging
     _extract_wireless_vaps(tree, config)
@@ -144,12 +150,26 @@ def extract_selected_sections(tree: SectionIndex, config: Config) -> None:
     _extract_config_settings(tree, config, "log memory setting", "log_memory_settings", FGLogMemorySetting)
     _extract_log_disk_settings(tree, config)
     _extract_config_settings(tree, config, "log setting", "log_settings", FGLogSetting)
-    _extract_config_settings(tree, config, "log threat-weight", "log_threat_weights", FGLogThreatWeight)
+    _extract_log_threat_weight(tree, config)
     _extract_guest_users(tree, config)
     _simple_edits(tree, config, "switch-controller port-policy", "switch_port_policies", FGSwitchPortPolicy)
     _simple_edits(tree, config, "switch-controller lldp-profile", "switch_lldp_profiles", FGSwitchLLDPProfile)
     _simple_edits(tree, config, "switch-controller qos qos-policy", "switch_qos_policies", FGSwitchQoSPolicy)
     _simple_edits(tree, config, "switch-controller vlan-policy", "switch_vlan_policies", FGSwitchVLANPolicy)
+
+    for store in ("local", "ca", "remote"):
+        _extract_certificates(tree, config, store)
+    _extract_local_in_policies(tree, config, "firewall local-in-policy", "ipv4")
+    _extract_local_in_policies(tree, config, "firewall local-in-policy6", "ipv6")
+    for target_name, path in (
+        ("fortianalyzer", "log fortianalyzer setting"),
+        ("fortianalyzer2", "log fortianalyzer2 setting"),
+        ("fortianalyzer3", "log fortianalyzer3 setting"),
+    ):
+        _extract_fortianalyzer_setting(tree, config, path, target_name)
+    _extract_config_settings(tree, config, "log fortiguard setting", "log_fortiguard_settings", FGLogFortiGuardSetting)
+    _simple_edits(tree, config, "system storage", "system_storages", FGSystemStorage)
+    _simple_edits(tree, config, "user saml", "saml_servers", FGSAMLServer)
 
 
 def _assign_numeric_id(values, raw_name: str, field_name: str = "id") -> None:
@@ -809,6 +829,23 @@ def _extract_wireless_wtps(tree, config):
         config.wireless_wtps.append(FGWirelessWTP(**values))
 
 
+def _extract_nac_settings(tree, config):
+    path = "switch-controller nac-settings"
+    for source in iter_section_configs(tree, path):
+        if source.config.edits:
+            for edit in source.config.edits:
+                evaluation = evaluate_edit(path, edit)
+                values = source_model_kwargs(evaluation, model_type=FGNACPolicy, name=edit.name, vdom=source.vdom)
+                values["source_path"] = path
+                config.nac_policies.append(FGNACPolicy(**values))
+        elif source.config.commands:
+            evaluation = evaluate_config(path, source.config)
+            values = source_model_kwargs(evaluation, model_type=FGNACPolicy, vdom=source.vdom)
+            values["name"] = values.get("name") or "nac-settings"
+            values["source_path"] = path
+            config.nac_policies.append(FGNACPolicy(**values))
+
+
 def _extract_wtp_profiles(tree, config):
     path = "wireless-controller wtp-profile"
     for source in iter_section_edits(tree, path):
@@ -816,6 +853,13 @@ def _extract_wtp_profiles(tree, config):
         values = source_model_kwargs(evaluation, model_type=FGWirelessWTPProfile, name=source.edit.name, vdom=source.vdom)
         values["login_passwd_configured"] = _secret_present(source.edit, "login-passwd")
         values["raw_extra"].pop("login-passwd", None)
+        platform_cfg = get_child_config(source.edit, "platform")
+        if platform_cfg is not None:
+            platform_eval = evaluate_config(f"{path} platform", platform_cfg)
+            platform_values = source_model_kwargs(platform_eval, model_type=FGWirelessWTPProfilePlatform)
+            values["platform_config"] = FGWirelessWTPProfilePlatform(**platform_values)
+            if values.get("platform") is None and platform_values.get("type") is not None:
+                values["platform"] = platform_values["type"]
         config.wtp_profiles.append(FGWirelessWTPProfile(**values))
 
 
@@ -864,3 +908,60 @@ def _extract_guest_users(tree, config):
         values["password_configured"] = _secret_present(source.edit, "password")
         values["raw_extra"].pop("password", None)
         config.guest_users.append(FGUserGuest(**values))
+
+
+def _extract_certificates(tree, config, store: str):
+    path = f"vpn certificate {store}"
+    for source in iter_section_edits(tree, path):
+        evaluation = evaluate_edit(path, source.edit)
+        values = source_model_kwargs(evaluation, model_type=FGCertificate, name=source.edit.name, vdom=source.vdom)
+        values["store"] = store
+        values["private_key_configured"] = _secret_present(source.edit, "private-key")
+        values["password_configured"] = _secret_present(source.edit, "password") or _secret_present(source.edit, "passphrase")
+        for secret_key in ("private-key", "password", "passphrase"):
+            values["raw_extra"].pop(secret_key, None)
+        config.certificates.append(FGCertificate(**values))
+
+
+def _extract_fortianalyzer_setting(tree, config, path: str, target_name: str):
+    for source in iter_section_configs(tree, path):
+        evaluation = evaluate_config(path, source.config)
+        values = source_model_kwargs(evaluation, model_type=FGFortiAnalyzerSetting, vdom=source.vdom)
+        values["target_name"] = target_name
+        config.fortianalyzer_settings.append(FGFortiAnalyzerSetting(**values))
+
+
+def _extract_log_threat_weight(tree, config):
+    path = "log threat-weight"
+    for source in iter_section_configs(tree, path):
+        evaluation = evaluate_config(path, source.config)
+        values = source_model_kwargs(evaluation, model_type=FGLogThreatWeight, vdom=source.vdom)
+        for child_name, model_cls in (
+            ("level", FGThreatWeightLevel),
+            ("ips", FGThreatWeightIPS),
+            ("malware", FGThreatWeightMalware),
+        ):
+            child_cfg = get_child_config(source.config, child_name)
+            if child_cfg is not None:
+                child_eval = evaluate_config(f"{path} {child_name}", child_cfg)
+                values[child_name] = model_cls(**source_model_kwargs(child_eval, model_type=model_cls))
+        for cat_name in ("web", "application"):
+            cat_cfg = get_child_config(source.config, cat_name)
+            if cat_cfg is not None:
+                entries = []
+                for edit in cat_cfg.edits:
+                    edit_eval = evaluate_edit(f"{path} {cat_name}", edit)
+                    edit_vals = source_model_kwargs(edit_eval, model_type=FGThreatWeightCategoryEntry)
+                    _assign_numeric_id(edit_vals, edit.name)
+                    entries.append(FGThreatWeightCategoryEntry(**edit_vals))
+                values[cat_name] = entries
+        config.log_threat_weights.append(FGLogThreatWeight(**values))
+
+
+def _extract_local_in_policies(tree, config, path: str, address_family: str):
+    for source in iter_section_edits(tree, path):
+        evaluation = evaluate_edit(path, source.edit)
+        values = source_model_kwargs(evaluation, model_type=FGLocalInPolicy, vdom=source.vdom)
+        values["address_family"] = address_family
+        _assign_numeric_id(values, source.edit.name, "policy_id")
+        config.local_in_policies.append(FGLocalInPolicy(**values))

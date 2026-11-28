@@ -747,8 +747,202 @@ end
         )
         buf.seek(0)
         wb = load_workbook(buf, read_only=True)
-        for sheet_name in ("Guest Users", "Switch Port Policies", "Proxy Policies", "SSL-SSH Profiles"):
+        for sheet_name in (
+            "Guest Users", "Managed FortiAPs", "WiFi SSIDs", "FortiAP Profiles",
+            "WIDS Profiles", "Managed Switches", "Switch Port Policies", "NAC Policies",
+            "Proxy Policies", "SSL-SSH Profiles",
+        ):
             self.assertIn(sheet_name, wb.sheetnames)
+        wb.close()
+
+    def test_wifi_switch_all_seven_sections_in_web_report_excel_and_chat_summary(self):
+        import io
+        from openpyxl import load_workbook
+        from fwmigrate.vendors.fortigate.export.excel import export_excel
+        from fwmigrate.web_support.chat_service import build_config_summary
+
+        source = '''
+config wireless-controller wtp-profile
+ edit "FAP221E-prof"
+  set comment "Campus AP"
+  config platform
+   set type 221E
+  end
+ next
+end
+config wireless-controller wtp
+ edit "FAP221E-default"
+  set admin enable
+  set wtp-profile "FAP221E-prof"
+  set location "Bldg 1"
+ next
+end
+config wireless-controller vap
+ edit "guest-wifi"
+  set ssid "Guest"
+  set status disable
+  set schedule "always"
+  set local-bridging enable
+  set security wpa2-only-personal
+  set passphrase SUPER_SECRET_GUEST_PSK
+ next
+end
+config wireless-controller wids-profile
+ edit "wids-default"
+  set ap-scan enable
+  set comment "Monitor rogues"
+ next
+end
+config switch-controller managed-switch
+ edit "FS124F-01"
+  set name "Access-SW1"
+  set switch-group "Edge"
+  set status enable
+  set platform FS-124F
+  set firmware-provision-version "7.4.2"
+ next
+end
+config switch-controller port-policy
+ edit "nac-port"
+  set user-group "employees"
+  set guest-vlan "guest"
+  set guest-auth-delay 30
+  set mac-auth-bypass enable
+  set eap-passthru enable
+  set radius-timeout-overwrite disable
+ next
+end
+config user nac-policy
+ edit "iot-devices"
+  set hw-vendor "Axis"
+  set assign-vlan 150
+  set matched-devices 4
+  set status enable
+ next
+end
+'''
+        reporter = FortiGateSourceReporter()
+        analysis = reporter.analyze_source(source)
+        report = reporter.build_preview(analysis)
+        sections = report["sections"]
+
+        self.assertEqual("221E", sections["wtp_profiles"][0]["platform"])
+        self.assertEqual("Bldg 1", sections["wireless_wtps"][0]["location"])
+        self.assertEqual("always", sections["wireless_vaps"][0]["schedule"])
+        self.assertTrue(sections["wireless_vaps"][0]["passphrase_configured"])
+        self.assertEqual("enable", sections["wids_profiles"][0]["ap_scan"])
+        self.assertEqual("Edge", sections["managed_switches"][0]["switch_group"])
+        self.assertEqual("7.4.2", sections["managed_switches"][0]["firmware_provision_version"])
+        self.assertEqual(["employees"], sections["switch_port_policies"][0]["user_group"])
+        self.assertEqual("150", sections["nac_policies"][0]["assign_vlan"])
+        self.assertEqual(4, sections["nac_policies"][0]["matched_devices"])
+        self.assertNotIn("SUPER_SECRET_GUEST_PSK", json.dumps(report))
+
+        summary_text = build_config_summary(vendor="fortigate", filename="fg.conf", preview=report)
+        for key in (
+            "[wireless_wtps]", "[wireless_vaps]", "[wtp_profiles]",
+            "[wids_profiles]", "[managed_switches]", "[switch_port_policies]", "[nac_policies]",
+        ):
+            self.assertIn(key, summary_text)
+        self.assertNotIn("SUPER_SECRET_GUEST_PSK", summary_text)
+
+        buf = io.BytesIO()
+        export_excel(
+            extracted=analysis.extracted,
+            derived=analysis.derived,
+            validation=analysis.validation,
+            output=buf,
+            source_name="wifi.conf",
+        )
+        buf.seek(0)
+        wb = load_workbook(buf, data_only=True)
+        self.assertEqual("221E", wb["FortiAP Profiles"]["B4"].value)
+        self.assertEqual("enable", wb["WIDS Profiles"]["B4"].value)
+        self.assertEqual("150", wb["NAC Policies"]["F4"].value)
+        self.assertEqual("Edge", wb["Managed Switches"]["C4"].value)
+        wb.close()
+
+    def test_sdwan_web_report_excel_and_chat_summary(self):
+        import io
+        from openpyxl import load_workbook
+        from fwmigrate.vendors.fortigate.export.excel import export_excel
+        from fwmigrate.web_support.chat_service import build_config_summary
+
+        source = '''
+config system interface
+ edit "wan1"
+  set vdom "root"
+  set ip 192.0.2.2 255.255.255.0
+ next
+end
+config system sdwan
+ set status enable
+ config zone
+  edit "virtual-wan-link"
+  next
+ end
+ config members
+  edit 1
+   set interface "wan1"
+   set gateway 192.0.2.1
+   set status enable
+  next
+ end
+ config health-check
+  edit "PingCheck"
+   set server "8.8.8.8"
+   set protocol ping
+   set members 1
+   config sla
+    edit 1
+     set latency-threshold 300
+     set jitter-threshold 25
+     set packetloss-threshold 2
+    next
+   end
+  next
+ end
+ config service
+  edit 1
+   set name "VideoConferencing"
+   set mode priority
+   set link-cost-factor bibandwidth
+   set protocol 6
+   set start-port 443
+   set end-port 443
+   set health-check "PingCheck"
+   set priority-members 1
+   set status enable
+  next
+ end
+end
+'''
+        reporter = FortiGateSourceReporter()
+        analysis = reporter.analyze_source(source)
+        report = reporter.build_preview(analysis)
+        sdwan = report["sections"]["sdwan"][0]
+
+        self.assertEqual("enable", sdwan["status"])
+        self.assertEqual(300, sdwan["health_checks"][0]["sla"][0]["latency_threshold"])
+        self.assertEqual("bibandwidth", sdwan["services"][0]["link_cost_factor"])
+        self.assertEqual(443, sdwan["services"][0]["start_port"])
+
+        summary_text = build_config_summary(vendor="fortigate", filename="fg.conf", preview=report)
+        self.assertIn("[sdwan]", summary_text)
+
+        buf = io.BytesIO()
+        export_excel(
+            extracted=analysis.extracted,
+            derived=analysis.derived,
+            validation=analysis.validation,
+            output=buf,
+            source_name="sdwan.conf",
+        )
+        buf.seek(0)
+        wb = load_workbook(buf, data_only=True)
+        self.assertEqual(300, wb["SD-WAN Health Checks"]["I4"].value)
+        self.assertEqual("bibandwidth", wb["SD-WAN Rules"]["E4"].value)
+        self.assertEqual(6, wb["SD-WAN Rules"]["H4"].value)
         wb.close()
 
 

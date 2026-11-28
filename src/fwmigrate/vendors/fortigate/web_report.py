@@ -17,6 +17,11 @@ from .extraction.coverage import (
     build_typed_source_inventory, build_typed_source_identity_index,
     find_typed_source_object, extraction_status, supports_path,
 )
+from ...source_reporting.lifecycle import (
+    build_fortigate_lifecycle_card,
+    evaluate_fortigate_lifecycle,
+)
+from .vpn_inspector import build_fortigate_vpn_inspector
 
 
 def _source_evidence(
@@ -211,16 +216,23 @@ def _object_counts(config: FGConfig) -> dict[str, int]:
         "fortitokens": len(config.fortitokens),
         "user_settings": len(config.user_settings),
         "password_policies": len(config.password_policies),
+        "system_password_policies": len(config.system_password_policies),
         "wireless_vaps": len(config.wireless_vaps),
         "wireless_wtps": len(config.wireless_wtps),
         "wtp_profiles": len(config.wtp_profiles),
         "wids_profiles": len(config.wids_profiles),
         "managed_switches": len(config.managed_switches),
         "syslog_settings": len(config.syslog_settings),
+        "fortianalyzer_settings": len(config.fortianalyzer_settings),
+        "log_fortiguard_settings": len(config.log_fortiguard_settings),
         "log_memory_settings": len(config.log_memory_settings),
         "log_disk_settings": len(config.log_disk_settings),
         "log_settings": len(config.log_settings),
         "log_threat_weights": len(config.log_threat_weights),
+        "system_storages": len(config.system_storages),
+        "local_in_policies": len(config.local_in_policies),
+        "certificates": len(config.certificates),
+        "saml_servers": len(config.saml_servers),
         "guest_users": len(config.guest_users),
         "switch_port_policies": len(config.switch_port_policies),
         "switch_lldp_profiles": len(config.switch_lldp_profiles),
@@ -387,8 +399,9 @@ def build_web_report(
     for item in config.interfaces:
         top = topology.get((item.vdom, item.name))
         source = _source_rows((item,), (
-            "alias", "description", "mode", "allowaccess", "vlanid", "vrf",
-            "secondary_ips", "members", "cli_scope", "cli_vdom", "unset_fields",
+            "alias", "description", "mode", "dedicated_to", "mtu_override", "dhcp_relay_service",
+            "allowaccess", "vlanid", "vrf", "secondary_ips", "members", "ipv6",
+            "cli_scope", "cli_vdom", "unset_fields",
         ))[0]
         extra_settings = source.get("additional_settings") or {}
         extra_projected = {
@@ -402,6 +415,7 @@ def build_web_report(
                 "name": item.name,
                 "vdom": item.vdom,
                 "ip": item.ip,
+                "ipv6_address": item.ipv6.ip6_address if item.ipv6 else None,
                 "type": item.type,
                 "kind": top.kind if top else None,
                 "role": item.role,
@@ -749,11 +763,10 @@ def build_web_report(
         for owner in owners for bookmark in owner.bookmarks
     ]
     nac_policies = [
-        {"name": item.name, "vdom": item.vdom, "category": item.category,
-         "description": item.description, "mac": item.mac, "host": item.host,
-         "os": item.os, "family": item.family, "firewall_address": item.firewall_address,
-         "user_group": item.user_group, "status": item.status,
-         "review": _review(_messages(issue_index, vdom=item.vdom, names=(item.name,), domains=("nac_policy",)))}
+        {
+            **_source_details(item),
+            "review": _review(_messages(issue_index, vdom=item.vdom, names=(item.name,), domains=("nac_policy",))),
+        }
         for item in config.nac_policies
     ]
 
@@ -923,16 +936,27 @@ def build_web_report(
         "fortitokens": [_source_details(item) for item in config.fortitokens],
         "user_settings": [_source_details(item) for item in config.user_settings],
         "password_policies": [_source_details(item) for item in config.password_policies],
+        "system_password_policies": [_source_details(item) for item in config.system_password_policies],
         "wireless_vaps": [_source_details(item) for item in config.wireless_vaps],
         "wireless_wtps": [_source_details(item) for item in config.wireless_wtps],
         "wtp_profiles": [_source_details(item) for item in config.wtp_profiles],
         "wids_profiles": [_source_details(item) for item in config.wids_profiles],
         "managed_switches": [_source_details(item) for item in config.managed_switches],
         "syslog_settings": [_source_details(item) for item in config.syslog_settings],
+        "fortianalyzer_settings": [_source_details(item) for item in config.fortianalyzer_settings],
+        "log_fortiguard_settings": [_source_details(item) for item in config.log_fortiguard_settings],
         "log_memory_settings": [_source_details(item) for item in config.log_memory_settings],
         "log_disk_settings": [_source_details(item) for item in config.log_disk_settings],
         "log_settings": [_source_details(item) for item in config.log_settings],
         "log_threat_weights": [_source_details(item) for item in config.log_threat_weights],
+        "system_storages": [_source_details(item) for item in config.system_storages],
+        "local_in_policies": [_source_details(item) for item in config.local_in_policies],
+        "certificates": _source_rows(
+            config.certificates,
+            ("name", "store", "vdom", "ca_identifier", "comments", "source", "source_ip",
+             "range", "scep_url", "private_key_configured", "password_configured"),
+        ),
+        "saml_servers": [_source_details(item) for item in config.saml_servers],
         "guest_users": [_source_details(item) for item in config.guest_users],
         "switch_port_policies": [_source_details(item) for item in config.switch_port_policies],
         "switch_lldp_profiles": [_source_details(item) for item in config.switch_lldp_profiles],
@@ -960,6 +984,7 @@ def build_web_report(
                 vpn_phase2_rows,
                 policy_vpn_phase1_rows,
                 policy_vpn_phase2_rows,
+                nac_policies,
                 validation_rows,
                 unresolved,
                 *source_sections.values(),
@@ -985,11 +1010,18 @@ def build_web_report(
         if meta is not None
         else {}
     )
+    lifecycle_result = evaluate_fortigate_lifecycle(
+        meta.hardware_model if meta is not None else None,
+        meta.fortios_version if meta is not None else None,
+        serial_raw=meta.serial_number if meta is not None else None,
+        cache_only=True,
+    )
     return {
         "vendor": "fortigate",
         "summary": {
             **evidence_summary,
             "source_metadata": source_meta_dict,
+            "lifecycle": build_fortigate_lifecycle_card(lifecycle_result),
             "top_level_sections": top_level_sections,
             "objects": _object_counts(config),
             "validation": {
@@ -1020,6 +1052,7 @@ def build_web_report(
             "per_ip_shapers": per_ip_shapers,
             "nat": nat_rows,
             "routes": routes,
+            "vpn_inspector": build_fortigate_vpn_inspector(config, derived),
             "vpn_tunnels": vpn_tunnels,
             "vpn_phase2": vpn_phase2_rows,
             "policy_vpn_phase1": policy_vpn_phase1_rows,

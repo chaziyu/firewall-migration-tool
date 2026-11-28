@@ -62,7 +62,7 @@ def readable_report_row(sheet, row_number, values):
 
 
 def _bounded_wrap_lines(value, width):
-    """Estimate only enough lines to reach Excel's row-height cap."""
+    """Estimate only enough lines to reach Excel's row-height cap without slow textwrap regexes."""
     lines = 0
     max_single_line = width * 27
     for line in value.split("\n", 27):
@@ -72,7 +72,7 @@ def _bounded_wrap_lines(value, width):
         elif line_len > max_single_line:
             return 27
         else:
-            lines += max(1, len(wrap(line, width=width)))
+            lines += (line_len + width - 1) // width
         if lines >= 27:
             return 27
     return lines
@@ -96,7 +96,7 @@ def report_column_width(header) -> int:
 
 
 def write_report_summary(
-    sheet, *, title, metadata, profile, validation, inventory, coverage=(), indicators=(),
+    sheet, *, title, metadata, profile, validation, inventory, coverage=(), indicators=(), lifecycle=(),
 ) -> None:
     """Present vendor-owned metrics without inferring source state or sheet availability."""
     sheet._report_summary_written = True
@@ -162,6 +162,10 @@ def write_report_summary(
     append(["SOURCE DETAILS"], heading=True)
     pairs((*metadata, ("Export Profile", profile),
            ("Generated UTC", datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"))))
+    if lifecycle:
+        append(["LIFECYCLE & FIRMWARE"], heading=True)
+        for label, value in lifecycle:
+            append([label, value], labels=(0,))
     append(["VALIDATION"], heading=True)
     pairs(validation)
     append(["CONFIGURATION INVENTORY"], heading=True)

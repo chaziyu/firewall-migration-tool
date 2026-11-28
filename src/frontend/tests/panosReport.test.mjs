@@ -1,26 +1,24 @@
-import test from 'node:test'
+import test, { before, after } from 'node:test'
 import assert from 'node:assert/strict'
-import { createServer } from 'vite'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { readFileSync } from 'node:fs'
-import ts from 'typescript'
-import * as jsxRuntime from 'react/jsx-runtime'
 import * as presentation from '../src/features/report/reportPresentation.ts'
 import { defaultColumns, detailGroups, fieldLabel, reportSections, rowColumns } from '../src/features/report/reportPresentation.ts'
+import { createHookHarness, createSharedVite, loadSourceReport, nodes } from './testHelpers.mjs'
+
+const vite = createSharedVite()
+before(() => vite.beforeHook())
+after(() => vite.afterHook())
 
 test('overview counts string references as well as structured reference rows', async () => {
-  const server = await createServer({ server: { middlewareMode: true }, appType: 'custom' })
-  try {
-    const { SourceReport } = await server.ssrLoadModule('/src/features/report/SourceReport.tsx')
-    for (const refs of [['first', 'second'], [{ reference: 'first' }, { reference: 'second' }], []]) {
-      const html = renderToStaticMarkup(createElement(SourceReport, {
-        data: { vendor: 'palo_alto', sections: { unresolved_references: refs } },
-        excelProfile: 'full', onExcelProfileChange() {}, exporting: false, exportStatus: '', onExport() {},
-      })).replace(/<!-- -->/g, '')
-      assert.match(html, new RegExp(`Unresolved references</button></th><td>${refs.length}</td>`))
-    }
-  } finally { await server.close() }
+  const { SourceReport } = await vite.load('/src/features/report/SourceReport.tsx')
+  for (const refs of [['first', 'second'], [{ reference: 'first' }, { reference: 'second' }], []]) {
+    const html = renderToStaticMarkup(createElement(SourceReport, {
+      data: { vendor: 'palo_alto', sections: { unresolved_references: refs } },
+      excelProfile: 'full', onExcelProfileChange() {}, exporting: false, exportStatus: '', onExport() {},
+    })).replace(/<!-- -->/g, '')
+    assert.match(html, new RegExp(`Unresolved references</button></th><td>${refs.length}</td>`))
+  }
 })
 
 test('PAN-OS rule columns and details distinguish source order, position, UUID and disabled state', () => {
@@ -56,9 +54,9 @@ test('PAN-OS parsed collections, proxy IDs and every source inventory record sta
     source_inventory: inventory, extraction_coverage: [{ domain: 'application', status: 'SOURCE_ONLY' }] })
   const section = (key) => groups.find((group) => group.subsections.some((item) => item.key === key))
   assert.equal(section('tags').label, 'Objects')
-  assert.equal(section('default_security_rules').label, 'Policies')
+  assert.equal(section('default_security_rules').label, 'Policies & NAT')
   assert.equal(section('ike_crypto_profiles').label, 'VPN')
-  assert.equal(section('source_inventory').label, 'Extraction')
+  assert.equal(section('source_inventory').label, 'Diagnostics & Coverage')
   const rows = section('source_inventory').subsections.find((item) => item.key === 'source_inventory').rows
   assert.equal(rows.length, 205)
   assert.equal(rows.at(-1).values.setting, 204)
@@ -94,53 +92,30 @@ test('report preserves safe authentication metadata while hiding credential valu
   assert.ok(!JSON.stringify(nested).includes('SENTINEL'))
 })
 
-test('PAN-OS overview links to extraction without repeating its coverage banner', async () => {
-  const server = await createServer({ server: { middlewareMode: true }, appType: 'custom' })
-  try {
-    const { SourceReport } = await server.ssrLoadModule('/src/features/report/SourceReport.tsx')
-    const html = renderToStaticMarkup(createElement(SourceReport, {
-      data: { vendor: 'palo_alto', records_total: 205, records_returned: 200, records_truncated: true,
-        summary: { source_only_count: 2, unsupported_count: 2, partial_count: 3 },
-        sections: { extraction_coverage: [{ domain: 'application', status: 'SOURCE_ONLY' }],
-          source_inventory: Array.from({ length: 205 }, (_, index) => ({ name: `record-${index}` })) } },
-      excelProfile: 'full', onExcelProfileChange() {}, exporting: false, exportStatus: '', onExport() {},
-    }))
-    const text = html.replace(/<!-- -->/g, '')
-    assert.doesNotMatch(text, /2 source-only records|3 partial records|Review Extraction for/)
-    assert.match(text, /PAN-OS Source Appendix/)
-    assert.match(text, /<option[^>]*>Extraction<\/option>/)
-    assert.match(text, /Unsupported \/ source-only/)
-  } finally { await server.close() }
+test('PAN-OS overview stays clean without repeating extraction coverage banners', async () => {
+  const { SourceReport } = await vite.load('/src/features/report/SourceReport.tsx')
+  const html = renderToStaticMarkup(createElement(SourceReport, {
+    data: { vendor: 'palo_alto', records_total: 205, records_returned: 200, records_truncated: true,
+      summary: { source_only_count: 2, unsupported_count: 2, partial_count: 3 },
+      sections: { extraction_coverage: [{ domain: 'application', status: 'SOURCE_ONLY' }],
+        source_inventory: Array.from({ length: 205 }, (_, index) => ({ name: `record-${index}` })) } },
+    excelProfile: 'full', onExcelProfileChange() {}, exporting: false, exportStatus: '', onExport() {},
+  }))
+  const text = html.replace(/<!-- -->/g, '')
+  assert.doesNotMatch(text, /2 source-only records|3 partial records|Review Extraction for/)
+  assert.doesNotMatch(text, /report-tabs/)
+  assert.match(text, /Unsupported \/ source-only/)
 })
 
 test('switching from scoped inventory to aggregate coverage does not filter away coverage rows', () => {
-  const slots = []
-  let cursor = 0
-  const hooks = {
-    useState(initial) {
-      const index = cursor++
-      if (!(index in slots)) slots[index] = initial
-      return [slots[index], (value) => { slots[index] = typeof value === 'function' ? value(slots[index]) : value }]
-    },
-    useMemo: (factory) => factory(), useRef: () => ({ current: null }), useEffect() {},
-  }
-  const compiled = ts.transpileModule(readFileSync(new URL('../src/features/report/SourceReport.tsx', import.meta.url), 'utf8'),
-    { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText
-  const exports = {}
-  const modules = { react: hooks, 'react/jsx-runtime': jsxRuntime, './reportPresentation': presentation,
-    './ReportDetails': {}, './ExcelExportControls': {}, '../../components/common/tabKeyboard': {}, '../../components/common/ErrorBanner': {} }
-  new Function('require', 'exports', compiled)((name) => modules[name], exports)
-  function nodes(node) {
-    if (Array.isArray(node)) return node.flatMap(nodes)
-    return node && typeof node === 'object' ? [node, ...nodes(node.props?.children)] : []
-  }
+  const { hooks, resetCursor } = createHookHarness()
+  const exports = loadSourceReport(hooks)
   const data = { vendor: 'palo_alto', sections: { extraction_coverage: [{ domain: 'application', status: 'SOURCE_ONLY' }],
     source_inventory: [{ name: 'a', scope: 'device:fw' }] } }
   const render = () => {
-    cursor = 0
-    return nodes(exports.SourceReport({ data, excelProfile: 'full', onExcelProfileChange() {}, exporting: false, exportStatus: '', onExport() {} }))
+    resetCursor()
+    return nodes(exports.SourceReport({ data, activeSection: 'Diagnostics & Coverage', excelProfile: 'full', onExcelProfileChange() {}, exporting: false, exportStatus: '', onExport() {} }))
   }
-  render().find((node) => node.props.role === 'tab' && node.props.children === 'Extraction').props.onClick()
   render().find((node) => node.props.id === 'subsection-tab-source_inventory').props.onClick()
   render().find((node) => node.props['aria-label'] === 'Filter report scope').props.onChange({ target: { value: 'device:fw' } })
   render().find((node) => node.props.id === 'subsection-tab-extraction_coverage').props.onClick()

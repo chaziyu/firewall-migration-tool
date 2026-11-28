@@ -15,14 +15,6 @@ if not exist "%PYTHON%" (
     if errorlevel 1 goto :failed
 )
 
-"%PYTHON%" -c "from fwmigrate.web import create_app; create_app()"
-if errorlevel 1 (
-    echo Backend startup check failed. See the error above.
-    echo To install dependencies, run:
-    echo   .venv\Scripts\python.exe -m pip install -e ".[collection]"
-    goto :failed
-)
-
 if exist "src\frontend\dist\index.html" goto :frontend_ready
 
 where node >nul 2>&1
@@ -59,12 +51,14 @@ if not exist "src\frontend\dist\index.html" (
 :frontend_ready
 echo Starting Firewall Migration Tool on http://127.0.0.1:5000/
 echo Press Ctrl+C in this window to stop the server.
-start "" /b powershell -NoProfile -WindowStyle Hidden -Command "$deadline = (Get-Date).AddSeconds(30); while ((Get-Date) -lt $deadline) { try { $c = [System.Net.Sockets.TcpClient]::new('127.0.0.1', 5000); $c.Close(); Start-Process 'http://127.0.0.1:5000/'; exit 0 } catch { Start-Sleep -Milliseconds 250 } }"
+start "" /b powershell -NoProfile -WindowStyle Hidden -Command "$deadline = (Get-Date).AddSeconds(30); while ((Get-Date) -lt $deadline) { try { $c = [System.Net.Sockets.TcpClient]::new('127.0.0.1', 5000); $c.Close(); Start-Process 'http://127.0.0.1:5000/'; exit 0 } catch { Start-Sleep -Milliseconds 100 } }"
 "%PYTHON%" -m fwmigrate.main serve --host 127.0.0.1 --port 5000
 if errorlevel 1 goto :failed
 exit /b 0
 
 :failed
 echo Local startup failed.
+echo If dependencies are missing, run:
+echo   .venv\Scripts\python.exe -m pip install -e ".[collection]"
 pause
 exit /b 1

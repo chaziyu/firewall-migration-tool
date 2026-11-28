@@ -8,13 +8,30 @@ import pytest
 from click.testing import CliRunner
 
 import fwmigrate.main as migration_cli
+from pathlib import Path
+
 from fwmigrate.conversion.workflow_registry import MigrationWorkflowRegistration, MigrationWorkflowRegistry
 from fwmigrate.main import cli
+from fwmigrate.vendors.palo_alto.source_model import pan_scope_identity
 from fwmigrate.web import create_app
-from tests.conversion.palo_alto_to_fortigate.conftest import SOURCE, options as mapping_fixture
 
 
 PREFIX = "/api/migration/palo_alto_to_fortigate"
+SOURCE = (Path(__file__).parents[1] / "fixtures" / "palo_alto" / "fortigate_conversion.xml").read_text(encoding="utf-8")
+
+
+def _mapping_options(analysis):
+    from fwmigrate.conversion.palo_alto_to_fortigate.planning.source_scope import identity
+
+    scope = next(s for s in analysis.config.scopes if s.kind == "vsys")
+    return {
+        "source_scope": pan_scope_identity(scope),
+        "vdom": "root",
+        "interfaces": {"ethernet1/1": "port1", "ethernet1/2": "port2"},
+        "zones": {"trust": "inside", "untrust": "outside"},
+        "profile": {"fortios_version": "7.4.6", "operating_mode": "nat", "ngfw_mode": "profile-based", "nat_mode": "central", "vdom_mode": "single", "ports": ["port1", "port2"]},
+        "policy_settings": {identity(analysis.config.security_rules[0], "policy"): {"schedule": "always"}},
+    }
 
 
 @pytest.fixture
@@ -22,9 +39,8 @@ def setup_reverse():
     from fwmigrate.source_reporting import source_reporters
 
     analysis = source_reporters.get("palo_alto").analyze_source(SOURCE)
-    options = mapping_fixture.__wrapped__(analysis)
     client = create_app({"TESTING": True, "WEB_MODE": "local", "API_RATE_LIMIT_PER_MINUTE": 10000}).test_client()
-    return client, {"source": {"vendor": "palo_alto", "source_text": SOURCE}, "options": options}
+    return client, {"source": {"vendor": "palo_alto", "source_text": SOURCE}, "options": _mapping_options(analysis)}
 
 
 def approved_artifact(client, payload):
@@ -269,7 +285,7 @@ def test_source_secrets_never_enter_draft_commands_report_or_workbook(setup_reve
     seed = 'fake-password-hash-must-not-export'
     text = SOURCE.replace('<address>', '<local-user-database><user><entry name="operator"><phash>' + seed + '</phash></entry></user></local-user-database><address>', 1)
     analysis = source_reporters.get('palo_alto').analyze_source(text)
-    payload = {'source': {'vendor': 'palo_alto', 'source_text': text}, 'options': mapping_fixture.__wrapped__(analysis)}
+    payload = {'source': {'vendor': 'palo_alto', 'source_text': text}, 'options': _mapping_options(analysis)}
     prepared = client.post(PREFIX + '/design/prepare', json=payload)
     assert prepared.status_code == 200
     assert seed.encode() not in prepared.data

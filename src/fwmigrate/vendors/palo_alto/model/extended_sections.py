@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import Field
-
 from .common import PANNamedSourceModel
 
 
@@ -19,6 +17,8 @@ class PANSystemSettings(PANNamedSourceModel):
     default_gateway: str | None = None
     ipv6_address: str | None = None
     ipv6_default_gateway: str | None = None
+    ipv6_link_local_address: str | None = None
+    speed_duplex: str | None = None
     timezone: str | None = None
     domain: str | None = None
     update_server: str | None = None
@@ -55,6 +55,7 @@ class PANDeviceSetupSetting(PANNamedSourceModel):
     application: dict[str, Any] | None = None
     alarm: dict[str, Any] | None = None
     user_id_collector: dict[str, Any] | None = None
+    advanced_routing: dict[str, Any] | None = None
 
 
 # ----------------------------------------------------------------------
@@ -182,6 +183,8 @@ class PANDoSRule(PANNamedSourceModel):
     rulebase_position: str | None = None
     from_zones: list[str] | None = None
     to_zones: list[str] | None = None
+    from_interfaces: list[str] | None = None
+    to_interfaces: list[str] | None = None
     source: list[str] | None = None
     destination: list[str] | None = None
     source_user: list[str] | None = None

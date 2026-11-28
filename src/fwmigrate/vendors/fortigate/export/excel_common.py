@@ -100,10 +100,12 @@ _VISIBLE_MODEL_FIELDS_BY_SHEET: dict[str, frozenset[str]] = {
         "seq_num", "interface", "zone", "gateway", "source", "cost", "weight", "priority", "status",
     }),
     "SD-WAN Health Checks": frozenset({
-        "name", "server", "members", "protocol", "interval", "failtime", "recoverytime",
+        "name", "server", "system_dns", "members", "protocol", "interval", "failtime",
+        "recoverytime", "latency_threshold", "jitter_threshold", "packetloss_threshold", "sla",
     }),
     "SD-WAN Rules": frozenset({
-        "id", "name", "status", "mode", "src", "dst", "priority_members", "health_check", "priority_zone",
+        "id", "name", "status", "mode", "link_cost_factor", "src", "dst",
+        "protocol", "start_port", "end_port", "priority_members", "health_check", "priority_zone",
     }),
     "SSL VPN Authentication Rules": frozenset({
         "id", "auth", "cipher", "client_cert", "realm", "source_interface", "source_address",

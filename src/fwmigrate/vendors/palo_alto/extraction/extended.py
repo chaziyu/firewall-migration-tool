@@ -675,6 +675,61 @@ def extract_mfa_server(element: ET.Element, path: tuple[str, ...], context: PANW
     return item
 
 
+def extract_qos_rule(element: ET.Element, path: tuple[str, ...], context: PANWalkContext, source_order: int, spec: PANPathSpec):
+    item = extract_structured(PANQoSRule, rulebase=True, dict_fields={"dscp-marking": "dscp_marking"})(
+        element, path, context, source_order, spec
+    )
+    action_node = element.find("action")
+    if action_node is not None:
+        if item.qos_class is None:
+            class_node = action_node.find("class")
+            if class_node is not None:
+                item.qos_class = _text(class_node)
+                item.explicit_fields.add("qos_class")
+        action_extra = raw_extra(action_node, {"class"} if item.qos_class is not None else set())
+        if action_extra:
+            item.raw_extra["action"] = action_extra
+    return item
+
+
+def _extract_dos_direction(
+    item: PANDoSRule,
+    element: ET.Element,
+    tag: str,
+    zone_field: str,
+    iface_field: str,
+) -> None:
+    node = element.find(tag)
+    if node is None:
+        return
+    direct_members = [m for m in node.findall("member")]
+    if direct_members:
+        setattr(item, zone_field, [_text(m) or m.get("name") or "" for m in direct_members])
+        item.explicit_fields.add(zone_field)
+    zones_node = node.find("zone")
+    if zones_node is not None:
+        setattr(item, zone_field, [_text(m) or m.get("name") or "" for m in zones_node.findall("member")])
+        item.explicit_fields.add(zone_field)
+    intf_node = node.find("interface")
+    if intf_node is not None:
+        setattr(item, iface_field, [_text(m) or m.get("name") or "" for m in intf_node.findall("member")])
+        item.explicit_fields.add(iface_field)
+    dir_extra = raw_extra(node, {"member", "zone", "interface"})
+    if dir_extra:
+        item.raw_extra[tag] = dir_extra
+
+
+def extract_dos_rule(element: ET.Element, path: tuple[str, ...], context: PANWalkContext, source_order: int, spec: PANPathSpec):
+    item = extract_structured(
+        PANDoSRule,
+        rulebase=True,
+        dict_fields={"action": "action", "protection": "protection"},
+    )(element, path, context, source_order, spec)
+    _extract_dos_direction(item, element, "from", "from_zones", "from_interfaces")
+    _extract_dos_direction(item, element, "to", "to_zones", "to_interfaces")
+    return item
+
+
 EXTRACTORS = {
     "vulnerability_profile": ("vulnerability_profiles", extract_vulnerability),
     "administrator": ("administrators", extract_administrator),
@@ -701,14 +756,14 @@ EXTRACTORS = {
     "globalprotect_gateway_selected": ("globalprotect_gateways", extract_gateway),
     "system_settings": ("system_settings", extract_system_settings),
     "ha_config": ("ha_configs", extract_structured(PANHAConfig, default_name="high-availability", dict_fields={"mode": "mode", "group": "group", "interface": "interface", "election-option": "election_option", "state-synchronization": "state_synchronization", "monitoring": "monitoring"})),
-    "device_setup_setting": ("device_setup_settings", extract_structured(PANDeviceSetupSetting, default_name="setting", dict_fields={"config": "config", "management": "management", "wildfire": "wildfire", "tcp": "tcp", "session": "session", "logging": "logging", "ctd": "ctd", "application": "application", "alarm": "alarm", "user-id-collector": "user_id_collector"})),
-    "qos_rule": ("qos_rules", extract_structured(PANQoSRule, rulebase=True, dict_fields={"dscp-marking": "dscp_marking"})),
+    "device_setup_setting": ("device_setup_settings", extract_structured(PANDeviceSetupSetting, default_name="setting", dict_fields={"config": "config", "management": "management", "wildfire": "wildfire", "tcp": "tcp", "session": "session", "logging": "logging", "ctd": "ctd", "application": "application", "alarm": "alarm", "user-id-collector": "user_id_collector", "advanced-routing": "advanced_routing"})),
+    "qos_rule": ("qos_rules", extract_qos_rule),
     "pbf_rule": ("pbf_rules", extract_pbf_rule),
     "decryption_rule": ("decryption_rules", extract_structured(PANDecryptionRule, rulebase=True, dict_fields={"type": "type"})),
     "tunnel_inspect_rule": ("tunnel_inspect_rules", extract_structured(PANTunnelInspectRule, rulebase=True)),
     "app_override_rule": ("app_override_rules", extract_structured(PANAppOverrideRule, rulebase=True)),
     "authentication_rule": ("authentication_rules", extract_structured(PANAuthenticationRule, rulebase=True)),
-    "dos_rule": ("dos_rules", extract_structured(PANDoSRule, rulebase=True, dict_fields={"action": "action", "protection": "protection"})),
+    "dos_rule": ("dos_rules", extract_dos_rule),
     "application_group": ("application_groups", extract_named(PANApplicationGroup)),
     "region": ("regions", extract_structured(PANRegion, dict_fields={"geo-location": "geo_location"})),
     "dynamic_user_group": ("dynamic_user_groups", extract_named(PANDynamicUserGroup)),
@@ -755,6 +810,10 @@ EXTRACTORS = {
     "email_server_profile": ("email_server_profiles", extract_structured(PANEmailServerProfile, entry_list_fields={"server": "servers"})),
     "snmptrap_server_profile": ("snmptrap_server_profiles", extract_structured(PANSNMPTrapServerProfile, dict_fields={"version": "version"})),
     "http_server_profile": ("http_server_profiles", extract_structured(PANHTTPServerProfile, entry_list_fields={"server": "servers"})),
+    "syslog_server_profile_compat": ("syslog_server_profiles", extract_structured(PANSyslogServerProfile, entry_list_fields={"server": "servers"})),
+    "email_server_profile_compat": ("email_server_profiles", extract_structured(PANEmailServerProfile, entry_list_fields={"server": "servers"})),
+    "snmptrap_server_profile_compat": ("snmptrap_server_profiles", extract_structured(PANSNMPTrapServerProfile, dict_fields={"version": "version"})),
+    "http_server_profile_compat": ("http_server_profiles", extract_structured(PANHTTPServerProfile, entry_list_fields={"server": "servers"})),
     "netflow_server_profile": ("netflow_server_profiles", extract_structured(PANNetflowServerProfile, dict_fields={"template-refresh-rate": "template_refresh_rate"}, entry_list_fields={"server": "servers"})),
     "password_complexity": ("password_complexities", extract_structured(PANPasswordComplexity, default_name="password-complexity")),
     "password_profile": ("password_profiles", extract_named(PANPasswordProfile)),

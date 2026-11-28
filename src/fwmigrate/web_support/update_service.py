@@ -42,7 +42,7 @@ def get_app_version() -> str:
     try:
         return metadata.version("firewall-migration-tool")
     except Exception:
-        return "0.2.4"
+        return "0.2.7"
 
 
 APP_VERSION = get_app_version()
@@ -207,6 +207,30 @@ def _verify_sha256(file_bytes: bytes, filename: str, sums_text: str) -> bool:
     return False
 
 
+def _verify_authenticode_if_required(exe_path: Path) -> None:
+    """Optionally verify Windows Authenticode signature when FWMIGRATE_REQUIRE_SIGNED_UPDATES=1."""
+    require_signed = str(os.environ.get("FWMIGRATE_REQUIRE_SIGNED_UPDATES", "")).strip().lower() in {
+        "1", "true", "yes", "on",
+    }
+    if not require_signed:
+        return
+    if sys.platform != "win32":
+        raise RuntimeError("Signed update verification is only supported on Windows.")
+    escaped = str(exe_path).replace("'", "''")
+    res = subprocess.run(
+        [
+            "powershell", "-NoProfile", "-Command",
+            f"(Get-AuthenticodeSignature -LiteralPath '{escaped}').Status",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=15,
+    )
+    status = (res.stdout or "").strip()
+    if res.returncode != 0 or status != "Valid":
+        raise RuntimeError(f"Update executable failed Authenticode signature check (status: {status or 'unknown'}).")
+
+
 def _run_git_pull_update(latest_version: str) -> dict[str, Any]:
     """Pull latest changes via git fast-forward when running from a local git repository."""
     if not is_local_git_checkout():
@@ -260,13 +284,19 @@ def download_and_trigger_install() -> dict[str, Any]:
         raise RuntimeError("Downloaded executable is invalid or corrupted.")
 
     sums_asset = info.get("sums_asset")
-    if sums_asset and sums_asset.get("url"):
-        sums_bytes = _download_bytes(sums_asset["url"], timeout=15.0)
-        sums_text = sums_bytes.decode("utf-8", errors="replace")
-        if not _verify_sha256(exe_bytes, exe_name, sums_text):
-            raise RuntimeError("SHA-256 checksum verification failed for downloaded update.")
+    if not (sums_asset and sums_asset.get("url")):
+        raise RuntimeError("Release is missing required SHA256SUMS.txt checksum manifest.")
+    sums_bytes = _download_bytes(sums_asset["url"], timeout=15.0)
+    sums_text = sums_bytes.decode("utf-8", errors="replace")
+    if not _verify_sha256(exe_bytes, exe_name, sums_text):
+        raise RuntimeError("SHA-256 checksum verification failed for downloaded update.")
 
     exe_path.write_bytes(exe_bytes)
+    try:
+        _verify_authenticode_if_required(exe_path)
+    except Exception:
+        exe_path.unlink(missing_ok=True)
+        raise
     current_exe = sys.executable
     batch_path = update_dir / "run_update.cmd"
     if installer:

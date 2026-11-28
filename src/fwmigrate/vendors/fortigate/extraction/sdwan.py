@@ -5,6 +5,7 @@ from typing import Protocol
 from ..model.sdwan import (
     FGSDWAN,
     FGSDWANHealthCheck,
+    FGSDWANHealthCheckSLA,
     FGSDWANMember,
     FGSDWANService,
     FGSDWANZone,
@@ -166,6 +167,22 @@ def _extract_health_checks(
             model_type=FGSDWANHealthCheck,
             name=edit.name,
         )
+
+        sla_entries: list[FGSDWANHealthCheckSLA] = []
+        for child in edit.children:
+            if child.name != "sla":
+                continue
+            for sla_edit in child.edits:
+                sla_eval = evaluate_edit(f"{section_path} sla", sla_edit)
+                sla_attrs = source_model_kwargs(sla_eval, model_type=FGSDWANHealthCheckSLA)
+                try:
+                    sla_attrs["id"] = int(sla_edit.name)
+                except ValueError:
+                    sla_attrs["id"] = None
+                    sla_attrs["raw_extra"]["unparsed_id"] = sla_edit.name
+                sla_entries.append(FGSDWANHealthCheckSLA(**sla_attrs))
+        if sla_entries:
+            attributes["sla"] = sla_entries
 
         result.append(
             FGSDWANHealthCheck(**attributes)

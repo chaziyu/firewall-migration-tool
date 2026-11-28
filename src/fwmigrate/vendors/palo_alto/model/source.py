@@ -58,6 +58,7 @@ class PANOSConfig(BaseModel):
 
     hostname: str | None = None
     source_version: str | None = None
+    detail_version: str | None = None
     source_format: str = "xml"
     scopes: list[PANScope] = Field(default_factory=list)
 

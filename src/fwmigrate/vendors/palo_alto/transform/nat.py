@@ -17,6 +17,7 @@ class PANDerivedNAT:
     dynamic_destination_mode: str | None
     translated_references: tuple[str, ...]
     source_order: int | None
+    disabled: str | None = None
 
 
 def transform_nat(rules: list[PANNATRule]) -> tuple[PANDerivedNAT, ...]:
@@ -36,5 +37,6 @@ def transform_nat(rules: list[PANNATRule]) -> tuple[PANDerivedNAT, ...]:
             dynamic.distribution if dynamic else None,
             refs,
             rule.source_order,
+            rule.disabled,
         ))
     return tuple(result)

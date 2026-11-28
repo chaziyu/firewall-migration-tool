@@ -18,6 +18,20 @@ export function nodes(tree) {
   return Array.isArray(tree) ? tree.flatMap(nodes) : tree && typeof tree === 'object' ? [tree, ...nodes(tree.props?.children)] : []
 }
 
+const compiledCache = new Map()
+
+function transpileCached(file) {
+  if (!compiledCache.has(file)) {
+    compiledCache.set(
+      file,
+      ts.transpileModule(readFileSync(new URL(`../src/${file}`, import.meta.url), 'utf8'), {
+        compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022 },
+      }).outputText,
+    )
+  }
+  return compiledCache.get(file)
+}
+
 export function harness(folder, { api = {}, items, saved, setup = false } = {}) {
   const [pairId, component] = pairs[folder]
   items ??= [
@@ -73,7 +87,7 @@ export function harness(folder, { api = {}, items, saved, setup = false } = {}) 
   function load(file) {
     if (modules.has(file)) return modules.get(file)
     const exports = {}; modules.set(file, exports)
-    const code = ts.transpileModule(readFileSync(new URL(`../src/${file}`, import.meta.url), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022 } }).outputText
+    const code = transpileCached(file)
     new Function('require', 'exports', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', code)((name) => {
       if (name === 'react') return hooks
       if (name === 'react/jsx-runtime') return jsx

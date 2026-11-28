@@ -5,6 +5,7 @@ from typing import Protocol
 
 from ..model.interface import (
     FGInterface,
+    FGInterfaceIPv6,
     FGInterfaceSecondaryIP,
 )
 from ..nodes import (
@@ -12,7 +13,10 @@ from ..nodes import (
 )
 
 from .common import (
+    combine_source_edits,
+    evaluate_config,
     evaluate_edit_sequence,
+    get_child_config,
     iter_section_edits,
     source_model_kwargs,
 )
@@ -68,6 +72,12 @@ def extract_interfaces(
                 for child_edit in child.edits
             )
         )
+        combined = combine_source_edits(edits)
+        ipv6_cfg = get_child_config(combined, "ipv6")
+        if ipv6_cfg is not None:
+            ipv6_eval = evaluate_config("system interface ipv6", ipv6_cfg)
+            ipv6_attrs = source_model_kwargs(ipv6_eval, model_type=FGInterfaceIPv6)
+            attributes["ipv6"] = FGInterfaceIPv6(**ipv6_attrs)
 
         config.interfaces.append(
             FGInterface(**attributes)

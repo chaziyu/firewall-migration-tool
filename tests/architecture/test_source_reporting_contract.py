@@ -17,8 +17,11 @@ def test_source_reporting_modules_do_not_import_legacy_ir():
         tree = ast.parse(path.read_text(encoding="utf-8"))
         imports = [node for node in ast.walk(tree) if isinstance(node, (ast.Import, ast.ImportFrom))]
         assert all(
-            "fwmigrate.ir" not in (node.module or "")
-            and all(name.name != "IRConfig" for name in getattr(node, "names", ()))
+            "fwmigrate.ir" not in (getattr(node, "module", None) or "")
+            and all(
+                name.name != "IRConfig" and "fwmigrate.ir" not in name.name
+                for name in getattr(node, "names", ())
+            )
             for node in imports
         ), path
 

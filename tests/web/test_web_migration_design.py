@@ -142,8 +142,46 @@ end
 
 
 def test_automatic_names_profile_mapping_and_split_nat_export_the_approved_values():
-    from tests.conversion.fortigate_to_palo_alto.test_nat import NAT_SOURCE
-    source = NAT_SOURCE.replace('web', 'web/8443')
+    nat_source = '''config system interface
+ edit inside
+  set type physical
+  set ip 10.0.0.1 255.255.255.0
+ next
+ edit outside
+  set type physical
+  set ip 203.0.113.1 255.255.255.0
+ next
+end
+config firewall service custom
+ edit web
+  set tcp-portrange 8443
+ next
+ edit dns
+  set udp-portrange 5353
+ next
+end
+config firewall service group
+ edit clients
+  set member web dns
+ next
+end
+config firewall policy
+ edit 1
+  set name outbound
+  set srcintf inside
+  set dstintf outside
+  set srcaddr all
+  set dstaddr all
+  set action accept
+  set schedule always
+  set service clients
+  set nat enable
+  set utm-status enable
+  set ips-sensor strict
+ next
+end
+'''
+    source = nat_source.replace('web', 'web/8443')
     client, payload = setup(None, source=source)
     data, payload = prepare(client, {**payload, 'workflow_mode': 'OFFLINE_EXPORT'})
     group = next(row for row in data['draft']['findings'] if row['code'] == 'SECURITY_PROFILE_REQUIRED')

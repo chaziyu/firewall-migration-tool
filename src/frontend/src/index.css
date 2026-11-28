@@ -2,13 +2,16 @@
 @import './styles/themes.css';
 @import './styles/colorPicker.css';
 
-#root { min-height: 100vh; }
+html,
+body,
+#root {
+  min-height: 100%;
+}
 
 * { box-sizing: border-box; }
 
 body {
   min-width: 320px;
-  min-height: 100vh;
   margin: 0;
   background: var(--canvas);
   color: var(--text-main);

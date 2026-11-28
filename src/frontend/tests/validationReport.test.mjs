@@ -1,20 +1,16 @@
-import test from 'node:test'
+import test, { before, after } from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
-import ts from 'typescript'
-import * as jsxRuntime from 'react/jsx-runtime'
-import * as presentation from '../src/features/report/reportPresentation.ts'
+import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
+import * as presentation from '../src/features/report/reportPresentation.ts'
+import { createHookHarness, createSharedVite, loadSourceReport } from './testHelpers.mjs'
+
+const vite = createSharedVite()
+before(() => vite.beforeHook())
+after(() => vite.afterHook())
 
 test('validation count labels distinguish zero, one and multiple findings', () => {
-  const source = readFileSync(new URL('../src/features/report/SourceReport.tsx', import.meta.url), 'utf8')
-  const compiled = ts.transpileModule(`${source}\nexport { ValidationSummary }`, {
-    compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX },
-  }).outputText
-  const exports = {}
-  const modules = { react: {}, 'react/jsx-runtime': jsxRuntime, './reportPresentation': presentation,
-    './ReportDetails': {}, './ExcelExportControls': {}, '../../components/common/tabKeyboard': {}, '../../components/common/ErrorBanner': {} }
-  new Function('require', 'exports', compiled)((name) => modules[name], exports)
+  const exports = loadSourceReport({}, { extraExports: ['ValidationSummary'] })
   for (const severity of ['error', 'warning']) {
     for (const count of [0, 1, 2]) {
       const rows = Array.from({ length: count }, () => ({ severity, message: 'review source' }))
@@ -29,14 +25,7 @@ test('validation count labels distinguish zero, one and multiple findings', () =
 })
 
 test('native IPsec and static-route reference findings have source-object links', () => {
-  const source = readFileSync(new URL('../src/features/report/SourceReport.tsx', import.meta.url), 'utf8')
-  const compiled = ts.transpileModule(`${source}\nexport { ValidationTable }`, {
-    compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX },
-  }).outputText
-  const exports = {}
-  const modules = { react: {}, 'react/jsx-runtime': jsxRuntime, './reportPresentation': presentation,
-    './ReportDetails': {}, './ExcelExportControls': {}, '../../components/common/tabKeyboard': {}, '../../components/common/ErrorBanner': {} }
-  new Function('require', 'exports', compiled)((name) => modules[name], exports)
+  const exports = loadSourceReport({}, { extraExports: ['ValidationTable'] })
   for (const object_type of ['ipsec-tunnel', 'static-route', 'route']) {
     const row = { domain: 'reference', object_type, object_name: 'owner', severity: 'warning' }
     let navigated
@@ -53,50 +42,18 @@ test('native IPsec and static-route reference findings have source-object links'
 })
 
 test('warning group selection settles and retains the matching findings', () => {
-  const slots = []
-  let cursor = 0
-  let pending = false
-  const hooks = {
-    useState(initial) {
-      const index = cursor++
-      if (!(index in slots)) slots[index] = initial
-      return [slots[index], (value) => {
-        const next = typeof value === 'function' ? value(slots[index]) : value
-        if (!Object.is(next, slots[index])) { slots[index] = next; pending = true }
-      }]
-    },
-    useMemo(factory, dependencies) {
-      const index = cursor++
-      const previous = slots[index]
-      if (!previous || dependencies.some((value, i) => !Object.is(value, previous.dependencies[i]))) {
-        slots[index] = { dependencies, value: factory() }
-      }
-      return slots[index].value
-    },
-    useRef(value) { return hooks.useMemo(() => ({ current: value }), []) },
-    useEffect() {},
-  }
-  const source = readFileSync(new URL('../src/features/report/SourceReport.tsx', import.meta.url), 'utf8')
-  const compiled = ts.transpileModule(`${source}\nexport { ValidationReport }`, {
-    compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX },
-  }).outputText
-  const exports = {}
-  const modules = { react: hooks, 'react/jsx-runtime': jsxRuntime, './reportPresentation': presentation,
-    './ReportDetails': {}, './ExcelExportControls': {}, '../../components/common/tabKeyboard': {}, '../../components/common/ErrorBanner': {} }
-  new Function('require', 'exports', compiled)((name) => {
-    assert.ok(name in modules, `Unexpected import: ${name}`)
-    return modules[name]
-  }, exports)
+  const { hooks, resetCursor, isPending, clearPending } = createHookHarness()
+  const exports = loadSourceReport(hooks, { extraExports: ['ValidationReport'] })
   const rows = Array.from({ length: 209 }, (_, i) => ({ severity: 'warning', domain: 'nat', message: i < 204 ? 'wan1' : 'any', object_name: String(i) }))
   function render() {
     let tree
     let attempts = 0
     do {
       assert.ok(++attempts < 25, 'Validation entered a render loop')
-      pending = false
-      cursor = 0
+      clearPending()
+      resetCursor()
       tree = exports.ValidationReport({ data: { sections: { validation: rows } }, reportScope: '', onReportScope() {}, active: true })
-    } while (pending)
+    } while (isPending())
     return tree
   }
   function table(tree) { return tree.props.children[4].props.children[0] }
@@ -112,23 +69,18 @@ test('warning group selection settles and retains the matching findings', () => 
 })
 
 test('overview displays public management exposure warning when interface allowaccess findings exist', async () => {
-  const { createServer } = await import('vite')
-  const { createElement } = await import('react')
-  const server = await createServer({ server: { middlewareMode: true }, appType: 'custom' })
-  try {
-    const { SourceReport } = await server.ssrLoadModule('/src/features/report/SourceReport.tsx')
-    const html = renderToStaticMarkup(createElement(SourceReport, {
-      data: {
-        vendor: 'fortigate',
-        sections: {
-          validation: [
-            { severity: 'warning', domain: 'interface', field: 'allowaccess', object_name: 'wan1', message: "Public-facing interface 'wan1' exposes management access (https, ssh)." },
-          ],
-        },
+  const { SourceReport } = await vite.load('/src/features/report/SourceReport.tsx')
+  const html = renderToStaticMarkup(createElement(SourceReport, {
+    data: {
+      vendor: 'fortigate',
+      sections: {
+        validation: [
+          { severity: 'warning', domain: 'interface', field: 'allowaccess', object_name: 'wan1', message: "Public-facing interface 'wan1' exposes management access (https, ssh)." },
+        ],
       },
-      excelProfile: 'fast', onExcelProfileChange() {}, exporting: false, exportStatus: '', onExport() {},
-    })).replace(/<!-- -->/g, '')
-    assert.ok(html.includes('Public management exposure (1)'))
-    assert.ok(html.includes('wan1'))
-  } finally { await server.close() }
+    },
+    excelProfile: 'fast', onExcelProfileChange() {}, exporting: false, exportStatus: '', onExport() {},
+  })).replace(/<!-- -->/g, '')
+  assert.ok(html.includes('Public management exposure (1)'))
+  assert.ok(html.includes('wan1'))
 })

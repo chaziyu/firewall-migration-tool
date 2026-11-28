@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 class FGNACPolicy(BaseModel):
     name: str
     vdom: str | None = "root"
+    source_path: str = "user nac-policy"
     category: str | None = None
     description: str | None = None
     ems_tag: str | None = None
@@ -32,6 +33,14 @@ class FGNACPolicy(BaseModel):
     type: str | None = None
     user: str | None = None
     user_group: str | None = None
+    assign_vlan: str | None = None
+    matched_devices: int | None = None
+    mode: str | None = None
+    onboarding_vlan: str | None = None
+    auto_auth: str | None = None
+    bounce_nac_port: str | None = None
+    inactive_timer: int | None = None
+    link_down_flush: str | None = None
     raw_extra: dict[str, Any] = Field(default_factory=dict)
     explicit_fields: set[str] = Field(default_factory=set)
 
@@ -1556,6 +1565,23 @@ class FGPasswordPolicy(BaseModel):
     explicit_fields: set[str] = Field(default_factory=set)
 
 
+class FGSystemPasswordPolicy(BaseModel):
+    vdom: str | None = "root"
+    status: str | None = None
+    apply_to: list[str] = Field(default_factory=list)
+    minimum_length: int | None = None
+    min_lower_case_letter: int | None = None
+    min_upper_case_letter: int | None = None
+    min_non_alphanumeric: int | None = None
+    min_number: int | None = None
+    min_change_characters: int | None = None
+    expire_status: str | None = None
+    expire_day: int | None = None
+    reuse_password: str | None = None
+    raw_extra: dict[str, Any] = Field(default_factory=dict)
+    explicit_fields: set[str] = Field(default_factory=set)
+
+
 # ----------------------------------------------------------------------
 # WiFi, Switch & Logging
 # ----------------------------------------------------------------------
@@ -1634,9 +1660,19 @@ class FGWirelessWTP(BaseModel):
     explicit_fields: set[str] = Field(default_factory=set)
 
 
+class FGWirelessWTPProfilePlatform(BaseModel):
+    type: str | None = None
+    ddscan: str | None = None
+    mode: str | None = None
+    raw_extra: dict[str, Any] = Field(default_factory=dict)
+    explicit_fields: set[str] = Field(default_factory=set)
+
+
 class FGWirelessWTPProfile(BaseModel):
     name: str
     vdom: str | None = "root"
+    platform: str | None = None
+    platform_config: FGWirelessWTPProfilePlatform | None = None
     comment: str | None = None
     login_passwd_change: str | None = None
     login_passwd_configured: bool = False
@@ -1745,6 +1781,10 @@ class FGManagedSwitch(BaseModel):
     dynamic_capability: int | None = None
     directly_connected: str | None = None
     switch_profile: str | None = None
+    switch_group: str | None = None
+    status: str | None = None
+    platform: str | None = None
+    firmware_provision_version: str | None = None
     override_snmp_sysinfo: str | None = None
     override_snmp_community: str | None = None
     override_snmp_user: str | None = None
@@ -1838,8 +1878,59 @@ class FGLogSetting(BaseModel):
     rest_api_set: str | None = None
     rest_api_get: str | None = None
     custom_log_fields: list[str] = Field(default_factory=list)
-    brief_traffic_format: int | None = None
+    brief_traffic_format: str | None = None
     user_anonymize: str | None = None
+    raw_extra: dict[str, Any] = Field(default_factory=dict)
+    explicit_fields: set[str] = Field(default_factory=set)
+
+
+class FGThreatWeightLevel(BaseModel):
+    low: int | None = None
+    medium: int | None = None
+    high: int | None = None
+    critical: int | None = None
+    raw_extra: dict[str, Any] = Field(default_factory=dict)
+    explicit_fields: set[str] = Field(default_factory=set)
+
+
+class FGThreatWeightIPS(BaseModel):
+    info_severity: str | None = None
+    low_severity: str | None = None
+    medium_severity: str | None = None
+    high_severity: str | None = None
+    critical_severity: str | None = None
+    raw_extra: dict[str, Any] = Field(default_factory=dict)
+    explicit_fields: set[str] = Field(default_factory=set)
+
+
+class FGThreatWeightMalware(BaseModel):
+    virus_infected: str | None = None
+    virus_file_type_executable: str | None = None
+    virus_outbreak_prevention: str | None = None
+    virus_scan_error: str | None = None
+    botnet_connection: str | None = None
+    command_blocked: str | None = None
+    file_blocked: str | None = None
+    oversize: str | None = None
+    switch_proto: str | None = None
+    mimefragmented: str | None = None
+    content_disarm: str | None = None
+    fortisandbox: str | None = None
+    fortindr: str | None = None
+    malware_list: str | None = None
+    ems_threat_feed: str | None = None
+    fsa_malicious: str | None = None
+    fsa_high_risk: str | None = None
+    fsa_medium_risk: str | None = None
+    inline_block: str | None = None
+    raw_extra: dict[str, Any] = Field(default_factory=dict)
+    explicit_fields: set[str] = Field(default_factory=set)
+
+
+class FGThreatWeightCategoryEntry(BaseModel):
+    id: int | None = None
+    category: int | None = None
+    level: str | None = None
     raw_extra: dict[str, Any] = Field(default_factory=dict)
     explicit_fields: set[str] = Field(default_factory=set)
 
@@ -1850,7 +1941,13 @@ class FGLogThreatWeight(BaseModel):
     blocked_connection: str | None = None
     failed_connection: str | None = None
     url_block_detected: str | None = None
+    url_block_detect: str | None = None
     botnet_connection_detected: str | None = None
+    level: FGThreatWeightLevel | None = None
+    ips: FGThreatWeightIPS | None = None
+    malware: FGThreatWeightMalware | None = None
+    web: list[FGThreatWeightCategoryEntry] = Field(default_factory=list)
+    application: list[FGThreatWeightCategoryEntry] = Field(default_factory=list)
     raw_extra: dict[str, Any] = Field(default_factory=dict)
     explicit_fields: set[str] = Field(default_factory=set)
 
@@ -1879,6 +1976,12 @@ class FGSwitchPortPolicy(BaseModel):
     qos_policy: str | None = None
     vlan_policy: str | None = None
     bounce_port_link: str | None = None
+    user_group: list[str] = Field(default_factory=list)
+    guest_vlan: str | None = None
+    guest_auth_delay: int | None = None
+    mac_auth_bypass: str | None = None
+    eap_passthru: str | None = None
+    radius_timeout_overwrite: str | None = None
     raw_extra: dict[str, Any] = Field(default_factory=dict)
     explicit_fields: set[str] = Field(default_factory=set)
 
@@ -1914,5 +2017,109 @@ class FGSwitchVLANPolicy(BaseModel):
     untagged_vlans: list[str] = Field(default_factory=list)
     allowed_vlans_all: str | None = None
     discard_mode: str | None = None
+    raw_extra: dict[str, Any] = Field(default_factory=dict)
+    explicit_fields: set[str] = Field(default_factory=set)
+
+
+class FGCertificate(BaseModel):
+    """Public X.509 certificate metadata from vpn certificate {local,ca,remote}; private keys are never stored."""
+
+    name: str
+    store: Literal["local", "ca", "remote"]
+    vdom: str | None = "root"
+    certificate: str | None = None
+    private_key_configured: bool = False
+    password_configured: bool = False
+    ca_identifier: str | None = None
+    comments: str | None = None
+    source: str | None = None
+    source_ip: str | None = None
+    range: str | None = None
+    scep_url: str | None = None
+    raw_extra: dict[str, Any] = Field(default_factory=dict)
+    explicit_fields: set[str] = Field(default_factory=set)
+
+
+class FGLocalInPolicy(BaseModel):
+    policy_id: int | None = None
+    vdom: str | None = "root"
+    address_family: Literal["ipv4", "ipv6"] = "ipv4"
+    uuid: str | None = None
+    intf: list[str] = Field(default_factory=list)
+    srcaddr: list[str] = Field(default_factory=list)
+    dstaddr: list[str] = Field(default_factory=list)
+    srcaddr_negate: str | None = None
+    dstaddr_negate: str | None = None
+    action: str | None = None
+    service: list[str] = Field(default_factory=list)
+    service_negate: str | None = None
+    schedule: str | None = None
+    status: str | None = None
+    comments: str | None = None
+    virtual_patch: str | None = None
+    raw_extra: dict[str, Any] = Field(default_factory=dict)
+    explicit_fields: set[str] = Field(default_factory=set)
+
+
+class FGFortiAnalyzerSetting(BaseModel):
+    target_name: str = "fortianalyzer"
+    vdom: str | None = "root"
+    status: str | None = None
+    server: str | None = None
+    source_ip: str | None = None
+    upload_option: str | None = None
+    reliable: str | None = None
+    enc_algorithm: str | None = None
+    ssl_min_proto_version: str | None = None
+    certificate: str | None = None
+    interface: str | None = None
+    interface_select_method: str | None = None
+    raw_extra: dict[str, Any] = Field(default_factory=dict)
+    explicit_fields: set[str] = Field(default_factory=set)
+
+
+class FGLogFortiGuardSetting(BaseModel):
+    vdom: str | None = "root"
+    status: str | None = None
+    upload_option: str | None = None
+    upload_interval: str | None = None
+    upload_day: str | None = None
+    upload_time: str | None = None
+    enc_algorithm: str | None = None
+    interface: str | None = None
+    interface_select_method: str | None = None
+    raw_extra: dict[str, Any] = Field(default_factory=dict)
+    explicit_fields: set[str] = Field(default_factory=set)
+
+
+class FGSystemStorage(BaseModel):
+    name: str
+    vdom: str | None = "root"
+    status: str | None = None
+    media_status: str | None = None
+    order: int | None = None
+    partition: str | None = None
+    device: str | None = None
+    size: int | None = None
+    usage: str | None = None
+    wanopt_mode: str | None = None
+    raw_extra: dict[str, Any] = Field(default_factory=dict)
+    explicit_fields: set[str] = Field(default_factory=set)
+
+
+class FGSAMLServer(BaseModel):
+    name: str
+    vdom: str | None = "root"
+    cert: str | None = None
+    entity_id: str | None = None
+    single_sign_on_url: str | None = None
+    single_logout_url: str | None = None
+    idp_entity_id: str | None = None
+    idp_single_sign_on_url: str | None = None
+    idp_single_logout_url: str | None = None
+    idp_cert: str | None = None
+    user_name: str | None = None
+    group_name: str | None = None
+    digest_method: str | None = None
     raw_extra: dict[str, Any] = Field(default_factory=dict)
     explicit_fields: set[str] = Field(default_factory=set)

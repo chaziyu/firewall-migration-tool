@@ -81,6 +81,9 @@ class FGPolicy(BaseModel):
     webfilter_profile: str | None = None
     dnsfilter_profile: str | None = None
     ssl_ssh_profile: str | None = None
+    file_filter_profile: str | None = None
+    emailfilter_profile: str | None = None
+    waf_profile: str | None = None
 
     # State / metadata
     status: str | None = None

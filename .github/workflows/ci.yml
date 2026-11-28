@@ -76,7 +76,7 @@ jobs:
           python -m pip install -e ".[dev,collection]"
           python -m pip check
       - name: Run collection tests with collection extras
-        run: python -m pytest tests/collection -n auto -q
+        run: python -m pytest tests/web/test_web_live_collection.py -n auto -q
 
   frontend:
     runs-on: ubuntu-latest

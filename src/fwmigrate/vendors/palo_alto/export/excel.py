@@ -14,6 +14,7 @@ from openpyxl.utils import get_column_letter
 from ....source_reporting.options import ExcelExportProfile
 from ....source_reporting.collection_excel import collection_summary, write_collection_evidence
 from ....source_reporting.excel_style import check_report_dimensions, REPORT_BODY_NOTE, excel_safe_value, report_cell_value, append_readable_report_row, report_column_width, style_report_header, write_report_summary
+from ....source_reporting.lifecycle import build_paloalto_lifecycle_excel_rows, evaluate_paloalto_lifecycle
 
 from .excel_rows import ROW_BUILDERS, _PANExcelContext
 from .excel_schema import SHEET_ORDER, HIDDEN_COLUMNS_BY_DEFAULT, SHEET_HEADERS, OWNER_COLUMNS
@@ -37,9 +38,14 @@ def _write_summary(
     sheet = workbook["Summary"] if "Summary" in workbook.sheetnames else workbook.create_sheet("Summary")
     coverage_sheets = {"Review Required", "Unresolved References", "Unsupported",
                        "PAN-OS Source Inventory", "Extraction Coverage", "PAN-OS Source Appendix"}
+    lifecycle_result = evaluate_paloalto_lifecycle(
+        context.config.detail_version or context.config.source_version,
+        is_exact_version=bool(context.config.detail_version),
+        allow_online=False,
+    )
     write_report_summary(
         sheet, title="PAN-OS Configuration Report",
-        metadata=(("Hostname", context.config.hostname), ("PAN-OS Version", context.config.source_version),
+        metadata=(("Hostname", context.config.hostname), ("PAN-OS Version", context.config.detail_version or context.config.source_version),
                   ("Scopes", "\n".join(context.derived.scope_identities) or None),
                   ("Source File", context.source_name)),
         profile=profile.value.upper(),
@@ -60,6 +66,7 @@ def _write_summary(
                       "Use FULL for complete source traceability." if profile is ExcelExportProfile.FAST else
                       "FULL includes PAN-OS Source Inventory, Extraction Coverage, and PAN-OS Source Appendix."
                   ))),
+        lifecycle=build_paloalto_lifecycle_excel_rows(lifecycle_result),
     )
 
 

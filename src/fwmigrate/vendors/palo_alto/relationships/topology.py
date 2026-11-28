@@ -32,6 +32,11 @@ class PANInterfaceTopologyEntry:
     aggregate: str | None = None
     physical_interfaces: tuple[str, ...] = ()
     attached_tunnels: tuple[str, ...] = ()
+    ipv4_addresses: tuple[str, ...] = ()
+    ipv6_addresses: tuple[str, ...] = ()
+    link_state: str | None = None
+    parent_link_state: str | None = None
+    management_profile: str | None = None
 
 
 def _kind(item) -> str:
@@ -174,7 +179,20 @@ def build_interface_topology(config: PANOSConfig) -> tuple[PANInterfaceTopologyE
         child_units = tuple(unit.name for unit in units if unit.parent == key[1] and scope_for(unit) == key[0] and unit.name)
         if len(aggregate_owners_for_item) > 1:
             issues.append(f"interface belongs to multiple aggregate interfaces: {', '.join(aggregate_owners_for_item)}")
-        entries.append(PANInterfaceTopologyEntry(key[1], key[0], child_units, imports, zones, routers, tuple(dict.fromkeys(issues)), _kind(item), parent, path, aggregate, physical(key), tunnel_names))
+        ipv4_addresses = tuple(getattr(item, "ipv4_addresses", None) or ())
+        ipv6_addresses = tuple(
+            addr.address for addr in (getattr(item, "ipv6_addresses", None) or ()) if getattr(addr, "address", None)
+        )
+        link_state = getattr(item, "link_state", None)
+        parent_item = objects.get((key[0], parent)) if parent else None
+        parent_link_state = getattr(parent_item, "link_state", None) if parent_item is not None else None
+        management_profile = getattr(item, "management_profile", None)
+        entries.append(PANInterfaceTopologyEntry(
+            key[1], key[0], child_units, imports, zones, routers,
+            tuple(dict.fromkeys(issues)), _kind(item), parent, path, aggregate,
+            physical(key), tunnel_names,
+            ipv4_addresses, ipv6_addresses, link_state, parent_link_state, management_profile,
+        ))
 
     known = set(interface_by_device)
     existing = {(item.scope, item.interface) for item in entries}

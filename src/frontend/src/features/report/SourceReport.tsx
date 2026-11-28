@@ -1,10 +1,21 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { SourcePreviewData } from '../source/types'
-import { activeSubsection, asRecord, asRows, cellBadgeVariant, compactValue, interfaceTopologyRows, isMonoColumn, matchingSourceRows, reportCounts, reportSections, reportSectionRowCount, reportSearchText, rowColumns, rowSemanticClass, safeValue, sectionLegend, defaultColumns, cellSummary, cellTooltip, columnWidth, fieldLabel, findingGroups, findingGroupKey } from './reportPresentation'
+import type { LifecycleCardData, PmChecklistResponse, SecurityAuditResponse, SourcePreviewData, SslToIpsecResponse } from '../source/types'
+import { fetchSecurityAudit } from '../source/sourceApi'
+import { activeSubsection, applianceHeroInfo, asRecord, asRows, cellBadgeVariant, compactValue, downloadCsvRows, extendedSystemOverviewItems, FORTIGATE_CORE_WIFI_SWITCH_TABS, haOverviewInfo, interfaceTopologyRows, isLifecycleCardData, isMonoColumn, matchingSourceRows, reportCounts, reportSections, reportSectionRowCount, reportSearchText, rowColumns, rowSemanticClass, rowSubtypeId, safeValue, sectionLegend, subtypeFilterTabs, defaultColumns, cellSummary, cellTooltip, columnWidth, fieldLabel, findingGroups, findingGroupKey } from './reportPresentation'
+import { ConfigDiffPanel } from './ConfigDiffPanel'
+import { LifecycleCard } from './LifecycleCard'
+import { PacketTracePanel } from './PacketTracePanel'
+import { PmLookupPanel } from './PmLookupPanel'
+import { PolicyLookupPanel } from './PolicyLookupPanel'
 import { ReportDetails } from './ReportDetails'
-import { ExcelExportControls } from './ExcelExportControls'
+import { RouteLookupPanel } from './RouteLookupPanel'
+import { PublicExposureCard, SecurityAuditPanel } from './SecurityAuditPanel'
+import { SslToIpsecPanel } from './SslToIpsecPanel'
+import { SdwanView } from './SdwanView'
+import { VpnInspectorView } from './VpnInspectorView'
 import { tabKeyboard } from '../../components/common/tabKeyboard'
 import { ErrorBanner } from '../../components/common/ErrorBanner'
+import { Toast } from '../../components/common/Toast'
 
 type Finding = Record<string, unknown>
 const EMPTY_ROWS: Finding[] = []
@@ -55,7 +66,14 @@ const VALIDATION_TARGETS: Record<string, [string, string]> = {
   radius_server: ['radius_servers', 'RADIUS servers'],
   tacacs_server: ['tacacs_servers', 'TACACS+ servers'],
   kerberos_keytab: ['kerberos_keytabs', 'Kerberos keytabs'],
-  wireless_vap: ['wireless_vaps', 'WiFi SSIDs'],
+  wireless_vap: ['wireless_vaps', 'SSIDs'],
+  wireless_wtp: ['wireless_wtps', 'Managed FortiAPs'],
+  wtp_profile: ['wtp_profiles', 'FortiAP Profiles'],
+  wids_profile: ['wids_profiles', 'WIDS Profiles'],
+  managed_switch: ['managed_switches', 'Managed FortiSwitches'],
+  managed_switch_port: ['managed_switches', 'Managed FortiSwitches'],
+  switch_port_policy: ['switch_port_policies', 'Port Policies'],
+  nac_policy: ['nac_policies', 'NAC Policies'],
   'application-group': ['application_groups', 'Application groups'],
   'external-list': ['external_lists', 'External dynamic lists'],
   'custom-url-category': ['custom_url_categories', 'Custom URL categories'],
@@ -304,7 +322,7 @@ function ValidationReport({ data, reportScope, onReportScope, active }: { data: 
   }
 
   return <div className="validation-report">
-    <h3>Validation findings</h3>
+    <h3>Config warnings</h3>
     <ValidationFilters rows={allRows} search={search} scope={scope} severity={severity} activeGroup={group?.key ?? ''} onSearch={(value) => { setSearch(value); setSelected(null) }} onScope={(value) => { onReportScope(value); setSelected(null) }} onSeverity={(value) => { setSeverity(value); setSelected(null) }} onClear={() => { clearFilters(); setSelected(null) }} />
     <ValidationSummary rows={matchingRows} activeGroup={group?.key ?? ''} onGroupChange={(key) => { setActiveGroup(key); setSelected(null) }} />
     {group && <p className="validation-group-explanation"><strong>{group.count} affected findings</strong> · {text(group.row.message)}</p>}
@@ -312,7 +330,7 @@ function ValidationReport({ data, reportScope, onReportScope, active }: { data: 
       <ValidationTable rows={filteredRows} selected={selected} grouped={!!group} onSelect={(row) => { setSelected(row); setTarget(null) }} onNavigate={navigateToObject} />
       {active && selected && filteredRows.includes(selected) && <ReportDetails finding row={selected} target={target} onNavigate={() => navigateToObject(selected)} onClose={() => { setSelected(null); setTarget(null) }} />}
     </div>
-    {!allRows.length && <p className="validation-empty">No validation findings were reported.</p>}
+    {!allRows.length && <p className="validation-empty">No config warnings were reported.</p>}
     {!!scopes.length && <p className="validation-scope-note">Findings are reported for {scopes.length} {scopes.length === 1 ? 'scope' : 'scopes'}.</p>}
   </div>
 }
@@ -324,29 +342,17 @@ function columnPixelWidth(key: string): number {
   return 230
 }
 
-function csvEscape(val: unknown): string {
-  const s = val == null ? '' : typeof val === 'object' ? cellSummary(val) : String(val)
-  if (/[",\n\r]/.test(s)) {
-    return '"' + s.replace(/"/g, '""') + '"'
+function emptySubsectionMessage(subsection: string): string {
+  const messages: Record<string, string> = {
+    wireless_wtps: 'No managed FortiAPs configured.',
+    wireless_vaps: 'No SSIDs configured.',
+    wtp_profiles: 'No FortiAP profiles configured.',
+    wids_profiles: 'No WIDS profiles configured.',
+    managed_switches: 'No managed FortiSwitches configured.',
+    switch_port_policies: 'No port policies configured.',
+    nac_policies: 'No NAC policies configured.',
   }
-  return s
-}
-
-function downloadTableCsv(columns: string[], rows: Finding[], filename: string) {
-  if (typeof document === 'undefined' || typeof Blob === 'undefined') return
-  const lines = [columns.map((c) => csvEscape(fieldLabel(c))).join(',')]
-  for (const r of rows) {
-    lines.push(columns.map((c) => csvEscape(r[c])).join(','))
-  }
-  const blob = new Blob([lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = filename || 'export.csv'
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
-  setTimeout(() => URL.revokeObjectURL(url), 1000)
+  return messages[subsection] ?? 'No reported entries in this subsection.'
 }
 
 function SourceRowsTable({ rows, columns, selected, hasSource, topology, subsection = '', sortCol = null, sortAsc = true, onSort, onSelect }: {
@@ -364,7 +370,7 @@ function SourceRowsTable({ rows, columns, selected, hasSource, topology, subsect
   const { wrapRef, onScroll, startIndex, visibleRows, topSpacerHeight, bottomSpacerHeight } = useVirtualRows(rows, ROW_HEIGHT, columns)
   const totalWidth = columns.reduce((sum, key) => sum + columnPixelWidth(key), 0)
 
-  if (!rows.length) return <p className="report-empty">{hasSource ? 'No rows match the current filters.' : 'No reported entries in this subsection.'}</p>
+  if (!rows.length) return <p className="report-empty">{hasSource ? 'No rows match the current filters.' : emptySubsectionMessage(subsection)}</p>
 
   return <div
     ref={wrapRef}
@@ -447,46 +453,120 @@ const VENDOR_DISPLAY_NAMES: Record<string, string> = {
   checkpoint: 'Check Point',
 }
 
-export function SourceReport({ data, excelProfile, onExcelProfileChange, exporting, exportStatus, exportError, onExport }: {
+export function SourceReport({
+  data,
+  activeSection: controlledActiveSection,
+  onSectionChange,
+  exportStatus,
+  onDismissExportStatus,
+  exportError,
+  liveDeviceAccess = false,
+}: {
   data: SourcePreviewData
-  excelProfile: 'fast' | 'full'
-  onExcelProfileChange: (value: 'fast' | 'full') => void
-  exporting: boolean
+  activeSection?: string
+  onSectionChange?: (section: string) => void
+  excelProfile?: 'fast' | 'full'
+  onExcelProfileChange?: (value: 'fast' | 'full') => void
+  exporting?: boolean
   exportStatus: string
+  onDismissExportStatus?: () => void
   exportError?: string | null
-  onExport: () => void
+  onExport?: () => void
+  liveDeviceAccess?: boolean
 }) {
   const sectionsData = asRecord(data.sections)
   const sections = useMemo(() => reportSections(asRecord(data.sections)), [data.sections])
   const summary = asRecord(data.summary)
-  const [activeSection, setActiveSection] = useState('Overview')
+  const supportsSecurityAudit = (data.vendor === 'fortigate' || data.vendor === 'palo_alto') && Boolean(data.source_evidence)
+  const [internalActiveSection, setInternalActiveSection] = useState('Overview')
+  const activeSection = controlledActiveSection ?? internalActiveSection
+  const [overviewTab, setOverviewTab] = useState<'summary' | 'packet_trace' | 'config_diff'>('summary')
+  const [auditState, setAuditState] = useState<{
+    vendor: string
+    sourceEvidence: NonNullable<SourcePreviewData['source_evidence']>
+    data: SecurityAuditResponse | null
+    error: string | null
+  } | null>(null)
+  const [pmState, setPmState] = useState<{
+    vendor: string
+    sourceEvidence: NonNullable<SourcePreviewData['source_evidence']>
+    data: PmChecklistResponse
+  } | null>(null)
+  const [sslToIpsecState, setSslToIpsecState] = useState<{
+    vendor: string
+    sourceEvidence: NonNullable<SourcePreviewData['source_evidence']>
+    byVdom: Record<string, SslToIpsecResponse>
+  } | null>(null)
+  const [resolvedLifecycle, setResolvedLifecycle] = useState<LifecycleCardData | null>(null)
   const [views, setViews] = useState<Record<string, SectionViewState>>({})
   const [scope, setScope] = useState('')
   const [subsectionChoices, setSubsectionChoices] = useState<Record<string, string>>({})
+  const [subtypeChoices, setSubtypeChoices] = useState<Record<string, string>>({})
   const [selectedRow, setSelectedRow] = useState<Finding | null>(null)
   const validationRows = useMemo(() => asRows(sectionsData.validation), [sectionsData.validation])
   const counts = useMemo(() => reportCounts(data), [data])
   const errorCount = counts.errors
   const warningCount = counts.warnings
   const overviewMetrics: OverviewMetric[] = []
-  overviewMetrics.push({ label: 'Policies', value: counts.policies, section: 'Policies' })
+  overviewMetrics.push({ label: 'Policies', value: counts.policies, section: 'Policies & NAT', objectSection: 'policies' })
   overviewMetrics.push({ label: 'Address/service objects', value: counts.objects, section: 'Objects', objectSection: 'addresses' })
-  overviewMetrics.push({ label: 'Interfaces', value: counts.interfaces, section: 'Interfaces', objectSection: 'interfaces' })
-  for (const section of ['Schedules', 'NAT', 'Routes', 'VPN']) {
-    const group = sections.find((item) => item.label === section)
-    overviewMetrics.push({ label: section, value: reportSectionRowCount(group), section })
-  }
+  overviewMetrics.push({ label: 'Interfaces', value: counts.interfaces, section: 'Interfaces & Network', objectSection: 'interface_topology' })
+  const schedulesGroup = sections.find((item) => item.label === 'Objects')?.subsections.find((s) => s.key === 'schedules')
+  overviewMetrics.push({ label: 'Schedules', value: schedulesGroup ? schedulesGroup.rows.length : null, section: 'Objects', objectSection: 'schedules' })
+  const natGroup = sections.find((item) => item.label === 'Policies & NAT')?.subsections.find((s) => s.key === 'nat')
+  overviewMetrics.push({ label: 'NAT', value: natGroup ? natGroup.rows.length : null, section: 'Policies & NAT', objectSection: 'nat' })
+  const routesGroup = sections.find((item) => item.label === 'Interfaces & Network')?.subsections.find((s) => s.key === 'routes')
+  overviewMetrics.push({ label: 'Routes', value: routesGroup ? routesGroup.rows.length : null, section: 'Interfaces & Network', objectSection: 'routes' })
+  const vpnGroup = sections.find((item) => item.label === 'VPN')
+  overviewMetrics.push({ label: 'VPN', value: reportSectionRowCount(vpnGroup), section: 'VPN' })
   const unresolved = Array.isArray(sectionsData.unresolved_references) ? sectionsData.unresolved_references.length : null
-  if (sectionsData.unresolved_references) overviewMetrics.push({ label: 'Unresolved references', value: unresolved, section: 'References', tone: unresolved ? 'warning' : undefined })
+  if (sectionsData.unresolved_references) overviewMetrics.push({ label: 'Unresolved references', value: unresolved, section: 'Diagnostics & Coverage', objectSection: 'unresolved_references', tone: unresolved ? 'warning' : undefined })
   const unsupported = Number(summary.unsupported_count ?? summary.source_only_count ?? 0)
   if (summary.unsupported_count != null || summary.source_only_count != null) overviewMetrics.push({ label: 'Unsupported / source-only', value: unsupported })
   const active = sections.find(({ label: sectionLabel }) => sectionLabel === activeSection)
-  const sourceSections = active?.subsections.map((item) => item.key) ?? []
+  const isFortiGateWifiSwitch = data.vendor === 'fortigate' && activeSection === 'WiFi & Switch'
+  const isFortiGateNetwork = data.vendor === 'fortigate' && activeSection === 'Interfaces & Network'
+  const effectiveSubsections = useMemo(() => {
+    const rawSubsections = active?.subsections ?? []
+    if (isFortiGateWifiSwitch) {
+      const byKey = new Map(rawSubsections.map((item) => [item.key, item]))
+      const core = FORTIGATE_CORE_WIFI_SWITCH_TABS.map((key) => byKey.get(key) ?? { key, rows: EMPTY_ROWS })
+      const coreSet = new Set<string>(FORTIGATE_CORE_WIFI_SWITCH_TABS)
+      const extras = rawSubsections.filter((item) => !coreSet.has(item.key) && item.rows.length > 0)
+      return [...core, ...extras]
+    }
+    if (isFortiGateNetwork && !rawSubsections.some((item) => item.key === 'sdwan')) {
+      const next = [...rawSubsections]
+      const topoIndex = next.findIndex((item) => item.key === 'interface_topology')
+      const ifaceIndex = next.findIndex((item) => item.key === 'interfaces')
+      const insertAt = topoIndex >= 0 ? topoIndex + 1 : ifaceIndex >= 0 ? ifaceIndex + 1 : 0
+      next.splice(insertAt, 0, { key: 'sdwan', rows: EMPTY_ROWS })
+      return next
+    }
+    return rawSubsections
+  }, [active, isFortiGateWifiSwitch, isFortiGateNetwork])
+  const sourceSections = effectiveSubsections.map((item) => item.key)
+  const defaultNetworkChoice = activeSection === 'Interfaces & Network' && !subsectionChoices[activeSection] && sourceSections.includes('interface_topology')
+    ? 'interface_topology'
+    : (subsectionChoices[activeSection] ?? '')
   const subsection = useMemo(() => activeSubsection(
-    sections.find((item) => item.label === activeSection)?.subsections ?? [], subsectionChoices[activeSection] ?? '',
-  ), [sections, activeSection, subsectionChoices])
-  const unifiedInterfaces = activeSection === 'Interfaces'
-  const activeObjectSection = unifiedInterfaces ? 'interface_topology' : subsection?.key ?? ''
+    effectiveSubsections, defaultNetworkChoice,
+  ), [effectiveSubsections, defaultNetworkChoice])
+  const virtualToolTab =
+    supportsSecurityAudit && activeSection === 'Policies & NAT' && subsectionChoices[activeSection] === 'policy_lookup'
+      ? 'policy_lookup'
+      : supportsSecurityAudit && activeSection === 'Interfaces & Network' && subsectionChoices[activeSection] === 'route_lookup'
+        ? 'route_lookup'
+        : supportsSecurityAudit && data.vendor === 'fortigate' && activeSection === 'VPN' && subsectionChoices[activeSection] === 'ssl_to_ipsec'
+          ? 'ssl_to_ipsec'
+          : activeSection === 'Diagnostics & Coverage' && (
+            subsectionChoices[activeSection] === 'config_warnings'
+            || (!subsectionChoices[activeSection] && !subsection && validationRows.length > 0)
+          )
+            ? 'config_warnings'
+            : ''
+  const activeObjectSection = virtualToolTab || (subsection?.key ?? '')
+  const unifiedInterfaces = activeSection === 'Interfaces & Network' && activeObjectSection === 'interface_topology'
   const unifiedRows = useMemo(() => {
     const subsections = sections.find((item) => item.label === activeSection)?.subsections
     return interfaceTopologyRows(
@@ -495,8 +575,10 @@ export function SourceReport({ data, excelProfile, onExcelProfileChange, exporti
     )
   }, [sections, activeSection])
   const subsectionRows = unifiedInterfaces ? unifiedRows : subsection?.rows ?? EMPTY_ROWS
+  const subtypeTabs = useMemo(() => subtypeFilterTabs(activeObjectSection, subsectionRows), [activeObjectSection, subsectionRows])
+  const activeSubtype = subtypeTabs.some((item) => item.id === subtypeChoices[activeObjectSection]) ? subtypeChoices[activeObjectSection] : 'all'
   const scopes = useMemo(() => {
-    const rowsForScope = activeSection === 'Extraction'
+    const rowsForScope = activeSection === 'Diagnostics & Coverage'
       ? subsectionRows
       : (sections.find(({ label }) => label === activeSection)?.rows ?? EMPTY_ROWS)
     const seen = new Set<string>()
@@ -525,15 +607,20 @@ export function SourceReport({ data, excelProfile, onExcelProfileChange, exporti
     }
   }
   function setSourceSection(value: string, section = activeSection) { setSubsectionChoices((current) => ({ ...current, [section]: value })); setSelectedRow(null) }
-  function changeSection(value: string) { setActiveSection(value); setSelectedRow(null) }
+  function changeSection(value: string) {
+    if (onSectionChange) onSectionChange(value)
+    else setInternalActiveSection(value)
+    setSelectedRow(null)
+  }
   function changeScope(value: string) { setScope(value); setSelectedRow(null) }
   const filteredRows = useMemo(() => {
     const query = search.toLowerCase()
     let rows = subsectionRows
-    if (query || effectiveScope) {
+    if (query || effectiveScope || activeSubtype !== 'all') {
       rows = subsectionRows.filter((row) => {
         if (effectiveScope && String(row.scope ?? row.vdom ?? '') !== effectiveScope) return false
         if (!unifiedInterfaces && activeObjectSection && row['Source section'] !== activeObjectSection) return false
+        if (activeSubtype !== 'all' && rowSubtypeId(activeObjectSection, row) !== activeSubtype) return false
         if (!query) return true
         if (searchCol && searchCol !== '__all__' && columns.includes(searchCol)) {
           return cellSummary(row[searchCol]).toLowerCase().includes(query) || String(row[searchCol] ?? '').toLowerCase().includes(query)
@@ -554,23 +641,139 @@ export function SourceReport({ data, excelProfile, onExcelProfileChange, exporti
       })
     }
     return rows
-  }, [subsectionRows, effectiveScope, activeObjectSection, search, searchCol, sortCol, sortAsc, columns, unifiedInterfaces])
-  const subsectionCount = search || effectiveScope ? `${filteredRows.length} of ${subsectionRows.length}` : subsectionRows.length
+  }, [subsectionRows, effectiveScope, activeObjectSection, activeSubtype, search, searchCol, sortCol, sortAsc, columns, unifiedInterfaces])
+  const subtypeTotalCount = activeSubtype === 'all' ? subsectionRows.length : (subtypeTabs.find((item) => item.id === activeSubtype)?.count ?? subsectionRows.length)
+  const subsectionCount = search || effectiveScope || activeSubtype !== 'all' ? `${filteredRows.length} of ${subtypeTotalCount}` : subsectionRows.length
+  const matchingAuditState =
+    supportsSecurityAudit && data.source_evidence && auditState
+    && auditState.vendor === data.vendor && auditState.sourceEvidence === data.source_evidence
+      ? auditState
+      : null
+  const auditData = matchingAuditState?.data ?? null
+  const auditLoading = supportsSecurityAudit && Boolean(data.source_evidence) && !matchingAuditState
+  const auditError = matchingAuditState?.error ?? null
+  const matchingPmData =
+    supportsSecurityAudit && data.source_evidence && pmState
+    && pmState.vendor === data.vendor && pmState.sourceEvidence === data.source_evidence
+      ? pmState.data
+      : null
+  const matchingSslToIpsecData =
+    supportsSecurityAudit && data.vendor === 'fortigate' && data.source_evidence && sslToIpsecState
+    && sslToIpsecState.vendor === data.vendor && sslToIpsecState.sourceEvidence === data.source_evidence
+      ? (Object.values(sslToIpsecState.byVdom)[0] ?? null)
+      : null
+  const initialLifecycle = isLifecycleCardData(summary.lifecycle) ? summary.lifecycle : null
+  const activeLifecycle = resolvedLifecycle ?? initialLifecycle
+
+  useEffect(() => {
+    if (!supportsSecurityAudit || !data.source_evidence || !data.vendor) return
+    const vendor = data.vendor
+    const evidence = data.source_evidence
+    let active = true
+    fetchSecurityAudit(vendor, evidence)
+      .then((res) => {
+        if (active) setAuditState({ vendor, sourceEvidence: evidence, data: res, error: null })
+      })
+      .catch((err: unknown) => {
+        if (active) {
+          setAuditState({
+            vendor,
+            sourceEvidence: evidence,
+            data: null,
+            error: err instanceof Error ? err.message : 'Security audit failed',
+          })
+        }
+      })
+    return () => { active = false }
+  }, [supportsSecurityAudit, data.vendor, data.source_evidence])
   const reportTabs = useMemo(
-    () => ['Overview', 'Interfaces', 'Objects', 'Schedules', 'Policies', 'NAT', 'Routes', 'VPN', 'References', ...(sections.some((item) => item.label === 'Extraction') ? ['Extraction'] : []), ...(sections.some((item) => item.label === 'Additional sections') ? ['Additional sections'] : []), 'Validation'],
-    [sections],
+    () => {
+      const hasSection = (label: string) => sections.some((item) => item.label === label && item.rows.length > 0)
+      return [
+        'Overview',
+        ...(supportsSecurityAudit ? ['Security Audit'] : []),
+        ...(supportsSecurityAudit ? ['PM Lookup'] : []),
+        'Policies & NAT',
+        'Objects',
+        'Interfaces & Network',
+        ...(hasSection('Security Profiles') ? ['Security Profiles'] : []),
+        'VPN',
+        ...(hasSection('Users & Auth') ? ['Users & Auth'] : []),
+        ...(data.vendor === 'fortigate' || hasSection('WiFi & Switch') ? ['WiFi & Switch'] : []),
+        ...(sections.some((item) => item.label === 'Diagnostics & Coverage') || validationRows.length > 0 ? ['Diagnostics & Coverage'] : []),
+        ...(hasSection('System & Logs') ? ['System & Logs'] : []),
+        ...(sections.some((item) => item.label === 'Additional sections') ? ['Additional sections'] : []),
+      ]
+    },
+    [sections, supportsSecurityAudit, data.vendor, validationRows.length],
   )
-  const objectTabs = unifiedInterfaces ? ['interface_topology'] : sourceSections.filter((key) => key === activeObjectSection || active?.subsections.find((item) => item.key === key)?.rows.length)
-  const tabLabel = (item: string) => unifiedInterfaces
-    ? `Interface Topology (${subsectionCount})`
-    : `${fieldLabel(item)} (${activeObjectSection === item ? subsectionCount : active?.subsections.find((section) => section.key === item)?.rows.length ?? 0})`
+  const baseObjectTabs = isFortiGateWifiSwitch
+    ? sourceSections
+    : sourceSections.filter((key) => (
+      key === activeObjectSection
+      || (isFortiGateNetwork && key === 'sdwan')
+      || active?.subsections.find((item) => item.key === key)?.rows.length
+    ))
+  const objectTabs = [
+    ...baseObjectTabs,
+    ...(supportsSecurityAudit && activeSection === 'Policies & NAT' ? ['policy_lookup'] : []),
+    ...(supportsSecurityAudit && activeSection === 'Interfaces & Network' ? ['route_lookup'] : []),
+    ...(supportsSecurityAudit && data.vendor === 'fortigate' && activeSection === 'VPN' ? ['ssl_to_ipsec'] : []),
+    ...(activeSection === 'Diagnostics & Coverage' && (validationRows.length > 0 || activeObjectSection === 'config_warnings') ? ['config_warnings'] : []),
+  ]
+  const subsectionLabel = (key: string) => (
+    key === 'vpn_inspector'
+      ? (data.vendor === 'palo_alto' ? 'IPSec Inspector' : 'Site-to-Site Inspector')
+      : key === 'policy_lookup'
+        ? 'Policy Lookup'
+        : key === 'route_lookup'
+          ? 'Route Lookup'
+          : key === 'ssl_to_ipsec'
+            ? 'SSL-to-IPSec Assistant'
+            : key === 'config_warnings'
+              ? 'Config Warnings'
+              : fieldLabel(key)
+  )
+  const COMPACT_TAB_LABELS: Record<string, string> = {
+    interface_topology: 'Topology',
+    router_bgp: 'BGP',
+    router_ospf: 'OSPF',
+    router_ospf6: 'OSPFv3',
+    router_rip: 'RIP',
+  }
+  const tabRawCount = (item: string): number | null => {
+    if (item === 'policy_lookup' || item === 'route_lookup' || item === 'ssl_to_ipsec') return null
+    if (item === 'config_warnings') return errorCount + warningCount
+    if (item === 'sdwan') {
+      const sdwanRows = effectiveSubsections.find((section) => section.key === 'sdwan')?.rows ?? EMPTY_ROWS
+      return sdwanRows.reduce((sum, entry) => sum + (Array.isArray(entry.services) ? entry.services.length : 0), 0)
+    }
+    if (item === 'interface_topology' && activeSection === 'Interfaces & Network') return unifiedRows.length
+    return effectiveSubsections.find((section) => section.key === item)?.rows.length ?? 0
+  }
+  const tabLabel = (item: string) => {
+    if (item === 'policy_lookup') return 'Policy Lookup'
+    if (item === 'route_lookup') return 'Route Lookup'
+    if (item === 'ssl_to_ipsec') return 'SSL-to-IPSec Assistant'
+    if (item === 'config_warnings') return `Config Warnings (${(errorCount + warningCount).toLocaleString()})`
+    if (item === 'sdwan') return `SD-WAN (${tabRawCount(item) ?? 0})`
+    const count = activeObjectSection === item
+      ? subsectionCount
+      : (tabRawCount(item) ?? 0)
+    const label = COMPACT_TAB_LABELS[item] ?? subsectionLabel(item)
+    return `${label} (${count})`
+  }
   const currentSelected = selectedRow && filteredRows.includes(selectedRow) ? selectedRow : null
   const selectedIndex = currentSelected ? filteredRows.indexOf(currentSelected) : -1
-  const warningGroups = useMemo(
-    () => findingGroups(validationRows).filter((group) => String(group.row.severity).toLowerCase() === 'warning').length,
-    [validationRows],
-  )
   const exposureWarnings = useMemo(() => validationRows.filter((row) => row.domain === 'interface' && row.field === 'allowaccess'), [validationRows])
+  const vendorDisplayName = VENDOR_DISPLAY_NAMES[String(data.vendor ?? '')] || String(data.vendor || 'Configuration')
+  const systemItems = extendedSystemOverviewItems(data, auditData, activeLifecycle)
+  const HERO_DUPLICATE_LABELS = new Set(['Hostname', 'Model', 'Firmware Version', 'Software Version', 'Timezone', 'Serial Number'])
+  const filteredSystemItems = systemItems.filter((item) => !HERO_DUPLICATE_LABELS.has(item.label))
+  const displaySystemItems = filteredSystemItems.length > 0 ? filteredSystemItems : systemItems
+  const scopeList = Array.isArray(summary.scopes) && summary.scopes.length > 0 ? summary.scopes.join(', ') : null
+  const haInfo = useMemo(() => haOverviewInfo(data), [data])
+  const heroInfo = applianceHeroInfo(data, vendorDisplayName, activeLifecycle, auditData)
   const legendItems = useMemo(() => sectionLegend(activeObjectSection, subsectionRows), [activeObjectSection, subsectionRows])
 
   useEffect(() => {
@@ -578,7 +781,8 @@ export function SourceReport({ data, excelProfile, onExcelProfileChange, exporti
     const onSelectSection = (event: Event) => {
       const next = (event as CustomEvent<string>).detail
       if (next && reportTabs.includes(next)) {
-        setActiveSection(next)
+        if (onSectionChange) onSectionChange(next)
+        else setInternalActiveSection(next)
         setSelectedRow(null)
       }
     }
@@ -592,16 +796,30 @@ export function SourceReport({ data, excelProfile, onExcelProfileChange, exporti
     const filename = String(data.source_evidence?.source_name || data.acquisition || 'Loaded source')
     const sidebarSections = reportTabs.map((label) => {
       if (label === 'Overview') return { label, count: null }
-      if (label === 'Policies') return { label, count: counts.policies }
+      if (label === 'Policies & NAT') return { label, count: counts.policies }
       if (label === 'Objects') return { label, count: counts.objects }
-      if (label === 'Interfaces') return { label, count: counts.interfaces }
-      if (label === 'Validation') {
-        const totalFindings = errorCount + warningCount
+      if (label === 'Interfaces & Network') return { label, count: counts.interfaces }
+      if (label === 'Security Audit') {
+        if (!auditData) return { label, count: null }
+        const actionable = auditData.quick_audit.high_count + auditData.quick_audit.med_count
         return {
           label,
-          count: totalFindings,
-          tone: errorCount > 0 ? ('danger' as const) : warningCount > 0 ? ('warning' as const) : undefined,
+          count: actionable,
+          tone: auditData.quick_audit.high_count > 0 ? ('danger' as const) : auditData.quick_audit.med_count > 0 ? ('warning' as const) : undefined,
         }
+      }
+      if (label === 'PM Lookup') {
+        if (!matchingPmData) return { label, count: null }
+        const { fail, warn } = matchingPmData.summary
+        return {
+          label,
+          count: fail + warn,
+          tone: fail > 0 ? ('danger' as const) : warn > 0 ? ('warning' as const) : undefined,
+        }
+      }
+      if (label === 'Diagnostics & Coverage') {
+        const grp = sections.find((s) => s.label === label)
+        return { label, count: (reportSectionRowCount(grp) ?? 0) + validationRows.length }
       }
       const grp = sections.find((s) => s.label === label)
       return { label, count: reportSectionRowCount(grp) }
@@ -613,11 +831,21 @@ export function SourceReport({ data, excelProfile, onExcelProfileChange, exporti
         errors: errorCount,
         warnings: warningCount,
         activeSection,
-        activeSubsectionLabel: unifiedInterfaces ? 'Interface Topology' : fieldLabel(activeObjectSection),
+        activeSubsectionLabel: activeObjectSection === 'policy_lookup'
+          ? 'Policy Lookup'
+          : activeObjectSection === 'route_lookup'
+            ? 'Route Lookup'
+            : activeObjectSection === 'ssl_to_ipsec'
+              ? 'SSL-to-IPSec Assistant'
+              : activeObjectSection === 'config_warnings'
+                ? 'Config Warnings'
+                : unifiedInterfaces
+                  ? 'Interface Topology'
+                  : fieldLabel(activeObjectSection),
         reportSections: sidebarSections,
       },
     }))
-  }, [data.vendor, data.source_evidence, data.acquisition, activeSection, activeObjectSection, unifiedInterfaces, counts, errorCount, warningCount, sections, reportTabs])
+  }, [data.vendor, data.source_evidence, data.acquisition, activeSection, activeObjectSection, unifiedInterfaces, counts, errorCount, warningCount, sections, reportTabs, matchingPmData, auditData, validationRows.length])
 
   function renderOverviewMetric(item: OverviewMetric) {
     return <tr key={item.label} className={item.tone ? `configuration-summary-${item.tone}` : undefined}>
@@ -628,76 +856,329 @@ export function SourceReport({ data, excelProfile, onExcelProfileChange, exporti
   }
 
   return <section className="panel source-report" aria-labelledby="report-title">
-    <div className="report-sticky-header">
-      <h2 id="report-title" className="visually-hidden">Source inventory</h2>
-      {exportError && <ErrorBanner message={exportError} />}
-      <label className="report-section-select">Report section<select value={activeSection} onChange={(event) => changeSection(event.target.value)}>{reportTabs.map((name) => <option key={name}>{name}</option>)}</select></label>
-      <nav className="report-tabs fw-tablist" role="tablist" aria-label="Report sections" onKeyDown={tabKeyboard}>
-        {reportTabs.map((sectionLabel) => (
-          <button key={sectionLabel} id={`report-tab-${encodeURIComponent(sectionLabel)}`} aria-controls={`report-panel-${encodeURIComponent(sectionLabel)}`} tabIndex={activeSection === sectionLabel ? 0 : -1} type="button" role="tab" aria-selected={activeSection === sectionLabel} className={`report-tab fw-tab-btn${activeSection === sectionLabel ? ' active' : ''}`} onClick={() => changeSection(sectionLabel)}>
-            {sectionLabel}
-          </button>
-        ))}
-      </nav>
-    </div>
-    {reportTabs.filter((item) => item !== activeSection).map((item) => <div key={item} hidden role="tabpanel" id={`report-panel-${encodeURIComponent(item)}`} aria-labelledby={`report-tab-${encodeURIComponent(item)}`} />)}
-    <div role="tabpanel" id={`report-panel-${encodeURIComponent(activeSection)}`} aria-labelledby={`report-tab-${encodeURIComponent(activeSection)}`} tabIndex={0}>
+    <h2 id="report-title" className="visually-hidden">Source inventory</h2>
+    {exportError && <ErrorBanner message={exportError} />}
+    {exportStatus && <Toast message={exportStatus} onDismiss={onDismissExportStatus} />}
+    <div role="tabpanel" id={`report-panel-${encodeURIComponent(activeSection)}`} aria-label={activeSection} tabIndex={0}>
       {activeSection === 'Overview' ? <>
-        <div className="fw-overview-top-bar">
-          <div className="fw-overview-meta">
-            {Array.isArray(summary.scopes) && summary.scopes.length > 0 && (
-              <p className="report-scope-summary">Scopes: {summary.scopes.join(', ')}</p>
-            )}
-            {data.collection != null && (
+        {supportsSecurityAudit && (
+          <nav className="report-object-tabs fw-tablist" role="tablist" aria-label="Overview subsections" onKeyDown={tabKeyboard}>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={overviewTab === 'summary'}
+              className={`fw-tab-btn${overviewTab === 'summary' ? ' active' : ''}`}
+              onClick={() => setOverviewTab('summary')}
+            >
+              Summary
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={overviewTab === 'packet_trace'}
+              className={`fw-tab-btn${overviewTab === 'packet_trace' ? ' active' : ''}`}
+              onClick={() => setOverviewTab('packet_trace')}
+            >
+              Trace Packet
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={overviewTab === 'config_diff'}
+              className={`fw-tab-btn${overviewTab === 'config_diff' ? ' active' : ''}`}
+              onClick={() => setOverviewTab('config_diff')}
+            >
+              Config Diff
+            </button>
+          </nav>
+        )}
+        {supportsSecurityAudit && data.source_evidence && overviewTab === 'packet_trace' ? (
+          <PacketTracePanel
+            vendor={data.vendor ?? ''}
+            sourceEvidence={data.source_evidence}
+            sections={sectionsData}
+          />
+        ) : supportsSecurityAudit && data.source_evidence && overviewTab === 'config_diff' ? (
+          <ConfigDiffPanel
+            vendor={data.vendor ?? ''}
+            sourceEvidence={data.source_evidence}
+            currentFilename={String(data.source_evidence.source_name || data.acquisition || 'Loaded source')}
+          />
+        ) : <>
+        {data.collection != null && (
+          <div className="fw-overview-top-bar">
+            <div className="fw-overview-meta">
               <div className="report-count-note">
                 <p>Collection: {String(asRecord(data.collection).status ?? 'Unknown')} · Method: {String(asRecord(data.collection).method ?? 'Not reported')}</p>
                 {Array.isArray(asRecord(data.collection).warnings) && <ul>{(asRecord(data.collection).warnings as unknown[]).map((warning, index) => <li key={index}>{String(safeValue(warning))}</li>)}</ul>}
               </div>
+            </div>
+          </div>
+        )}
+
+        <section className="fw-card fw-card-flex fw-hero-card" aria-label="Appliance overview">
+          <div className="fw-hero-heading">
+            <div className="fw-hero-eyebrow">{heroInfo.eyebrow}</div>
+            <div className="fw-hero-title fw-mono">{heroInfo.title}</div>
+            {(heroInfo.subtitle || scopeList) && (
+              <div className="fw-hero-sub">
+                {heroInfo.subtitle}
+                {scopeList ? `${heroInfo.subtitle ? ' · ' : ''}Scopes: ${scopeList}` : ''}
+              </div>
             )}
           </div>
-          <div className="report-header-actions">
-            <ExcelExportControls vendor={data.vendor ?? ''} profile={excelProfile} onProfileChange={onExcelProfileChange} exporting={exporting} onExport={onExport} />
+          {(heroInfo.badges.length > 0 || errorCount > 0 || warningCount > 0) && (
+            <div className="fw-hero-badges">
+              {heroInfo.badges.map((badge, idx) => (
+                badge.targetSection ? (
+                  <button
+                    key={`${badge.text}-${idx}`}
+                    type="button"
+                    id={badge.id}
+                    className={`fw-badge fw-badge-${badge.variant} fw-badge-link`}
+                    onClick={() => changeSection(badge.targetSection!)}
+                  >
+                    {badge.text}
+                  </button>
+                ) : (
+                  <span key={`${badge.text}-${idx}`} id={badge.id} className={`fw-badge fw-badge-${badge.variant}`}>
+                    {badge.text}
+                  </span>
+                )
+              ))}
+              {(errorCount > 0 || warningCount > 0) && (
+                <button
+                  type="button"
+                  className={`fw-badge fw-badge-${errorCount > 0 ? 'deny' : 'warn'} fw-badge-link`}
+                  onClick={() => { changeSection('Diagnostics & Coverage'); setSourceSection('config_warnings', 'Diagnostics & Coverage') }}
+                >
+                  Config Warnings: {(errorCount + warningCount).toLocaleString()}
+                </button>
+              )}
+            </div>
+          )}
+        </section>
+
+        <div className={`fw-overview-bento${!activeLifecycle && !haInfo ? ' fw-overview-bento-single' : ''}`}>
+          <div className="fw-overview-main">
+            <section className="fw-card fw-overview-panel" aria-labelledby="system-overview-title">
+              <div className="fw-overview-panel-head">
+                <h3 className="fw-overview-panel-title" id="system-overview-title">System &amp; Network</h3>
+              </div>
+              <dl className="fw-spec-list" aria-labelledby="system-overview-title">
+                {displaySystemItems.map((item) => (
+                  <div key={item.label} className="fw-spec-row">
+                    <dt className="fw-spec-label">{item.label}</dt>
+                    <dd className="fw-spec-val-wrap">
+                      <span className={item.value == null ? 'fw-spec-val system-overview-missing' : 'fw-spec-val'}>
+                        {item.value ?? 'Not reported'}
+                      </span>
+                      {item.detail && <span className="fw-spec-detail">{item.detail}</span>}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            </section>
           </div>
+
+          {(activeLifecycle || haInfo) && (
+            <div className="fw-overview-aside">
+              {activeLifecycle && (
+                <LifecycleCard lifecycle={activeLifecycle} onLifecycleResolved={setResolvedLifecycle} />
+              )}
+
+              {haInfo && (
+                <section className="fw-card fw-overview-panel fw-ha-panel" aria-labelledby="ha-overview-title">
+                  <div className="fw-overview-panel-head">
+                    <h3 className="fw-overview-panel-title" id="ha-overview-title">High Availability</h3>
+                    <span className={`fw-badge fw-badge-${haInfo.badgeVariant}`}>{haInfo.badgeText}</span>
+                  </div>
+                  <div className="fw-ha-summary">
+                    <div className="fw-ha-title">{haInfo.title}</div>
+                    <div className="fw-ha-sub">{haInfo.subtitle}</div>
+                  </div>
+                  {haInfo.enabled && haInfo.items.length > 0 && (
+                    <dl className="fw-spec-list fw-spec-list-compact" aria-label="High Availability details">
+                      {haInfo.items.map((item) => (
+                        <div key={item.label} className="fw-spec-row">
+                          <dt className="fw-spec-label">{item.label}</dt>
+                          <dd className="fw-spec-val-wrap">
+                            <span className="fw-spec-val">{item.value ?? '—'}</span>
+                          </dd>
+                        </div>
+                      ))}
+                    </dl>
+                  )}
+                </section>
+              )}
+            </div>
+          )}
         </div>
-        <p className="preview-status" role="status" aria-live="polite">{exportStatus}</p>
-        <h3 className="report-overview-heading fw-section-header"><span className="dot" aria-hidden="true" />Validation</h3>
-        <button type="button" className={`report-validation-attention${errorCount ? ' has-errors' : warningCount ? ' has-warnings' : ''}`} onClick={() => changeSection('Validation')}><div>{sectionsData.validation == null && asRecord(summary.validation).severity_counts == null ? 'Not reported' : <>{errorCount.toLocaleString()} {errorCount === 1 ? 'error' : 'errors'} · {warningCount.toLocaleString()} {warningCount === 1 ? 'warning' : 'warnings'} <small>{warningGroups.toLocaleString()} warning {warningGroups === 1 ? 'group' : 'groups'}</small></>}</div><span>Review findings →</span></button>
-        {!!exposureWarnings.length && <div className="report-exposure-warning" role="status">
-          <div>
-            <strong>Public management exposure ({exposureWarnings.length})</strong>
-            <p>{exposureWarnings.map((row) => text(row.object_name)).filter(Boolean).join(', ')} — HTTP/HTTPS/SSH/Telnet management access is enabled on a WAN or public-facing interface.</p>
+
+        <PublicExposureCard
+          vendor={data.vendor ?? ''}
+          sourceEvidence={data.source_evidence}
+          audit={auditData}
+          liveDeviceAccess={liveDeviceAccess}
+          exposureWarnings={exposureWarnings}
+          onInspectValidation={() => { changeSection('Diagnostics & Coverage'); setSourceSection('config_warnings', 'Diagnostics & Coverage') }}
+        />
+
+        <section className="fw-card fw-overview-panel fw-overview-summary-panel" aria-labelledby="configuration-summary-title">
+          <div className="fw-overview-panel-head">
+            <h3 className="fw-overview-panel-title" id="configuration-summary-title">Configuration summary</h3>
           </div>
-          <button type="button" className="secondary-button" onClick={() => changeSection('Validation')}>Inspect in Validation →</button>
-        </div>}
-        <div className="report-overview-group">
-          <h3 className="report-overview-heading fw-section-header" id="configuration-summary-title"><span className="dot" aria-hidden="true" />Configuration summary</h3>
           <div className="configuration-summary-wrap">
             <table className="configuration-summary" aria-labelledby="configuration-summary-title">
               <thead><tr><th scope="col">Section</th><th scope="col">Count</th><th scope="col"><span className="visually-hidden">Navigation</span></th></tr></thead>
               <tbody>{overviewMetrics.map(renderOverviewMetric)}</tbody>
             </table>
           </div>
-        </div>
-      </> : activeSection === 'Validation' ? null : <>
+        </section>
+        </>}
+      </> : activeSection === 'Security Audit' ? (
+        <>
+          <section className="fw-card fw-card-flex fw-hero-card" aria-label="Security audit summary">
+            <div className="fw-hero-heading">
+              <div className="fw-hero-eyebrow">Security Audit</div>
+              <div className="fw-hero-title fw-mono">{heroInfo.title}</div>
+              {heroInfo.subtitle && <div className="fw-hero-sub">{heroInfo.subtitle}</div>}
+            </div>
+            <div className="fw-hero-badges">
+              {heroInfo.badges
+                .filter((b) => b.targetSection === 'Security Audit')
+                .map((badge, idx) => (
+                  <span key={`${badge.text}-${idx}`} className={`fw-badge fw-badge-${badge.variant}`}>
+                    {badge.text}
+                  </span>
+                ))}
+            </div>
+          </section>
+
+          {supportsSecurityAudit && data.source_evidence ? (
+            <SecurityAuditPanel
+              vendor={data.vendor ?? ''}
+              sourceEvidence={data.source_evidence}
+              liveDeviceAccess={liveDeviceAccess}
+              initialAudit={auditData}
+              managedExternally
+              externalLoading={auditLoading}
+              externalError={auditError}
+            />
+          ) : null}
+        </>
+      ) : activeSection === 'PM Lookup' && supportsSecurityAudit && data.source_evidence ? (
+        <PmLookupPanel
+          vendor={data.vendor ?? ''}
+          sourceEvidence={data.source_evidence}
+          initialData={matchingPmData}
+          onLoaded={(res) => {
+            if (data.vendor && data.source_evidence) {
+              setPmState({ vendor: data.vendor, sourceEvidence: data.source_evidence, data: res })
+            }
+          }}
+        />
+      ) : <>
         {!!objectTabs.length && <nav className="report-object-tabs fw-tablist" role="tablist" aria-label="Source subsections" onKeyDown={tabKeyboard}>
-          {objectTabs.map((item) => (
-            <button
-              type="button"
-              role="tab"
-              id={`subsection-tab-${encodeURIComponent(item)}`}
-              aria-controls={`subsection-panel-${encodeURIComponent(item)}`}
-              tabIndex={activeObjectSection === item ? 0 : -1}
-              aria-selected={activeObjectSection === item}
-              className={`fw-tab-btn${activeObjectSection === item ? ' active' : ''}`}
-              key={item}
-              onClick={() => setSourceSection(item)}
-            >
-              {tabLabel(item)}
-            </button>
-          ))}
+          {objectTabs.map((item) => {
+            const isEmpty = tabRawCount(item) === 0
+            return (
+              <button
+                type="button"
+                role="tab"
+                id={`subsection-tab-${encodeURIComponent(item)}`}
+                aria-controls={`subsection-panel-${encodeURIComponent(item)}`}
+                tabIndex={activeObjectSection === item ? 0 : -1}
+                aria-selected={activeObjectSection === item}
+                className={`fw-tab-btn${activeObjectSection === item ? ' active' : ''}${isEmpty ? ' fw-tab-btn--empty' : ''}`}
+                key={item}
+                onClick={() => setSourceSection(item)}
+              >
+                {tabLabel(item)}
+              </button>
+            )
+          })}
         </nav>}
         {objectTabs.filter((item) => item !== activeObjectSection).map((item) => <div key={item} hidden role="tabpanel" id={`subsection-panel-${encodeURIComponent(item)}`} aria-labelledby={`subsection-tab-${encodeURIComponent(item)}`} />)}
-        <div {...(unifiedInterfaces ? {} : { role: 'tabpanel', id: `subsection-panel-${encodeURIComponent(activeObjectSection)}`, 'aria-labelledby': `subsection-tab-${encodeURIComponent(activeObjectSection)}`, tabIndex: 0 as const })}>
+        <div role="tabpanel" id={`subsection-panel-${encodeURIComponent(activeObjectSection)}`} aria-labelledby={`subsection-tab-${encodeURIComponent(activeObjectSection)}`} tabIndex={0}>
+          {activeObjectSection === 'config_warnings' ? (
+            <ValidationReport data={data} reportScope={scope} onReportScope={changeScope} active />
+          ) : activeObjectSection === 'policy_lookup' && supportsSecurityAudit && data.source_evidence ? (
+            <PolicyLookupPanel
+              vendor={data.vendor ?? ''}
+              sourceEvidence={data.source_evidence}
+              sections={sectionsData}
+            />
+          ) : activeObjectSection === 'route_lookup' && supportsSecurityAudit && data.source_evidence ? (
+            <RouteLookupPanel
+              vendor={data.vendor ?? ''}
+              sourceEvidence={data.source_evidence}
+              sections={sectionsData}
+            />
+          ) : activeObjectSection === 'ssl_to_ipsec' && supportsSecurityAudit && data.vendor === 'fortigate' && data.source_evidence ? (
+            <SslToIpsecPanel
+              vendor={data.vendor ?? ''}
+              sourceEvidence={data.source_evidence}
+              initialData={matchingSslToIpsecData}
+              onLoaded={(vdomKey, res) => {
+                if (data.vendor && data.source_evidence) {
+                  const sourceEvidence = data.source_evidence
+                  const vendor = data.vendor
+                  setSslToIpsecState((current) => ({
+                    vendor,
+                    sourceEvidence,
+                    byVdom: {
+                      ...(current && current.vendor === vendor && current.sourceEvidence === sourceEvidence ? current.byVdom : {}),
+                      [vdomKey]: res,
+                    },
+                  }))
+                }
+              }}
+            />
+          ) : activeObjectSection === 'sdwan' && data.vendor === 'fortigate' ? (
+            <>
+              {scopes.length > 0 && (
+                <div className="sdwan-scope-bar">
+                  <select aria-label="Filter report scope" value={effectiveScope} onChange={(event) => changeScope(event.target.value)}>
+                    <option value="">All scopes</option>
+                    {scopes.map((item) => <option key={item} value={item}>{item}</option>)}
+                  </select>
+                </div>
+              )}
+              <SdwanView rows={subsectionRows} scope={effectiveScope} />
+            </>
+          ) : <>
+          {activeObjectSection === 'ssl_vpn_settings' && supportsSecurityAudit && data.vendor === 'fortigate' && (
+            <div className="fw-ssl-ipsec-callout" role="note">
+              <span>Planning a migration from SSL-VPN to Dial-up IPSec (IKEv2)?</span>
+              <button
+                type="button"
+                className="secondary-button button-compact"
+                onClick={() => setSourceSection('ssl_to_ipsec')}
+              >
+                Open SSL-to-IPSec Assistant →
+              </button>
+            </div>
+          )}
+          {subtypeTabs.length > 0 && (
+            <nav className="fw-subtablist" role="tablist" aria-label="Object type filters" onKeyDown={tabKeyboard}>
+              {subtypeTabs.map((sub) => (
+                <button
+                  key={sub.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={activeSubtype === sub.id}
+                  className={`fw-subtab-btn${activeSubtype === sub.id ? ' active' : ''}`}
+                  onClick={() => {
+                    setSubtypeChoices((current) => ({ ...current, [activeObjectSection]: sub.id }))
+                    setSelectedRow(null)
+                  }}
+                >
+                  {sub.label} ({sub.count.toLocaleString()})
+                </button>
+              ))}
+            </nav>
+          )}
           {legendItems.length > 0 && (
             <div className="fw-legend" aria-label="Table color legend">
               {legendItems.map((item) => (
@@ -722,7 +1203,7 @@ export function SourceReport({ data, excelProfile, onExcelProfileChange, exporti
               <button
                 type="button"
                 className="secondary-button button-compact fw-csv-btn"
-                onClick={() => downloadTableCsv(columns, filteredRows, `${data.vendor || 'firewall'}_${activeObjectSection || 'report'}.csv`)}
+                onClick={() => downloadCsvRows(columns, filteredRows, `${data.vendor || 'firewall'}_${activeObjectSection || 'report'}.csv`)}
                 title="Export filtered rows to CSV"
               >
                 ⬇ CSV
@@ -730,24 +1211,28 @@ export function SourceReport({ data, excelProfile, onExcelProfileChange, exporti
               <details className="report-column-selector"><summary>Columns ({columns.length})</summary><div>{allColumns.map((key, index) => <label key={key}><input type="checkbox" checked={columns.includes(key)} disabled={index === 0} onChange={(event) => updateView({ columns: allColumns.filter((column) => column === allColumns[0] || (column === key ? event.target.checked : columns.includes(column))) })} />{fieldLabel(key)}</label>)}<button className="filter-clear" type="button" onClick={() => updateView({ columns: undefined })}>Reset columns</button></div></details>
             </div>
           </div>
-          <div className={`validation-workspace${currentSelected ? ' has-details' : ''}${unifiedInterfaces ? ' report-topology-view' : ''}`}>
-            <SourceRowsTable
-              rows={filteredRows}
-              columns={columns}
-              selected={currentSelected}
-              hasSource={subsectionRows.length > 0}
-              topology={activeObjectSection === 'interface_topology'}
-              subsection={activeObjectSection}
-              sortCol={sortCol}
-              sortAsc={sortAsc}
-              onSort={toggleSort}
-              onSelect={setSelectedRow}
-            />
-            {currentSelected && <ReportDetails row={currentSelected} subsection={activeObjectSection} vendor={data.vendor} onClose={() => setSelectedRow(null)} previous={selectedIndex > 0 ? () => setSelectedRow(filteredRows[selectedIndex - 1]) : undefined} next={selectedIndex < filteredRows.length - 1 ? () => setSelectedRow(filteredRows[selectedIndex + 1]) : undefined} />}
-          </div>
+          {activeObjectSection === 'vpn_inspector' ? (
+            <VpnInspectorView rows={filteredRows} vendor={data.vendor} />
+          ) : (
+            <div className={`validation-workspace${currentSelected ? ' has-details' : ''}${unifiedInterfaces ? ' report-topology-view' : ''}`}>
+              <SourceRowsTable
+                rows={filteredRows}
+                columns={columns}
+                selected={currentSelected}
+                hasSource={subsectionRows.length > 0}
+                topology={activeObjectSection === 'interface_topology'}
+                subsection={activeObjectSection}
+                sortCol={sortCol}
+                sortAsc={sortAsc}
+                onSort={toggleSort}
+                onSelect={setSelectedRow}
+              />
+              {currentSelected && <ReportDetails row={currentSelected} subsection={activeObjectSection} vendor={data.vendor} onClose={() => setSelectedRow(null)} previous={selectedIndex > 0 ? () => setSelectedRow(filteredRows[selectedIndex - 1]) : undefined} next={selectedIndex < filteredRows.length - 1 ? () => setSelectedRow(filteredRows[selectedIndex + 1]) : undefined} />}
+            </div>
+          )}
+          </>}
         </div>
       </>}
-      <div hidden={activeSection !== 'Validation'}><ValidationReport data={data} reportScope={scope} onReportScope={changeScope} active={activeSection === 'Validation'} /></div>
     </div>
   </section>
 }

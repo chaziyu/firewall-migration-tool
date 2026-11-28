@@ -1,4 +1,4 @@
-"""Source-to-workbook regressions for the Palo Alto / Junos export review."""
+"""Source-to-workbook regressions for the Palo Alto / FortiGate export review."""
 
 from copy import deepcopy
 from ast import literal_eval
@@ -11,13 +11,11 @@ import pytest
 
 from fwmigrate.collection.contracts import CollectedSource, CollectionStatus
 from fwmigrate.collection.snapshot import make_snapshot, parse_snapshot, sanitize_source
-from fwmigrate.vendors.juniper_srx.source_report import JuniperSRXSourceReporter
 from fwmigrate.vendors.palo_alto.source_report import PaloAltoSourceReporter
 from fwmigrate.web import create_app
 
 
 PAN = PaloAltoSourceReporter()
-JUNOS = JuniperSRXSourceReporter()
 
 
 def export(reporter, source, profile="full"):
@@ -66,96 +64,6 @@ def test_pan_credential_aliases_are_redacted_in_direct_snapshot_and_http_exports
     assert response.status_code == 200
     with ZipFile(BytesIO(response.data)) as archive:
         assert all(b"SENTINEL" not in archive.read(name) for name in archive.namelist() if name.endswith(".xml"))
-
-
-HIERARCHY = '''interfaces {
- ge-0/0/0 { description "uplink #1 /* literal */";
-  unit 100 { vlan-id 200; family inet { address 192.0.2.1/24; } }
- }
-}
-system { root-authentication { encrypted-password "JUNOS_SENTINEL"; } }
-'''
-
-
-@pytest.mark.parametrize("profile", ["fast", "full"])
-def test_junos_sanitizer_preserves_hierarchy_and_http_units(client, profile):
-    safe = sanitize_source("juniper_srx", HIERARCHY)
-    assert 'description "uplink #1 /* literal */";' in safe
-    assert "JUNOS_SENTINEL" not in safe
-    assert sanitize_source("juniper_srx", safe) == safe
-    direct = JUNOS.analyze_source(HIERARCHY)
-    sanitized = JUNOS.analyze_source(safe)
-    assert direct.config.get_context().interfaces == sanitized.config.get_context().interfaces
-    snapshot = make_snapshot(CollectedSource("juniper_srx", HIERARCHY, "synthetic.conf", "test", CollectionStatus.SUCCESS))
-    restored = JUNOS.analyze_source(parse_snapshot(json.dumps(snapshot).encode()).source_text)
-    assert restored.config.get_context().interfaces == sanitized.config.get_context().interfaces
-    response = client.post("/api/extract/excel", data={"source_vendor": "juniper_srx", "excel_profile": profile,
-        "file": (BytesIO(HIERARCHY.encode()), "synthetic.conf")})
-    assert response.status_code == 200
-    workbook = load_workbook(BytesIO(response.data))
-    data = rows(workbook, "Interface Addresses")
-    assert [(row["Unit"], row["Address"]) for row in data] == [("100", "192.0.2.1/24")]
-    assert next(row for row in rows(workbook, "Interface Details") if row["Unit"] == "100")["VLAN ID"] == 200
-
-
-@pytest.mark.parametrize("literal", ["literal /* marker", "literal */ marker", "}", "{", ";", "[", "]", 'escaped "quote" /* marker'])
-def test_junos_quoted_syntax_does_not_remove_following_source(literal):
-    quoted = json.dumps(literal)
-    for source in (
-        f'set interfaces ge-0/0/0 description {quoted}\nset security address-book global address KEEP 192.0.2.1/32',
-        f'interfaces {{ ge-0/0/0 {{ description {quoted}; }} }}\nsecurity {{ address-book global {{ address KEEP 192.0.2.1/32; }} }}',
-    ):
-        analysis = JUNOS.analyze_source(sanitize_source("juniper_srx", source))
-        context = analysis.config.get_context()
-        assert context.interfaces["ge-0/0/0"].description == literal
-        assert context.address_books["global"].addresses["KEEP"].prefix == "192.0.2.1/32"
-
-
-def test_junos_multiline_hierarchy_strings_preserve_values_and_source_lines():
-    source = 'interfaces {\n ge-0/0/0 { description "first\n/* literal # marker\nlast"; }\n}\nsystem { host-name edge; }'
-    safe = sanitize_source("juniper_srx", source)
-    assert safe == source
-    analysis = JUNOS.analyze_source(safe)
-    assert analysis.config.get_context().interfaces["ge-0/0/0"].description == "first\n/* literal # marker\nlast"
-    assert analysis.config.hostname == "edge"
-    assert analysis.inventory_items[-1].commands[0].line_number == 6
-
-
-@pytest.mark.parametrize("source", [
-    'interfaces { ge-0/0/0 { description "unterminated; } }',
-    'interfaces { ge-0/0/0 { description uplink;',
-    'interfaces { ge-0/0/0 { description uplink } }',
-    'interfaces { ge-0/0/0 { description uplink; } } }',
-    'applications { application-set X { application [ A B; } }',
-    'interfaces { /* unterminated',
-])
-def test_junos_malformed_hierarchy_is_rejected_with_safe_line_diagnostic(client, source):
-    with pytest.raises(ValueError, match=r"line \d+"):
-        JUNOS.analyze_source(source)
-    response = client.post("/api/extract/excel", data={"source_vendor": "juniper_srx",
-        "file": (BytesIO(source.encode()), "malformed.conf")})
-    assert response.status_code == 400
-
-
-def test_junos_case_distinct_objects_groups_and_scopes_remain_distinct():
-    source = '''set security address-book global address Foo 192.0.2.1/32
-set security address-book global address foo 192.0.2.2/32
-deactivate security address-book global address Foo
-set groups G security address-book global address UPPER 192.0.2.3/32
-set groups g security address-book global address lower 192.0.2.4/32
-set apply-groups G
-set logical-systems LS interfaces ge-0/0/0 description upper
-set logical-systems ls interfaces ge-0/0/0 description lower
-deactivate logical-systems LS interfaces ge-0/0/0'''
-    analysis, workbook = export(JUNOS, source)
-    states = {row["Name"]: row["Effective State"] for row in rows(workbook, "Addresses")}
-    assert states == {"Foo": "INACTIVE", "foo": "EFFECTIVE"}
-    paths = [row["target_path"] for row in analysis.derived.inheritance["effective_commands"]]
-    assert any("UPPER" in path for path in paths)
-    assert not any("lower" in path for path in paths)
-    detail = {row["Context"]: row["Effective State"] for row in rows(workbook, "Interface Details")}
-    assert detail["logical-system LS"] == "INACTIVE"
-    assert detail["logical-system ls"] == "EFFECTIVE"
 
 
 @pytest.mark.parametrize("profile", ["fast", "full"])
@@ -211,16 +119,6 @@ def test_pan_standalone_vsys_rules_have_explicit_source_only_order():
 
 @pytest.mark.parametrize("profile", ["fast", "full"])
 def test_feature_settings_include_application_top_level_terms_and_explicit_vlan(profile):
-    source = '''set applications application HTTPS protocol tcp
-set applications application HTTPS destination-port 443
-set applications application MULTI term DNS protocol udp
-set applications application MULTI term DNS destination-port 53'''
-    _, workbook = export(JUNOS, source, profile)
-    settings = rows(workbook, "Application Settings")
-    https = next(row for row in settings if row["Application"] == "HTTPS")
-    assert (https["Location"], https["Term"], https["Protocol"], https["Destination Ports"]) == ("top-level", None, "tcp", "['443']")
-    dns = next(row for row in settings if row["Application"] == "MULTI" and row["Term"] == "DNS")
-    assert (dns["Protocol"], dns["Destination Ports"]) == ("udp", "['53']")
     source = '''<config><devices><entry name="fw"><network><interface><ethernet><entry name="ethernet1/1">
 <layer3><units><entry name="ethernet1/1.100"><tag>200</tag><ip><entry name="192.0.2.1/24"/></ip></entry></units></layer3>
 </entry></ethernet></interface></network></entry></devices></config>'''
@@ -241,12 +139,11 @@ def test_pan_scalar_nat_distribution_survives_with_accurate_coverage(distributio
     assert status == ("PARTIAL" if distribution == "future-choice" else "EXTRACTED")
 
 
-@pytest.mark.parametrize("reporter,header", [(PAN, 3), (JUNOS, 1)])
+@pytest.mark.parametrize("reporter,header", [(PAN, 3)])
 @pytest.mark.parametrize("profile", ["fast", "full"])
 def test_upstream_overflow_fix_preserves_actual_vendor_workbook_values(reporter, header, profile):
     value = "x" * 32767 + "=1+1😀END"
-    source = (f'<config><shared><address><entry name="X"><description>{value}</description></entry></address></shared></config>'
-              if reporter is PAN else f'set security address-book global address X description "{value}"')
+    source = f'<config><shared><address><entry name="X"><description>{value}</description></entry></address></shared></config>'
     _, workbook = export(reporter, source, profile)
     assert "See Text Overflow:" in rows(workbook, "Addresses", header)[0]["Description"]
     overflow = [row for row in list(workbook["Text Overflow"].values)[1:] if row[0] == "Addresses"]

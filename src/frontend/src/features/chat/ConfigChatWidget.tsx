@@ -162,7 +162,9 @@ export function ConfigChatWidget({ vendor, filename, preview }: {
         title="Ask AI about this firewall config"
         onClick={() => setIsOpen((open) => !open)}
       >
-        ✨
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+        </svg>
       </button>
       {isOpen && (
         <section
@@ -275,6 +277,10 @@ export function ConfigChatWidget({ vendor, filename, preview }: {
           {vendorMismatch && (
             <div className="fw-chat-mismatch">{vendorMismatch}</div>
           )}
+
+          <div className="fw-chat-privacy-notice" role="note">
+            Queries send a sanitized configuration summary (up to 250k chars) to Google Gemini.
+          </div>
 
           <div className="fw-chat-messages">
             {messages.length === 0 && !sending ? (

@@ -75,7 +75,10 @@ def test_public_mode_blocks_device_routes_before_reading_payload(route, remote_a
                            headers={'X-Forwarded-For': '198.51.100.20'},
                            environ_overrides={'REMOTE_ADDR': remote_addr})
     assert response.status_code == 403
-    assert client.get('/api/capabilities').json == {'live_device_access': False}
+    caps = client.get('/api/capabilities').json
+    assert caps['live_device_access'] is False
+    assert caps['tsf_enabled'] is True
+    assert caps['tsf_max_zip_mb'] == 100
     assert all(not vendor['live_collection'] for vendor in client.get('/api/vendors').json['sources'])
 
 
@@ -131,14 +134,17 @@ def test_cross_origin_writes_fail_before_source_processing(headers, monkeypatch)
     assert response.headers['Cache-Control'] == 'no-store, private'
 
 
-@pytest.mark.parametrize('mode,origin,status', [
-    ('public', 'http://localhost', 400),
-    ('public', 'http://127.0.0.1:5173', 403),
-    ('local', 'http://127.0.0.1:5173', 400),
-    ('local', 'http://localhost:5173', 400),
+@pytest.mark.parametrize('mode,allow_dev,origin,status', [
+    ('public', False, 'http://localhost', 400),
+    ('public', False, 'http://127.0.0.1:5173', 403),
+    ('public', True, 'http://127.0.0.1:5173', 403),
+    ('local', False, 'http://127.0.0.1:5173', 403),
+    ('local', False, 'http://localhost:5173', 403),
+    ('local', True, 'http://127.0.0.1:5173', 400),
+    ('local', True, 'http://localhost:5173', 400),
 ])
-def test_same_origin_and_local_vite_requests(mode, origin, status):
-    client = create_app({'TESTING': True, 'WEB_MODE': mode}).test_client()
+def test_same_origin_and_local_vite_requests(mode, allow_dev, origin, status):
+    client = create_app({'TESTING': True, 'WEB_MODE': mode, 'ALLOW_DEV_ORIGINS': allow_dev}).test_client()
     # Missing source returns 400 only after the browser request guard accepts it.
     assert client.post('/api/preview', headers={'Origin': origin}).status_code == status
 
@@ -188,3 +194,23 @@ def test_serve_selects_mode_from_bind_address(host, mode, monkeypatch):
 def test_invalid_web_mode_fails_closed():
     with pytest.raises(ValueError, match='WEB_MODE'):
         create_app({'TESTING': True, 'WEB_MODE': 'typo'})
+
+
+@pytest.mark.parametrize('path', ['/api/chat', '/api/vendors'])
+@pytest.mark.parametrize('headers', [
+    {'Origin': 'http://attacker.example'},
+    {'Origin': 'null'},
+    {'Sec-Fetch-Site': 'cross-site'},
+])
+def test_cross_origin_api_reads_are_rejected(path, headers):
+    client = create_app({'TESTING': True, 'WEB_MODE': 'local'}).test_client()
+    response = client.get(path, headers=headers)
+    assert response.status_code == 403
+    assert response.headers['Cache-Control'] == 'no-store, private'
+
+
+@pytest.mark.parametrize('path', ['/api/chat', '/api/vendors'])
+def test_same_origin_api_reads_succeed(path):
+    client = create_app({'TESTING': True, 'WEB_MODE': 'local'}).test_client()
+    assert client.get(path).status_code == 200
+    assert client.get(path, headers={'Origin': 'http://localhost', 'Sec-Fetch-Site': 'same-origin'}).status_code == 200

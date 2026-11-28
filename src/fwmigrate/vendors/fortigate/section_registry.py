@@ -157,12 +157,32 @@ register_section(
             "description",
             "status",
             "role",
+            "dedicated-to",
+            "mtu-override",
+            "dhcp-relay-service",
             "defaultgw",
             "lacp-mode",
             "lacp-speed",
             "aggregate-type",
             "management-ip",
             "dhcp-relay-ip",
+        ),
+    )
+)
+
+register_section(
+    SectionSpec(
+        source_path="system interface ipv6",
+        list_fields=_fields("ip6-allowaccess"),
+        integer_fields=_fields("ip6-default-life"),
+        scalar_fields=_fields(
+            "ip6-mode",
+            "ip6-address",
+            "ip6-send-adv",
+            "ip6-manage-flag",
+            "ip6-other-flag",
+            "ip6-dns-server-override",
+            "dhcp6-prefix-delegation",
         ),
     )
 )
@@ -413,8 +433,13 @@ for _path in ("vpn ssl web user-bookmark bookmarks form-data", "vpn ssl web user
 
 register_section(SectionSpec(
     source_path="user nac-policy", list_fields=_fields("severity", "switch-group"),
-    integer_fields=_fields("match-period"),
-    scalar_fields=_fields("category", "description", "ems-tag", "family", "firewall-address", "fortivoice-tag", "host", "hw-vendor", "hw-version", "mac", "match-type", "os", "src", "ssid-policy", "status", "sw-version", "switch-fortilink", "switch-mac-policy", "type", "user", "user-group"),
+    integer_fields=_fields("match-period", "matched-devices"),
+    scalar_fields=_fields("assign-vlan", "category", "description", "ems-tag", "family", "firewall-address", "fortivoice-tag", "host", "hw-vendor", "hw-version", "mac", "match-type", "os", "src", "ssid-policy", "status", "sw-version", "switch-fortilink", "switch-mac-policy", "type", "user", "user-group"),
+))
+register_section(SectionSpec(
+    source_path="switch-controller nac-settings",
+    integer_fields=_fields("inactive-timer", "matched-devices"),
+    scalar_fields=_fields("name", "mode", "onboarding-vlan", "auto-auth", "bounce-nac-port", "link-down-flush", "hw-vendor", "assign-vlan", "description", "status"),
 ))
 register_section(SectionSpec(
     source_path="firewall address6-template", integer_fields=_fields("subnet-segment-count"),
@@ -552,6 +577,9 @@ register_section(
             "webfilter-profile",
             "dnsfilter-profile",
             "ssl-ssh-profile",
+            "file-filter-profile",
+            "emailfilter-profile",
+            "waf-profile",
 
             "logtraffic",
             "comments",
@@ -999,10 +1027,25 @@ register_section(
             "interval",
             "failtime",
             "recoverytime",
+            "latency-threshold",
+            "jitter-threshold",
+            "packetloss-threshold",
         ),
         scalar_fields=_fields(
             "protocol",
             "server",
+            "system-dns",
+        ),
+    )
+)
+
+register_section(
+    SectionSpec(
+        source_path="system sdwan health-check sla",
+        integer_fields=_fields(
+            "latency-threshold",
+            "jitter-threshold",
+            "packetloss-threshold",
         ),
     )
 )
@@ -1019,9 +1062,15 @@ register_section(
         integer_list_fields=_fields(
             "priority-members",
         ),
+        integer_fields=_fields(
+            "protocol",
+            "start-port",
+            "end-port",
+        ),
         scalar_fields=_fields(
             "name",
             "mode",
+            "link-cost-factor",
             "status",
         ),
     )
@@ -2305,6 +2354,15 @@ register_section(
     )
 )
 
+register_section(
+    SectionSpec(
+        source_path="system password-policy",
+        list_fields=_fields("apply-to"),
+        integer_fields=_fields("minimum-length", "min-lower-case-letter", "min-upper-case-letter", "min-non-alphanumeric", "min-number", "min-change-characters", "expire-day"),
+        scalar_fields=_fields("status", "expire-status", "reuse-password"),
+    )
+)
+
 
 # ----------------------------------------------------------------------
 # WiFi, Switch & Logging
@@ -2355,8 +2413,15 @@ register_section(
             "ip-fragment-preventing", "tun-mtu-uplink", "tun-mtu-downlink",
             "split-tunneling-acl-path", "split-tunneling-acl-local-ap-subnet",
             "energy-efficient-ethernet", "led-state", "poe-mode", "wan-port-mode",
-            "lldp",
+            "lldp", "platform",
         ),
+    )
+)
+
+register_section(
+    SectionSpec(
+        source_path="wireless-controller wtp-profile platform",
+        scalar_fields=_fields("type", "ddscan", "mode"),
     )
 )
 
@@ -2385,6 +2450,7 @@ register_section(
             "name", "sn", "fsw-wan1-peer", "fsw-wan1-admin", "fsw-wan2-peer",
             "fsw-wan2-admin", "version", "poe-pre-standard-detection",
             "poe-detection-type", "directly-connected", "switch-profile",
+            "switch-group", "status", "platform", "firmware-provision-version",
             "override-snmp-sysinfo", "override-snmp-community", "override-snmp-user",
             "description", "type", "owner-vdom", "mclag-igmp-snooping-aware",
         ),
@@ -2444,15 +2510,14 @@ register_section(
     SectionSpec(
         source_path="log setting",
         list_fields=_fields("custom-log-fields"),
-        integer_fields=_fields("brief-traffic-format"),
         scalar_fields=_fields(
             "resolve-ip", "resolve-port", "log-user-in-upper", "fwpolicy-implicit-log",
             "fwpolicy6-implicit-log", "log-invalid-packet", "local-in-allow",
             "local-in-deny-unicast", "local-in-deny-broadcast", "local-out",
-            " local-out-ioc-detection", "local-out-ioc-detection", "daemon-log",
+            "local-out-ioc-detection", "daemon-log",
             "neighbor-event", "expolicy-implicit-log", "faz-override",
             "syslog-override", "rest-api-set", "rest-api-get", "anonymization-hash",
-            "user-anonymize",
+            "brief-traffic-format", "user-anonymize",
         ),
     )
 )
@@ -2460,9 +2525,52 @@ register_section(
 register_section(
     SectionSpec(
         source_path="log threat-weight",
-        scalar_fields=_fields("status", "blocked-connection", "failed-connection", "url-block-detected", "botnet-connection-detected"),
+        scalar_fields=_fields(
+            "status", "blocked-connection", "failed-connection",
+            "url-block-detected", "url-block-detect", "botnet-connection-detected",
+        ),
     )
 )
+
+register_section(
+    SectionSpec(
+        source_path="log threat-weight level",
+        integer_fields=_fields("low", "medium", "high", "critical"),
+    )
+)
+
+register_section(
+    SectionSpec(
+        source_path="log threat-weight ips",
+        scalar_fields=_fields(
+            "info-severity", "low-severity", "medium-severity",
+            "high-severity", "critical-severity",
+        ),
+    )
+)
+
+register_section(
+    SectionSpec(
+        source_path="log threat-weight malware",
+        scalar_fields=_fields(
+            "virus-infected", "virus-file-type-executable", "virus-outbreak-prevention",
+            "virus-scan-error", "botnet-connection", "command-blocked",
+            "file-blocked", "oversize", "switch-proto", "mimefragmented",
+            "content-disarm", "fortisandbox", "fortindr", "malware-list",
+            "ems-threat-feed", "fsa-malicious", "fsa-high-risk", "fsa-medium-risk",
+            "inline-block",
+        ),
+    )
+)
+
+for _tw_cat_path in ("log threat-weight web", "log threat-weight application"):
+    register_section(
+        SectionSpec(
+            source_path=_tw_cat_path,
+            integer_fields=_fields("category"),
+            scalar_fields=_fields("level"),
+        )
+    )
 
 register_section(
     SectionSpec(
@@ -2475,7 +2583,12 @@ register_section(
 register_section(
     SectionSpec(
         source_path="switch-controller port-policy",
-        scalar_fields=_fields("description", "fortilink", "qos-policy", "vlan-policy", "bounce-port-link"),
+        list_fields=_fields("user-group"),
+        integer_fields=_fields("guest-auth-delay"),
+        scalar_fields=_fields(
+            "description", "fortilink", "qos-policy", "vlan-policy", "bounce-port-link",
+            "guest-vlan", "mac-auth-bypass", "eap-passthru", "radius-timeout-overwrite",
+        ),
     )
 )
 
@@ -2501,5 +2614,73 @@ register_section(
         source_path="switch-controller vlan-policy",
         list_fields=_fields("allowed-vlans", "untagged-vlans"),
         scalar_fields=_fields("description", "fortilink", "vlan", "allowed-vlans-all", "discard-mode"),
+    )
+)
+
+for _cert_store in ("local", "ca", "remote"):
+    register_section(
+        SectionSpec(
+            source_path=f"vpn certificate {_cert_store}",
+            scalar_fields=_fields(
+                "certificate", "ca-identifier", "comments",
+                "source", "source-ip", "range", "scep-url",
+            ),
+        )
+    )
+
+for _local_in_path in ("firewall local-in-policy", "firewall local-in-policy6"):
+    register_section(
+        SectionSpec(
+            source_path=_local_in_path,
+            list_fields=_fields("intf", "srcaddr", "dstaddr", "service"),
+            scalar_fields=_fields(
+                "uuid", "srcaddr-negate", "dstaddr-negate", "action",
+                "service-negate", "schedule", "status", "comments", "virtual-patch",
+            ),
+        )
+    )
+
+for _faz_path in (
+    "log fortianalyzer setting",
+    "log fortianalyzer2 setting",
+    "log fortianalyzer3 setting",
+):
+    register_section(
+        SectionSpec(
+            source_path=_faz_path,
+            scalar_fields=_fields(
+                "status", "server", "source-ip", "upload-option", "reliable",
+                "enc-algorithm", "ssl-min-proto-version", "certificate",
+                "interface", "interface-select-method",
+            ),
+        )
+    )
+
+register_section(
+    SectionSpec(
+        source_path="log fortiguard setting",
+        scalar_fields=_fields(
+            "status", "upload-option", "upload-interval", "upload-day",
+            "upload-time", "enc-algorithm", "interface", "interface-select-method",
+        ),
+    )
+)
+
+register_section(
+    SectionSpec(
+        source_path="system storage",
+        integer_fields=_fields("order", "size"),
+        scalar_fields=_fields("status", "media-status", "partition", "device", "usage", "wanopt-mode"),
+    )
+)
+
+register_section(
+    SectionSpec(
+        source_path="user saml",
+        scalar_fields=_fields(
+            "cert", "entity-id", "single-sign-on-url", "single-logout-url",
+            "idp-entity-id", "idp-single-sign-on-url", "idp-single-logout-url",
+            "idp-cert", "user-name", "group-name", "digest-method",
+        ),
     )
 )

@@ -7,6 +7,7 @@ from time import perf_counter
 from typing import Any, BinaryIO, Iterable, Mapping, Sequence
 
 from ....source_reporting.excel_style import check_report_dimensions, REPORT_BODY_NOTE, report_cell_value, append_readable_report_row, style_report_header, write_report_summary
+from ....source_reporting.lifecycle import build_fortigate_lifecycle_excel_rows, evaluate_fortigate_lifecycle
 
 from ....source_reporting.excel_lifecycle import report_workbook, save_report_workbook
 
@@ -465,10 +466,17 @@ def _build_summary(
 ) -> None:
     counts = _inventory_counts(context)
     coverage_labels = {"Review Required", "Source-only Sections"}
+    meta = context.extracted.source_metadata
+    lifecycle_result = evaluate_fortigate_lifecycle(
+        meta.hardware_model,
+        meta.fortios_version,
+        serial_raw=meta.serial_number,
+        allow_online=False,
+    )
     write_report_summary(
         workbook["Summary"], title="FortiGate Configuration Report",
         metadata=(("Hostname", _hostname(context)),
-                  ("FortiOS Version", context.extracted.source_metadata.fortios_version),
+                  ("FortiOS Version", meta.fortios_version),
                   ("VDOMs", "\n".join(_vdoms(context)) or None),
                   ("Source File", context.source_name or None)),
         profile=context.profile.value.upper(),
@@ -486,6 +494,7 @@ def _build_summary(
                       "FULL includes command-level Source Inventory and Extraction Coverage."
                   ))),
         indicators=_migration_indicators(context),
+        lifecycle=build_fortigate_lifecycle_excel_rows(lifecycle_result),
     )
 
 

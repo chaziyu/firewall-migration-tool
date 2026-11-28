@@ -1,163 +1,195 @@
 import { restoreWorkspace, saveWorkspace } from '../../storage/workspaceStore'
-import type { SourceEvidence } from '../../storage/workspaceTypes'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Button } from '../../components/common/Button'
 import { ErrorBanner } from '../../components/common/ErrorBanner'
 import { LoadingState } from '../../components/common/LoadingState'
+import type { WorkspaceTopbarActions } from '../../components/layout/PageHeader'
 import { FileUpload } from './FileUpload'
 import { SourceReport } from '../report/SourceReport'
-import { downloadSourceWorkbook, importCollectionSnapshot, loadSourceVendors, previewSource } from './sourceApi'
-import type { MigrationPairOption, SourcePreviewData, SourceVendor, SourceVendorOption } from './types'
-import { SourceOverview } from './SourceOverview'
-import { VendorSelect } from './VendorSelect'
-import { LiveCollection, type CollectionResult } from './LiveCollection'
-import { MigrationWorkflow } from '../migration/MigrationWorkflow'
+import { QuickSearchModal } from '../report/QuickSearchModal'
+import { TsfExplorer } from '../tsf/TsfExplorer'
+import { deleteTsfSession, fetchTsfProgress, uploadTsfArchive } from '../tsf/tsfApi'
+import type { TsfSessionInfo } from '../tsf/types'
+import { downloadSourceWorkbook, previewSource, rememberSourceDigest } from './sourceApi'
+import { detectUploadKind } from './autoDetect'
+import type { SourcePreviewData, SourceVendor } from './types'
 import { saveBlobWithFallback } from '../../utils/desktop'
-import { MigrationReview } from '../migration/MigrationReview'
-import { loadMigrationPairs } from '../migration/pairApi'
-import { MigrationPairWorkflow } from '../migration/MigrationPairWorkflow'
-import type { MigrationReviewTab } from '../migration/types'
-import type { MigrationStage, MigrationDecisionDocument } from '../migration/types'
 import { ConfigChatWidget } from '../chat/ConfigChatWidget'
 
 export type WorkflowView = 'report' | 'collect' | 'migration'
 
-export function SourceConfiguration({ view, onViewChange, liveDeviceAccess }: {
-  view: WorkflowView
-  liveDeviceAccess: boolean
-  onViewChange: (view: WorkflowView) => void
+const MAX_CONFIG_UPLOAD_BYTES = 50 * 1024 * 1024
+
+export function SourceConfiguration({
+  liveDeviceAccess = false,
+  tsfMaxZipMb = 500,
+  onWorkspaceActionsChange,
+}: {
+  view?: WorkflowView
+  liveDeviceAccess?: boolean
+  tsfMaxZipMb?: number
+  onViewChange?: (view: WorkflowView) => void
+  onWorkspaceActionsChange?: (actions: WorkspaceTopbarActions | null) => void
 }) {
   const [vendor, setVendor] = useState<SourceVendor>('')
-  const [vendors, setVendors] = useState<SourceVendorOption[]>([])
-  const [vendorsLoading, setVendorsLoading] = useState(true)
-  const [vendorsError, setVendorsError] = useState<string | null>(null)
-  const [migrationPairs, setMigrationPairs] = useState<MigrationPairOption[]>([])
-  const [migrationPairsLoading, setMigrationPairsLoading] = useState(true)
-  const [migrationPairsError, setMigrationPairsError] = useState<string | null>(null)
-  const [migrationPairId, setMigrationPairId] = useState('')
   const [file, setFile] = useState<File | null>(null)
   const [preview, setPreview] = useState<SourcePreviewData | null>(null)
-  const previewId = useMemo(() => preview?.source_digest || (preview?.source_evidence ? JSON.stringify(preview.source_evidence) : ''), [preview])
-  const [decisionDocument, setDecisionDocument] = useState<MigrationDecisionDocument | null>(null)
-  const [targetSource, setTargetSource] = useState<SourceEvidence | null>(null)
+  const [tsfSession, setTsfSession] = useState<TsfSessionInfo | null>(null)
+  const [tsfProgress, setTsfProgress] = useState<{ progress: number; message: string } | null>(null)
+  const previewId = useMemo(
+    () => preview?.source_digest || (preview?.source_evidence ? JSON.stringify(preview.source_evidence) : ''),
+    [preview],
+  )
   const [workspaceReady, setWorkspaceReady] = useState(false)
-  const [targetDevice, setTargetDevice] = useState('')
   const [loading, setLoading] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [exportStatus, setExportStatus] = useState('')
   const [exportError, setExportError] = useState<string | null>(null)
-  // All ingestion paths use the vendor default, retaining deliberate choices per vendor.
   const [excelProfiles, setExcelProfiles] = useState<Record<string, 'fast' | 'full'>>({})
   const excelProfile = excelProfiles[vendor] ?? (vendor === 'palo_alto' ? 'full' : 'fast')
-  const setExcelProfile = (profile: 'fast' | 'full') => setExcelProfiles((current) => ({ ...current, [vendor]: profile }))
-  const [ingestMode, setIngestMode] = useState<'config' | 'snapshot'>('config')
+  const setExcelProfile = useCallback(
+    (profile: 'fast' | 'full') => setExcelProfiles((current) => ({ ...current, [vendor]: profile })),
+    [vendor],
+  )
   const [error, setError] = useState<string | null>(null)
-  const [migrationVisited, setMigrationVisited] = useState(false)
-  const [migrationView, setMigrationView] = useState<MigrationStage>('load')
-  const availableMigrationPairs = migrationPairs.filter((pair) => pair.source_vendor === vendor)
-  const preferredPairId = vendor === 'fortigate' ? 'fortigate_to_palo_alto' : 'palo_alto_to_fortigate'
-  const selectedMigrationPair = availableMigrationPairs.find((pair) => pair.pair_id === migrationPairId)
-    ?? availableMigrationPairs.find((pair) => pair.pair_id === preferredPairId)
-    ?? availableMigrationPairs[0]
-  const activeMigrationPairId = selectedMigrationPair?.pair_id ?? ''
-  const isPanosOfflinePair = vendor === 'palo_alto' && Boolean(selectedMigrationPair?.export_available)
-  const reviewContextKey = JSON.stringify([previewId, activeMigrationPairId, targetSource, targetDevice])
-  const [reviewTabState, setReviewTabState] = useState({ contextKey: reviewContextKey, tab: 'changes' as MigrationReviewTab })
-  const migrationReviewTab = reviewTabState.contextKey === reviewContextKey ? reviewTabState.tab : 'changes'
-  const setMigrationReviewTab = (tab: MigrationReviewTab) => setReviewTabState({ contextKey: reviewContextKey, tab })
-  const [workflowMode, setWorkflowMode] = useState<'offline' | 'destination'>('offline')
-  const offlineConversion = activeMigrationPairId !== 'fortigate_to_palo_alto' || workflowMode === 'offline'
-  const [generationRequest, setGenerationRequest] = useState(0)
-  const [requestedDecision, setRequestedDecision] = useState<{ key: string; request: number } | null>(null)
+  const [searchOpen, setSearchOpen] = useState(false)
   const analysisRequest = useRef(0)
   const exportRequest = useRef(0)
   const exportController = useRef<AbortController | null>(null)
-
-  if (view === 'migration' && !migrationVisited) setMigrationVisited(true)
-
-  useEffect(() => () => { analysisRequest.current++; exportRequest.current++; exportController.current?.abort() }, [])
+  const tsfSessionIdRef = useRef<string | null>(null)
 
   useEffect(() => {
-    loadSourceVendors()
-      .then((availableVendors) => {
-        setVendors(availableVendors)
-        setVendor((current) => current || availableVendors[0]?.vendor_id || '')
-      })
-      .catch((cause) => setVendorsError(cause instanceof Error ? cause.message : 'Could not load vendors'))
-      .finally(() => setVendorsLoading(false))
-  }, [])
+    tsfSessionIdRef.current = tsfSession?.sessionId ?? null
+  }, [tsfSession])
 
-  useEffect(() => {
-    loadMigrationPairs()
-      .then((available) => setMigrationPairs(available.filter((pair) => pair.export_available)))
-      .catch((cause) => setMigrationPairsError(cause instanceof Error ? cause.message : 'Could not load migration targets'))
-      .finally(() => setMigrationPairsLoading(false))
+  useEffect(() => () => {
+    analysisRequest.current++
+    exportRequest.current++
+    exportController.current?.abort()
+    if (tsfSessionIdRef.current) {
+      void deleteTsfSession(tsfSessionIdRef.current).catch(() => { })
+    }
   }, [])
 
   useEffect(() => {
     let active = true
-    restoreWorkspace().then((saved) => {
-      if (!active) return
-      if (saved.preview) { setPreview(saved.preview); setVendor(saved.preview.vendor || ''); setDecisionDocument(saved.decisionDocument); setTargetSource(saved.targetSource); setTargetDevice(saved.targetDevice); setMigrationPairId(saved.migrationPairId || ''); setWorkflowMode(saved.workflowMode ?? 'offline'); setMigrationView(saved.panosMigration?.stage ?? (saved.workflowMode === 'destination' && (!saved.migrationPairId || saved.migrationPairId === 'fortigate_to_palo_alto') ? 'load' : 'review')) }
-    }).catch((cause) => { if (active) setError(`Workspace restore failed: ${String(cause)}`) })
-      .finally(() => { if (active) setWorkspaceReady(true) })
+    restoreWorkspace()
+      .then((saved) => {
+        if (!active) return
+        if (saved.preview && (saved.preview.vendor === 'fortigate' || saved.preview.vendor === 'palo_alto')) {
+          if (typeof rememberSourceDigest === 'function') {
+            rememberSourceDigest(saved.preview.source_evidence, saved.preview.source_digest)
+          }
+          setPreview(saved.preview)
+          setVendor(saved.preview.vendor)
+        }
+      })
+      .catch((cause) => {
+        if (active) setError(`Workspace restore failed: ${String(cause)}`)
+      })
+      .finally(() => {
+        if (active) setWorkspaceReady(true)
+      })
     return () => { active = false }
   }, [])
 
   useEffect(() => {
-    if (workspaceReady && !migrationPairsLoading) void saveWorkspace({ preview, decisionDocument, targetSource, targetDevice, migrationPairId: activeMigrationPairId }).catch((cause) => setError(`Workspace save failed: ${String(cause)}`))
-  }, [workspaceReady, migrationPairsLoading, activeMigrationPairId, preview, decisionDocument, targetSource, targetDevice])
-
-  useEffect(() => {
-    if (typeof window === 'undefined' || typeof window.addEventListener !== 'function') return
-    const onSelectStage = (event: Event) => {
-      const nextStage = (event as CustomEvent<MigrationStage>).detail
-      if (nextStage) setMigrationView(nextStage)
+    if (workspaceReady) {
+      void saveWorkspace({ preview }).catch((cause) => setError(`Workspace save failed: ${String(cause)}`))
     }
-    window.addEventListener('fw-select-migration-stage', onSelectStage)
-    return () => window.removeEventListener('fw-select-migration-stage', onSelectStage)
-  }, [])
+  }, [workspaceReady, preview])
 
   useEffect(() => {
     if (typeof window === 'undefined' || typeof window.dispatchEvent !== 'function') return
-    if (!preview) {
-      window.dispatchEvent(new CustomEvent('fw-workspace-meta', { detail: null }))
+    if (tsfSession) {
+      window.dispatchEvent(new CustomEvent('fw-workspace-meta', {
+        detail: {
+          vendorLabel: 'Palo Alto TSF',
+          filename: tsfSession.filename,
+          activeSection: 'TSF Explorer',
+          reportSections: [{ label: 'TSF Explorer', count: tsfSession.totalFiles }],
+        },
+      }))
       return
     }
-    if (view === 'report') return
-    const vName = vendors.find((v) => v.vendor_id === (preview.vendor || vendor))?.display_name || preview.vendor || vendor || 'Source'
-    const fName = preview.source_evidence?.source_name || file?.name || String(preview.acquisition ?? 'Configuration')
-    const stageDefinitions = offlineConversion
-      ? ([['load', 'Source'], ['review', 'Review conversion'], ['export', 'Download']] as const)
-      : ([['load', 'Source'], ['place', 'Target setup'], ['review', 'Review migration'], ['export', 'Download']] as const)
-    window.dispatchEvent(new CustomEvent('fw-workspace-meta', {
-      detail: {
-        vendorLabel: vName,
-        filename: fName,
-        activeSection: view === 'migration' ? (stageDefinitions.find(([id]) => id === migrationView)?.[1] ?? 'Migration') : 'Live collection',
-        migrationPairLabel: selectedMigrationPair?.display_name,
-        migrationStages: stageDefinitions.map(([id, label]) => ({
-          id,
-          label,
-          active: migrationView === id || (offlineConversion && id === 'review' && migrationView === 'place'),
-        })),
-      },
-    }))
-  }, [preview, view, vendor, vendors, file, offlineConversion, migrationView, selectedMigrationPair])
+    if (!preview) {
+      window.dispatchEvent(new CustomEvent('fw-workspace-meta', { detail: null }))
+    }
+  }, [preview, tsfSession])
+
+  const canSearch = Boolean(
+    preview?.source_evidence && (vendor === 'fortigate' || vendor === 'palo_alto'),
+  )
+
+  useEffect(() => {
+    if (!canSearch || typeof document === 'undefined') return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault()
+        setSearchOpen((current) => !current)
+      }
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [canSearch])
 
   async function analyse(sourceFile = file) {
     if (!sourceFile) return
+    const detected = detectUploadKind(sourceFile.name)
+    if (detected === 'unknown') {
+      setError(
+        'Unsupported file type. Upload a FortiGate (.conf, .cfg, .txt), Palo Alto PAN-OS (.xml), or Palo Alto TSF (.zip) archive.',
+      )
+      return
+    }
+
     const request = ++analysisRequest.current
     setLoading(true)
     setError(null)
+    if (detected === 'tsf') {
+      setTsfProgress({ progress: 0.02, message: 'Uploading TSF archive…' })
+      try {
+        const uploadRes = await uploadTsfArchive(sourceFile)
+        if (request !== analysisRequest.current) return
+        while (request === analysisRequest.current) {
+          const prog = await fetchTsfProgress(uploadRes.job_id)
+          if (request !== analysisRequest.current) return
+          if (prog.status === 'done') {
+            setTsfProgress(null)
+            setTsfSession({
+              sessionId: prog.session_id,
+              filename: prog.filename || sourceFile.name,
+              totalFiles: prog.total_files,
+              skippedCount: prog.skipped_count,
+            })
+            break
+          }
+          if (prog.status === 'error') {
+            throw new Error(prog.error || 'TSF extraction failed.')
+          }
+          setTsfProgress({
+            progress: prog.progress,
+            message: prog.message || 'Extracting TSF archive…',
+          })
+          await new Promise((resolve) => setTimeout(resolve, 400))
+        }
+      } catch (cause) {
+        if (request !== analysisRequest.current) return
+        setTsfProgress(null)
+        setError(cause instanceof Error ? cause.message : 'TSF upload failed')
+      } finally {
+        if (request === analysisRequest.current) setLoading(false)
+      }
+      return
+    }
+
+    setTsfProgress(null)
     try {
-      const result = await previewSource(sourceFile, vendor)
+      const result = await previewSource(sourceFile, 'auto')
       if (request !== analysisRequest.current) return
-      setPreview({ ...result, vendor: result.vendor || vendor, acquisition: 'Uploaded configuration' })
-      setMigrationView(offlineConversion ? 'review' : 'place')
-      setDecisionDocument(null)
-      setTargetSource(null)
-      setTargetDevice('')
+      const resolvedVendor = result.vendor || (detected === 'palo_alto' ? 'palo_alto' : 'fortigate')
+      setVendor(resolvedVendor)
+      setPreview({ ...result, vendor: resolvedVendor, acquisition: 'Uploaded configuration' })
     } catch (cause) {
       if (request !== analysisRequest.current) return
       setError(cause instanceof Error ? cause.message : 'Analysis failed')
@@ -172,17 +204,19 @@ export function SourceConfiguration({ view, onViewChange, liveDeviceAccess }: {
     setExportStatus('')
     setExportError(null)
     setExporting(false)
+    setSearchOpen(false)
     exportRequest.current++
     analysisRequest.current++
+    if (tsfSessionIdRef.current) {
+      const sid = tsfSessionIdRef.current
+      tsfSessionIdRef.current = null
+      void deleteTsfSession(sid).catch(() => { })
+    }
+    setTsfSession(null)
+    setTsfProgress(null)
     void saveWorkspace({ deterministicDraft: null, artifact: null }).catch((cause) => setError(String(cause)))
     setLoading(false)
-    setMigrationVisited(false)
-    setMigrationView('load')
-    setRequestedDecision(null)
     setPreview(null)
-    setDecisionDocument(null)
-    setTargetSource(null)
-    setTargetDevice('')
   }
 
   function updateFile(nextFile: File | null) {
@@ -192,36 +226,7 @@ export function SourceConfiguration({ view, onViewChange, liveDeviceAccess }: {
     if (nextFile) void analyse(nextFile)
   }
 
-  function changeVendor(nextVendor: SourceVendor) {
-    if (nextVendor === vendor) return
-    setVendor(nextVendor)
-    setMigrationPairId('')
-    setFile(null)
-    clearAnalysis()
-    setError(null)
-  }
-
-  function changeMigrationPair(nextPairId: string) {
-    if (nextPairId === migrationPairId) return
-    setMigrationPairId(nextPairId)
-    if (nextPairId !== 'fortigate_to_palo_alto') setWorkflowMode('offline')
-    setMigrationView(preview ? 'review' : 'load')
-    setDecisionDocument(null)
-    setTargetSource(null)
-    setTargetDevice('')
-  }
-
-  function acceptCollection(result: CollectionResult) {
-    clearAnalysis()
-    setError(null)
-    const collectedVendor = result.vendor_id || result.collection.vendor || vendor
-    setVendor(collectedVendor)
-    setPreview({ ...result.preview, source_evidence: result.snapshot, vendor: collectedVendor, collection: result.collection, acquisition: 'Live collection' })
-    setFile(null)
-    onViewChange('report')
-  }
-
-  async function exportWorkbook() {
+  const exportWorkbook = useCallback(async () => {
     if (!previewId || !preview?.source_evidence) return
     const request = analysisRequest.current
     const exportId = ++exportRequest.current
@@ -250,107 +255,189 @@ export function SourceConfiguration({ view, onViewChange, liveDeviceAccess }: {
     } catch (cause) {
       if (current() && !controller.signal.aborted) setExportError(cause instanceof Error ? cause.message : 'Workbook export failed')
     } finally {
-      if (current()) { setExporting(false); exportController.current = null }
+      if (current()) {
+        setExporting(false)
+        exportController.current = null
+      }
     }
-  }
+  }, [previewId, preview, vendor, excelProfile, file])
 
-  async function importSnapshot(file: File | undefined) {
-    if (!file) return
-    clearAnalysis()
-    const request = ++analysisRequest.current
-    setLoading(true)
-    setError(null)
-    try {
-      const result = await importCollectionSnapshot(file)
-      if (request !== analysisRequest.current) return
-      setVendor(result.vendor_id)
-      setFile(null)
-      setPreview({ ...result.preview, source_evidence: result.snapshot, vendor: result.vendor_id, collection: result.collection, acquisition: 'Imported collection snapshot' })
-    } catch (cause) {
-      if (request !== analysisRequest.current) return
-      setError(cause instanceof Error ? cause.message : 'Snapshot import failed')
-    } finally {
-      if (request === analysisRequest.current) setLoading(false)
+  useEffect(() => {
+    if (!onWorkspaceActionsChange) return
+    if (!preview) {
+      onWorkspaceActionsChange(null)
+      return
     }
-  }
+    onWorkspaceActionsChange({
+      canSearch,
+      excelProfile,
+      exporting,
+      onOpenSearch: () => setSearchOpen(true),
+      onExcelProfileChange: setExcelProfile,
+      onExportExcel: () => void exportWorkbook(),
+    })
+  }, [
+    onWorkspaceActionsChange,
+    preview,
+    canSearch,
+    excelProfile,
+    exporting,
+    setExcelProfile,
+    exportWorkbook,
+  ])
 
-  const selectedVendor = vendors.find((item) => item.vendor_id === vendor)
+  useEffect(() => () => {
+    onWorkspaceActionsChange?.(null)
+  }, [onWorkspaceActionsChange])
 
   if (!workspaceReady) return <LoadingState label="Restoring browser workspace…" />
-  if (!liveDeviceAccess && view === 'collect') return <p role="status">Live device access is available only in the local application.</p>
-  return <main className="feature-content">
-    <section id="source-configuration" className="panel source-configuration" hidden={view !== 'collect' && Boolean(preview) && !(view === 'migration' && migrationView === 'load')} aria-label="Source configuration">
-      <div id="source-configuration-controls">
-          <div className={`source-vendor-grid${view === 'migration' ? ' with-target' : ''}`}>
-            <VendorSelect value={vendor} onChange={changeVendor} vendors={vendors} />
-            {view === 'migration' && <label className="field"><span>Target platform</span><span className="vendor-select-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path d="m12 3 10 5-10 5L2 8Zm-10 9 10 5 10-5M2 17l10 5 10-5" /></svg><select className="vendor-select" value={selectedMigrationPair?.pair_id || ''} disabled={migrationPairsLoading || availableMigrationPairs.length === 0} onChange={(event) => changeMigrationPair(event.target.value)}><option value="" disabled>Choose a target</option>{availableMigrationPairs.map((pair) => <option key={pair.pair_id} value={pair.pair_id}>{pair.display_name}</option>)}</select></span></label>}
+
+  const vendorDisplay = vendor === 'palo_alto' ? 'Palo Alto PAN-OS' : vendor === 'fortigate' ? 'FortiGate FortiOS' : 'Firewall'
+
+  return (
+    <main className="feature-content">
+      {!preview && !tsfSession && (
+        <section id="source-configuration" className="panel source-configuration fw-landing-panel" aria-label="Source configuration">
+          <div className="fw-landing-header">
+            <div className="fw-landing-eyebrow">Firewall Analysis Console</div>
+            <h2 className="fw-landing-title">Inspect firewall configurations</h2>
+            <p className="fw-landing-desc">
+              Drop a Palo Alto PAN-OS XML backup, FortiGate FortiOS configuration, or Technical Support File archive to audit policies, objects, interfaces, VPNs, and security posture.
+            </p>
           </div>
-          {vendorsLoading && <LoadingState label="Loading vendors…" />}
-          {vendorsError && <ErrorBanner message={vendorsError} />}
-          {view === 'migration' && migrationPairsError && <ErrorBanner message={migrationPairsError} />}
-          {view === 'collect' ? <>{selectedVendor?.live_collection ? <LiveCollection key={vendor} vendor={selectedVendor} onCollected={acceptCollection} /> : !vendorsLoading && <p>Live collection is not available for this vendor.</p>}</> : <>
-            {!preview && <><div className="ingest-tabs" role="tablist" aria-label="Configuration source">
-              <button className={`ingest-tab-btn${ingestMode === 'config' ? ' active' : ''}`} role="tab" aria-selected={ingestMode === 'config'} type="button" onClick={() => setIngestMode('config')}>↑ Upload Config</button>
-              <button className={`ingest-tab-btn${ingestMode === 'snapshot' ? ' active' : ''}`} role="tab" aria-selected={ingestMode === 'snapshot'} type="button" onClick={() => setIngestMode('snapshot')}>▤ Upload Snapshot</button>
-            </div></>}
-            {ingestMode === 'config' ? selectedVendor && <FileUpload key={vendor} maxBytes={selectedVendor.max_source_bytes} file={file} onChange={updateFile} description={selectedVendor.display_name} accept={selectedVendor.file_extensions.join(',')}>
-              {loading ? <LoadingState label="Reading configuration and preparing the inventory…" /> : preview ? <span className="selected-file-success" role="status"><span aria-hidden="true">✓ </span>Configuration loaded</span> : error && <><ErrorBanner message={error} /><Button type="button" className="text-button" onClick={() => void analyse()}>Retry</Button></>}
-            </FileUpload> : !preview && <FileUpload key="snapshot" maxBytes={selectedVendor?.max_snapshot_bytes} file={null} onChange={(snapshot) => { if (snapshot) void importSnapshot(snapshot) }} accept=".json,application/json" disabled={loading} title="Drop your collection snapshot here" helpText="Import a previously collected, sanitized snapshot (.json)" />}
-            {preview && !file && <SourceOverview vendor={vendor} vendorName={selectedVendor?.display_name ?? ''} file={file} preview={preview} />}
-            {loading && (ingestMode !== 'config' || !file) && <LoadingState label="Reading configuration and preparing the inventory…" />}
-          </>}
+
+          <div className="fw-vendor-grid" aria-label="Supported configuration formats">
+            <div className="vendor-card">
+              <div className="vendor-card-head">
+                <div>
+                  <h3>Palo Alto Networks</h3>
+                  <p>PAN-OS XML running or backup configs</p>
+                </div>
+                <span className="fw-badge fw-badge-info">PAN-OS</span>
+              </div>
+              <div className="vendor-card-meta">
+                <span className="fw-badge fw-badge-info">PAN-OS 10.x+</span>
+                <span className="fw-badge fw-badge-muted">.xml</span>
+                <span className="fw-badge fw-badge-muted">Max 50 MB</span>
+              </div>
+            </div>
+
+            <div className="vendor-card">
+              <div className="vendor-card-head">
+                <div>
+                  <h3>FortiGate</h3>
+                  <p>FortiOS CLI configuration exports</p>
+                </div>
+                <span className="fw-badge fw-badge-warn">FortiOS</span>
+              </div>
+              <div className="vendor-card-meta">
+                <span className="fw-badge fw-badge-warn">FortiOS 6.x / 7.x</span>
+                <span className="fw-badge fw-badge-muted">.conf · .cfg · .txt</span>
+                <span className="fw-badge fw-badge-muted">Max 50 MB</span>
+              </div>
+            </div>
+
+            <div className="vendor-card">
+              <div className="vendor-card-head">
+                <div>
+                  <h3>Palo Alto TSF</h3>
+                  <p>Technical Support File log archives</p>
+                </div>
+                <span className="fw-badge fw-badge-info">TSF</span>
+              </div>
+              <div className="vendor-card-meta">
+                <span className="fw-badge fw-badge-info">Tree &amp; Full-Text Search</span>
+                <span className="fw-badge fw-badge-muted">.zip</span>
+                <span className="fw-badge fw-badge-muted">Max {tsfMaxZipMb} MB</span>
+              </div>
+            </div>
+          </div>
+
+          <FileUpload
+            maxBytes={MAX_CONFIG_UPLOAD_BYTES}
+            maxBytesForFile={(selected) =>
+              detectUploadKind(selected.name) === 'tsf'
+                ? tsfMaxZipMb * 1024 * 1024
+                : MAX_CONFIG_UPLOAD_BYTES
+            }
+            file={file}
+            onChange={updateFile}
+            accept=".xml,.conf,.cfg,.txt,.zip"
+            title="Drop configuration file (.xml, .conf, .cfg, .txt) or TSF archive (.zip)"
+            helpText={`Automatic vendor detection · Configs up to 50 MB · TSF .zip up to ${tsfMaxZipMb} MB`}
+          >
+            {loading ? (
+              tsfProgress ? (
+                <div className="tsf-upload-progress" role="status" aria-live="polite">
+                  <div className="tsf-progress-track">
+                    <div
+                      className="tsf-progress-fill"
+                      style={{ width: `${Math.round(Math.max(0.03, Math.min(1, tsfProgress.progress)) * 100)}%` }}
+                    />
+                  </div>
+                  <div className="tsf-progress-meta">
+                    <span>{tsfProgress.message}</span>
+                    <span>{Math.round(tsfProgress.progress * 100)}%</span>
+                  </div>
+                </div>
+              ) : (
+                <LoadingState label="Detecting vendor and preparing configuration inventory…" />
+              )
+            ) : error ? (
+              <>
+                <ErrorBanner message={error} />
+                <Button type="button" className="text-button" onClick={() => void analyse()}>Retry</Button>
+              </>
+            ) : null}
+          </FileUpload>
+
+          <p className="fw-landing-caption">
+            Files are processed in ephemeral session memory and cleared automatically when the workspace resets or expires.
+          </p>
+        </section>
+      )}
+
+      {tsfSession && (
+        <div className="workflow-panel">
+          <TsfExplorer key={tsfSession.sessionId} session={tsfSession} />
         </div>
-    </section>
+      )}
 
-    <div className="workflow-panel" hidden={view !== 'report'}>
-      {preview && <SourceReport key={previewId} data={preview}
-        excelProfile={excelProfile}
-        onExcelProfileChange={(value) => setExcelProfile(value)}
-        exporting={exporting}
-        exportStatus={exportStatus}
-        exportError={exportError}
-        onExport={() => void exportWorkbook()} />}
-    </div>
+      {preview && (
+        <div className="workflow-panel">
+          <SourceReport
+            key={previewId}
+            data={preview}
+            liveDeviceAccess={liveDeviceAccess}
+            excelProfile={excelProfile}
+            onExcelProfileChange={setExcelProfile}
+            exporting={exporting}
+            exportStatus={exportStatus}
+            onDismissExportStatus={() => setExportStatus('')}
+            exportError={exportError}
+            onExport={() => void exportWorkbook()}
+          />
+        </div>
+      )}
 
-    <div className="workflow-panel" hidden={view !== 'migration'}>
-      {view === 'migration' && selectedMigrationPair && <details className="panel" open={!offlineConversion} aria-label="Selected migration workflow limits">
-        <summary>{offlineConversion ? 'Workflow limits' : selectedMigrationPair.display_name}</summary>
-        <p>{selectedMigrationPair.mapping_workflow || 'Mapping assistance is not specified. Review target choices explicitly.'}</p>
-        <p>{selectedMigrationPair.destination_comparison || 'Destination comparison limits are not specified. Review target evidence before export.'}</p>
-        <p>{selectedMigrationPair.execution_mode || 'Execution capabilities are not specified.'}</p>
-        {!!selectedMigrationPair.activation_steps?.length && <ul>{selectedMigrationPair.activation_steps.map((step) => <li key={step}>{step}</li>)}</ul>}
-      </details>}
-      {preview?.source_evidence && previewId && migrationVisited && selectedMigrationPair && (vendor === 'fortigate' || isPanosOfflinePair) ? <>
-        {view === 'migration' && <div className="report-source-context"><strong>{selectedMigrationPair.display_name}</strong><span>{preview.source_evidence.source_name || file?.name || 'Loaded source configuration'}</span>{selectedMigrationPair.pair_id === 'fortigate_to_palo_alto' && <span>{targetDevice ? `Destination: ${targetDevice}` : 'Destination checks optional for offline export'}</span>}</div>}
-        {view === 'migration' && <nav className="migration-view-nav" aria-label="Migration workspace">
-          {(offlineConversion ? [['load', 'Source'], ['review', 'Review conversion'], ['export', 'Download']] as const : [['load', 'Source'], ['place', 'Target setup'], ['review', 'Review migration'], ['export', 'Download']] as const).map(([stage, label], index) =>
-            <button key={stage} type="button" aria-current={(migrationView === stage || (offlineConversion && stage === 'review' && migrationView === 'place')) ? 'step' : undefined} onClick={() => setMigrationView(stage)}>{index + 1}. {label}</button>)}
-        </nav>}
-        {view === 'migration' && ((vendor === 'fortigate' && selectedMigrationPair.pair_id !== 'fortigate_to_palo_alto') || isPanosOfflinePair) && <MigrationPairWorkflow pairId={selectedMigrationPair.pair_id} source={preview.source_evidence} sourceKey={previewId} stage={migrationView} onStageChange={setMigrationView} onReviewSource={() => onViewChange('report')} />}
-        {selectedMigrationPair.pair_id === 'fortigate_to_palo_alto' && <>
-          <section hidden={view !== 'migration' || migrationView === 'export'}>
-            <MigrationReview key={previewId} preview={preview} vendor={vendor} pairId={activeMigrationPairId} requestedDecision={requestedDecision}
-              stage={migrationView} onStageChange={setMigrationView} onWorkflowModeChange={setWorkflowMode} reviewTab={migrationReviewTab} onReviewTabChange={setMigrationReviewTab}
-              onApproved={() => { setGenerationRequest((value) => value + 1); setMigrationView('export') }}
-              onDecisionDocument={setDecisionDocument}
-              onContextChange={(nextSource, nextDevice) => { setTargetSource(nextSource); setTargetDevice(nextDevice) }} />
-          </section>
-        </>}
-      </> : !loading && !isPanosOfflinePair && <section className="panel"><h2>Migration source required</h2><p>Upload a supported source configuration above and choose an available migration target.</p><Button onClick={() => onViewChange('report')}>Open configuration report</Button></section>}
-        {migrationVisited && vendor === 'fortigate' && selectedMigrationPair?.pair_id === 'fortigate_to_palo_alto' && <div hidden={view === 'migration' && migrationView !== 'export'}>
-          <MigrationWorkflow key={previewId || 'uploaded-commands'}
-            preview={preview ?? {}} decisionDocument={decisionDocument}
-            targetSource={targetSource} targetDevice={targetDevice} generationRequest={generationRequest}
-            onReviewDecision={(key) => { setRequestedDecision({ key, request: Date.now() }); setMigrationView('place'); onViewChange('migration'); requestAnimationFrame(() => document.getElementById('migration-review-title')?.scrollIntoView({ block: 'start' })) }} />
-      </div>}
-    </div>
-    {error && !(file && !preview && ingestMode === 'config' && view !== 'collect') && <ErrorBanner message={error} />}
-    {preview && (
-      <ConfigChatWidget
-        vendor={selectedVendor?.display_name || preview.vendor || vendor || 'Firewall'}
-        filename={String(preview.source_evidence?.source_name || file?.name || 'config')}
-        preview={preview}
-      />
-    )}
-  </main>
+      {error && preview && <ErrorBanner message={error} />}
+
+      {preview && canSearch && preview.source_evidence && (
+        <QuickSearchModal
+          open={searchOpen}
+          onClose={() => setSearchOpen(false)}
+          vendor={vendor}
+          sourceEvidence={preview.source_evidence}
+        />
+      )}
+
+      {preview && (
+        <ConfigChatWidget
+          vendor={vendorDisplay}
+          filename={String(preview.source_evidence?.source_name || file?.name || 'config')}
+          preview={preview}
+        />
+      )}
+    </main>
+  )
 }

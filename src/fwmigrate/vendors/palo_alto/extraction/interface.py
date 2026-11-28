@@ -91,10 +91,15 @@ def extract_interface(element: ET.Element, path: tuple[str, ...], context: PANWa
     layer3 = element.find("layer3")
     if layer3 is not None:
         explicit.update(field for field in ("management_profile", "mtu", "ipv4_addresses", "ipv6_addresses") if layer3.find({"management_profile": "interface-management-profile", "mtu": "mtu", "ipv4_addresses": "ip", "ipv6_addresses": "ipv6"}[field]) is not None)
+    mgmt_profile = value(layer3, "interface-management-profile")
+    if mgmt_profile is None:
+        mgmt_profile = value(element, "interface-management-profile")
+        if mgmt_profile is not None:
+            explicit.add("management_profile")
     extra.update(_mode_extra(element, modes))
     sdwan_enabled, ipv6_sdwan_enabled, sdwan_profile, upstream_nat, sdwan_fields = _sdwan_link_settings(element)
     explicit.update(sdwan_fields)
     aggregate = _scalar_or_member(element, "aggregate-group") or _scalar_or_member(layer3, "aggregate-group") or _scalar_or_member(element.find("layer2"), "aggregate-group")
     if aggregate:
         explicit.add("aggregate-group")
-    return PANInterface(name=element.get("name"), **common, interface_family=context.interface_family, aggregate_group=aggregate, mode=next(iter(modes)) if len(modes) == 1 else sorted(modes) if modes else None, comment=value(element, "comment"), link_state=value(element, "link-state"), speed=value(element, "speed"), duplex=value(element, "duplex"), management_profile=value(layer3, "interface-management-profile"), mtu=value(layer3, "mtu"), ipv4_addresses=_ipv4(layer3), ipv6_addresses=_ipv6(layer3), vlan=value(element, "vlan"), lldp_enable=value(element.find("lldp"), "enable"), sdwan_enabled=sdwan_enabled, ipv6_sdwan_enabled=ipv6_sdwan_enabled, sdwan_interface_profile=sdwan_profile, upstream_nat=upstream_nat, raw_extra=extra, explicit_fields=explicit)
+    return PANInterface(name=element.get("name"), **common, interface_family=context.interface_family, aggregate_group=aggregate, mode=next(iter(modes)) if len(modes) == 1 else sorted(modes) if modes else None, comment=value(element, "comment"), link_state=value(element, "link-state"), speed=value(element, "speed"), duplex=value(element, "duplex"), management_profile=mgmt_profile, mtu=value(layer3, "mtu"), ipv4_addresses=_ipv4(layer3), ipv6_addresses=_ipv6(layer3), vlan=value(element, "vlan"), lldp_enable=value(element.find("lldp"), "enable"), sdwan_enabled=sdwan_enabled, ipv6_sdwan_enabled=ipv6_sdwan_enabled, sdwan_interface_profile=sdwan_profile, upstream_nat=upstream_nat, raw_extra=extra, explicit_fields=explicit)
