@@ -168,7 +168,7 @@ export function UpdateChecker({ collapsed = false }: { collapsed?: boolean }) {
 
   if (collapsed || info?.mode === 'cloud') return null
 
-  const versionText = `v${info?.current_version || '0.2.6'}`
+  const versionText = `v${info?.current_version || '0.2.7'}`
 
   return (
     <div className="fw-sidebar-footer">

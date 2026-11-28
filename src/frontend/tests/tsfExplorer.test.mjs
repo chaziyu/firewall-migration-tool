@@ -49,6 +49,7 @@ test('TsfExplorer opens files, runs search, jumps to matching line, paginates, a
     'react/jsx-runtime': jsxRuntime,
     '../../components/common/Button': { Button: 'Button' },
     '../../components/common/ErrorBanner': { ErrorBanner: 'ErrorBanner' },
+    '../../components/common/Toast': { Toast: 'Toast' },
     '../../utils/desktop': {
       saveBlobWithFallback: async (blob, filename) => {
         savedCalls.push({ size: blob.size, filename })

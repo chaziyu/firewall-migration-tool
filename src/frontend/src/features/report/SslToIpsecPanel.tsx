@@ -6,6 +6,7 @@ import { saveBlobWithFallback } from '../../utils/desktop'
 import { downloadCsvRows } from './reportPresentation'
 import { ErrorBanner } from '../../components/common/ErrorBanner'
 import { LoadingState } from '../../components/common/LoadingState'
+import { Toast } from '../../components/common/Toast'
 
 function policyRowClass(row: SslToIpsecPolicyRow): string {
   if (row.status.trim().toLowerCase() === 'disable') return 'row-danger'
@@ -369,7 +370,7 @@ export function SslToIpsecPanel({
             </button>
           </div>
         </div>
-        {downloadStatus && <p className="preview-status" role="status">{downloadStatus}</p>}
+        {downloadStatus && <Toast message={downloadStatus} onDismiss={() => setDownloadStatus('')} />}
         <pre className="fw-ssl-ipsec-cli"><code>{data.cli_draft ?? ''}</code></pre>
       </section>
 

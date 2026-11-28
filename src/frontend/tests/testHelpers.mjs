@@ -121,6 +121,7 @@ export function createSourceReportMocks(hooks, overrides = {}) {
     './SslToIpsecPanel': { SslToIpsecPanel: 'SslToIpsecPanel' },
     '../../components/common/tabKeyboard': {},
     '../../components/common/ErrorBanner': {},
+    '../../components/common/Toast': { Toast: 'Toast' },
     ...overrides,
   }
 }

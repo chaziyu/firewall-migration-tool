@@ -413,6 +413,7 @@ export function SourceConfiguration({
             onExcelProfileChange={setExcelProfile}
             exporting={exporting}
             exportStatus={exportStatus}
+            onDismissExportStatus={() => setExportStatus('')}
             exportError={exportError}
             onExport={() => void exportWorkbook()}
           />

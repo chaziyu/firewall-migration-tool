@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import argparse
 import base64
+import ctypes
+import json
 import os
 import sys
 import threading
@@ -103,30 +105,106 @@ def _configure_environment() -> None:
     os.environ["FWMIGRATE_FRONTEND_DIST_DIR"] = str(_resolve_frontend_dist())
 
 
-def _compute_window_geometry(webview_module: Any) -> dict[str, Any]:
-    """Compute a centered initial window size and position fitted to the primary screen."""
+def _get_primary_dpi_scale(primary_screen: Any) -> float:
+    """Return the primary display DPI scale factor (>= 1.0)."""
+    if sys.platform == "win32":
+        try:
+            dpi = int(ctypes.windll.user32.GetDpiForSystem())
+            if dpi > 0:
+                return max(1.0, dpi / 96.0)
+        except Exception:
+            pass
+    try:
+        scale = float(getattr(primary_screen, "scale", 1.0) or 1.0)
+    except (TypeError, ValueError):
+        scale = 1.0
+    return max(1.0, scale)
+
+
+def _window_state_path() -> Path:
+    """Return the local JSON path used to persist desktop window size and maximized state."""
+    if sys.platform == "win32":
+        base = Path(os.environ.get("LOCALAPPDATA") or (Path.home() / "AppData" / "Local"))
+    else:
+        base = Path.home() / ".config"
+    return base / "FirewallMigrationTool" / "window_state.json"
+
+
+def _load_window_state(path: Path | None = None) -> dict[str, Any]:
+    """Load persisted desktop window state, returning an empty dict if missing or invalid."""
+    target = path or _window_state_path()
+    try:
+        raw = json.loads(target.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return {}
+    if not isinstance(raw, dict):
+        return {}
+    result: dict[str, Any] = {}
+    if isinstance(raw.get("maximized"), bool):
+        result["maximized"] = raw["maximized"]
+    for key in ("width", "height"):
+        val = raw.get(key)
+        if isinstance(val, int) and not isinstance(val, bool) and val > 0:
+            result[key] = val
+    return result
+
+
+def _save_window_state(state: dict[str, Any], path: Path | None = None) -> None:
+    """Persist desktop window state cleanly to local storage."""
+    target = path or _window_state_path()
+    payload = {
+        "maximized": bool(state.get("maximized", False)),
+        "width": int(state.get("width", 1200)),
+        "height": int(state.get("height", 760)),
+    }
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    except OSError:
+        pass
+
+
+def _compute_window_geometry(
+    webview_module: Any,
+    saved_state: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Compute a logical-pixel window size fitted to the primary screen so pywebview centers it."""
+    saved = saved_state or {}
     screens = getattr(webview_module, "screens", None) or []
     if not screens:
-        return {"width": 1200, "height": 760, "min_size": (800, 600)}
+        default_w, default_h = 1200, 760
+        max_w, max_h = 3840, 2160
+    else:
+        primary = screens[0]
+        screen_w = int(getattr(primary, "width", 1440))
+        screen_h = int(getattr(primary, "height", 900))
+        dpi_scale = _get_primary_dpi_scale(primary)
+        logical_w = max(1, int(round(screen_w / dpi_scale)))
+        logical_h = max(1, int(round(screen_h / dpi_scale)))
+        default_w = max(1, min(1440, int(logical_w * 0.88)))
+        default_h = max(1, min(900, int(logical_h * 0.85)))
+        max_w, max_h = logical_w, logical_h
 
-    primary = screens[0]
-    screen_w = int(getattr(primary, "width", 1440))
-    screen_h = int(getattr(primary, "height", 900))
-    screen_x = int(getattr(primary, "x", 0))
-    screen_y = int(getattr(primary, "y", 0))
+    saved_w = saved.get("width")
+    saved_h = saved.get("height")
+    if isinstance(saved_w, int) and isinstance(saved_h, int) and saved_w > 0 and saved_h > 0:
+        min_w = min(800, max_w)
+        min_h = min(600, max_h)
+        width = max(min_w, min(max_w, saved_w))
+        height = max(min_h, min(max_h, saved_h))
+    else:
+        width = default_w
+        height = default_h
 
-    width = max(1, min(1440, int(screen_w * 0.88)))
-    height = max(1, min(900, int(screen_h * 0.85)))
-    x = screen_x + max(0, (screen_w - width) // 2)
-    y = screen_y + max(0, (screen_h - height) // 2)
-    return {
+    # Omit x, y, and screen so WinForms uses CenterScreen on the primary monitor's WorkingArea.
+    geometry: dict[str, Any] = {
         "width": width,
         "height": height,
-        "x": x,
-        "y": y,
-        "screen": primary,
         "min_size": (min(800, width), min(600, height)),
     }
+    if saved.get("maximized") is True:
+        geometry["maximized"] = True
+    return geometry
 
 
 def _close_splash() -> None:
@@ -221,17 +299,67 @@ def main(argv: list[str] | None = None) -> int:
 
         webview.settings["ALLOW_DOWNLOADS"] = True
         api = DesktopApi(webview)
-        geometry = _compute_window_geometry(webview)
+        saved_state = _load_window_state()
+        geometry = _compute_window_geometry(webview, saved_state=saved_state)
         window = webview.create_window(
             "Firewall Migration Tool",
             url,
             js_api=api,
             resizable=True,
+            text_select=True,
             zoomable=True,
             **geometry,
         )
         api.attach_window(window)
+        window_state: dict[str, Any] = {
+            "maximized": bool(geometry.get("maximized", False)),
+            "width": int(geometry["width"]),
+            "height": int(geometry["height"]),
+        }
+        is_minimized = False
+
+        def _on_maximized(*_args: Any) -> None:
+            nonlocal is_minimized
+            is_minimized = False
+            window_state["maximized"] = True
+
+        def _on_minimized(*_args: Any) -> None:
+            nonlocal is_minimized
+            is_minimized = True
+
+        def _on_restored(*_args: Any) -> None:
+            nonlocal is_minimized
+            is_minimized = False
+            window_state["maximized"] = False
+
+        def _on_resized(*args: Any) -> None:
+            if window_state["maximized"] or is_minimized:
+                return
+            if len(args) >= 2 and isinstance(args[0], (int, float)) and isinstance(args[1], (int, float)):
+                w, h = int(args[0]), int(args[1])
+            else:
+                w = int(getattr(window, "width", 0) or 0)
+                h = int(getattr(window, "height", 0) or 0)
+            if w >= 400 and h >= 300:
+                window_state["width"] = w
+                window_state["height"] = h
+
+        def _on_closing(*_args: Any) -> None:
+            _save_window_state(window_state)
+
         events = getattr(window, "events", None)
+        if events is not None:
+            if hasattr(events, "maximized"):
+                events.maximized += _on_maximized
+            if hasattr(events, "minimized"):
+                events.minimized += _on_minimized
+            if hasattr(events, "restored"):
+                events.restored += _on_restored
+            if hasattr(events, "resized"):
+                events.resized += _on_resized
+            if hasattr(events, "closing"):
+                events.closing += _on_closing
+
         if events is not None and hasattr(events, "shown"):
             events.shown += _close_splash
             webview.start(private_mode=True)

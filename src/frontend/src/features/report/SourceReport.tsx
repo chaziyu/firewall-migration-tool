@@ -15,6 +15,7 @@ import { SdwanView } from './SdwanView'
 import { VpnInspectorView } from './VpnInspectorView'
 import { tabKeyboard } from '../../components/common/tabKeyboard'
 import { ErrorBanner } from '../../components/common/ErrorBanner'
+import { Toast } from '../../components/common/Toast'
 
 type Finding = Record<string, unknown>
 const EMPTY_ROWS: Finding[] = []
@@ -457,6 +458,7 @@ export function SourceReport({
   activeSection: controlledActiveSection,
   onSectionChange,
   exportStatus,
+  onDismissExportStatus,
   exportError,
   liveDeviceAccess = false,
 }: {
@@ -467,6 +469,7 @@ export function SourceReport({
   onExcelProfileChange?: (value: 'fast' | 'full') => void
   exporting?: boolean
   exportStatus: string
+  onDismissExportStatus?: () => void
   exportError?: string | null
   onExport?: () => void
   liveDeviceAccess?: boolean
@@ -855,7 +858,7 @@ export function SourceReport({
   return <section className="panel source-report" aria-labelledby="report-title">
     <h2 id="report-title" className="visually-hidden">Source inventory</h2>
     {exportError && <ErrorBanner message={exportError} />}
-    {exportStatus && <p className="preview-status" role="status" aria-live="polite">{exportStatus}</p>}
+    {exportStatus && <Toast message={exportStatus} onDismiss={onDismissExportStatus} />}
     <div role="tabpanel" id={`report-panel-${encodeURIComponent(activeSection)}`} aria-label={activeSection} tabIndex={0}>
       {activeSection === 'Overview' ? <>
         {supportsSecurityAudit && (

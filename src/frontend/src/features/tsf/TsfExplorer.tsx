@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button } from '../../components/common/Button'
 import { ErrorBanner } from '../../components/common/ErrorBanner'
+import { Toast } from '../../components/common/Toast'
 import { saveBlobWithFallback } from '../../utils/desktop'
 import {
   downloadTsfFile,
@@ -393,7 +394,7 @@ export function TsfExplorer({
                 </div>
               </div>
 
-              {downloadStatus && <div className="tsf-download-note">{downloadStatus}</div>}
+              {downloadStatus && <Toast message={downloadStatus} onDismiss={() => setDownloadStatus('')} />}
 
               {!fileData.success ? (
                 <div className="tsf-empty-state">

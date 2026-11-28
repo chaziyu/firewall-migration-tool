@@ -136,15 +136,14 @@ const reportProps = (vendor) => ({
   onExport: () => {},
 })
 
-test('PmLookupPanel renders hero, status filters, legend, and checklist rows', async () => {
+test('PmLookupPanel renders status filters, legend, and checklist rows without top hero card', async () => {
   const { PmLookupPanel } = await vite.load('/src/features/report/PmLookupPanel.tsx')
   const html = renderToStaticMarkup(createElement(PmLookupPanel, {
     vendor: 'fortigate',
     sourceEvidence: { vendor: 'fortigate', source_text: '' },
     initialData: SAMPLE_PM,
   }))
-  assert.ok(html.includes('PM Lookup (Backup Config)'))
-  assert.ok(html.includes('FG-PM-TEST'))
+  assert.ok(!html.includes('fw-hero-card'))
   assert.ok(html.includes('All (4)'))
   assert.ok(html.includes('Pass (1)'))
   assert.ok(html.includes('Warn (1)'))
@@ -168,6 +167,7 @@ test('PmLookupPanel filters rows by status chip and search text', () => {
     './reportPresentation': presentation,
     '../../components/common/ErrorBanner': { ErrorBanner: 'ErrorBanner' },
     '../../components/common/LoadingState': { LoadingState: 'LoadingState' },
+    '../../components/common/Toast': { Toast: 'Toast' },
   })
   const render = () => {
     resetCursor()

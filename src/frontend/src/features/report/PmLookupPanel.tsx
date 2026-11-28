@@ -6,6 +6,7 @@ import { saveBlobWithFallback } from '../../utils/desktop'
 import { downloadCsvRows } from './reportPresentation'
 import { ErrorBanner } from '../../components/common/ErrorBanner'
 import { LoadingState } from '../../components/common/LoadingState'
+import { Toast } from '../../components/common/Toast'
 
 type StatusFilter = 'all' | 'pass' | 'warn' | 'fail' | 'info'
 
@@ -162,26 +163,12 @@ export function PmLookupPanel({
 
   return (
     <div className="fw-pm-panel">
-      <section className="fw-card fw-card-flex fw-hero-card" aria-label="PM Lookup summary">
-        <div className="fw-hero-heading">
-          <div className="fw-hero-eyebrow">PM Lookup (Backup Config)</div>
-          <div className="fw-hero-title fw-mono">{data.hostname}</div>
-          {data.subtitle && <div className="fw-hero-sub">{data.subtitle}</div>}
-        </div>
-        <div className="fw-hero-badges">
-          <span className="fw-badge fw-badge-allow">Pass: {summary.pass}</span>
-          <span className={`fw-badge fw-badge-${summary.warn ? 'warn' : 'muted'}`}>Warn: {summary.warn}</span>
-          <span className={`fw-badge fw-badge-${summary.fail ? 'deny' : 'muted'}`}>Fail: {summary.fail}</span>
-          <span className={`fw-badge fw-badge-${summary.info ? 'info' : 'muted'}`}>Info: {summary.info}</span>
-        </div>
-      </section>
-
       <p className="fw-pm-note">
         Evaluated {summary.total} backup-config verifiable Preventive Maintenance checks (live-only metrics such as CPU, memory, uptime, PSU, and license expiry are omitted).
       </p>
 
       {exportError && <ErrorBanner message={exportError} />}
-      {exportStatus && <p className="preview-status" role="status">{exportStatus}</p>}
+      {exportStatus && <Toast message={exportStatus} onDismiss={() => setExportStatus('')} />}
 
       <div className="fw-legend" aria-label="PM status color legend">
         {legend.map((item) => (
