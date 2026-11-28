@@ -12,6 +12,9 @@ from pathlib import Path
 from typing import Any
 
 
+MAX_DESKTOP_SAVE_BYTES = 100 * 1024 * 1024
+
+
 class DesktopApi:
     """JS-callable bridge exposed to the desktop UI via pywebview."""
 
@@ -23,10 +26,25 @@ class DesktopApi:
         """Bind the created pywebview Window instance after window creation."""
         self._window = window
 
+    def _decode_bounded_base64(self, content_base64: str) -> bytes:
+        if not isinstance(content_base64, str):
+            raise ValueError("Invalid export payload")
+        # Base64 expands 3 bytes to 4 chars; reject oversized payloads before decoding.
+        if len(content_base64) > (MAX_DESKTOP_SAVE_BYTES * 4 // 3) + 8:
+            raise ValueError("Export exceeds desktop save size limit")
+        raw = base64.b64decode(content_base64)
+        if len(raw) > MAX_DESKTOP_SAVE_BYTES:
+            raise ValueError("Export exceeds desktop save size limit")
+        return raw
+
     def save_file(self, filename: str, content_base64: str) -> dict[str, object]:
         """Open a native Save dialog with a preserved extension and write the file."""
         if self._window is None:
             return {"saved": False, "cancelled": False, "error": "Window is not ready"}
+        try:
+            raw = self._decode_bounded_base64(content_base64)
+        except ValueError as exc:
+            return {"saved": False, "cancelled": False, "error": str(exc)}
         safe_name = Path(filename or "export.xlsx").name or "export.xlsx"
         expected_ext = Path(safe_name).suffix
         file_types: tuple[str, ...]
@@ -52,7 +70,6 @@ class DesktopApi:
         if expected_ext and target.suffix.lower() != expected_ext.lower():
             target = target.with_name(f"{target.name}{expected_ext}")
 
-        raw = base64.b64decode(content_base64)
         target.write_bytes(raw)
         return {"saved": True, "cancelled": False, "path": str(target), "filename": target.name}
 
@@ -60,12 +77,15 @@ class DesktopApi:
         """Save file directly into native Windows Downloads with a unique filename (no manual prompt)."""
         from fwmigrate.web_support.desktop_downloads import get_downloads_dir, unique_export_path
 
+        try:
+            raw = self._decode_bounded_base64(content_base64)
+        except ValueError as exc:
+            return {"saved": False, "cancelled": False, "error": str(exc)}
         safe_name = Path(filename or "export.xlsx").name or "export.xlsx"
         stem = Path(safe_name).stem or "export"
         ext = Path(safe_name).suffix or ".xlsx"
         downloads_dir = get_downloads_dir()
         target = unique_export_path(downloads_dir, stem, ext)
-        raw = base64.b64decode(content_base64)
         target.write_bytes(raw)
         return {"saved": True, "cancelled": False, "path": str(target), "filename": target.name}
 
@@ -131,13 +151,27 @@ def _start_backend_async() -> tuple[threading.Event, dict[str, object]]:
             from werkzeug.serving import make_server
 
             from fwmigrate.web import create_app
+            from fwmigrate.web_support.local_server import KeepAliveWSGIRequestHandler
 
             app = create_app()
-            try:
-                server = make_server("127.0.0.1", 5000, app, threaded=True)
-            except OSError:
-                server = make_server("127.0.0.1", 0, app, threaded=True)
+            server = None
+            for candidate_port in (5000, 5001, 5002, 5003, 5004, 5005, 0):
+                try:
+                    server = make_server(
+                        "127.0.0.1",
+                        candidate_port,
+                        app,
+                        threaded=True,
+                        request_handler=KeepAliveWSGIRequestHandler,
+                    )
+                    break
+                except OSError:
+                    continue
+            assert server is not None
+            server_thread = threading.Thread(target=server.serve_forever, daemon=True)
+            server_thread.start()
             state["server"] = server
+            state["server_thread"] = server_thread
             state["url"] = f"http://127.0.0.1:{server.server_port}/"
         except BaseException as exc:  # pragma: no cover - surfaced on main thread
             state["error"] = exc
@@ -172,10 +206,11 @@ def main(argv: list[str] | None = None) -> int:
         raise backend_state["error"]  # type: ignore[misc]
 
     server = backend_state["server"]
+    server_thread = backend_state.get("server_thread")
+    if server_thread is None:
+        server_thread = threading.Thread(target=server.serve_forever, daemon=True)  # type: ignore[attr-defined]
+        server_thread.start()
     url = str(backend_state["url"])
-
-    server_thread = threading.Thread(target=server.serve_forever, daemon=True)  # type: ignore[attr-defined]
-    server_thread.start()
 
     try:
         if args.browser or webview is None:

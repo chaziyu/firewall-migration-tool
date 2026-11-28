@@ -120,10 +120,13 @@ def rows_for_sheet(
         "Route Maps": _route_map_rows,
         "Password Policies": _password_policy_rows,
         "Guest Users": _guest_user_rows,
-        "WiFi SSIDs": _wifi_ssid_rows,
         "Managed FortiAPs": _managed_fortiap_rows,
+        "WiFi SSIDs": _wifi_ssid_rows,
+        "FortiAP Profiles": _fortiap_profile_rows,
+        "WIDS Profiles": _wids_profile_rows,
         "Managed Switches": _managed_switch_rows,
         "Switch Port Policies": _switch_port_policy_rows,
+        "NAC Policies": _nac_policy_rows,
         "Syslog Settings": _syslog_setting_rows,
         "External Resources": _external_resource_rows,
         "Unresolved References": _unresolved_reference_rows,
@@ -1213,14 +1216,19 @@ def _sdwan_member_rows(context: _ExcelContext, headers: Sequence[str]) -> Iterat
 def _sdwan_health_rows(context: _ExcelContext, headers: Sequence[str]) -> Iterator[dict[str, Any]]:
     for sdwan in context.config.sdwans:
         for item in sdwan.health_checks:
+            first_sla = item.sla[0] if item.sla else None
             row = {
                 "Name": item.name,
                 "Server": item.server,
+                "System DNS": item.system_dns,
                 "Members": item.members,
                 "Protocol": item.protocol,
                 "Interval": item.interval,
                 "Fail Time": item.failtime,
                 "Recovery Time": item.recoverytime,
+                "Latency (ms)": item.latency_threshold if item.latency_threshold is not None else (first_sla.latency_threshold if first_sla else None),
+                "Jitter (ms)": item.jitter_threshold if item.jitter_threshold is not None else (first_sla.jitter_threshold if first_sla else None),
+                "Packet Loss (%)": item.packetloss_threshold if item.packetloss_threshold is not None else (first_sla.packetloss_threshold if first_sla else None),
                 "Additional Settings": _additional_settings(item, sheet_name="SD-WAN Health Checks"),
                 "VDOM": sdwan.vdom,
             }
@@ -1237,8 +1245,12 @@ def _sdwan_rule_rows(context: _ExcelContext, headers: Sequence[str]) -> Iterator
                 "Name": item.name,
                 "Status": item.status,
                 "Mode": item.mode,
+                "Link Cost Factor": item.link_cost_factor,
                 "Source": item.src,
                 "Destination": item.dst,
+                "Protocol": item.protocol,
+                "Start Port": item.start_port,
+                "End Port": item.end_port,
                 "Priority Members": item.priority_members,
                 "Health Checks": item.health_check,
                 "Priority Zones": item.priority_zone,
@@ -1777,7 +1789,7 @@ def _guest_user_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dic
 def _wifi_ssid_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str, Any]]:
     return _model_rows(
         context, context.config.wireless_vaps, headers,
-        {"Name": "name", "SSID": "ssid", "Status": "status", "Security": "security", "Encrypt": "encrypt", "Auth": "auth", "Passphrase Configured": "passphrase_configured", "RADIUS Server": "radius_server", "User Groups": "usergroup", "VLAN ID": "vlanid", "VDOM": "vdom"},
+        {"Name": "name", "SSID": "ssid", "Status": "status", "Local Bridging": "local_bridging", "Security": "security", "Encrypt": "encrypt", "Auth": "auth", "Passphrase Configured": "passphrase_configured", "RADIUS Server": "radius_server", "User Groups": "usergroup", "Schedule": "schedule", "VLAN ID": "vlanid", "VDOM": "vdom"},
         domains=("wireless_vap",),
     )
 
@@ -1785,15 +1797,31 @@ def _wifi_ssid_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict
 def _managed_fortiap_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str, Any]]:
     return _model_rows(
         context, context.config.wireless_wtps, headers,
-        {"WTP ID": "wtp_id", "Name": "name", "WTP Profile": "wtp_profile", "Admin": "admin", "WAN Port Mode": "wan_port_mode", "Override Allowaccess": "override_allowaccess", "Comments": "comment", "VDOM": "vdom"},
+        {"WTP ID": "wtp_id", "Name": "name", "WTP Profile": "wtp_profile", "Admin": "admin", "Location": "location", "WAN Port Mode": "wan_port_mode", "Override Allowaccess": "override_allowaccess", "Comments": "comment", "VDOM": "vdom"},
         domains=("wireless_wtp",),
+    )
+
+
+def _fortiap_profile_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str, Any]]:
+    return _model_rows(
+        context, context.config.wtp_profiles, headers,
+        {"Name": "name", "Platform": "platform", "AP Country": "ap_country", "DTLS Policy": "dtls_policy", "LED State": "led_state", "Comments": "comment", "VDOM": "vdom"},
+        domains=("wtp_profile",),
+    )
+
+
+def _wids_profile_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str, Any]]:
+    return _model_rows(
+        context, context.config.wids_profiles, headers,
+        {"Name": "name", "Rogue AP Detection": "ap_scan", "Sensor Mode": "sensor_mode", "Passive Scan": "ap_scan_passive", "Comments": "comment", "VDOM": "vdom"},
+        domains=("wids_profile",),
     )
 
 
 def _managed_switch_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str, Any]]:
     return _model_rows(
         context, context.config.managed_switches, headers,
-        {"Switch ID": "switch_id", "Name": "name", "Serial": "sn", "Version": "version", "Directly Connected": "directly_connected", "Switch Profile": "switch_profile", "Port Count": lambda item: len(item.ports), "Description": "description", "VDOM": "vdom"},
+        {"Switch ID": "switch_id", "Name": "name", "Switch Group": "switch_group", "Status": "status", "Platform": "platform", "Serial": "sn", "Firmware Version": "firmware_provision_version", "Version": "version", "Directly Connected": "directly_connected", "Switch Profile": "switch_profile", "Port Count": lambda item: len(item.ports), "Description": "description", "VDOM": "vdom"},
         domains=("managed_switch",),
     )
 
@@ -1801,8 +1829,16 @@ def _managed_switch_rows(context: _ExcelContext, headers: Sequence[str]) -> list
 def _switch_port_policy_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str, Any]]:
     return _model_rows(
         context, context.config.switch_port_policies, headers,
-        {"Name": "name", "FortiLink": "fortilink", "QoS Policy": "qos_policy", "VLAN Policy": "vlan_policy", "Bounce Port Link": "bounce_port_link", "Description": "description", "VDOM": "vdom"},
+        {"Name": "name", "User Groups": "user_group", "Guest VLAN": "guest_vlan", "Guest Auth Delay": "guest_auth_delay", "MAC Auth Bypass": "mac_auth_bypass", "EAP Pass Through": "eap_passthru", "Override RADIUS": "radius_timeout_overwrite", "FortiLink": "fortilink", "QoS Policy": "qos_policy", "VLAN Policy": "vlan_policy", "Bounce Port Link": "bounce_port_link", "Description": "description", "VDOM": "vdom"},
         domains=("switch_port_policy",),
+    )
+
+
+def _nac_policy_rows(context: _ExcelContext, headers: Sequence[str]) -> list[dict[str, Any]]:
+    return _model_rows(
+        context, context.config.nac_policies, headers,
+        {"Name": "name", "Category": "category", "HW Vendor": "hw_vendor", "MAC": "mac", "OS": "os", "Assign VLAN": "assign_vlan", "Matched Devices": "matched_devices", "Switch Group": "switch_group", "User Group": "user_group", "Status": "status", "Description": "description", "VDOM": "vdom"},
+        domains=("nac_policy",),
     )
 
 

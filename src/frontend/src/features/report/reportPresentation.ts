@@ -60,12 +60,22 @@ export function reportSearchText(row: ReportRow): string {
   return text
 }
 
+export const FORTIGATE_CORE_WIFI_SWITCH_TABS = [
+  'wireless_wtps',
+  'wireless_vaps',
+  'wtp_profiles',
+  'wids_profiles',
+  'managed_switches',
+  'switch_port_policies',
+  'nac_policies',
+] as const
+
 const SECTION_KEYS: Record<string, string[]> = {
   'Policies & NAT': [
     'policies', 'security_policies', 'security_rules', 'default_security_rules',
     'nat', 'nat_rules', 'translations', 'central_snat', 'vips', 'vip_groups', 'ip_pools',
     'proxy_policies', 'auth_policies', 'local_in_policies', 'access_control_policies', 'access_rules',
-    'nac_policies', 'sdwan_rules', 'qos_rules', 'pbf_rules', 'decryption_rules',
+    'sdwan_rules', 'qos_rules', 'pbf_rules', 'decryption_rules',
     'tunnel_inspect_rules', 'app_override_rules', 'authentication_rules', 'dos_rules',
   ],
   Objects: [
@@ -79,7 +89,7 @@ const SECTION_KEYS: Record<string, string[]> = {
     'session_helpers', 'external_resources', 'firewall_regions', 'vendor_macs',
   ],
   'Interfaces & Network': [
-    'interfaces', 'interface_topology', 'interface_imports', 'zones', 'vlans', 'virtual_wires',
+    'interfaces', 'interface_topology', 'sdwan', 'interface_imports', 'zones', 'vlans', 'virtual_wires',
     'routes', 'static_routes', 'routing_instances', 'virtual_routers', 'logical_routers',
     'router_settings', 'router_bgp', 'router_ospf', 'router_ospf6', 'router_rip',
     'policy_routes', 'prefix_lists', 'route_maps', 'aspath_lists', 'community_lists', 'router_multicast',
@@ -114,8 +124,8 @@ const SECTION_KEYS: Record<string, string[]> = {
     'administrators', 'admin_roles', 'admin_profiles', 'kerberos_keytabs', 'saml_servers',
   ],
   'WiFi & Switch': [
-    'wireless_vaps', 'wireless_wtps', 'wtp_profiles',
-    'managed_switches', 'switch_port_policies', 'switch_lldp_profiles', 'switch_qos_policies', 'switch_vlan_policies',
+    ...FORTIGATE_CORE_WIFI_SWITCH_TABS,
+    'switch_lldp_profiles', 'switch_qos_policies', 'switch_vlan_policies',
   ],
   'Diagnostics & Coverage': ['unresolved_references', 'references', 'relationships', 'extraction_coverage', 'source_inventory'],
   'System & Logs': [
@@ -360,10 +370,13 @@ const FORTIGATE_COLUMNS: Record<string, string[]> = {
   fsso_servers: ['name', 'vdom', 'server', 'port', 'type', 'ssl', 'password_configured'],
   fortitokens: ['serial_number', 'vdom', 'status', 'license', 'seed_configured', 'comments'],
   password_policies: ['name', 'vdom', 'minimum_length', 'expire_status', 'expire_days', 'reuse_password'],
-  wireless_vaps: ['name', 'vdom', 'ssid', 'security', 'vlanid', 'status', 'passphrase_configured'],
-  wireless_wtps: ['wtp_id', 'name', 'vdom', 'wtp_profile', 'wtp_mode', 'admin', 'location'],
-  wtp_profiles: ['name', 'vdom', 'ap_country', 'dtls_policy', 'led_state', 'comment'],
-  managed_switches: ['switch_id', 'name', 'vdom', 'sn', 'switch_profile', 'owner_vdom', 'description'],
+  wireless_wtps: ['wtp_id', 'name', 'vdom', 'admin', 'wtp_profile', 'location', 'comment'],
+  wireless_vaps: ['name', 'vdom', 'ssid', 'local_bridging', 'vlanid', 'security', 'schedule', 'status', 'passphrase_configured'],
+  wtp_profiles: ['name', 'vdom', 'platform', 'ap_country', 'dtls_policy', 'comment'],
+  wids_profiles: ['name', 'vdom', 'ap_scan', 'sensor_mode', 'comment'],
+  managed_switches: ['switch_id', 'name', 'vdom', 'switch_group', 'status', 'platform', 'sn', 'firmware_provision_version', 'version'],
+  switch_port_policies: ['name', 'vdom', 'user_group', 'guest_vlan', 'guest_auth_delay', 'mac_auth_bypass', 'eap_passthru', 'radius_timeout_overwrite', 'fortilink', 'qos_policy', 'vlan_policy'],
+  nac_policies: ['name', 'vdom', 'category', 'hw_vendor', 'mac', 'assign_vlan', 'matched_devices', 'switch_group', 'status'],
   system_global: ['hostname', 'alias', 'timezone', 'vdom_mode', 'admintimeout', 'admin_port', 'admin_sport', 'admin_ssh_port'],
   system_dns: ['vdom', 'primary', 'secondary', 'protocol', 'domain', 'dns_over_tls'],
   system_ntp: ['vdom', 'ntpsync', 'type', 'syncinterval', 'server_mode'],
@@ -459,10 +472,10 @@ const PANOS_COLUMNS: Record<string, string[]> = {
 }
 export function fieldLabel(key: string) {
   const labels: Record<string, string> = {
-    policy_id: 'Policy ID', rule_id: 'Rule ID', route_id: 'Route ID',
+    policy_id: 'Policy ID', rule_id: 'Rule ID', route_id: 'Route ID', sdwan: 'SD-WAN',
     domain_id: 'Domain ID', device_id: 'Device ID', device_name: 'Device', virtual_router_name: 'Virtual Router',
     parent_policy_name: 'Parent Policy', vdom: 'VDOM', ip: 'IP / prefix', nat: 'NAT',
-    ike_version: 'IKE version', vpn_inspector: 'Site-to-Site Inspector', vpn_tunnels: 'VPN tunnels', vpn_phase2: 'VPN phase 2',
+    ike_version: 'IKE version', vpn_inspector: 'Site-to-Site Inspector', vpn_tunnels: 'VPN tunnels', vpn_phase2: 'VPN phase 2', ssl_to_ipsec: 'SSL-to-IPSec Assistant',
     tunnel_interface: 'Tunnel interface', virtual_router: 'Virtual router', phase2_count: 'Phase 2', route_count: 'Routes', policy_count: 'Policies', finding_count: 'Checks',
     ssl_vpn_bookmarks: 'SSL VPN bookmarks', status: 'Reported status', review: 'Review',
     vips: 'Virtual IPs', vip_groups: 'VIP groups', ip_pools: 'IP pools', wildcard_fqdns: 'Wildcard FQDNs',
@@ -489,8 +502,15 @@ export function fieldLabel(key: string) {
     file_filter_profiles: 'File filter profiles', emailfilter_profiles: 'Email filter profiles', voip_profiles: 'VoIP profiles',
     waf_profiles: 'WAF profiles', ssl_ssh_profiles: 'SSL/SSH inspection', ldap_servers: 'LDAP servers', radius_servers: 'RADIUS servers',
     tacacs_servers: 'TACACS+ servers', fsso_servers: 'FSSO servers', fsso_pollings: 'FSSO polling', fortitokens: 'FortiTokens',
-    wireless_vaps: 'WiFi SSIDs (VAP)', wireless_wtps: 'Managed FortiAPs', wtp_profiles: 'FortiAP profiles', wids_profiles: 'WIDS profiles',
-    managed_switches: 'Managed FortiSwitches', syslog_settings: 'Syslog settings', log_settings: 'Log settings',
+    wireless_vaps: 'SSIDs', wireless_wtps: 'Managed FortiAPs', wtp_profiles: 'FortiAP Profiles', wids_profiles: 'WIDS Profiles',
+    managed_switches: 'Managed FortiSwitches', switch_port_policies: 'Port Policies', nac_policies: 'NAC Policies',
+    wtp_id: 'Access Point', wtp_profile: 'Profile', ap_scan: 'Rogue AP Detection',
+    local_bridging: 'Local Bridging', firmware_provision_version: 'Firmware Version',
+    guest_vlan: 'Guest VLAN', guest_auth_delay: 'Guest Auth Delay',
+    mac_auth_bypass: 'MAC Auth Bypass', eap_passthru: 'EAP Pass Through',
+    radius_timeout_overwrite: 'Override RADIUS', assign_vlan: 'Assign VLAN',
+    matched_devices: 'Matched Devices', hw_vendor: 'HW Vendor',
+    syslog_settings: 'Syslog settings', log_settings: 'Log settings',
     fortianalyzer_settings: 'FortiAnalyzer settings', log_fortiguard_settings: 'FortiCloud log settings',
     log_threat_weights: 'Threat weight settings', system_password_policies: 'System password policy',
     system_storages: 'System storage', local_in_policies: 'Local-in policies',
@@ -539,10 +559,14 @@ export function cellBadgeVariant(key: string, value: unknown): 'allow' | 'deny' 
     if (val === 'deny' || val === 'drop' || val === 'block' || val.startsWith('reset') || val === 'reject') return 'deny'
     if (val === 'alert' || val === 'warning' || val === 'monitor' || val === 'authenticate') return 'warn'
   }
-  if (col === 'status' || col === 'extraction_status') {
+  if (col === 'status' || col === 'extraction_status' || col === 'admin' || col === 'ap_scan') {
     if (val === 'enable' || val === 'enabled' || val === 'up' || val === 'online' || val === 'true' || val === 'typed' || val === 'complete' || val === 'success') return 'allow'
     if (val === 'disable' || val === 'disabled' || val === 'down' || val === 'offline' || val === 'false' || val === 'failed') return 'deny'
     if (val === 'partial' || val === 'source_only' || val === 'warning' || val === 'model_gap') return 'warn'
+  }
+  if (col === 'mac_auth_bypass' || col === 'eap_passthru' || col === 'radius_timeout_overwrite') {
+    if (val === 'enable' || val === 'enabled' || val === 'true') return 'allow'
+    if (val === 'disable' || val === 'disabled' || val === 'false') return 'muted'
   }
   if (col === 'disabled') {
     if (val === 'yes' || val === 'true') return 'deny'
@@ -558,12 +582,13 @@ export function cellBadgeVariant(key: string, value: unknown): 'allow' | 'deny' 
 
 export function rowSemanticClass(row: ReportRow, subsection = ''): string {
   const status = String(row.status ?? '').trim().toLowerCase()
+  const admin = String(row.admin ?? '').trim().toLowerCase()
   const disabled = String(row.disabled ?? '').trim().toLowerCase()
   const action = String(row.action ?? '').trim().toLowerCase()
   const kind = String(row.kind ?? row.type ?? '').trim().toLowerCase()
   const extraction = String(row.extraction_status ?? '').trim().toUpperCase()
 
-  if (status === 'disable' || status === 'disabled' || row.status === false || disabled === 'yes' || row.disabled === true) {
+  if (status === 'disable' || status === 'disabled' || admin === 'disable' || admin === 'disabled' || row.status === false || disabled === 'yes' || row.disabled === true) {
     return 'row-danger'
   }
   if (action === 'deny' || action === 'drop' || action === 'block' || action.startsWith('reset')) {
@@ -605,6 +630,12 @@ export function sectionLegend(subsection: string, rows: ReportRow[]): Array<{ la
     return [
       { label: 'Typed / Complete', variant: 'success' },
       { label: 'Source-Only / Partial', variant: 'warn' },
+    ]
+  }
+  if (sub === 'wireless_vaps') {
+    return [
+      { label: 'Enabled SSID', variant: 'default' },
+      { label: 'Disabled SSID', variant: 'danger' },
     ]
   }
   const hasDanger = rows.some((r) => rowSemanticClass(r, subsection) === 'row-danger')
@@ -715,6 +746,35 @@ const FORTIGATE_DETAILS: Record<string, Array<[string, string[]]>> = {
   nat: [['Translation', ['translation_type', 'egress_interfaces', 'pool_names', 'translated_addresses']], ['Reported settings', ['review']]],
   vpn_tunnels: [['Endpoints', ['interface', 'remote_gateway', 'physical_interfaces', 'topology_path', 'aggregate']], ['Reported protection', ['ike_version', 'proposal', 'type', 'review']]],
   vpn_phase2: [['Selectors', ['phase1', 'source_range', 'source_range6', 'destination_range', 'destination_range6']], ['Reported protection', ['proposal', 'pfs', 'dh_groups', 'review']]],
+  wireless_wtps: [
+    ['Identity & Profile', ['wtp_id', 'name', 'vdom', 'admin', 'wtp_profile', 'wtp_mode', 'location', 'comment']],
+    ['Overrides & Hardware', ['wan_port_mode', 'override_wan_port_mode', 'led_state', 'override_led_state', 'allowaccess', 'override_allowaccess', 'image_download', 'mesh_bridge_enable', 'login_passwd_configured']],
+  ],
+  wireless_vaps: [
+    ['SSID & Forwarding', ['name', 'ssid', 'vdom', 'status', 'broadcast_ssid', 'local_bridging', 'local_standalone', 'local_standalone_nat', 'vlanid', 'schedule']],
+    ['Security & Auth', ['security', 'encrypt', 'auth', 'passphrase_configured', 'radius_server', 'radius_mac_auth', 'radius_mac_auth_server', 'usergroup', 'selected_usergroups', 'portal_type', 'pmf']],
+    ['Clients & Radio', ['max_clients', 'max_clients_ap', 'intra_vap_privacy', 'dynamic_vlan', 'vlan_pooling', 'mpsk', 'mpsk_profile', 'quarantine']],
+  ],
+  wtp_profiles: [
+    ['Profile & Platform', ['name', 'vdom', 'platform', 'platform_config', 'ap_country', 'comment']],
+    ['Radio & Tunneling', ['dtls_policy', 'max_clients', 'handoff_roaming', 'handoff_rssi', 'handoff_sta_thresh', 'split_tunneling_acl_path', 'split_tunneling_acl_local_ap_subnet', 'allowaccess', 'led_state', 'poe_mode', 'wan_port_mode', 'lldp', 'login_passwd_configured']],
+  ],
+  wids_profiles: [
+    ['WIDS Detection', ['name', 'vdom', 'ap_scan', 'ap_scan_passive', 'sensor_mode', 'rogue_scan', 'wireless_bridge', 'comment']],
+    ['Flood & Attack Thresholds', ['deauth_broadcast', 'null_ssid_probe_resp', 'long_duration_attack', 'invalid_mac_oui', 'weak_wep_iv', 'auth_frame_flood', 'assoc_frame_flood', 'reassoc_flood', 'probe_flood', 'disassoc_flood', 'deauth_flood', 'asleap_attack']],
+  ],
+  managed_switches: [
+    ['Switch Identity', ['switch_id', 'name', 'vdom', 'switch_group', 'status', 'platform', 'sn', 'firmware_provision_version', 'version', 'switch_profile', 'description']],
+    ['Uplink & Ports', ['directly_connected', 'fsw_wan1_peer', 'fsw_wan1_admin', 'fsw_wan2_peer', 'fsw_wan2_admin', 'poe_detection_type', 'max_allowed_trunk_members', 'owner_vdom', 'ports']],
+  ],
+  switch_port_policies: [
+    ['Authentication & VLAN', ['name', 'vdom', 'user_group', 'guest_vlan', 'guest_auth_delay', 'mac_auth_bypass', 'eap_passthru', 'radius_timeout_overwrite']],
+    ['Link & Policies', ['fortilink', 'qos_policy', 'vlan_policy', 'bounce_port_link', 'description']],
+  ],
+  nac_policies: [
+    ['Match Criteria', ['name', 'vdom', 'source_path', 'category', 'hw_vendor', 'hw_version', 'mac', 'os', 'family', 'host', 'firewall_address', 'user', 'user_group', 'ems_tag', 'fortivoice_tag']],
+    ['Action & Switch Binding', ['status', 'assign_vlan', 'matched_devices', 'switch_fortilink', 'switch_group', 'switch_mac_policy', 'ssid_policy', 'mode', 'onboarding_vlan', 'auto_auth', 'bounce_nac_port', 'description']],
+  ],
 }
 export function detailGroups(row: ReportRow, subsection = '', vendor = '') {
   const definitions: Array<[string, string[]]> = [
@@ -787,8 +847,7 @@ export type HeroBadgeItem = {
   id?: string
   text: string
   variant: 'allow' | 'warn' | 'deny' | 'info' | 'muted'
-  targetSection?: 'Security & Health'
-  targetHealthTab?: 'audit' | 'validation'
+  targetSection?: 'Security Audit'
 }
 
 export type HaOverviewInfo = {
@@ -1339,11 +1398,8 @@ export function applianceHeroInfo(
   }
   if (lifecycle?.badge) {
     badges.push({
-      id: lifecycle.badge.id,
       text: lifecycle.badge.text,
       variant: lifecycle.badge.variant,
-      targetSection: 'Security & Health',
-      targetHealthTab: 'audit',
     })
   }
   if (audit) {
@@ -1353,29 +1409,24 @@ export function applianceHeroInfo(
         ? `Public Mgmt Exposed (${audit.exposure.length})`
         : 'No Public Mgmt Exposure',
       variant: expCrit > 0 ? 'deny' : audit.exposure.length > 0 ? 'warn' : 'allow',
-      targetSection: 'Security & Health',
-      targetHealthTab: 'audit',
     })
     const actionable = audit.quick_audit.high_count + audit.quick_audit.med_count
     badges.push({
       text: actionable > 0 ? `Audit: ${actionable} Findings` : 'Audit: Clean',
       variant: audit.quick_audit.high_count > 0 ? 'deny' : audit.quick_audit.med_count > 0 ? 'warn' : 'allow',
-      targetSection: 'Security & Health',
-      targetHealthTab: 'audit',
+      targetSection: 'Security Audit',
     })
     if (audit.certificate_summary.expired > 0) {
       badges.push({
         text: `Expired Certs (${audit.certificate_summary.expired})`,
         variant: 'deny',
-        targetSection: 'Security & Health',
-        targetHealthTab: 'audit',
+        targetSection: 'Security Audit',
       })
     } else if (audit.certificate_summary.expiring_soon > 0) {
       badges.push({
         text: `Certs Expiring Soon (${audit.certificate_summary.expiring_soon})`,
         variant: 'warn',
-        targetSection: 'Security & Health',
-        targetHealthTab: 'audit',
+        targetSection: 'Security Audit',
       })
     }
   }

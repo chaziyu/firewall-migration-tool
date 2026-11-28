@@ -40,11 +40,27 @@ class FGSDWANMember(BaseModel):
     )
 
 
+class FGSDWANHealthCheckSLA(BaseModel):
+    id: int | None = None
+
+    latency_threshold: int | None = None
+    jitter_threshold: int | None = None
+    packetloss_threshold: int | None = None
+
+    raw_extra: dict[str, Any] = Field(
+        default_factory=dict
+    )
+    explicit_fields: set[str] = Field(
+        default_factory=set
+    )
+
+
 class FGSDWANHealthCheck(BaseModel):
     name: str
 
     protocol: str | None = None
     server: str | None = None
+    system_dns: str | None = None
 
     # References SD-WAN member sequence numbers.
     members: list[int] | None = Field(
@@ -54,6 +70,12 @@ class FGSDWANHealthCheck(BaseModel):
     interval: int | None = None
     failtime: int | None = None
     recoverytime: int | None = None
+    latency_threshold: int | None = None
+    jitter_threshold: int | None = None
+    packetloss_threshold: int | None = None
+    sla: list[FGSDWANHealthCheckSLA] = Field(
+        default_factory=list
+    )
 
     raw_extra: dict[str, Any] = Field(
         default_factory=dict
@@ -68,7 +90,11 @@ class FGSDWANService(BaseModel):
 
     name: str | None = None
     mode: str | None = None
+    link_cost_factor: str | None = None
     status: str | None = None
+    protocol: int | None = None
+    start_port: int | None = None
+    end_port: int | None = None
 
     src: list[str] = Field(
         default_factory=list

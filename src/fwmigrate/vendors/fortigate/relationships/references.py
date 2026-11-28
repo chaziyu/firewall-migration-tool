@@ -64,6 +64,12 @@ class ReferenceKind(str, Enum):
     IPSEC_PHASE1 = "ipsec_phase1"
     IPSEC_POLICY_PHASE1 = "ipsec_policy_phase1"
 
+    WTP_PROFILE = "wtp_profile"
+    SWITCH_PORT_POLICY = "switch_port_policy"
+    SWITCH_LLDP_PROFILE = "switch_lldp_profile"
+    SWITCH_QOS_POLICY = "switch_qos_policy"
+    SWITCH_VLAN_POLICY = "switch_vlan_policy"
+
     SDWAN_ZONE = "sdwan_zone"
 
 
@@ -331,6 +337,11 @@ def build_reference_index(
     _add_named(index, ReferenceKind.LDAP_SERVER, config.ldap_servers)
     _add_named(index, ReferenceKind.RADIUS_SERVER, config.radius_servers)
     _add_named(index, ReferenceKind.TACACS_SERVER, config.tacacs_servers)
+    _add_named(index, ReferenceKind.WTP_PROFILE, config.wtp_profiles)
+    _add_named(index, ReferenceKind.SWITCH_PORT_POLICY, config.switch_port_policies)
+    _add_named(index, ReferenceKind.SWITCH_LLDP_PROFILE, config.switch_lldp_profiles)
+    _add_named(index, ReferenceKind.SWITCH_QOS_POLICY, config.switch_qos_policies)
+    _add_named(index, ReferenceKind.SWITCH_VLAN_POLICY, config.switch_vlan_policies)
 
     _add_named(index, ReferenceKind.ADMIN_PROFILE, config.admin_profiles)
 
@@ -862,6 +873,42 @@ def collect_broken_references(
             check(source_kind="nac_policy", vdom=policy.vdom, source_name=policy.name,
                   source_field="user_group", names=(policy.user_group,),
                   kinds=(ReferenceKind.USER_GROUP,))
+
+    if index.objects.get(ReferenceKind.WTP_PROFILE):
+        for wtp in config.wireless_wtps:
+            if wtp.wtp_profile:
+                check(source_kind="wireless_wtp", vdom=wtp.vdom, source_name=wtp.wtp_id,
+                      source_field="wtp_profile", names=(wtp.wtp_profile,),
+                      kinds=(ReferenceKind.WTP_PROFILE,))
+
+    for port_policy in config.switch_port_policies:
+        if port_policy.qos_policy and index.objects.get(ReferenceKind.SWITCH_QOS_POLICY):
+            check(source_kind="switch_port_policy", vdom=port_policy.vdom, source_name=port_policy.name,
+                  source_field="qos_policy", names=(port_policy.qos_policy,),
+                  kinds=(ReferenceKind.SWITCH_QOS_POLICY,))
+        if port_policy.vlan_policy and index.objects.get(ReferenceKind.SWITCH_VLAN_POLICY):
+            check(source_kind="switch_port_policy", vdom=port_policy.vdom, source_name=port_policy.name,
+                  source_field="vlan_policy", names=(port_policy.vlan_policy,),
+                  kinds=(ReferenceKind.SWITCH_VLAN_POLICY,))
+        if port_policy.user_group and index.objects.get(ReferenceKind.USER_GROUP):
+            check(source_kind="switch_port_policy", vdom=port_policy.vdom, source_name=port_policy.name,
+                  source_field="user_group", names=port_policy.user_group,
+                  kinds=(ReferenceKind.USER_GROUP,))
+
+    for sw in config.managed_switches:
+        for port in sw.ports:
+            if port.lldp_profile and index.objects.get(ReferenceKind.SWITCH_LLDP_PROFILE):
+                check(source_kind="managed_switch_port", vdom=sw.vdom, source_name=f"{sw.switch_id}:{port.port_name}",
+                      source_field="lldp_profile", names=(port.lldp_profile,),
+                      kinds=(ReferenceKind.SWITCH_LLDP_PROFILE,))
+            if port.qos_policy and index.objects.get(ReferenceKind.SWITCH_QOS_POLICY):
+                check(source_kind="managed_switch_port", vdom=sw.vdom, source_name=f"{sw.switch_id}:{port.port_name}",
+                      source_field="qos_policy", names=(port.qos_policy,),
+                      kinds=(ReferenceKind.SWITCH_QOS_POLICY,))
+            if port.port_security_policy and index.objects.get(ReferenceKind.SWITCH_PORT_POLICY):
+                check(source_kind="managed_switch_port", vdom=sw.vdom, source_name=f"{sw.switch_id}:{port.port_name}",
+                      source_field="port_security_policy", names=(port.port_security_policy,),
+                      kinds=(ReferenceKind.SWITCH_PORT_POLICY,))
 
     for sniffer in config.on_demand_sniffers:
         if sniffer.interface:

@@ -174,3 +174,76 @@ def test_chat_session_store_ttl_and_clear_all(monkeypatch):
     sess2.gemini_api_key = "synthetic-key"
     store.clear_all()
     assert store.get(sess2.session_id) is None
+
+
+def test_update_install_requires_checksums_and_sanitizes_unexpected_errors(monkeypatch):
+    local_client = create_app({"TESTING": True, "WEB_MODE": "local"}).test_client()
+    monkeypatch.setattr(update_service, "is_frozen_desktop_exe", lambda: True)
+    monkeypatch.setattr(
+        update_service,
+        "check_for_updates",
+        lambda timeout=8.0, is_loopback=True: {
+            "checked": True,
+            "update_available": True,
+            "latest_version": "9.9.9",
+            "installer_asset": {
+                "name": "FirewallMigrationTool-Setup-9.9.9.exe",
+                "url": "https://github.com/chaziyu/firewall-migration-tool/releases/download/v9.9.9/FirewallMigrationTool-Setup-9.9.9.exe",
+            },
+            "sums_asset": None,
+        },
+    )
+    monkeypatch.setattr(update_service, "_download_bytes", lambda _url, timeout=120.0: b"MZ" + b"\x90" * 2048)
+
+    missing_sums = local_client.post("/api/update/install", base_url="http://127.0.0.1:5000")
+    assert missing_sums.status_code == 400
+    assert "SHA256SUMS.txt" in missing_sums.get_json()["error"]
+
+    monkeypatch.setattr(
+        update_service,
+        "check_for_updates",
+        lambda **_kw: (_ for _ in ()).throw(OSError("C:\\secret\\internal\\path")),
+    )
+    unexpected = local_client.post("/api/update/install", base_url="http://127.0.0.1:5000")
+    assert unexpected.status_code == 500
+    assert unexpected.get_json()["error"] == "Update installation failed."
+    assert "secret" not in unexpected.get_json()["error"]
+
+
+def test_gemini_rest_uses_header_key_not_query_param(monkeypatch):
+    captured = {}
+
+    class FakeResp(io.BytesIO):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+    def fake_urlopen(req, timeout=45.0):
+        captured["url"] = req.full_url
+        captured["headers"] = {k.lower(): v for k, v in req.header_items()}
+        return FakeResp(json.dumps({"candidates": [{"content": {"parts": [{"text": "ok"}]}}]}).encode("utf-8"))
+
+    monkeypatch.setattr(chat_service.urllib.request, "urlopen", fake_urlopen)
+    reply = chat_service._call_gemini_rest(
+        api_key="AIzaHeaderOnlyTestKey",
+        system_prompt="sys",
+        contents=[{"role": "user", "parts": [{"text": "hi"}]}],
+    )
+    assert reply == "ok"
+    assert "key=" not in captured["url"]
+    assert captured["headers"].get("x-goog-api-key") == "AIzaHeaderOnlyTestKey"
+
+
+def test_desktop_api_rejects_oversized_payloads(tmp_path: Path, monkeypatch):
+    scripts_dir = Path(__file__).resolve().parents[2] / "scripts"
+    if str(scripts_dir) not in sys.path:
+        sys.path.insert(0, str(scripts_dir))
+    import desktop_launcher
+
+    monkeypatch.setattr(desktop_launcher, "MAX_DESKTOP_SAVE_BYTES", 16)
+    api = desktop_launcher.DesktopApi()
+    res = api.download_file("big.xlsx", base64.b64encode(b"x" * 64).decode("ascii"))
+    assert res["saved"] is False
+    assert "size limit" in str(res["error"]).lower()

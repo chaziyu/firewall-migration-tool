@@ -1,86 +1,66 @@
-import test from 'node:test'
+import test, { before, after } from 'node:test'
 import assert from 'node:assert/strict'
-import { createServer } from 'vite'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { readFileSync } from 'node:fs'
-import ts from 'typescript'
-import * as jsxRuntime from 'react/jsx-runtime'
 import * as presentation from '../src/features/report/reportPresentation.ts'
-import { activeSubsection, interfaceTopologyRows, matchingSourceRows, reportSections, reportSectionRowCount, reportCounts, reportSearchText, compactValue, rowColumns, safeValue, defaultColumns, cellSummary, detailGroups, findingGroups, findingGroupKey, fieldLabel, systemOverviewItems } from '../src/features/report/reportPresentation.ts'
+import { activeSubsection, applianceHeroInfo, interfaceTopologyRows, matchingSourceRows, reportSections, reportSectionRowCount, reportCounts, reportSearchText, compactValue, rowColumns, safeValue, defaultColumns, cellSummary, detailGroups, extendedSystemOverviewItems, findingGroups, findingGroupKey, fieldLabel, haOverviewInfo, systemOverviewItems } from '../src/features/report/reportPresentation.ts'
+import { createHookHarness, createSharedVite, loadSourceReport, nodes } from './testHelpers.mjs'
+
+const vite = createSharedVite()
+before(() => vite.beforeHook())
+after(() => vite.afterHook())
 
 test('configuration summary renders each count once, preserves missing and zero values, and keeps informational rows plain', async () => {
-  const server = await createServer({ server: { middlewareMode: true }, appType: 'custom' })
-  try {
-    const { SourceReport } = await server.ssrLoadModule('/src/features/report/SourceReport.tsx')
-    const render = (data) => renderToStaticMarkup(createElement(SourceReport, {
-      data, excelProfile: 'fast', onExcelProfileChange() { }, exporting: false, exportStatus: '', onExport() { },
-    }))
-    const data = { vendor: 'fortigate', summary: { objects: { policies: 1724, interfaces: 83, addresses: 6000, address_groups: 100, services: 100, service_groups: 56 }, unsupported_count: 2 }, sections: { schedules: [], nat: [{}, {}], routes: [{}], vpn_tunnels: [{}], unresolved_references: [] } }
-    const before = structuredClone(data)
-    const html = render(data)
-    const table = html.match(/<table class="configuration-summary"[\s\S]*?<\/table>/)[0]
-    const rows = [...table.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/g)].slice(1).map((match) => match[1])
-    const labels = ['Policies', 'Address/service objects', 'Interfaces', 'Schedules', 'NAT', 'Routes', 'VPN', 'Unresolved references', 'Unsupported / source-only']
-    const values = [1724, 6256, 83, 0, 2, 1, 1, 0, 2]
-    assert.equal(rows.length, labels.length)
-    rows.forEach((row, index) => {
-      assert.ok(row.includes(`>${labels[index]}<`))
-      assert.ok(row.includes(`<td>${values[index].toLocaleString()}</td>`))
-      assert.equal(row.includes('<button'), index < 8)
-      assert.equal(row.includes('›'), index < 8)
-    })
-    assert.ok(!html.includes('About these counts'))
-    assert.ok(!table.includes('Review findings'))
-    assert.ok(!table.includes('configuration-summary-warning'))
-    const missing = render({ vendor: 'fortigate' })
-    const missingTable = missing.match(/<table class="configuration-summary"[\s\S]*?<\/table>/)[0]
-    assert.equal((missingTable.match(/Not reported/g) ?? []).length, 7)
-    assert.ok(!missingTable.includes('Unresolved references'))
-    assert.ok(!missingTable.includes('Unsupported / source-only'))
-    assert.match(render({ vendor: 'fortigate', sections: { unresolved_references: [{}] } }), /class="configuration-summary-warning"/)
-    assert.deepEqual(data, before)
-    const { SourceOverview } = await server.ssrLoadModule('/src/features/source/SourceOverview.tsx')
-    for (const count of [0, 1, 2]) {
-      const sections = { validation: ['error', 'warning'].flatMap((severity) => Array.from({ length: count }, (_, index) => ({ severity, message: `${severity}-${index}` }))) }
-      const label = `${count} ${count === 1 ? 'error' : 'errors'} · ${count} ${count === 1 ? 'warning' : 'warnings'}`
-      assert.ok(render({ vendor: 'fortigate', sections }).includes(`${label} <small>`))
-      assert.ok(render({ vendor: 'fortigate', sections }).includes(`${count} warning ${count === 1 ? 'group' : 'groups'}</small>`))
-      const overview = renderToStaticMarkup(createElement(SourceOverview, { vendor: 'fortigate', vendorName: 'FortiGate', file: null, preview: { sections } }))
-      assert.ok(overview.includes(`${label}</span>`))
+  const { SourceReport } = await vite.load('/src/features/report/SourceReport.tsx')
+  const render = (data) => renderToStaticMarkup(createElement(SourceReport, {
+    data, excelProfile: 'fast', onExcelProfileChange() { }, exporting: false, exportStatus: '', onExport() { },
+  }))
+  const data = { vendor: 'fortigate', summary: { objects: { policies: 1724, interfaces: 83, addresses: 6000, address_groups: 100, services: 100, service_groups: 56 }, unsupported_count: 2 }, sections: { schedules: [], nat: [{}, {}], routes: [{}], vpn_tunnels: [{}], unresolved_references: [] } }
+  const beforeData = structuredClone(data)
+  const html = render(data)
+  const table = html.match(/<table class="configuration-summary"[\s\S]*?<\/table>/)[0]
+  const rows = [...table.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/g)].slice(1).map((match) => match[1])
+  const labels = ['Policies', 'Address/service objects', 'Interfaces', 'Schedules', 'NAT', 'Routes', 'VPN', 'Unresolved references', 'Unsupported / source-only']
+  const values = [1724, 6256, 83, 0, 2, 1, 1, 0, 2]
+  assert.equal(rows.length, labels.length)
+  rows.forEach((row, index) => {
+    assert.ok(row.includes(`>${labels[index]}<`))
+    assert.ok(row.includes(`<td>${values[index].toLocaleString()}</td>`))
+    assert.equal(row.includes('<button'), index < 8)
+    assert.equal(row.includes('›'), index < 8)
+  })
+  assert.ok(!html.includes('About these counts'))
+  assert.ok(!table.includes('Review findings'))
+  assert.ok(!table.includes('configuration-summary-warning'))
+  const missing = render({ vendor: 'fortigate' })
+  const missingTable = missing.match(/<table class="configuration-summary"[\s\S]*?<\/table>/)[0]
+  assert.equal((missingTable.match(/Not reported/g) ?? []).length, 7)
+  assert.ok(!missingTable.includes('Unresolved references'))
+  assert.ok(!missingTable.includes('Unsupported / source-only'))
+  assert.match(render({ vendor: 'fortigate', sections: { unresolved_references: [{}] } }), /class="configuration-summary-warning"/)
+  assert.deepEqual(data, beforeData)
+  const { SourceOverview } = await vite.load('/src/features/source/SourceOverview.tsx')
+  for (const count of [0, 1, 2]) {
+    const sections = { validation: ['error', 'warning'].flatMap((severity) => Array.from({ length: count }, (_, index) => ({ severity, message: `${severity}-${index}` }))) }
+    const label = `${count} ${count === 1 ? 'error' : 'errors'} · ${count} ${count === 1 ? 'warning' : 'warnings'}`
+    const rendered = render({ vendor: 'fortigate', sections })
+    assert.ok(!rendered.includes('report-validation-attention'))
+    if (count > 0) {
+      assert.ok(rendered.includes(`Config Warnings: ${(count * 2).toLocaleString()}`))
     }
-    assert.match(missing, /report-validation-attention[^]*?Not reported/)
-  } finally {
-    await server.close()
+    const overview = renderToStaticMarkup(createElement(SourceOverview, { vendor: 'fortigate', vendorName: 'FortiGate', file: null, preview: { sections } }))
+    assert.ok(overview.includes(`${label}</span>`))
   }
+  assert.ok(!missing.includes('report-validation-attention'))
 })
 
 test('summary buttons retain their section and subsection destinations', () => {
-  const slots = []
-  let cursor = 0
-  const hooks = {
-    useState(initial) {
-      const index = cursor++
-      if (!(index in slots)) slots[index] = initial
-      return [slots[index], (value) => { slots[index] = typeof value === 'function' ? value(slots[index]) : value }]
-    },
-    useMemo: (factory) => factory(),
-    useRef: () => ({ current: null }),
-    useEffect() { },
-  }
-  const source = readFileSync(new URL('../src/features/report/SourceReport.tsx', import.meta.url), 'utf8')
-  const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText
-  const exports = {}
-  const modules = { react: hooks, 'react/jsx-runtime': jsxRuntime, './reportPresentation': presentation, '../source/sourceApi': { fetchSecurityAudit: async () => null }, './PmLookupPanel': { PmLookupPanel: 'PmLookupPanel' }, './ReportDetails': {}, './ExcelExportControls': {}, './LifecycleCard': { isLifecycleCardData: () => false, LifecycleCard: 'LifecycleCard' }, './WhereUsedPanel': { WhereUsedPanel: 'WhereUsedPanel' }, './VpnInspectorView': { VpnInspectorView: 'VpnInspectorView' }, './SecurityAuditPanel': { SecurityAuditPanel: 'SecurityAuditPanel' }, '../../components/common/tabKeyboard': {}, '../../components/common/ErrorBanner': {} }
-  new Function('require', 'exports', compiled)((name) => { assert.ok(name in modules); return modules[name] }, exports)
-  function nodes(node) {
-    if (Array.isArray(node)) return node.flatMap(nodes)
-    return node && typeof node === 'object' ? [node, ...nodes(node.props?.children)] : []
-  }
+  const { hooks, resetCursor } = createHookHarness()
+  const exports = loadSourceReport(hooks)
   const data = { sections: { policies: [], addresses: [], address_groups: [{}], interfaces: [{}], schedules: [], nat: [], routes: [], unresolved_references: [] } }
   let activeSection = 'Overview'
   function render() {
-    cursor = 0
+    resetCursor()
     return nodes(exports.SourceReport({
       data,
       activeSection,
@@ -210,28 +190,23 @@ test('interface topology rows retain topology relationships and enrich only uniq
 })
 
 test('object subsections pin top 4 pills and place remaining types in a More menu', async () => {
-  const server = await createServer({ server: { middlewareMode: true }, appType: 'custom' })
-  try {
-    const { SourceReport } = await server.ssrLoadModule('/src/features/report/SourceReport.tsx')
-    const { default: React } = await import('react')
-    const { renderToStaticMarkup } = await import('react-dom/server')
-    const html = renderToStaticMarkup(React.createElement(SourceReport, {
-      data: {
-        vendor: 'fortigate',
-        sections: {
-          addresses: [{ name: 'a1' }],
-          address_groups: [{ name: 'g1' }],
-          wildcard_fqdns: [{ name: 'w1' }],
-          services: [{ name: 's1' }],
-          service_groups: [{ name: 'sg1' }],
-          zones: [{ name: 'z1' }],
-          local_users: [{ name: 'u1' }],
-        },
+  const { SourceReport } = await vite.load('/src/features/report/SourceReport.tsx')
+  const html = renderToStaticMarkup(createElement(SourceReport, {
+    data: {
+      vendor: 'fortigate',
+      sections: {
+        addresses: [{ name: 'a1' }],
+        address_groups: [{ name: 'g1' }],
+        wildcard_fqdns: [{ name: 'w1' }],
+        services: [{ name: 's1' }],
+        service_groups: [{ name: 'sg1' }],
+        zones: [{ name: 'z1' }],
+        local_users: [{ name: 'u1' }],
       },
-      excelProfile: 'fast', onExcelProfileChange() { }, exporting: false, exportStatus: '', onExport() { },
-    }))
-    assert.ok(html.includes('Overview'))
-  } finally { await server.close() }
+    },
+    excelProfile: 'fast', onExcelProfileChange() { }, exporting: false, exportStatus: '', onExport() { },
+  }))
+  assert.ok(html.includes('Overview'))
 })
 
 test('finding navigation preserves duplicate names across scopes and resolves NAT policy and route identities', () => {
@@ -245,7 +220,7 @@ test('finding navigation preserves duplicate names across scopes and resolves NA
 })
 
 test('alphabetically returned empty subsections do not hide populated policies; explicit empty selections remain reachable', () => {
-  const group = reportSections({ nac_policies: [], policies: [{ policy_id: 1 }], security_policies: [] })[0]
+  const group = reportSections({ local_in_policies: [], policies: [{ policy_id: 1 }], security_policies: [] })[0]
   assert.equal(activeSubsection(group.subsections, '').key, 'policies')
   assert.equal(activeSubsection(group.subsections, 'security_policies').rows.length, 0)
   assert.equal(activeSubsection(group.subsections, 'obsolete-key').key, 'policies')
@@ -592,91 +567,195 @@ test('systemOverviewItems extracts FortiGate, PAN-OS, and missing system metadat
   ])
 })
 
-test('SourceReport Overview renders System Overview above Validation with key system cards', async () => {
-  const server = await createServer({ server: { middlewareMode: true }, appType: 'custom' })
-  try {
-    const { SourceReport } = await server.ssrLoadModule('/src/features/report/SourceReport.tsx')
-    const html = renderToStaticMarkup(createElement(SourceReport, {
-      data: {
-        vendor: 'fortigate',
-        summary: {
-          source_metadata: {
-            fortios_version: '7.2.13',
-            serial_number: 'FG100E4Q17003638',
-          },
-        },
-        sections: {
-          system_global: [{ hostname: 'myinfuatforti1' }],
-          system_dns: [{ primary: '1.1.1.1', secondary: '8.8.8.8' }],
-          interfaces: [{ name: 'wan1', role: 'wan', ip: '103.230.127.147 255.255.255.0' }],
-        },
-      },
-      excelProfile: 'fast', onExcelProfileChange() { }, exporting: false, exportStatus: '', onExport() { },
-    }))
-    const sysIndex = html.indexOf('id="system-overview-title"')
-    const valIndex = html.indexOf('Validation</h3>')
-    assert.ok(sysIndex > -1 && valIndex > sysIndex, 'System Overview must appear above Validation')
-    for (const expected of ['myinfuatforti1', '103.230.127.147/255.255.255.0', '1.1.1.1', 'Secondary: 8.8.8.8', 'FG100E4Q17003638', '7.2.13']) {
-      assert.ok(html.includes(expected), `Missing expected value: ${expected}`)
-    }
-    assert.ok(html.includes('fw-hero-card'), 'Overview renders Appliance Hero banner')
-    assert.ok(html.includes('id="ha-overview-title"'), 'Overview renders High Availability section')
-  } finally {
-    await server.close()
-  }
-})
-
-test('Overview omits LifecycleCard and renders HA details; extendedSystemOverviewItems includes posture and admin ports', async () => {
-  const server = await createServer({ server: { middlewareMode: true }, appType: 'custom' })
-  try {
-    const { SourceReport } = await server.ssrLoadModule('/src/features/report/SourceReport.tsx')
-    const { extendedSystemOverviewItems, haOverviewInfo } = await server.ssrLoadModule('/src/features/report/reportPresentation.ts')
-
-    const fgData = {
+test('SourceReport Overview renders System Overview and HA without Validation card', async () => {
+  const { SourceReport } = await vite.load('/src/features/report/SourceReport.tsx')
+  const html = renderToStaticMarkup(createElement(SourceReport, {
+    data: {
       vendor: 'fortigate',
-      source_evidence: { vendor: 'fortigate', source_text: '' },
       summary: {
-        source_metadata: { hardware_model: 'FG-60F', fortios_version: '7.4.4', serial_number: 'FGT60F123' },
-        lifecycle: {
-          id: 'fg_lifecycle_card',
-          vendor: 'fortigate',
-          title: 'Lifecycle & Firmware',
-          subtitle: 'Snapshot',
-          source_label: 'Offline snapshot',
-          needs_live_refresh: false,
-          badge: { id: 'fg_lifecycle_badge', text: 'Lifecycle OK · Up to Date', variant: 'allow' },
-          rows: [{ label: 'Hardware Model', value: 'FortiGate-60F' }],
+        source_metadata: {
+          fortios_version: '7.2.13',
+          serial_number: 'FG100E4Q17003638',
         },
       },
       sections: {
-        system_global: [{ hostname: 'fg-ha', admin_port: 8080, admin_sport: 8443, admin_ssh_port: 2222 }],
-        ha_config: [{ mode: 'a-p', group_name: 'PROD-HA', priority: 200, session_pickup: 'enable', hbdev: 'port7' }],
-        interfaces: [{ name: 'mgmt', role: 'mgmt', ip: '192.168.10.1/24' }],
+        system_global: [{ hostname: 'myinfuatforti1' }],
+        system_dns: [{ primary: '1.1.1.1', secondary: '8.8.8.8' }],
+        interfaces: [{ name: 'wan1', role: 'wan', ip: '103.230.127.147 255.255.255.0' }],
       },
-    }
-
-    const ha = haOverviewInfo(fgData)
-    assert.equal(ha.enabled, true)
-    assert.equal(ha.title, 'a-p Cluster')
-    assert.equal(ha.items.find((i) => i.label === 'Heartbeat Interfaces').value, 'port7')
-
-    const extItems = extendedSystemOverviewItems(fgData, {
-      posture: { internet: 'Connected (Direct Public IP)', internet_sub: '0.0.0.0/0 route', disk: 'Yes (Onboard SSD)', disk_sub: 'Disk logging enabled' },
-    }, fgData.summary.lifecycle)
-    assert.equal(extItems.find((i) => i.label === 'Model').value, 'FortiGate-60F')
-    assert.equal(extItems.find((i) => i.label === 'Admin Ports').value, 'HTTPS 8443 · SSH 2222')
-    assert.equal(extItems.find((i) => i.label === 'Internet Connectivity').value, 'Connected (Direct Public IP)')
-    assert.equal(extItems.find((i) => i.label === 'Local Hard Disk').value, 'Yes (Onboard SSD)')
-
-    const html = renderToStaticMarkup(createElement(SourceReport, {
-      data: fgData,
-      excelProfile: 'fast', onExcelProfileChange() {}, exporting: false, exportStatus: '', onExport() {},
-    }))
-    assert.ok(!html.includes('id="fg_lifecycle_card"'), 'LifecycleCard must not render inside Overview')
-    assert.ok(html.includes('id="fg_lifecycle_badge"'), 'Overview Hero shows lifecycle badge')
-    assert.ok(html.includes('PROD-HA'), 'Overview renders HA cluster info')
-    assert.ok(!html.includes('Global IP / Object'), 'Inline Where-Used expander moved to top-right Ctrl+K modal')
-  } finally {
-    await server.close()
+    },
+    excelProfile: 'fast', onExcelProfileChange() { }, exporting: false, exportStatus: '', onExport() { },
+  }))
+  assert.ok(html.includes('id="system-overview-title"'), 'Overview renders System & Network')
+  assert.ok(!html.includes('fw-overview-validation-panel'), 'Overview omits Validation card')
+  for (const expected of ['myinfuatforti1', '103.230.127.147/255.255.255.0', '1.1.1.1', 'Secondary: 8.8.8.8', 'FG100E4Q17003638', '7.2.13']) {
+    assert.ok(html.includes(expected), `Missing expected value: ${expected}`)
   }
+  for (const dupLabel of ['>Hostname<', '>Model<', '>Firmware Version<']) {
+    assert.ok(!html.includes(dupLabel), `Duplicate hero label should be omitted from System & Network list: ${dupLabel}`)
+  }
+  assert.ok(html.includes('fw-hero-card'), 'Overview renders Appliance Hero banner')
+  assert.ok(html.includes('id="ha-overview-title"'), 'Overview renders High Availability section')
+})
+
+test('Overview renders LifecycleCard and HA details; extendedSystemOverviewItems includes posture and admin ports', async () => {
+  const { SourceReport } = await vite.load('/src/features/report/SourceReport.tsx')
+
+  const fgData = {
+    vendor: 'fortigate',
+    source_evidence: { vendor: 'fortigate', source_text: '' },
+    summary: {
+      source_metadata: { hardware_model: 'FG-60F', fortios_version: '7.4.4', serial_number: 'FGT60F123' },
+      lifecycle: {
+        id: 'fg_lifecycle_card',
+        vendor: 'fortigate',
+        title: 'Lifecycle & Firmware',
+        subtitle: 'Snapshot',
+        source_label: 'Offline snapshot',
+        needs_live_refresh: false,
+        badge: { id: 'fg_lifecycle_badge', text: 'Lifecycle OK · Up to Date', variant: 'allow' },
+        rows: [{ label: 'Hardware Model', value: 'FortiGate-60F' }],
+      },
+    },
+    sections: {
+      system_global: [{ hostname: 'fg-ha', admin_port: 8080, admin_sport: 8443, admin_ssh_port: 2222 }],
+      ha_config: [{ mode: 'a-p', group_name: 'PROD-HA', priority: 200, session_pickup: 'enable', hbdev: 'port7' }],
+      interfaces: [{ name: 'mgmt', role: 'mgmt', ip: '192.168.10.1/24' }],
+    },
+  }
+
+  const ha = haOverviewInfo(fgData)
+  assert.equal(ha.enabled, true)
+  assert.equal(ha.title, 'a-p Cluster')
+  assert.equal(ha.items.find((i) => i.label === 'Heartbeat Interfaces').value, 'port7')
+
+  const extItems = extendedSystemOverviewItems(fgData, {
+    posture: { internet: 'Connected (Direct Public IP)', internet_sub: '0.0.0.0/0 route', disk: 'Yes (Onboard SSD)', disk_sub: 'Disk logging enabled' },
+  }, fgData.summary.lifecycle)
+  assert.equal(extItems.find((i) => i.label === 'Model').value, 'FortiGate-60F')
+  assert.equal(extItems.find((i) => i.label === 'Admin Ports').value, 'HTTPS 8443 · SSH 2222')
+  assert.equal(extItems.find((i) => i.label === 'Internet Connectivity').value, 'Connected (Direct Public IP)')
+  assert.equal(extItems.find((i) => i.label === 'Local Hard Disk').value, 'Yes (Onboard SSD)')
+
+  const html = renderToStaticMarkup(createElement(SourceReport, {
+    data: fgData,
+    excelProfile: 'fast', onExcelProfileChange() {}, exporting: false, exportStatus: '', onExport() {},
+  }))
+  assert.ok(html.includes('id="fg_lifecycle_card"'), 'Overview renders LifecycleCard')
+  assert.ok(html.includes('id="fg_lifecycle_badge"'), 'LifecycleCard renders unique lifecycle badge id')
+  assert.ok(html.includes('PROD-HA'), 'Overview renders HA cluster info')
+  assert.ok(!html.includes('Global IP / Object'), 'Inline Where-Used expander moved to top-right Ctrl+K modal')
+})
+
+test('reportPresentation parity: PA HA group.mode, device_setup advanced_routing, FG dedicated_to mgmt IP, and System & Logs grouping', () => {
+  const paData = {
+    vendor: 'palo_alto',
+    source_version: '11.1.0',
+    sections: {
+      system_settings: [{
+        hostname: 'pa-gw',
+        ip_address: '10.0.0.1',
+        route: { entry: { nexthop: { 'ip-address': '10.0.0.254' } } },
+      }],
+      device_setup_settings: [{
+        advanced_routing: { enable: 'yes' },
+        management: { 'enable-duplicate-mac-detect': 'yes' },
+      }],
+      ha_configs: [{
+        enabled: 'yes',
+        group: { 'group-id': '7', 'peer-ip': '169.254.1.2', mode: { 'active-active': {} } },
+        interface: { ha1: { port: 'ha1-a', 'ip-address': '169.254.1.1' }, ha2: { 'ip-address': '169.254.2.1' } },
+      }],
+    },
+  }
+  const ha = haOverviewInfo(paData)
+  assert.equal(ha.enabled, true)
+  assert.equal(ha.title, 'Active-Active Cluster')
+  assert.equal(ha.items.find((i) => i.label === 'HA2 IP').value, '169.254.2.1')
+
+  const paExt = extendedSystemOverviewItems(paData)
+  assert.equal(paExt.find((i) => i.label === 'Default Gateway').value, '10.0.0.254')
+
+  const hero = applianceHeroInfo(paData, 'Palo Alto PAN-OS')
+  assert.ok(hero.badges.some((b) => b.text === 'Advanced Routing: On'))
+  assert.ok(hero.badges.some((b) => b.text === 'Duplicate IP: Enable'))
+
+  const fgMgmtData = {
+    vendor: 'fortigate',
+    sections: {
+      ha_config: [{ mode: 'a-p', ha_mgmt_status: 'enable', ha_mgmt_interfaces: [{ interface: 'mgmt2' }] }],
+      interfaces: [
+        { name: 'mgmt1', role: 'mgmt', ip: '10.1.1.1/24', status: 'enable' },
+        { name: 'mgmt2', dedicated_to: 'management', ip: '10.2.2.2/24', status: 'enable' },
+      ],
+    },
+  }
+  const fgExt = extendedSystemOverviewItems(fgMgmtData)
+  assert.equal(fgExt.find((i) => i.label === 'Management IP').value, '10.2.2.2/24')
+
+  const grouped = reportSections({
+    fortianalyzer_settings: [{}],
+    log_fortiguard_settings: [{}],
+    system_password_policies: [{}],
+    local_in_policies: [{}],
+    saml_servers: [{}],
+  })
+  assert.equal(grouped.find((g) => g.label === 'System & Logs').subsections.length, 3)
+  assert.equal(grouped.find((g) => g.label === 'Policies & NAT').subsections.length, 1)
+  assert.equal(grouped.find((g) => g.label === 'Users & Auth').subsections.length, 1)
+})
+
+test('WiFi & Switch groups all seven FCR-parity tabs in order with NAC moved out of Policies & NAT', () => {
+  const wifiSections = reportSections({
+    nac_policies: [{ name: 'nac-1', assign_vlan: '200', status: 'enable' }],
+    switch_port_policies: [{ name: 'port-1', mac_auth_bypass: 'enable' }],
+    managed_switches: [{ switch_id: 'SW1', switch_group: 'Edge', status: 'enable' }],
+    wids_profiles: [{ name: 'wids-1', ap_scan: 'enable' }],
+    wtp_profiles: [{ name: 'prof-1', platform: '221E' }],
+    wireless_vaps: [{ name: 'vap-1', ssid: 'Guest', status: 'disable' }],
+    wireless_wtps: [{ wtp_id: 'AP1', admin: 'disable' }],
+  })
+  assert.equal(wifiSections.some((g) => g.label === 'Policies & NAT'), false)
+  const wifiGroup = wifiSections.find((g) => g.label === 'WiFi & Switch')
+  assert.ok(wifiGroup)
+  assert.deepEqual(
+    wifiGroup.subsections.map((s) => s.key),
+    ['wireless_wtps', 'wireless_vaps', 'wtp_profiles', 'wids_profiles', 'managed_switches', 'switch_port_policies', 'nac_policies'],
+  )
+  assert.equal(defaultColumns([{ wtp_id: 'AP1', location: 'Lobby' }], 'wireless_wtps', 'fortigate').includes('location'), true)
+  assert.equal(defaultColumns([{ name: 'vap-1', schedule: 'always' }], 'wireless_vaps', 'fortigate').includes('schedule'), true)
+  assert.equal(defaultColumns([{ name: 'prof-1', platform: '221E' }], 'wtp_profiles', 'fortigate').includes('platform'), true)
+  assert.equal(defaultColumns([{ name: 'wids-1', ap_scan: 'enable' }], 'wids_profiles', 'fortigate').includes('ap_scan'), true)
+  assert.equal(defaultColumns([{ switch_id: 'SW1', firmware_provision_version: '7.4.2' }], 'managed_switches', 'fortigate').includes('firmware_provision_version'), true)
+  assert.equal(defaultColumns([{ name: 'port-1', guest_vlan: 'guest' }], 'switch_port_policies', 'fortigate').includes('guest_vlan'), true)
+  assert.equal(defaultColumns([{ name: 'nac-1', assign_vlan: '200' }], 'nac_policies', 'fortigate').includes('assign_vlan'), true)
+
+  assert.equal(presentation.cellBadgeVariant('ap_scan', 'enable'), 'allow')
+  assert.equal(presentation.cellBadgeVariant('admin', 'disable'), 'deny')
+  assert.equal(presentation.cellBadgeVariant('mac_auth_bypass', 'disable'), 'muted')
+  assert.equal(presentation.rowSemanticClass({ wtp_id: 'AP1', admin: 'disable' }, 'wireless_wtps'), 'row-danger')
+  assert.deepEqual(
+    presentation.sectionLegend('wireless_vaps', [{ name: 'vap-1', status: 'disable' }]),
+    [
+      { label: 'Enabled SSID', variant: 'default' },
+      { label: 'Disabled SSID', variant: 'danger' },
+    ],
+  )
+})
+
+test('SD-WAN groups under Interfaces & Network after interface_topology rather than Additional sections', () => {
+  const groups = reportSections({
+    interfaces: [{ name: 'wan1' }],
+    interface_topology: [{ name: 'wan1' }],
+    sdwan: [{ vdom: 'root', status: 'enable', zones: [], members: [], health_checks: [], services: [] }],
+    routes: [{ route_id: 1 }],
+  })
+  assert.equal(groups.some((g) => g.label === 'Additional sections'), false)
+  const net = groups.find((g) => g.label === 'Interfaces & Network')
+  assert.ok(net)
+  assert.deepEqual(
+    net.subsections.map((s) => s.key),
+    ['interfaces', 'interface_topology', 'sdwan', 'routes'],
+  )
+  assert.equal(fieldLabel('sdwan'), 'SD-WAN')
 })

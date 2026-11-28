@@ -1,4 +1,4 @@
-"""HTTP endpoints for Phase 2 security audit, local-only exposure probe, and HTML audit report export."""
+"""HTTP endpoints for Phase 2 security audit, local-only exposure probe, PM Lookup, and SSL-to-IPSec."""
 
 from __future__ import annotations
 
@@ -9,12 +9,6 @@ from flask import jsonify, request, send_file
 from werkzeug.exceptions import HTTPException
 
 from fwmigrate.source_reporting.exposure import probe_exposure_targets
-from fwmigrate.source_reporting.lifecycle import (
-    build_fortigate_lifecycle_card,
-    build_paloalto_lifecycle_card,
-    evaluate_fortigate_lifecycle,
-    evaluate_paloalto_lifecycle,
-)
 from fwmigrate.source_reporting.pm_checklist import (
     evaluate_fortigate_pm_checklist,
     evaluate_paloalto_pm_checklist,
@@ -22,18 +16,17 @@ from fwmigrate.source_reporting.pm_checklist import (
 )
 from fwmigrate.vendors.fortigate.security_audit import (
     build_fortigate_security_audit,
-    export_fortigate_audit_html,
     find_fortigate_exposure,
 )
+from fwmigrate.vendors.fortigate.ssl_to_ipsec import analyze_fortigate_ssl_to_ipsec
 from fwmigrate.vendors.palo_alto.security_audit import (
     build_paloalto_security_audit,
-    export_paloalto_audit_html,
     find_paloalto_exposure,
 )
 from fwmigrate.web_support.public_errors import safe_validation_message
 from fwmigrate.web_support.reporting import ConfigurationDecodeError, SourceSizeError, _safe_vendor_filename
 from fwmigrate.web_support.request_controls import limit_export_response, live_device_access_allowed
-from fwmigrate.web_support.request_source import analyze_request_source
+from fwmigrate.web_support.request_source import SourceCacheExpiredError, analyze_request_source
 
 _LOGGER = logging.getLogger(__name__)
 _SUPPORTED_VENDORS = frozenset({"fortigate", "palo_alto"})
@@ -71,7 +64,7 @@ def register_diagnostic_routes(app) -> None:
             return jsonify({"success": True, **audit})
         except ConfigurationDecodeError:
             return jsonify({"success": False, "error": "Configuration file is not valid UTF-8."}), 400
-        except SourceSizeError:
+        except (SourceSizeError, SourceCacheExpiredError):
             raise
         except ValueError as exc:
             return jsonify({"success": False, "error": safe_validation_message(exc, "Invalid security audit request")}), 400
@@ -97,7 +90,7 @@ def register_diagnostic_routes(app) -> None:
             return jsonify({"success": True, "vendor": vendor, **probe_result})
         except ConfigurationDecodeError:
             return jsonify({"success": False, "error": "Configuration file is not valid UTF-8."}), 400
-        except SourceSizeError:
+        except (SourceSizeError, SourceCacheExpiredError):
             raise
         except ValueError as exc:
             return jsonify({"success": False, "error": safe_validation_message(exc, "Invalid exposure probe request")}), 400
@@ -106,64 +99,6 @@ def register_diagnostic_routes(app) -> None:
         except Exception:
             _LOGGER.exception("Exposure reachability probe failed")
             return jsonify({"success": False, "error": "Exposure reachability probe failed"}), 500
-
-    @app.route("/api/source/audit-report", methods=["POST"])
-    @limit_export_response
-    def source_audit_report():
-        """Export standalone, script-free HTML / Print-to-PDF security audit report."""
-        try:
-            vendor, entry = _parse_audit_request()
-            filename = entry.source_name or f"{vendor}_config"
-            if vendor == "fortigate":
-                meta = entry.analysis.extracted.source_metadata
-                lifecycle = build_fortigate_lifecycle_card(
-                    evaluate_fortigate_lifecycle(
-                        meta.hardware_model if meta else None,
-                        meta.fortios_version if meta else None,
-                        serial_raw=meta.serial_number if meta else None,
-                        cache_only=True,
-                    )
-                )
-                html_bytes = export_fortigate_audit_html(
-                    entry.analysis.extracted.config,
-                    entry.analysis.derived,
-                    metadata=meta,
-                    lifecycle_card=lifecycle,
-                    filename=filename,
-                )
-            else:
-                config = entry.analysis.config
-                version = config.detail_version or config.source_version
-                lifecycle = build_paloalto_lifecycle_card(
-                    evaluate_paloalto_lifecycle(
-                        version,
-                        is_exact_version=bool(config.detail_version),
-                        cache_only=True,
-                    )
-                )
-                html_bytes = export_paloalto_audit_html(
-                    config,
-                    entry.analysis.derived,
-                    lifecycle_card=lifecycle,
-                    filename=filename,
-                )
-            return send_file(
-                io.BytesIO(html_bytes),
-                mimetype="text/html; charset=utf-8",
-                as_attachment=True,
-                download_name=f"{_safe_vendor_filename(vendor)}_security_audit_report.html",
-            )
-        except ConfigurationDecodeError:
-            return jsonify({"success": False, "error": "Configuration file is not valid UTF-8."}), 400
-        except SourceSizeError:
-            raise
-        except ValueError as exc:
-            return jsonify({"success": False, "error": safe_validation_message(exc, "Invalid audit report request")}), 400
-        except HTTPException:
-            raise
-        except Exception:
-            _LOGGER.exception("Audit report export failed")
-            return jsonify({"success": False, "error": "Security audit report export failed"}), 500
 
     @app.route("/api/source/pm-lookup", methods=["POST"])
     def source_pm_lookup():
@@ -184,7 +119,7 @@ def register_diagnostic_routes(app) -> None:
             return jsonify({"success": True, **result})
         except ConfigurationDecodeError:
             return jsonify({"success": False, "error": "Configuration file is not valid UTF-8."}), 400
-        except SourceSizeError:
+        except (SourceSizeError, SourceCacheExpiredError):
             raise
         except ValueError as exc:
             return jsonify({"success": False, "error": safe_validation_message(exc, "Invalid PM Lookup request")}), 400
@@ -220,7 +155,7 @@ def register_diagnostic_routes(app) -> None:
             )
         except ConfigurationDecodeError:
             return jsonify({"success": False, "error": "Configuration file is not valid UTF-8."}), 400
-        except SourceSizeError:
+        except (SourceSizeError, SourceCacheExpiredError):
             raise
         except ValueError as exc:
             return jsonify({"success": False, "error": safe_validation_message(exc, "Invalid PM Lookup export request")}), 400
@@ -229,3 +164,33 @@ def register_diagnostic_routes(app) -> None:
         except Exception:
             _LOGGER.exception("PM Lookup Excel export failed")
             return jsonify({"success": False, "error": "PM Lookup Excel export failed"}), 500
+
+    @app.route("/api/source/ssl-to-ipsec", methods=["POST"])
+    def source_ssl_to_ipsec():
+        """Run FortiGate SSL-VPN -> Dial-up IPSec (IKEv2) readiness audit & CLI draft."""
+        try:
+            payload = request.get_json(silent=True, cache=False)
+            if not isinstance(payload, dict):
+                raise ValueError("SSL-to-IPSec request must be a JSON object")
+            vendor = str(payload.get("source_vendor") or "").strip().lower()
+            if vendor != "fortigate":
+                raise ValueError("SSL-VPN to IPSec assistant supports fortigate only")
+            vdom = str(payload.get("vdom") or "").strip() or None
+            entry = analyze_request_source(payload, "fortigate", use_cache=True)
+            result = analyze_fortigate_ssl_to_ipsec(
+                entry.analysis.extracted.config,
+                metadata=entry.analysis.extracted.source_metadata,
+                vdom=vdom,
+            )
+            return jsonify({"success": True, **result})
+        except ConfigurationDecodeError:
+            return jsonify({"success": False, "error": "Configuration file is not valid UTF-8."}), 400
+        except (SourceSizeError, SourceCacheExpiredError):
+            raise
+        except ValueError as exc:
+            return jsonify({"success": False, "error": safe_validation_message(exc, "Invalid SSL-to-IPSec request")}), 400
+        except HTTPException:
+            raise
+        except Exception:
+            _LOGGER.exception("SSL-to-IPSec analysis failed")
+            return jsonify({"success": False, "error": "SSL-to-IPSec analysis failed"}), 500

@@ -6,7 +6,6 @@ from datetime import datetime, timezone
 from re import search as re_search
 from typing import Any
 
-from ...source_reporting.audit_report import render_security_audit_html
 from ...source_reporting.certificates import parse_pem_certificate, summarize_certificates
 from ...source_reporting.exposure import (
     CRITICAL_VIP_PORTS,
@@ -783,38 +782,3 @@ def build_fortigate_security_audit(
         "quick_audit": quick_audit,
         "vpn_health": vpn_health,
     }
-
-
-def export_fortigate_audit_html(
-    config: FGConfig,
-    derived: DerivedViews,
-    *,
-    metadata: FortiGateSourceMetadata | None = None,
-    lifecycle_card: dict[str, Any] | None = None,
-    filename: str = "fortigate.conf",
-    now: datetime | None = None,
-) -> bytes:
-    """Render standalone HTML security audit report for a FortiGate configuration."""
-    audit = build_fortigate_security_audit(config, derived, metadata=metadata, now=now)
-    hostname = next((g.hostname for g in config.system_global if g.hostname), None) or "FortiGate"
-    overview_items = [
-        ("Hostname", hostname),
-        ("Hardware Model", (metadata.hardware_model if metadata else None) or "-"),
-        ("FortiOS Version", (metadata.fortios_version if metadata else None) or "-"),
-        ("Interfaces", str(len(config.interfaces))),
-        ("Firewall Policies", str(len(config.policies))),
-        ("IPSec Tunnels", str(len(config.ipsec_phase1))),
-    ]
-    return render_security_audit_html(
-        vendor_label="FortiGate",
-        hostname=hostname,
-        filename=filename,
-        overview_items=overview_items,
-        lifecycle_card=lifecycle_card,
-        posture=audit["posture"],
-        exposure_findings=audit["exposure"],
-        certificates=audit["certificates"],
-        vpn_inspections=audit["vpn_health"],
-        quick_audit=audit["quick_audit"],
-        hygiene=audit["hygiene"],
-    )

@@ -3,12 +3,9 @@ import type { SidebarWorkspaceMeta } from './Sidebar'
 
 export type WorkspaceTopbarActions = {
   canSearch: boolean
-  canAudit: boolean
   excelProfile: 'fast' | 'full'
   exporting: boolean
-  auditExporting: boolean
   onOpenSearch: () => void
-  onExportAuditReport: () => void
   onExcelProfileChange: (profile: 'fast' | 'full') => void
   onExportExcel: () => void
 }
@@ -100,22 +97,6 @@ export function PageHeader({
                 </svg>
                 <span>Search</span>
                 <kbd className="fw-kbd">Ctrl+K</kbd>
-              </Button>
-            )}
-            {workspaceActions.canAudit && (
-              <Button
-                variant="secondary"
-                className="fw-topbar-btn"
-                type="button"
-                disabled={workspaceActions.auditExporting}
-                aria-busy={workspaceActions.auditExporting}
-                title="Export Security & Health Audit Report (HTML / Print to PDF)"
-                onClick={workspaceActions.onExportAuditReport}
-              >
-                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9Zm0 0v6h6M8 13h8M8 17h5" />
-                </svg>
-                <span>{workspaceActions.auditExporting ? 'Generating…' : 'Audit Report'}</span>
               </Button>
             )}
             <div className="fw-topbar-excel-group">

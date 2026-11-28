@@ -9,7 +9,7 @@ import type { SidebarWorkspaceMeta } from './components/layout/Sidebar'
 import { SourceConfiguration } from './features/source/SourceConfiguration'
 
 const landingPage = {
-  title: 'Firewall Config Reader',
+  title: 'Firewall Migration Tool',
   description: 'Inspect FortiGate and Palo Alto PAN-OS configurations.',
 }
 
@@ -18,6 +18,7 @@ export default function App() {
   const [resetting, setResetting] = useState(false)
   const [workspaceError, setWorkspaceError] = useState<string | null>(null)
   const [liveDeviceAccess, setLiveDeviceAccess] = useState(false)
+  const [tsfMaxZipMb, setTsfMaxZipMb] = useState(500)
   const [workspaceMeta, setWorkspaceMeta] = useState<SidebarWorkspaceMeta | null>(null)
   const [workspaceActions, setWorkspaceActions] = useState<WorkspaceTopbarActions | null>(null)
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
@@ -31,7 +32,12 @@ export default function App() {
       .then(async (response) => {
         if (!response.ok) throw new Error('Could not load server capabilities')
         const capabilities = await response.json()
-        if (!controller.signal.aborted) setLiveDeviceAccess(capabilities.live_device_access === true)
+        if (!controller.signal.aborted) {
+          setLiveDeviceAccess(capabilities.live_device_access === true)
+          if (typeof capabilities.tsf_max_zip_mb === 'number' && capabilities.tsf_max_zip_mb > 0) {
+            setTsfMaxZipMb(capabilities.tsf_max_zip_mb)
+          }
+        }
       })
       .catch(() => { /* Live device access stays disabled if capabilities are unavailable. */ })
     return () => controller.abort()
@@ -93,6 +99,7 @@ export default function App() {
         <SourceConfiguration
           key={workspace}
           liveDeviceAccess={liveDeviceAccess}
+          tsfMaxZipMb={tsfMaxZipMb}
           onWorkspaceActionsChange={setWorkspaceActions}
         />
       )}

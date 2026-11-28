@@ -264,13 +264,6 @@ def test_diagnostics_endpoints_enforce_security_boundaries_and_csp():
     # Live exposure probe fails closed in public mode, non-loopback local mode, and passes with local loopback.
     assert public_client.post("/api/source/exposure-probe", json=payload).status_code == 403
 
-    report_resp = public_client.post("/api/source/audit-report", json=payload)
-    assert report_resp.status_code == 200
-    assert "attachment" in report_resp.headers.get("Content-Disposition", "")
-    html_text = report_resp.get_data(as_text=True)
-    assert "&lt;script&gt;alert(&#x27;xss&#x27;)&lt;/script&gt;" in html_text
-    assert "<script" not in html_text.lower()
-
     local_client = create_app({
         "TESTING": True,
         "WEB_MODE": "local",

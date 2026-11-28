@@ -46,6 +46,12 @@ Use official vendor documentation under `documentation/official-cli-references-s
 - **FortiGate**: Source input is `.conf` / `.cfg` only.
 - **PAN-OS**: Source input is XML only.
 
+## Frontend styling
+
+Follow `src/frontend/STYLE_GUIDE.md` for all React/CSS changes:
+- Use only design tokens defined in `src/frontend/src/styles/tokens.css` and `themes.css` (enforced by `src/frontend/tests/designSystem.test.mjs`).
+- Do not append new feature styles to `src/frontend/src/App.css`; colocate new styles in `*.module.css` or feature-scoped CSS files and reuse primitives from `src/components/common/` and `src/styles/primitives.css`.
+
 ## Testing and verification
 
 - **End-to-end path**: Test the affected real path across boundaries (`source → VendorConfig → DerivedViews → validation → preview / Excel`).

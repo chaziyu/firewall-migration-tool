@@ -210,7 +210,7 @@ end
             "System Settings", "Session Helpers", "Router Settings", "IPS Settings",
             "Protocol Options", "Per-IP Shapers",
             "SSL VPN Host Checks", "SSL VPN Host Check Items", "User Group Guests",
-            "NAC Policies", "Kerberos Keytabs", "KMIP Servers", "SDN Proxies",
+            "Kerberos Keytabs", "KMIP Servers", "SDN Proxies",
             "IPv6 Address Templates", "On-Demand Sniffers", "Affinity Interrupts",
             "Serial Ports", "Firewall Regions", "Vendor MACs",
             "Schedules",

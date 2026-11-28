@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 class FGNACPolicy(BaseModel):
     name: str
     vdom: str | None = "root"
+    source_path: str = "user nac-policy"
     category: str | None = None
     description: str | None = None
     ems_tag: str | None = None
@@ -32,6 +33,14 @@ class FGNACPolicy(BaseModel):
     type: str | None = None
     user: str | None = None
     user_group: str | None = None
+    assign_vlan: str | None = None
+    matched_devices: int | None = None
+    mode: str | None = None
+    onboarding_vlan: str | None = None
+    auto_auth: str | None = None
+    bounce_nac_port: str | None = None
+    inactive_timer: int | None = None
+    link_down_flush: str | None = None
     raw_extra: dict[str, Any] = Field(default_factory=dict)
     explicit_fields: set[str] = Field(default_factory=set)
 
@@ -1651,9 +1660,19 @@ class FGWirelessWTP(BaseModel):
     explicit_fields: set[str] = Field(default_factory=set)
 
 
+class FGWirelessWTPProfilePlatform(BaseModel):
+    type: str | None = None
+    ddscan: str | None = None
+    mode: str | None = None
+    raw_extra: dict[str, Any] = Field(default_factory=dict)
+    explicit_fields: set[str] = Field(default_factory=set)
+
+
 class FGWirelessWTPProfile(BaseModel):
     name: str
     vdom: str | None = "root"
+    platform: str | None = None
+    platform_config: FGWirelessWTPProfilePlatform | None = None
     comment: str | None = None
     login_passwd_change: str | None = None
     login_passwd_configured: bool = False
@@ -1762,6 +1781,10 @@ class FGManagedSwitch(BaseModel):
     dynamic_capability: int | None = None
     directly_connected: str | None = None
     switch_profile: str | None = None
+    switch_group: str | None = None
+    status: str | None = None
+    platform: str | None = None
+    firmware_provision_version: str | None = None
     override_snmp_sysinfo: str | None = None
     override_snmp_community: str | None = None
     override_snmp_user: str | None = None
@@ -1953,6 +1976,12 @@ class FGSwitchPortPolicy(BaseModel):
     qos_policy: str | None = None
     vlan_policy: str | None = None
     bounce_port_link: str | None = None
+    user_group: list[str] = Field(default_factory=list)
+    guest_vlan: str | None = None
+    guest_auth_delay: int | None = None
+    mac_auth_bypass: str | None = None
+    eap_passthru: str | None = None
+    radius_timeout_overwrite: str | None = None
     raw_extra: dict[str, Any] = Field(default_factory=dict)
     explicit_fields: set[str] = Field(default_factory=set)
 

@@ -1,0 +1,321 @@
+/* ── Palo Alto TSF Explorer (Phase 5) ─────────────────────────────────────────── */
+
+.tsf-upload-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+}
+
+.tsf-progress-track {
+  width: 100%;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--surface-muted);
+  border: 1px solid var(--line);
+  overflow: hidden;
+}
+
+.tsf-progress-fill {
+  height: 100%;
+  background: var(--color-primary);
+  transition: width 0.2s ease;
+}
+
+.tsf-progress-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--text-main);
+}
+
+.tsf-explorer {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.tsf-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+.tsf-mode-group {
+  display: inline-flex;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.tsf-mode-btn {
+  padding: 6px 11px;
+  border: 0;
+  background: var(--surface);
+  color: var(--text-main);
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.tsf-mode-btn + .tsf-mode-btn {
+  border-left: 1px solid var(--line-strong);
+}
+
+.tsf-mode-btn.active {
+  background: var(--surface-muted);
+  color: var(--text-heading);
+  font-weight: 600;
+}
+
+.tsf-search-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 320px;
+}
+
+.tsf-search-input {
+  flex: 1 1 auto;
+  min-width: 180px;
+  padding: 6px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text-heading);
+  font-size: 13px;
+}
+
+.tsf-status-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.tsf-split {
+  display: grid;
+  grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
+  gap: 12px;
+  min-height: 560px;
+}
+
+@media (max-width: 900px) {
+  .tsf-split {
+    grid-template-columns: 1fr;
+  }
+}
+
+.tsf-tree-pane,
+.tsf-viewer-pane {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  min-width: 0;
+  overflow: hidden;
+}
+
+.tsf-pane-header,
+.tsf-viewer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-muted);
+}
+
+.tsf-pane-header {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.tsf-tree-scroll {
+  padding: 6px;
+  overflow: auto;
+  max-height: 68vh;
+}
+
+.tsf-tree-node {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-main);
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tsf-tree-node:hover {
+  background: var(--surface-muted);
+}
+
+.tsf-tree-node.selected {
+  background: var(--surface-muted);
+  color: var(--text-heading);
+  font-weight: 600;
+}
+
+.tsf-tree-caret {
+  width: 12px;
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.tsf-tree-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tsf-tree-size {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.tsf-tree-empty {
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.tsf-viewer-path {
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-heading);
+  word-break: break-all;
+}
+
+.tsf-viewer-meta {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.tsf-viewer-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.tsf-download-note {
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-muted);
+  font-size: 12px;
+  color: var(--text-main);
+}
+
+.tsf-empty-state {
+  padding: 24px 16px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.tsf-code-wrap {
+  flex: 1 1 auto;
+  overflow: auto;
+  max-height: 62vh;
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.tsf-code-line {
+  display: flex;
+  align-items: flex-start;
+  padding: 1px 10px;
+}
+
+.tsf-code-line.highlight {
+  background: var(--fw-warn-soft);
+}
+
+.tsf-line-no {
+  width: 56px;
+  flex-shrink: 0;
+  padding-right: 12px;
+  text-align: right;
+  color: var(--text-muted);
+  user-select: none;
+}
+
+.tsf-line-text {
+  white-space: pre;
+  color: var(--text-heading);
+}
+
+.tsf-pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--line);
+  background: var(--surface-muted);
+}
+
+.tsf-pager-info {
+  font-size: 12px;
+  color: var(--text-main);
+}
+
+.tsf-result-list {
+  overflow: auto;
+  max-height: 66vh;
+}
+
+.tsf-result-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: 9px 12px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tsf-result-item:hover {
+  background: var(--surface-muted);
+}
+
+.tsf-result-path {
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-heading);
+}
+
+.tsf-result-snippet {
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+  font-size: 11.5px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

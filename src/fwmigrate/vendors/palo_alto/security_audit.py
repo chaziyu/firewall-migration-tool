@@ -5,7 +5,6 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-from ...source_reporting.audit_report import render_security_audit_html
 from ...source_reporting.certificates import (
     classify_expiry,
     parse_panos_cert_time,
@@ -582,37 +581,3 @@ def build_paloalto_security_audit(
         "quick_audit": quick_audit,
         "vpn_health": vpn_health,
     }
-
-
-def export_paloalto_audit_html(
-    config: PANOSConfig,
-    derived: PANOSDerivedViews,
-    *,
-    lifecycle_card: dict[str, Any] | None = None,
-    filename: str = "panos-config.xml",
-    now: datetime | None = None,
-) -> bytes:
-    """Render standalone HTML security audit report for a PAN-OS configuration."""
-    audit = build_paloalto_security_audit(config, derived, now=now)
-    hostname = config.hostname or next((s.hostname for s in config.system_settings if s.hostname), None) or "Palo Alto"
-    overview_items = [
-        ("Hostname", hostname),
-        ("PAN-OS Version", config.detail_version or config.source_version or "-"),
-        ("Scopes", str(len(config.scopes))),
-        ("Interfaces", str(len(config.interfaces) + len(config.interface_units))),
-        ("Security Rules", str(len(config.security_rules))),
-        ("IPSec Tunnels", str(len(config.ipsec_tunnels))),
-    ]
-    return render_security_audit_html(
-        vendor_label="Palo Alto PAN-OS",
-        hostname=hostname,
-        filename=filename,
-        overview_items=overview_items,
-        lifecycle_card=lifecycle_card,
-        posture=audit["posture"],
-        exposure_findings=audit["exposure"],
-        certificates=audit["certificates"],
-        vpn_inspections=audit["vpn_health"],
-        quick_audit=audit["quick_audit"],
-        hygiene=audit["hygiene"],
-    )

@@ -1,0 +1,209 @@
+/* Phase 3 Simulators & Structural Config Diff */
+.fw-sim-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.fw-sim-card,
+.fw-sim-result {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 16px;
+  background: var(--surface);
+}
+
+.fw-sim-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.fw-sim-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-heading);
+}
+
+.fw-sim-subtitle {
+  margin: 2px 0 0;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+.fw-sim-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.fw-sim-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 10px;
+}
+
+.fw-sim-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.fw-sim-field input,
+.fw-sim-field select {
+  padding: 6px 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text-main);
+  font-size: 12.5px;
+}
+
+.fw-sim-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.fw-sim-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  color: var(--text-main);
+  margin-right: auto;
+  cursor: pointer;
+}
+
+.fw-sim-verdict-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.fw-sim-verdict-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.fw-sim-verdict-reason {
+  margin-top: 2px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-heading);
+}
+
+.fw-sim-kv {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.fw-sim-kv-item {
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-muted);
+}
+
+.fw-sim-kv-item dt {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+
+.fw-sim-kv-item dd {
+  margin: 2px 0 0;
+  font-size: 12.5px;
+  color: var(--text-heading);
+  word-break: break-word;
+}
+
+.fw-sim-note-warn,
+.fw-sim-note-success {
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.fw-sim-note-warn {
+  border: 1px solid var(--fw-warn);
+  background: var(--fw-warn-soft);
+  color: var(--text-heading);
+}
+
+.fw-sim-note-warn ul {
+  margin: 4px 0 0 18px;
+  padding: 0;
+}
+
+.fw-sim-note-success {
+  border: 1px solid var(--fw-allow);
+  background: var(--fw-allow-soft);
+  color: var(--text-heading);
+}
+
+.fw-sim-details {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+}
+
+.fw-sim-details > summary {
+  cursor: pointer;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-heading);
+}
+
+.fw-sim-details[open] > summary {
+  margin-bottom: 8px;
+}
+
+.fw-diff-upload {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.fw-diff-file-field {
+  flex: 1 1 260px;
+}
+
+.fw-diff-domain {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  background: var(--surface);
+}
+
+.fw-diff-domain > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-heading);
+}
+
+.fw-diff-domain[open] > summary {
+  margin-bottom: 8px;
+}

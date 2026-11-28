@@ -433,8 +433,13 @@ for _path in ("vpn ssl web user-bookmark bookmarks form-data", "vpn ssl web user
 
 register_section(SectionSpec(
     source_path="user nac-policy", list_fields=_fields("severity", "switch-group"),
-    integer_fields=_fields("match-period"),
-    scalar_fields=_fields("category", "description", "ems-tag", "family", "firewall-address", "fortivoice-tag", "host", "hw-vendor", "hw-version", "mac", "match-type", "os", "src", "ssid-policy", "status", "sw-version", "switch-fortilink", "switch-mac-policy", "type", "user", "user-group"),
+    integer_fields=_fields("match-period", "matched-devices"),
+    scalar_fields=_fields("assign-vlan", "category", "description", "ems-tag", "family", "firewall-address", "fortivoice-tag", "host", "hw-vendor", "hw-version", "mac", "match-type", "os", "src", "ssid-policy", "status", "sw-version", "switch-fortilink", "switch-mac-policy", "type", "user", "user-group"),
+))
+register_section(SectionSpec(
+    source_path="switch-controller nac-settings",
+    integer_fields=_fields("inactive-timer", "matched-devices"),
+    scalar_fields=_fields("name", "mode", "onboarding-vlan", "auto-auth", "bounce-nac-port", "link-down-flush", "hw-vendor", "assign-vlan", "description", "status"),
 ))
 register_section(SectionSpec(
     source_path="firewall address6-template", integer_fields=_fields("subnet-segment-count"),
@@ -1022,10 +1027,25 @@ register_section(
             "interval",
             "failtime",
             "recoverytime",
+            "latency-threshold",
+            "jitter-threshold",
+            "packetloss-threshold",
         ),
         scalar_fields=_fields(
             "protocol",
             "server",
+            "system-dns",
+        ),
+    )
+)
+
+register_section(
+    SectionSpec(
+        source_path="system sdwan health-check sla",
+        integer_fields=_fields(
+            "latency-threshold",
+            "jitter-threshold",
+            "packetloss-threshold",
         ),
     )
 )
@@ -1042,9 +1062,15 @@ register_section(
         integer_list_fields=_fields(
             "priority-members",
         ),
+        integer_fields=_fields(
+            "protocol",
+            "start-port",
+            "end-port",
+        ),
         scalar_fields=_fields(
             "name",
             "mode",
+            "link-cost-factor",
             "status",
         ),
     )
@@ -2387,8 +2413,15 @@ register_section(
             "ip-fragment-preventing", "tun-mtu-uplink", "tun-mtu-downlink",
             "split-tunneling-acl-path", "split-tunneling-acl-local-ap-subnet",
             "energy-efficient-ethernet", "led-state", "poe-mode", "wan-port-mode",
-            "lldp",
+            "lldp", "platform",
         ),
+    )
+)
+
+register_section(
+    SectionSpec(
+        source_path="wireless-controller wtp-profile platform",
+        scalar_fields=_fields("type", "ddscan", "mode"),
     )
 )
 
@@ -2417,6 +2450,7 @@ register_section(
             "name", "sn", "fsw-wan1-peer", "fsw-wan1-admin", "fsw-wan2-peer",
             "fsw-wan2-admin", "version", "poe-pre-standard-detection",
             "poe-detection-type", "directly-connected", "switch-profile",
+            "switch-group", "status", "platform", "firmware-provision-version",
             "override-snmp-sysinfo", "override-snmp-community", "override-snmp-user",
             "description", "type", "owner-vdom", "mclag-igmp-snooping-aware",
         ),
@@ -2549,7 +2583,12 @@ register_section(
 register_section(
     SectionSpec(
         source_path="switch-controller port-policy",
-        scalar_fields=_fields("description", "fortilink", "qos-policy", "vlan-policy", "bounce-port-link"),
+        list_fields=_fields("user-group"),
+        integer_fields=_fields("guest-auth-delay"),
+        scalar_fields=_fields(
+            "description", "fortilink", "qos-policy", "vlan-policy", "bounce-port-link",
+            "guest-vlan", "mac-auth-bypass", "eap-passthru", "radius-timeout-overwrite",
+        ),
     )
 )
 

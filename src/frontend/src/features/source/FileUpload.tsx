@@ -2,7 +2,7 @@ import { useId, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Button } from '../../components/common/Button'
 
-export function FileUpload({ file, onChange, accept, title = 'Drop your configuration here', helpText, disabled = false, description, children, maxBytes }: {
+export function FileUpload({ file, onChange, accept, title = 'Drop your configuration here', helpText, disabled = false, description, children, maxBytes, maxBytesForFile }: {
   file: File | null
   onChange: (file: File | null) => void
   accept?: string
@@ -12,6 +12,7 @@ export function FileUpload({ file, onChange, accept, title = 'Drop your configur
   description?: string
   children?: ReactNode
   maxBytes?: number
+  maxBytesForFile?: (file: File) => number
 }) {
   const input = useRef<HTMLInputElement>(null)
   const inputId = useId()
@@ -19,8 +20,9 @@ export function FileUpload({ file, onChange, accept, title = 'Drop your configur
 
   function selectFile(selected: File | undefined) {
     if (!selected || disabled) return
-    if (maxBytes !== undefined && selected.size > maxBytes) {
-      setError(`This file exceeds the ${formatFileSize(maxBytes)} upload limit. Choose a smaller file.`)
+    const limit = maxBytesForFile ? maxBytesForFile(selected) : maxBytes
+    if (limit !== undefined && selected.size > limit) {
+      setError(`This file exceeds the ${formatFileSize(limit)} upload limit. Choose a smaller file.`)
       if (input.current) input.current.value = ''
       return
     }

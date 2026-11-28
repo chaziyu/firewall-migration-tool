@@ -1,10 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { LifecycleCardData, PmChecklistResponse, SecurityAuditResponse, SourcePreviewData } from '../source/types'
+import type { LifecycleCardData, PmChecklistResponse, SecurityAuditResponse, SourcePreviewData, SslToIpsecResponse } from '../source/types'
 import { fetchSecurityAudit } from '../source/sourceApi'
-import { activeSubsection, applianceHeroInfo, asRecord, asRows, cellBadgeVariant, compactValue, downloadCsvRows, extendedSystemOverviewItems, haOverviewInfo, interfaceTopologyRows, isLifecycleCardData, isMonoColumn, matchingSourceRows, reportCounts, reportSections, reportSectionRowCount, reportSearchText, rowColumns, rowSemanticClass, rowSubtypeId, safeValue, sectionLegend, subtypeFilterTabs, defaultColumns, cellSummary, cellTooltip, columnWidth, fieldLabel, findingGroups, findingGroupKey } from './reportPresentation'
+import { activeSubsection, applianceHeroInfo, asRecord, asRows, cellBadgeVariant, compactValue, downloadCsvRows, extendedSystemOverviewItems, FORTIGATE_CORE_WIFI_SWITCH_TABS, haOverviewInfo, interfaceTopologyRows, isLifecycleCardData, isMonoColumn, matchingSourceRows, reportCounts, reportSections, reportSectionRowCount, reportSearchText, rowColumns, rowSemanticClass, rowSubtypeId, safeValue, sectionLegend, subtypeFilterTabs, defaultColumns, cellSummary, cellTooltip, columnWidth, fieldLabel, findingGroups, findingGroupKey } from './reportPresentation'
+import { ConfigDiffPanel } from './ConfigDiffPanel'
+import { LifecycleCard } from './LifecycleCard'
+import { PacketTracePanel } from './PacketTracePanel'
 import { PmLookupPanel } from './PmLookupPanel'
+import { PolicyLookupPanel } from './PolicyLookupPanel'
 import { ReportDetails } from './ReportDetails'
-import { SecurityAuditPanel } from './SecurityAuditPanel'
+import { RouteLookupPanel } from './RouteLookupPanel'
+import { PublicExposureCard, SecurityAuditPanel } from './SecurityAuditPanel'
+import { SslToIpsecPanel } from './SslToIpsecPanel'
+import { SdwanView } from './SdwanView'
 import { VpnInspectorView } from './VpnInspectorView'
 import { tabKeyboard } from '../../components/common/tabKeyboard'
 import { ErrorBanner } from '../../components/common/ErrorBanner'
@@ -58,7 +65,14 @@ const VALIDATION_TARGETS: Record<string, [string, string]> = {
   radius_server: ['radius_servers', 'RADIUS servers'],
   tacacs_server: ['tacacs_servers', 'TACACS+ servers'],
   kerberos_keytab: ['kerberos_keytabs', 'Kerberos keytabs'],
-  wireless_vap: ['wireless_vaps', 'WiFi SSIDs'],
+  wireless_vap: ['wireless_vaps', 'SSIDs'],
+  wireless_wtp: ['wireless_wtps', 'Managed FortiAPs'],
+  wtp_profile: ['wtp_profiles', 'FortiAP Profiles'],
+  wids_profile: ['wids_profiles', 'WIDS Profiles'],
+  managed_switch: ['managed_switches', 'Managed FortiSwitches'],
+  managed_switch_port: ['managed_switches', 'Managed FortiSwitches'],
+  switch_port_policy: ['switch_port_policies', 'Port Policies'],
+  nac_policy: ['nac_policies', 'NAC Policies'],
   'application-group': ['application_groups', 'Application groups'],
   'external-list': ['external_lists', 'External dynamic lists'],
   'custom-url-category': ['custom_url_categories', 'Custom URL categories'],
@@ -307,7 +321,7 @@ function ValidationReport({ data, reportScope, onReportScope, active }: { data: 
   }
 
   return <div className="validation-report">
-    <h3>Validation findings</h3>
+    <h3>Config warnings</h3>
     <ValidationFilters rows={allRows} search={search} scope={scope} severity={severity} activeGroup={group?.key ?? ''} onSearch={(value) => { setSearch(value); setSelected(null) }} onScope={(value) => { onReportScope(value); setSelected(null) }} onSeverity={(value) => { setSeverity(value); setSelected(null) }} onClear={() => { clearFilters(); setSelected(null) }} />
     <ValidationSummary rows={matchingRows} activeGroup={group?.key ?? ''} onGroupChange={(key) => { setActiveGroup(key); setSelected(null) }} />
     {group && <p className="validation-group-explanation"><strong>{group.count} affected findings</strong> · {text(group.row.message)}</p>}
@@ -315,7 +329,7 @@ function ValidationReport({ data, reportScope, onReportScope, active }: { data: 
       <ValidationTable rows={filteredRows} selected={selected} grouped={!!group} onSelect={(row) => { setSelected(row); setTarget(null) }} onNavigate={navigateToObject} />
       {active && selected && filteredRows.includes(selected) && <ReportDetails finding row={selected} target={target} onNavigate={() => navigateToObject(selected)} onClose={() => { setSelected(null); setTarget(null) }} />}
     </div>
-    {!allRows.length && <p className="validation-empty">No validation findings were reported.</p>}
+    {!allRows.length && <p className="validation-empty">No config warnings were reported.</p>}
     {!!scopes.length && <p className="validation-scope-note">Findings are reported for {scopes.length} {scopes.length === 1 ? 'scope' : 'scopes'}.</p>}
   </div>
 }
@@ -325,6 +339,19 @@ function columnPixelWidth(key: string): number {
   if (kind === 'short') return 118
   if (kind === 'identity') return 240
   return 230
+}
+
+function emptySubsectionMessage(subsection: string): string {
+  const messages: Record<string, string> = {
+    wireless_wtps: 'No managed FortiAPs configured.',
+    wireless_vaps: 'No SSIDs configured.',
+    wtp_profiles: 'No FortiAP profiles configured.',
+    wids_profiles: 'No WIDS profiles configured.',
+    managed_switches: 'No managed FortiSwitches configured.',
+    switch_port_policies: 'No port policies configured.',
+    nac_policies: 'No NAC policies configured.',
+  }
+  return messages[subsection] ?? 'No reported entries in this subsection.'
 }
 
 function SourceRowsTable({ rows, columns, selected, hasSource, topology, subsection = '', sortCol = null, sortAsc = true, onSort, onSelect }: {
@@ -342,7 +369,7 @@ function SourceRowsTable({ rows, columns, selected, hasSource, topology, subsect
   const { wrapRef, onScroll, startIndex, visibleRows, topSpacerHeight, bottomSpacerHeight } = useVirtualRows(rows, ROW_HEIGHT, columns)
   const totalWidth = columns.reduce((sum, key) => sum + columnPixelWidth(key), 0)
 
-  if (!rows.length) return <p className="report-empty">{hasSource ? 'No rows match the current filters.' : 'No reported entries in this subsection.'}</p>
+  if (!rows.length) return <p className="report-empty">{hasSource ? 'No rows match the current filters.' : emptySubsectionMessage(subsection)}</p>
 
   return <div
     ref={wrapRef}
@@ -450,7 +477,7 @@ export function SourceReport({
   const supportsSecurityAudit = (data.vendor === 'fortigate' || data.vendor === 'palo_alto') && Boolean(data.source_evidence)
   const [internalActiveSection, setInternalActiveSection] = useState('Overview')
   const activeSection = controlledActiveSection ?? internalActiveSection
-  const [healthTab, setHealthTab] = useState<'audit' | 'validation'>(() => (supportsSecurityAudit ? 'audit' : 'validation'))
+  const [overviewTab, setOverviewTab] = useState<'summary' | 'packet_trace' | 'config_diff'>('summary')
   const [auditState, setAuditState] = useState<{
     vendor: string
     sourceEvidence: NonNullable<SourcePreviewData['source_evidence']>
@@ -461,6 +488,11 @@ export function SourceReport({
     vendor: string
     sourceEvidence: NonNullable<SourcePreviewData['source_evidence']>
     data: PmChecklistResponse
+  } | null>(null)
+  const [sslToIpsecState, setSslToIpsecState] = useState<{
+    vendor: string
+    sourceEvidence: NonNullable<SourcePreviewData['source_evidence']>
+    byVdom: Record<string, SslToIpsecResponse>
   } | null>(null)
   const [resolvedLifecycle, setResolvedLifecycle] = useState<LifecycleCardData | null>(null)
   const [views, setViews] = useState<Record<string, SectionViewState>>({})
@@ -489,14 +521,48 @@ export function SourceReport({
   const unsupported = Number(summary.unsupported_count ?? summary.source_only_count ?? 0)
   if (summary.unsupported_count != null || summary.source_only_count != null) overviewMetrics.push({ label: 'Unsupported / source-only', value: unsupported })
   const active = sections.find(({ label: sectionLabel }) => sectionLabel === activeSection)
-  const sourceSections = active?.subsections.map((item) => item.key) ?? []
+  const isFortiGateWifiSwitch = data.vendor === 'fortigate' && activeSection === 'WiFi & Switch'
+  const isFortiGateNetwork = data.vendor === 'fortigate' && activeSection === 'Interfaces & Network'
+  const effectiveSubsections = useMemo(() => {
+    const rawSubsections = active?.subsections ?? []
+    if (isFortiGateWifiSwitch) {
+      const byKey = new Map(rawSubsections.map((item) => [item.key, item]))
+      const core = FORTIGATE_CORE_WIFI_SWITCH_TABS.map((key) => byKey.get(key) ?? { key, rows: EMPTY_ROWS })
+      const coreSet = new Set<string>(FORTIGATE_CORE_WIFI_SWITCH_TABS)
+      const extras = rawSubsections.filter((item) => !coreSet.has(item.key) && item.rows.length > 0)
+      return [...core, ...extras]
+    }
+    if (isFortiGateNetwork && !rawSubsections.some((item) => item.key === 'sdwan')) {
+      const next = [...rawSubsections]
+      const topoIndex = next.findIndex((item) => item.key === 'interface_topology')
+      const ifaceIndex = next.findIndex((item) => item.key === 'interfaces')
+      const insertAt = topoIndex >= 0 ? topoIndex + 1 : ifaceIndex >= 0 ? ifaceIndex + 1 : 0
+      next.splice(insertAt, 0, { key: 'sdwan', rows: EMPTY_ROWS })
+      return next
+    }
+    return rawSubsections
+  }, [active, isFortiGateWifiSwitch, isFortiGateNetwork])
+  const sourceSections = effectiveSubsections.map((item) => item.key)
   const defaultNetworkChoice = activeSection === 'Interfaces & Network' && !subsectionChoices[activeSection] && sourceSections.includes('interface_topology')
     ? 'interface_topology'
     : (subsectionChoices[activeSection] ?? '')
   const subsection = useMemo(() => activeSubsection(
-    sections.find((item) => item.label === activeSection)?.subsections ?? [], defaultNetworkChoice,
-  ), [sections, activeSection, defaultNetworkChoice])
-  const activeObjectSection = subsection?.key ?? ''
+    effectiveSubsections, defaultNetworkChoice,
+  ), [effectiveSubsections, defaultNetworkChoice])
+  const virtualToolTab =
+    supportsSecurityAudit && activeSection === 'Policies & NAT' && subsectionChoices[activeSection] === 'policy_lookup'
+      ? 'policy_lookup'
+      : supportsSecurityAudit && activeSection === 'Interfaces & Network' && subsectionChoices[activeSection] === 'route_lookup'
+        ? 'route_lookup'
+        : supportsSecurityAudit && data.vendor === 'fortigate' && activeSection === 'VPN' && subsectionChoices[activeSection] === 'ssl_to_ipsec'
+          ? 'ssl_to_ipsec'
+          : activeSection === 'Diagnostics & Coverage' && (
+            subsectionChoices[activeSection] === 'config_warnings'
+            || (!subsectionChoices[activeSection] && !subsection && validationRows.length > 0)
+          )
+            ? 'config_warnings'
+            : ''
+  const activeObjectSection = virtualToolTab || (subsection?.key ?? '')
   const unifiedInterfaces = activeSection === 'Interfaces & Network' && activeObjectSection === 'interface_topology'
   const unifiedRows = useMemo(() => {
     const subsections = sections.find((item) => item.label === activeSection)?.subsections
@@ -588,6 +654,11 @@ export function SourceReport({
     && pmState.vendor === data.vendor && pmState.sourceEvidence === data.source_evidence
       ? pmState.data
       : null
+  const matchingSslToIpsecData =
+    supportsSecurityAudit && data.vendor === 'fortigate' && data.source_evidence && sslToIpsecState
+    && sslToIpsecState.vendor === data.vendor && sslToIpsecState.sourceEvidence === data.source_evidence
+      ? (Object.values(sslToIpsecState.byVdom)[0] ?? null)
+      : null
   const initialLifecycle = isLifecycleCardData(summary.lifecycle) ? summary.lifecycle : null
   const activeLifecycle = resolvedLifecycle ?? initialLifecycle
 
@@ -617,7 +688,7 @@ export function SourceReport({
       const hasSection = (label: string) => sections.some((item) => item.label === label && item.rows.length > 0)
       return [
         'Overview',
-        'Security & Health',
+        ...(supportsSecurityAudit ? ['Security Audit'] : []),
         ...(supportsSecurityAudit ? ['PM Lookup'] : []),
         'Policies & NAT',
         'Objects',
@@ -625,32 +696,79 @@ export function SourceReport({
         ...(hasSection('Security Profiles') ? ['Security Profiles'] : []),
         'VPN',
         ...(hasSection('Users & Auth') ? ['Users & Auth'] : []),
-        ...(hasSection('WiFi & Switch') ? ['WiFi & Switch'] : []),
-        ...(sections.some((item) => item.label === 'Diagnostics & Coverage') ? ['Diagnostics & Coverage'] : []),
+        ...(data.vendor === 'fortigate' || hasSection('WiFi & Switch') ? ['WiFi & Switch'] : []),
+        ...(sections.some((item) => item.label === 'Diagnostics & Coverage') || validationRows.length > 0 ? ['Diagnostics & Coverage'] : []),
         ...(hasSection('System & Logs') ? ['System & Logs'] : []),
         ...(sections.some((item) => item.label === 'Additional sections') ? ['Additional sections'] : []),
       ]
     },
-    [sections, supportsSecurityAudit],
+    [sections, supportsSecurityAudit, data.vendor, validationRows.length],
   )
-  const objectTabs = sourceSections.filter((key) => key === activeObjectSection || active?.subsections.find((item) => item.key === key)?.rows.length)
+  const baseObjectTabs = isFortiGateWifiSwitch
+    ? sourceSections
+    : sourceSections.filter((key) => (
+      key === activeObjectSection
+      || (isFortiGateNetwork && key === 'sdwan')
+      || active?.subsections.find((item) => item.key === key)?.rows.length
+    ))
+  const objectTabs = [
+    ...baseObjectTabs,
+    ...(supportsSecurityAudit && activeSection === 'Policies & NAT' ? ['policy_lookup'] : []),
+    ...(supportsSecurityAudit && activeSection === 'Interfaces & Network' ? ['route_lookup'] : []),
+    ...(supportsSecurityAudit && data.vendor === 'fortigate' && activeSection === 'VPN' ? ['ssl_to_ipsec'] : []),
+    ...(activeSection === 'Diagnostics & Coverage' && (validationRows.length > 0 || activeObjectSection === 'config_warnings') ? ['config_warnings'] : []),
+  ]
   const subsectionLabel = (key: string) => (
     key === 'vpn_inspector'
       ? (data.vendor === 'palo_alto' ? 'IPSec Inspector' : 'Site-to-Site Inspector')
-      : fieldLabel(key)
+      : key === 'policy_lookup'
+        ? 'Policy Lookup'
+        : key === 'route_lookup'
+          ? 'Route Lookup'
+          : key === 'ssl_to_ipsec'
+            ? 'SSL-to-IPSec Assistant'
+            : key === 'config_warnings'
+              ? 'Config Warnings'
+              : fieldLabel(key)
   )
-  const tabLabel = (item: string) => unifiedInterfaces
-    ? `Interface Topology (${subsectionCount})`
-    : `${subsectionLabel(item)} (${activeObjectSection === item ? subsectionCount : active?.subsections.find((section) => section.key === item)?.rows.length ?? 0})`
+  const COMPACT_TAB_LABELS: Record<string, string> = {
+    interface_topology: 'Topology',
+    router_bgp: 'BGP',
+    router_ospf: 'OSPF',
+    router_ospf6: 'OSPFv3',
+    router_rip: 'RIP',
+  }
+  const tabRawCount = (item: string): number | null => {
+    if (item === 'policy_lookup' || item === 'route_lookup' || item === 'ssl_to_ipsec') return null
+    if (item === 'config_warnings') return errorCount + warningCount
+    if (item === 'sdwan') {
+      const sdwanRows = effectiveSubsections.find((section) => section.key === 'sdwan')?.rows ?? EMPTY_ROWS
+      return sdwanRows.reduce((sum, entry) => sum + (Array.isArray(entry.services) ? entry.services.length : 0), 0)
+    }
+    if (item === 'interface_topology' && activeSection === 'Interfaces & Network') return unifiedRows.length
+    return effectiveSubsections.find((section) => section.key === item)?.rows.length ?? 0
+  }
+  const tabLabel = (item: string) => {
+    if (item === 'policy_lookup') return 'Policy Lookup'
+    if (item === 'route_lookup') return 'Route Lookup'
+    if (item === 'ssl_to_ipsec') return 'SSL-to-IPSec Assistant'
+    if (item === 'config_warnings') return `Config Warnings (${(errorCount + warningCount).toLocaleString()})`
+    if (item === 'sdwan') return `SD-WAN (${tabRawCount(item) ?? 0})`
+    const count = activeObjectSection === item
+      ? subsectionCount
+      : (tabRawCount(item) ?? 0)
+    const label = COMPACT_TAB_LABELS[item] ?? subsectionLabel(item)
+    return `${label} (${count})`
+  }
   const currentSelected = selectedRow && filteredRows.includes(selectedRow) ? selectedRow : null
   const selectedIndex = currentSelected ? filteredRows.indexOf(currentSelected) : -1
-  const warningGroups = useMemo(
-    () => findingGroups(validationRows).filter((group) => String(group.row.severity).toLowerCase() === 'warning').length,
-    [validationRows],
-  )
   const exposureWarnings = useMemo(() => validationRows.filter((row) => row.domain === 'interface' && row.field === 'allowaccess'), [validationRows])
   const vendorDisplayName = VENDOR_DISPLAY_NAMES[String(data.vendor ?? '')] || String(data.vendor || 'Configuration')
   const systemItems = extendedSystemOverviewItems(data, auditData, activeLifecycle)
+  const HERO_DUPLICATE_LABELS = new Set(['Hostname', 'Model', 'Firmware Version', 'Software Version', 'Timezone', 'Serial Number'])
+  const filteredSystemItems = systemItems.filter((item) => !HERO_DUPLICATE_LABELS.has(item.label))
+  const displaySystemItems = filteredSystemItems.length > 0 ? filteredSystemItems : systemItems
+  const scopeList = Array.isArray(summary.scopes) && summary.scopes.length > 0 ? summary.scopes.join(', ') : null
   const haInfo = useMemo(() => haOverviewInfo(data), [data])
   const heroInfo = applianceHeroInfo(data, vendorDisplayName, activeLifecycle, auditData)
   const legendItems = useMemo(() => sectionLegend(activeObjectSection, subsectionRows), [activeObjectSection, subsectionRows])
@@ -678,12 +796,13 @@ export function SourceReport({
       if (label === 'Policies & NAT') return { label, count: counts.policies }
       if (label === 'Objects') return { label, count: counts.objects }
       if (label === 'Interfaces & Network') return { label, count: counts.interfaces }
-      if (label === 'Security & Health') {
-        const totalFindings = errorCount + warningCount
+      if (label === 'Security Audit') {
+        if (!auditData) return { label, count: null }
+        const actionable = auditData.quick_audit.high_count + auditData.quick_audit.med_count
         return {
           label,
-          count: totalFindings,
-          tone: errorCount > 0 ? ('danger' as const) : warningCount > 0 ? ('warning' as const) : undefined,
+          count: actionable,
+          tone: auditData.quick_audit.high_count > 0 ? ('danger' as const) : auditData.quick_audit.med_count > 0 ? ('warning' as const) : undefined,
         }
       }
       if (label === 'PM Lookup') {
@@ -695,6 +814,10 @@ export function SourceReport({
           tone: fail > 0 ? ('danger' as const) : warn > 0 ? ('warning' as const) : undefined,
         }
       }
+      if (label === 'Diagnostics & Coverage') {
+        const grp = sections.find((s) => s.label === label)
+        return { label, count: (reportSectionRowCount(grp) ?? 0) + validationRows.length }
+      }
       const grp = sections.find((s) => s.label === label)
       return { label, count: reportSectionRowCount(grp) }
     })
@@ -705,11 +828,21 @@ export function SourceReport({
         errors: errorCount,
         warnings: warningCount,
         activeSection,
-        activeSubsectionLabel: unifiedInterfaces ? 'Interface Topology' : fieldLabel(activeObjectSection),
+        activeSubsectionLabel: activeObjectSection === 'policy_lookup'
+          ? 'Policy Lookup'
+          : activeObjectSection === 'route_lookup'
+            ? 'Route Lookup'
+            : activeObjectSection === 'ssl_to_ipsec'
+              ? 'SSL-to-IPSec Assistant'
+              : activeObjectSection === 'config_warnings'
+                ? 'Config Warnings'
+                : unifiedInterfaces
+                  ? 'Interface Topology'
+                  : fieldLabel(activeObjectSection),
         reportSections: sidebarSections,
       },
     }))
-  }, [data.vendor, data.source_evidence, data.acquisition, activeSection, activeObjectSection, unifiedInterfaces, counts, errorCount, warningCount, sections, reportTabs, matchingPmData])
+  }, [data.vendor, data.source_evidence, data.acquisition, activeSection, activeObjectSection, unifiedInterfaces, counts, errorCount, warningCount, sections, reportTabs, matchingPmData, auditData, validationRows.length])
 
   function renderOverviewMetric(item: OverviewMetric) {
     return <tr key={item.label} className={item.tone ? `configuration-summary-${item.tone}` : undefined}>
@@ -725,29 +858,73 @@ export function SourceReport({
     {exportStatus && <p className="preview-status" role="status" aria-live="polite">{exportStatus}</p>}
     <div role="tabpanel" id={`report-panel-${encodeURIComponent(activeSection)}`} aria-label={activeSection} tabIndex={0}>
       {activeSection === 'Overview' ? <>
-        {(Array.isArray(summary.scopes) && summary.scopes.length > 0) || data.collection != null ? (
+        {supportsSecurityAudit && (
+          <nav className="report-object-tabs fw-tablist" role="tablist" aria-label="Overview subsections" onKeyDown={tabKeyboard}>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={overviewTab === 'summary'}
+              className={`fw-tab-btn${overviewTab === 'summary' ? ' active' : ''}`}
+              onClick={() => setOverviewTab('summary')}
+            >
+              Summary
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={overviewTab === 'packet_trace'}
+              className={`fw-tab-btn${overviewTab === 'packet_trace' ? ' active' : ''}`}
+              onClick={() => setOverviewTab('packet_trace')}
+            >
+              Trace Packet
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={overviewTab === 'config_diff'}
+              className={`fw-tab-btn${overviewTab === 'config_diff' ? ' active' : ''}`}
+              onClick={() => setOverviewTab('config_diff')}
+            >
+              Config Diff
+            </button>
+          </nav>
+        )}
+        {supportsSecurityAudit && data.source_evidence && overviewTab === 'packet_trace' ? (
+          <PacketTracePanel
+            vendor={data.vendor ?? ''}
+            sourceEvidence={data.source_evidence}
+            sections={sectionsData}
+          />
+        ) : supportsSecurityAudit && data.source_evidence && overviewTab === 'config_diff' ? (
+          <ConfigDiffPanel
+            vendor={data.vendor ?? ''}
+            sourceEvidence={data.source_evidence}
+            currentFilename={String(data.source_evidence.source_name || data.acquisition || 'Loaded source')}
+          />
+        ) : <>
+        {data.collection != null && (
           <div className="fw-overview-top-bar">
             <div className="fw-overview-meta">
-              {Array.isArray(summary.scopes) && summary.scopes.length > 0 && (
-                <p className="report-scope-summary">Scopes: {summary.scopes.join(', ')}</p>
-              )}
-              {data.collection != null && (
-                <div className="report-count-note">
-                  <p>Collection: {String(asRecord(data.collection).status ?? 'Unknown')} · Method: {String(asRecord(data.collection).method ?? 'Not reported')}</p>
-                  {Array.isArray(asRecord(data.collection).warnings) && <ul>{(asRecord(data.collection).warnings as unknown[]).map((warning, index) => <li key={index}>{String(safeValue(warning))}</li>)}</ul>}
-                </div>
-              )}
+              <div className="report-count-note">
+                <p>Collection: {String(asRecord(data.collection).status ?? 'Unknown')} · Method: {String(asRecord(data.collection).method ?? 'Not reported')}</p>
+                {Array.isArray(asRecord(data.collection).warnings) && <ul>{(asRecord(data.collection).warnings as unknown[]).map((warning, index) => <li key={index}>{String(safeValue(warning))}</li>)}</ul>}
+              </div>
             </div>
           </div>
-        ) : null}
+        )}
 
         <section className="fw-card fw-card-flex fw-hero-card" aria-label="Appliance overview">
           <div className="fw-hero-heading">
             <div className="fw-hero-eyebrow">{heroInfo.eyebrow}</div>
             <div className="fw-hero-title fw-mono">{heroInfo.title}</div>
-            {heroInfo.subtitle && <div className="fw-hero-sub">{heroInfo.subtitle}</div>}
+            {(heroInfo.subtitle || scopeList) && (
+              <div className="fw-hero-sub">
+                {heroInfo.subtitle}
+                {scopeList ? `${heroInfo.subtitle ? ' · ' : ''}Scopes: ${scopeList}` : ''}
+              </div>
+            )}
           </div>
-          {heroInfo.badges.length > 0 && (
+          {(heroInfo.badges.length > 0 || errorCount > 0 || warningCount > 0) && (
             <div className="fw-hero-badges">
               {heroInfo.badges.map((badge, idx) => (
                 badge.targetSection ? (
@@ -756,10 +933,7 @@ export function SourceReport({
                     type="button"
                     id={badge.id}
                     className={`fw-badge fw-badge-${badge.variant} fw-badge-link`}
-                    onClick={() => {
-                      changeSection(badge.targetSection!)
-                      if (badge.targetHealthTab) setHealthTab(badge.targetHealthTab)
-                    }}
+                    onClick={() => changeSection(badge.targetSection!)}
                   >
                     {badge.text}
                   </button>
@@ -769,109 +943,116 @@ export function SourceReport({
                   </span>
                 )
               ))}
+              {(errorCount > 0 || warningCount > 0) && (
+                <button
+                  type="button"
+                  className={`fw-badge fw-badge-${errorCount > 0 ? 'deny' : 'warn'} fw-badge-link`}
+                  onClick={() => { changeSection('Diagnostics & Coverage'); setSourceSection('config_warnings', 'Diagnostics & Coverage') }}
+                >
+                  Config Warnings: {(errorCount + warningCount).toLocaleString()}
+                </button>
+              )}
             </div>
           )}
         </section>
 
-        <div className="system-overview-section">
-          <h3 className="report-overview-heading fw-section-header" id="system-overview-title">System Overview</h3>
-          <dl className="system-overview-grid" aria-labelledby="system-overview-title">
-            {systemItems.map((item) => (
-              <div key={item.label} className="system-overview-card">
-                <dt>{item.label}</dt>
-                <dd className={item.value == null ? 'system-overview-missing' : undefined}>{item.value ?? 'Not reported'}</dd>
-                {item.detail && <dd className="system-overview-detail">{item.detail}</dd>}
+        <div className={`fw-overview-bento${!activeLifecycle && !haInfo ? ' fw-overview-bento-single' : ''}`}>
+          <div className="fw-overview-main">
+            <section className="fw-card fw-overview-panel" aria-labelledby="system-overview-title">
+              <div className="fw-overview-panel-head">
+                <h3 className="fw-overview-panel-title" id="system-overview-title">System &amp; Network</h3>
               </div>
-            ))}
-          </dl>
-        </div>
-
-        {haInfo && (
-          <section className="fw-ha-section" aria-labelledby="ha-overview-title">
-            <h3 className="report-overview-heading fw-section-header" id="ha-overview-title">High Availability</h3>
-            <div className="fw-card fw-card-flex fw-ha-card">
-              <div>
-                <div className="fw-ha-title">{haInfo.title}</div>
-                <div className="fw-ha-sub">{haInfo.subtitle}</div>
-              </div>
-              <span className={`fw-badge fw-badge-${haInfo.badgeVariant}`}>{haInfo.badgeText}</span>
-            </div>
-            {haInfo.enabled && haInfo.items.length > 0 && (
-              <dl className="system-overview-grid fw-ha-grid" aria-label="High Availability details">
-                {haInfo.items.map((item) => (
-                  <div key={item.label} className="system-overview-card">
-                    <dt>{item.label}</dt>
-                    <dd>{item.value ?? '—'}</dd>
+              <dl className="fw-spec-list" aria-labelledby="system-overview-title">
+                {displaySystemItems.map((item) => (
+                  <div key={item.label} className="fw-spec-row">
+                    <dt className="fw-spec-label">{item.label}</dt>
+                    <dd className="fw-spec-val-wrap">
+                      <span className={item.value == null ? 'fw-spec-val system-overview-missing' : 'fw-spec-val'}>
+                        {item.value ?? 'Not reported'}
+                      </span>
+                      {item.detail && <span className="fw-spec-detail">{item.detail}</span>}
+                    </dd>
                   </div>
                 ))}
               </dl>
-            )}
-          </section>
-        )}
-
-        <h3 className="report-overview-heading fw-section-header">Validation</h3>
-        <button type="button" className={`report-validation-attention${errorCount ? ' has-errors' : warningCount ? ' has-warnings' : ''}`} onClick={() => { changeSection('Security & Health'); setHealthTab('validation') }}><div>{sectionsData.validation == null && asRecord(summary.validation).severity_counts == null ? 'Not reported' : <>{errorCount.toLocaleString()} {errorCount === 1 ? 'error' : 'errors'} · {warningCount.toLocaleString()} {warningCount === 1 ? 'warning' : 'warnings'} <small>{warningGroups.toLocaleString()} warning {warningGroups === 1 ? 'group' : 'groups'}</small></>}</div><span>Review findings →</span></button>
-        {!!exposureWarnings.length && <div className="report-exposure-warning" role="status">
-          <div>
-            <strong>Public management exposure ({exposureWarnings.length})</strong>
-            <p>{exposureWarnings.map((row) => text(row.object_name)).filter(Boolean).join(', ')} — HTTP/HTTPS/SSH/Telnet management access is enabled on a WAN or public-facing interface.</p>
+            </section>
           </div>
-          <button type="button" className="secondary-button" onClick={() => { changeSection('Security & Health'); setHealthTab('validation') }}>Inspect in Validation →</button>
-        </div>}
-        <div className="report-overview-group">
-          <h3 className="report-overview-heading fw-section-header" id="configuration-summary-title">Configuration summary</h3>
+
+          {(activeLifecycle || haInfo) && (
+            <div className="fw-overview-aside">
+              {activeLifecycle && (
+                <LifecycleCard lifecycle={activeLifecycle} onLifecycleResolved={setResolvedLifecycle} />
+              )}
+
+              {haInfo && (
+                <section className="fw-card fw-overview-panel fw-ha-panel" aria-labelledby="ha-overview-title">
+                  <div className="fw-overview-panel-head">
+                    <h3 className="fw-overview-panel-title" id="ha-overview-title">High Availability</h3>
+                    <span className={`fw-badge fw-badge-${haInfo.badgeVariant}`}>{haInfo.badgeText}</span>
+                  </div>
+                  <div className="fw-ha-summary">
+                    <div className="fw-ha-title">{haInfo.title}</div>
+                    <div className="fw-ha-sub">{haInfo.subtitle}</div>
+                  </div>
+                  {haInfo.enabled && haInfo.items.length > 0 && (
+                    <dl className="fw-spec-list fw-spec-list-compact" aria-label="High Availability details">
+                      {haInfo.items.map((item) => (
+                        <div key={item.label} className="fw-spec-row">
+                          <dt className="fw-spec-label">{item.label}</dt>
+                          <dd className="fw-spec-val-wrap">
+                            <span className="fw-spec-val">{item.value ?? '—'}</span>
+                          </dd>
+                        </div>
+                      ))}
+                    </dl>
+                  )}
+                </section>
+              )}
+            </div>
+          )}
+        </div>
+
+        <PublicExposureCard
+          vendor={data.vendor ?? ''}
+          sourceEvidence={data.source_evidence}
+          audit={auditData}
+          liveDeviceAccess={liveDeviceAccess}
+          exposureWarnings={exposureWarnings}
+          onInspectValidation={() => { changeSection('Diagnostics & Coverage'); setSourceSection('config_warnings', 'Diagnostics & Coverage') }}
+        />
+
+        <section className="fw-card fw-overview-panel fw-overview-summary-panel" aria-labelledby="configuration-summary-title">
+          <div className="fw-overview-panel-head">
+            <h3 className="fw-overview-panel-title" id="configuration-summary-title">Configuration summary</h3>
+          </div>
           <div className="configuration-summary-wrap">
             <table className="configuration-summary" aria-labelledby="configuration-summary-title">
               <thead><tr><th scope="col">Section</th><th scope="col">Count</th><th scope="col"><span className="visually-hidden">Navigation</span></th></tr></thead>
               <tbody>{overviewMetrics.map(renderOverviewMetric)}</tbody>
             </table>
           </div>
-        </div>
-      </> : activeSection === 'Security & Health' ? (
+        </section>
+        </>}
+      </> : activeSection === 'Security Audit' ? (
         <>
-          <section className="fw-card fw-card-flex fw-hero-card" aria-label="Security and health summary">
+          <section className="fw-card fw-card-flex fw-hero-card" aria-label="Security audit summary">
             <div className="fw-hero-heading">
-              <div className="fw-hero-eyebrow">Security &amp; Health</div>
+              <div className="fw-hero-eyebrow">Security Audit</div>
               <div className="fw-hero-title fw-mono">{heroInfo.title}</div>
               {heroInfo.subtitle && <div className="fw-hero-sub">{heroInfo.subtitle}</div>}
             </div>
             <div className="fw-hero-badges">
               {heroInfo.badges
-                .filter((b) => b.targetSection === 'Security & Health')
+                .filter((b) => b.targetSection === 'Security Audit')
                 .map((badge, idx) => (
                   <span key={`${badge.text}-${idx}`} className={`fw-badge fw-badge-${badge.variant}`}>
                     {badge.text}
                   </span>
                 ))}
-              <span className={`fw-badge fw-badge-${errorCount > 0 ? 'deny' : warningCount > 0 ? 'warn' : 'muted'}`}>
-                Validation: {(errorCount + warningCount).toLocaleString()}
-              </span>
             </div>
           </section>
 
-          {supportsSecurityAudit && (
-            <nav className="report-object-tabs fw-tablist" role="tablist" aria-label="Security and health subsections" onKeyDown={tabKeyboard}>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={healthTab === 'audit'}
-                className={`fw-tab-btn${healthTab === 'audit' ? ' active' : ''}`}
-                onClick={() => setHealthTab('audit')}
-              >
-                Security Audit
-              </button>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={healthTab === 'validation'}
-                className={`fw-tab-btn${healthTab === 'validation' ? ' active' : ''}`}
-                onClick={() => setHealthTab('validation')}
-              >
-                Validation Findings ({(errorCount + warningCount).toLocaleString()})
-              </button>
-            </nav>
-          )}
-          {healthTab === 'audit' && supportsSecurityAudit && data.source_evidence ? (
+          {supportsSecurityAudit && data.source_evidence ? (
             <SecurityAuditPanel
               vendor={data.vendor ?? ''}
               sourceEvidence={data.source_evidence}
@@ -880,8 +1061,6 @@ export function SourceReport({
               managedExternally
               externalLoading={auditLoading}
               externalError={auditError}
-              lifecycle={activeLifecycle}
-              onLifecycleResolved={setResolvedLifecycle}
             />
           ) : null}
         </>
@@ -898,24 +1077,86 @@ export function SourceReport({
         />
       ) : <>
         {!!objectTabs.length && <nav className="report-object-tabs fw-tablist" role="tablist" aria-label="Source subsections" onKeyDown={tabKeyboard}>
-          {objectTabs.map((item) => (
-            <button
-              type="button"
-              role="tab"
-              id={`subsection-tab-${encodeURIComponent(item)}`}
-              aria-controls={`subsection-panel-${encodeURIComponent(item)}`}
-              tabIndex={activeObjectSection === item ? 0 : -1}
-              aria-selected={activeObjectSection === item}
-              className={`fw-tab-btn${activeObjectSection === item ? ' active' : ''}`}
-              key={item}
-              onClick={() => setSourceSection(item)}
-            >
-              {tabLabel(item)}
-            </button>
-          ))}
+          {objectTabs.map((item) => {
+            const isEmpty = tabRawCount(item) === 0
+            return (
+              <button
+                type="button"
+                role="tab"
+                id={`subsection-tab-${encodeURIComponent(item)}`}
+                aria-controls={`subsection-panel-${encodeURIComponent(item)}`}
+                tabIndex={activeObjectSection === item ? 0 : -1}
+                aria-selected={activeObjectSection === item}
+                className={`fw-tab-btn${activeObjectSection === item ? ' active' : ''}${isEmpty ? ' fw-tab-btn--empty' : ''}`}
+                key={item}
+                onClick={() => setSourceSection(item)}
+              >
+                {tabLabel(item)}
+              </button>
+            )
+          })}
         </nav>}
         {objectTabs.filter((item) => item !== activeObjectSection).map((item) => <div key={item} hidden role="tabpanel" id={`subsection-panel-${encodeURIComponent(item)}`} aria-labelledby={`subsection-tab-${encodeURIComponent(item)}`} />)}
         <div role="tabpanel" id={`subsection-panel-${encodeURIComponent(activeObjectSection)}`} aria-labelledby={`subsection-tab-${encodeURIComponent(activeObjectSection)}`} tabIndex={0}>
+          {activeObjectSection === 'config_warnings' ? (
+            <ValidationReport data={data} reportScope={scope} onReportScope={changeScope} active />
+          ) : activeObjectSection === 'policy_lookup' && supportsSecurityAudit && data.source_evidence ? (
+            <PolicyLookupPanel
+              vendor={data.vendor ?? ''}
+              sourceEvidence={data.source_evidence}
+              sections={sectionsData}
+            />
+          ) : activeObjectSection === 'route_lookup' && supportsSecurityAudit && data.source_evidence ? (
+            <RouteLookupPanel
+              vendor={data.vendor ?? ''}
+              sourceEvidence={data.source_evidence}
+              sections={sectionsData}
+            />
+          ) : activeObjectSection === 'ssl_to_ipsec' && supportsSecurityAudit && data.vendor === 'fortigate' && data.source_evidence ? (
+            <SslToIpsecPanel
+              vendor={data.vendor ?? ''}
+              sourceEvidence={data.source_evidence}
+              initialData={matchingSslToIpsecData}
+              onLoaded={(vdomKey, res) => {
+                if (data.vendor && data.source_evidence) {
+                  const sourceEvidence = data.source_evidence
+                  const vendor = data.vendor
+                  setSslToIpsecState((current) => ({
+                    vendor,
+                    sourceEvidence,
+                    byVdom: {
+                      ...(current && current.vendor === vendor && current.sourceEvidence === sourceEvidence ? current.byVdom : {}),
+                      [vdomKey]: res,
+                    },
+                  }))
+                }
+              }}
+            />
+          ) : activeObjectSection === 'sdwan' && data.vendor === 'fortigate' ? (
+            <>
+              {scopes.length > 0 && (
+                <div className="sdwan-scope-bar">
+                  <select aria-label="Filter report scope" value={effectiveScope} onChange={(event) => changeScope(event.target.value)}>
+                    <option value="">All scopes</option>
+                    {scopes.map((item) => <option key={item} value={item}>{item}</option>)}
+                  </select>
+                </div>
+              )}
+              <SdwanView rows={subsectionRows} scope={effectiveScope} />
+            </>
+          ) : <>
+          {activeObjectSection === 'ssl_vpn_settings' && supportsSecurityAudit && data.vendor === 'fortigate' && (
+            <div className="fw-ssl-ipsec-callout" role="note">
+              <span>Planning a migration from SSL-VPN to Dial-up IPSec (IKEv2)?</span>
+              <button
+                type="button"
+                className="secondary-button button-compact"
+                onClick={() => setSourceSection('ssl_to_ipsec')}
+              >
+                Open SSL-to-IPSec Assistant →
+              </button>
+            </div>
+          )}
           {subtypeTabs.length > 0 && (
             <nav className="fw-subtablist" role="tablist" aria-label="Object type filters" onKeyDown={tabKeyboard}>
               {subtypeTabs.map((sub) => (
@@ -986,9 +1227,9 @@ export function SourceReport({
               {currentSelected && <ReportDetails row={currentSelected} subsection={activeObjectSection} vendor={data.vendor} onClose={() => setSelectedRow(null)} previous={selectedIndex > 0 ? () => setSelectedRow(filteredRows[selectedIndex - 1]) : undefined} next={selectedIndex < filteredRows.length - 1 ? () => setSelectedRow(filteredRows[selectedIndex + 1]) : undefined} />}
             </div>
           )}
+          </>}
         </div>
       </>}
-      <div hidden={!(activeSection === 'Security & Health' && (!supportsSecurityAudit || healthTab === 'validation'))}><ValidationReport data={data} reportScope={scope} onReportScope={changeScope} active={activeSection === 'Security & Health' && (!supportsSecurityAudit || healthTab === 'validation')} /></div>
     </div>
   </section>
 }

@@ -154,3 +154,177 @@ end
     )
     assert config.sdn_proxies[0].password_configured
     assert (config.sdn_proxies[0].server, config.sdn_proxies[0].server_port) == ("proxy.example.test", 443)
+
+
+def test_wifi_switch_and_nac_parity_fields_preserve_source_values_and_redact_secrets():
+    analysis = _analysis('''config wireless-controller wtp-profile
+    edit "FAP231F-custom"
+        set ap-country US
+        set dtls-policy clear-text
+        set login-passwd SUPER_SECRET_AP_PWD
+        set comment "Office profile"
+        config platform
+            set type 231F
+        end
+    next
+end
+config wireless-controller wtp
+    edit "FP231F-01"
+        set admin disable
+        set wtp-profile "FAP231F-custom"
+        set location "Floor 2"
+        set comment "Lobby AP"
+        set login-passwd SUPER_SECRET_WTP_PWD
+    next
+    edit "FP231F-02"
+        set wtp-profile "MISSING-PROFILE"
+    next
+end
+config wireless-controller vap
+    edit "Corp-SSID"
+        set ssid "CorpNet"
+        set local-bridging enable
+        set vlanid 120
+        set security wpa2-only-personal
+        set schedule "always"
+        set status enable
+        set passphrase SUPER_SECRET_WIFI_PASS
+    next
+end
+config wireless-controller wids-profile
+    edit "wids-strict"
+        set ap-scan enable
+        set sensor-mode foreign
+        set comment "Rogue detection"
+    next
+end
+config switch-controller managed-switch
+    edit "S248E-01"
+        set name "Core-SW1"
+        set switch-group "Floor-Switches"
+        set status enable
+        set platform FS-248E
+        set sn "S248EF123456"
+        set firmware-provision-version "7.4.3"
+    next
+end
+config switch-controller port-policy
+    edit "dot1x-port"
+        set user-group "staff"
+        set guest-vlan "guest-vlan"
+        set guest-auth-delay 45
+        set mac-auth-bypass enable
+        set eap-passthru enable
+        set radius-timeout-overwrite enable
+    next
+end
+config switch-controller nac-settings
+    set mode local
+    set onboarding-vlan "onboarding"
+    set hw-vendor "Apple"
+    set assign-vlan 200
+    set matched-devices 5
+end
+config user nac-policy
+    edit "corp-mac"
+        set hw-vendor "Cisco"
+        set assign-vlan 300
+        set matched-devices 12
+        set status enable
+    next
+end
+''')
+    config = analysis.extracted.config
+    assert config.wtp_profiles[0].platform == "231F"
+    assert config.wtp_profiles[0].platform_config.type == "231F"
+    assert config.wtp_profiles[0].login_passwd_configured is True
+    assert config.wireless_wtps[0].admin == "disable"
+    assert config.wireless_wtps[0].location == "Floor 2"
+    assert config.wireless_wtps[0].login_passwd_configured is True
+    assert config.wireless_vaps[0].local_bridging == "enable"
+    assert config.wireless_vaps[0].schedule == "always"
+    assert config.wireless_vaps[0].passphrase_configured is True
+    assert config.wids_profiles[0].ap_scan == "enable"
+    assert config.managed_switches[0].switch_group == "Floor-Switches"
+    assert config.managed_switches[0].status == "enable"
+    assert config.managed_switches[0].platform == "FS-248E"
+    assert config.managed_switches[0].firmware_provision_version == "7.4.3"
+    assert config.switch_port_policies[0].user_group == ["staff"]
+    assert config.switch_port_policies[0].guest_vlan == "guest-vlan"
+    assert config.switch_port_policies[0].guest_auth_delay == 45
+    assert config.switch_port_policies[0].mac_auth_bypass == "enable"
+    assert config.switch_port_policies[0].eap_passthru == "enable"
+    assert config.switch_port_policies[0].radius_timeout_overwrite == "enable"
+    assert len(config.nac_policies) == 2
+    assert config.nac_policies[0].assign_vlan == "300"
+    assert config.nac_policies[0].matched_devices == 12
+    assert config.nac_policies[1].source_path == "switch-controller nac-settings"
+    assert config.nac_policies[1].assign_vlan == "200"
+    assert config.nac_policies[1].matched_devices == 5
+    serialized = str(config.model_dump())
+    assert "SUPER_SECRET_" not in serialized
+    assert any(
+        ref.source_kind == "wireless_wtp" and ref.reference == "MISSING-PROFILE"
+        for ref in analysis.derived.broken_references
+    )
+
+
+def test_sdwan_extracts_nested_sla_thresholds_and_rule_ports_without_defaults():
+    analysis = _analysis('''config system sdwan
+    set status enable
+    config zone
+        edit "virtual-wan-link"
+        next
+    end
+    config members
+        edit 1
+            set interface "wan1"
+            set gateway 192.0.2.1
+            set status enable
+        next
+    end
+    config health-check
+        edit "PingCheck"
+            set server "8.8.8.8"
+            set protocol ping
+            set members 1
+            config sla
+                edit 1
+                    set latency-threshold 300
+                    set jitter-threshold 40
+                    set packetloss-threshold 5
+                next
+            end
+        next
+        edit "DnsCheck"
+            set system-dns enable
+        next
+    end
+    config service
+        edit 1
+            set name "VideoConferencing"
+            set mode priority
+            set link-cost-factor bibandwidth
+            set protocol 17
+            set start-port 5000
+            set end-port 5010
+            set health-check "PingCheck"
+            set priority-members 1
+            set status enable
+        next
+    end
+end
+''')
+    sdwan = analysis.extracted.config.sdwans[0]
+    assert sdwan.status == "enable"
+    hc = sdwan.health_checks[0]
+    assert hc.sla[0].latency_threshold == 300
+    assert hc.sla[0].jitter_threshold == 40
+    assert hc.sla[0].packetloss_threshold == 5
+    assert sdwan.health_checks[1].system_dns == "enable"
+    assert sdwan.health_checks[1].protocol is None
+    svc = sdwan.services[0]
+    assert svc.link_cost_factor == "bibandwidth"
+    assert svc.protocol == 17
+    assert svc.start_port == 5000
+    assert svc.end_port == 5010

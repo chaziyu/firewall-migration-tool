@@ -18,7 +18,7 @@ export type SidebarWorkspaceMeta = {
 
 const SECTION_ICON_PATHS: Record<string, string> = {
   Overview: 'M4 5h6v6H4zM14 5h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z',
-  'Security & Health': 'M12 3 5 6v6c0 4.5 3 7.8 7 9 4-1.2 7-4.5 7-9V6l-7-3Zm-2.5 9 1.8 1.8 3.5-3.6',
+  'Security Audit': 'M12 3 5 6v6c0 4.5 3 7.8 7 9 4-1.2 7-4.5 7-9V6l-7-3Zm-2.5 9 1.8 1.8 3.5-3.6',
   'PM Lookup': 'M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2M9 5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v0a2 2 0 0 1-2 2h-2a2 2 0 0 1-2-2Zm0 9 2 2 4-4',
   'Policies & NAT': 'M4 6h16M4 12h16M4 18h10M17 16l3 2-3 2',
   Objects: 'M12 3 4 7.5 12 12l8-4.5L12 3ZM4 12l8 4.5 8-4.5M4 16.5 12 21l8-4.5',
@@ -28,6 +28,7 @@ const SECTION_ICON_PATHS: Record<string, string> = {
   'Users & Auth': 'M16 19v-1a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v1M9.5 10a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7ZM21 19v-1a3.5 3.5 0 0 0-2.5-3.3M16.5 3.3a3.5 3.5 0 0 1 0 6.4',
   'WiFi & Switch': 'M5 12.5a10 10 0 0 1 14 0M8.5 15.5a5.5 5.5 0 0 1 7 0M12 19h.01',
   'System & Logs': 'M4 6h16v12H4zM8 10h8M8 14h5',
+  'TSF Explorer': 'M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z',
   'Diagnostics & Coverage': 'M9 4h6M9 4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2M9 10h6M9 14h4',
   'Additional sections': 'M12 4v16M4 12h16',
 }
@@ -67,17 +68,16 @@ function renderSidebarBody({
 
   return (
     <>
-      <a className="brand" href="/" aria-label="Firewall Config Reader home" title="Firewall Config Reader">
+      <a className="brand" href="/" aria-label="Firewall Migration Tool home" title="Firewall Migration Tool">
         <span className="brand-mark" aria-hidden="true">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M12 3 5 6v6c0 4.5 3 7.8 7 9 4-1.2 7-4.5 7-9V6l-7-3Z" />
-            <path d="M9 12h6M12 9v6" />
+            <path d="M4 7h16m-4-4 4 4-4 4M20 17H4m4 4-4-4 4-4" />
           </svg>
         </span>
         {!collapsed && (
           <span className="brand-wordmark">
             <span>Firewall</span>
-            <small>CONFIG READER</small>
+            <small>MIGRATION TOOL</small>
           </span>
         )}
       </a>

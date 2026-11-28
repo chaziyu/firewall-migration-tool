@@ -47,7 +47,7 @@ test('sidebar renders monochrome sections when loaded and hides wordmark when co
 
   const collapsedTree = await harness.render({ collapsed: true, workspaceMeta: null })
   assert.equal(elements(collapsedTree).find((node) => node.type === 'aside').props.className, 'sidebar collapsed')
-  assert.ok(!JSON.stringify(collapsedTree).includes('CONFIG READER'))
+  assert.ok(!JSON.stringify(collapsedTree).includes('MIGRATION TOOL'))
 })
 
 test('layout starts with sidebar collapsed and toggles desktop collapse and mobile drawer', async () => {
@@ -395,14 +395,31 @@ test('offline setup removes duplicate tools and moves exceptions to review; dest
   assert.ok(elements(tree).some((node) => node.type === 'Decisions'))
 })
 
-test('landing upload auto-detects FG/PA configs, shows Phase 5 message for TSF zip, and restores saved workspace', async () => {
+test('landing upload auto-detects FG/PA configs, opens TSF Explorer for TSF zip, and restores saved workspace', async () => {
   let completePreview
   let rejectPreview
+  let completeTsfUpload
   const modules = {
     '../../storage/workspaceStore': { restoreWorkspace: async () => ({}), saveWorkspace: async () => { } },
     '../../components/common/ErrorBanner': { ErrorBanner: 'ErrorBanner' }, '../../components/common/LoadingState': { LoadingState: 'LoadingState' },
     './FileUpload': { FileUpload: 'FileUpload' }, '../report/SourceReport': { SourceReport: 'SourceReport' },
     '../report/QuickSearchModal': { QuickSearchModal: 'QuickSearchModal' },
+    '../tsf/TsfExplorer': { TsfExplorer: 'TsfExplorer' },
+    '../tsf/tsfApi': {
+      deleteTsfSession: async () => { },
+      uploadTsfArchive: () => new Promise((resolve) => { completeTsfUpload = resolve }),
+      fetchTsfProgress: async () => ({
+        success: true,
+        status: 'done',
+        progress: 1,
+        message: 'Done',
+        session_id: '0123456789abcdef0123456789abcdef',
+        filename: 'techsupport.zip',
+        total_files: 12,
+        skipped_count: 0,
+        error: '',
+      }),
+    },
     './autoDetect': { detectUploadKind: (name) => (name.endsWith('.xml') ? 'palo_alto' : name.endsWith('.zip') ? 'tsf' : 'fortigate') },
     '../../utils/desktop': { saveBlobWithFallback: async (_b, filename) => ({ status: 'downloaded', filename }) },
     './sourceApi': {
@@ -426,17 +443,22 @@ test('landing upload auto-detects FG/PA configs, shows Phase 5 message for TSF z
   assert.equal(elements(tree).find((node) => node.type === 'SourceReport'), undefined)
   assert.ok(JSON.stringify(tree).includes('Invalid configuration'))
 
-  upload(tree).props.onChange({ name: 'techsupport.zip', size: 1024 })
-  tree = await harness.render(props)
-  assert.ok(JSON.stringify(tree).includes('Phase 5'))
-  assert.equal(elements(tree).find((node) => node.type === 'SourceReport'), undefined)
-
   upload(tree).props.onChange({ name: 'first.conf', size: 2048 })
   tree = await harness.render(props)
   completePreview({ vendor: 'fortigate', source_digest: 'first', source_evidence: { vendor: 'fortigate', source_name: 'first.conf', source_text: 'cfg' } })
   tree = await harness.render(props)
   assert.equal(section(tree), undefined)
   assert.ok(elements(tree).find((node) => node.type === 'SourceReport'))
+
+  const tsfHarness = component('../src/features/source/SourceConfiguration.tsx', 'SourceConfiguration', modules)
+  let tsfTree = await tsfHarness.render(props)
+  upload(tsfTree).props.onChange({ name: 'techsupport.zip', size: 1024 })
+  tsfTree = await tsfHarness.render(props)
+  completeTsfUpload({ success: true, job_id: 'abcdef0123456789abcdef0123456789', filename: 'techsupport.zip' })
+  tsfTree = await tsfHarness.render(props)
+  assert.equal(section(tsfTree), undefined)
+  assert.ok(elements(tsfTree).find((node) => node.type === 'TsfExplorer'))
+  assert.equal(elements(tsfTree).find((node) => node.type === 'SourceReport'), undefined)
 
   modules['../../storage/workspaceStore'].restoreWorkspace = async () => ({
     preview: {
@@ -462,6 +484,8 @@ test('SourceConfiguration opens top-right QuickSearchModal when topbar Search ac
     '../../components/common/LoadingState': { LoadingState: 'LoadingState' }, './FileUpload': { FileUpload: 'FileUpload' },
     '../report/SourceReport': { SourceReport: 'SourceReport' },
     '../report/QuickSearchModal': { QuickSearchModal: 'QuickSearchModal' },
+    '../tsf/TsfExplorer': { TsfExplorer: 'TsfExplorer' },
+    '../tsf/tsfApi': { deleteTsfSession: async () => { }, fetchTsfProgress: async () => ({}), uploadTsfArchive: async () => ({}) },
     './autoDetect': { detectUploadKind: () => 'fortigate' },
     '../../utils/desktop': { saveBlobWithFallback: async (_b, filename) => ({ status: 'downloaded', filename }) },
     './sourceApi': { downloadSecurityAuditReport: async () => new Blob(['<html></html>']), downloadSourceWorkbook: async () => new Blob(['xlsx']), previewSource: async () => ({}) },
@@ -2208,6 +2232,8 @@ function sourceExportComponent(api = {}, vendor = 'fortigate', savedPreview = { 
     './FileUpload': { FileUpload: 'FileUpload' },
     '../report/SourceReport': { SourceReport: 'SourceReport' },
     '../report/QuickSearchModal': { QuickSearchModal: 'QuickSearchModal' },
+    '../tsf/TsfExplorer': { TsfExplorer: 'TsfExplorer' },
+    '../tsf/tsfApi': { deleteTsfSession: async () => { }, fetchTsfProgress: async () => ({}), uploadTsfArchive: async () => ({}) },
     '../chat/ConfigChatWidget': { ConfigChatWidget: 'ConfigChatWidget' },
     '../../utils/desktop': { saveBlobWithFallback: async (_blob, filename) => ({ status: 'downloaded', filename }) },
   })

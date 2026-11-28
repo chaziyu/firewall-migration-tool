@@ -1,7 +1,12 @@
 """Helpers for retaining safe FortiGate source attributes during extraction."""
 
 from functools import cache
+import re
 from typing import Any, Dict, Mapping
+
+_FORTIOS_ENC_VALUE_RE = re.compile(r"^\s*ENC\s+[A-Za-z0-9+/=]{16,}\s*$")
+_FORTIOS_ENC_TOKEN_RE = re.compile(r"^[A-Za-z0-9+/=]{16,}$")
+_HISTORY_KEY_RE = re.compile(r"^history\d+$")
 
 
 _SENSITIVE_EXACT_KEYS = frozenset({
@@ -14,6 +19,16 @@ _SENSITIVE_EXACT_KEYS = frozenset({
     "password4",
     "password5",
     "passwd_hash",
+    "history0",
+    "history1",
+    "history2",
+    "history3",
+    "history4",
+    "history5",
+    "history6",
+    "history7",
+    "history8",
+    "history9",
     "uploadpass",
     "secret",
     "psk",
@@ -130,15 +145,30 @@ def sanitize_source_value(
         return value
     if classification == 2:
         return "[REDACTED]"
-    if isinstance(value, Mapping):
+    if isinstance(value, str):
+        if _FORTIOS_ENC_VALUE_RE.match(value):
+            return "[REDACTED]"
+        return value
+    if isinstance(value, dict):
         return sanitize_source_attributes(value, preserve_keys=preserve_keys)
     if isinstance(value, list):
+        if (
+            len(value) == 2
+            and value[0] == "ENC"
+            and isinstance(value[1], str)
+            and _FORTIOS_ENC_TOKEN_RE.match(value[1])
+        ):
+            return "[REDACTED]"
         return [
-            sanitize_source_attributes(item, preserve_keys=preserve_keys)
-            if isinstance(item, Mapping)
+            "[REDACTED]"
+            if isinstance(item, str) and _FORTIOS_ENC_VALUE_RE.match(item)
+            else sanitize_source_attributes(item, preserve_keys=preserve_keys)
+            if isinstance(item, (dict, Mapping))
             else item
             for item in value
         ]
+    if isinstance(value, Mapping):
+        return sanitize_source_attributes(value, preserve_keys=preserve_keys)
     return value
 
 
@@ -153,6 +183,7 @@ def _classify_source_key(normalized_key: str) -> int:
     if (
         normalized_key in _SENSITIVE_EXACT_KEYS
         or normalized_key.endswith(_SENSITIVE_KEY_SUFFIXES)
+        or _HISTORY_KEY_RE.fullmatch(normalized_key) is not None
     ):
         return 2
     return 0

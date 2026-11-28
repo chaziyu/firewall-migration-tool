@@ -3,11 +3,9 @@
 from __future__ import annotations
 
 from datetime import date, timedelta
+from functools import lru_cache
 from io import BytesIO
 from typing import Any
-
-from openpyxl import Workbook
-from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 
 from ..vendors.fortigate.derived import DerivedViews
 from ..vendors.fortigate.extraction.source_metadata import FortiGateSourceMetadata
@@ -23,7 +21,6 @@ from ..vendors.palo_alto.security_audit import (
     find_paloalto_exposure,
 )
 from ..vendors.palo_alto.source_model import PANOSDerivedViews
-from .excel_style import excel_safe_value, style_report_header
 from .exposure import clean_interface_name
 from .lifecycle import evaluate_fortigate_lifecycle, evaluate_paloalto_lifecycle
 
@@ -61,22 +58,32 @@ PM_LEGEND = [
     {"label": "Fail (red)", "variant": "danger"},
 ]
 
-_STATUS_FILLS = {
-    "pass": PatternFill("solid", fgColor="E8F8F0"),
-    "warn": PatternFill("solid", fgColor="FFF3CD"),
-    "fail": PatternFill("solid", fgColor="FDECEA"),
-    "info": PatternFill("solid", fgColor="EAF4FB"),
-}
-_STATUS_FONTS = {
-    "pass": Font(bold=True, color="166534"),
-    "warn": Font(bold=True, color="854D0E"),
-    "fail": Font(bold=True, color="991B1B"),
-    "info": Font(bold=True, color="075985"),
-}
-_TITLE_FILL = PatternFill("solid", fgColor="17324D")
-_TITLE_FONT = Font(color="FFFFFF", bold=True, size=14)
-_META_LABEL_FONT = Font(bold=True, color="334155")
-_CELL_BORDER = Border(bottom=Side(style="hair", color="E2E8F0"))
+
+@lru_cache(maxsize=1)
+def _excel_styles() -> dict[str, Any]:
+    from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+
+    return {
+        "status_fills": {
+            "pass": PatternFill("solid", fgColor="E8F8F0"),
+            "warn": PatternFill("solid", fgColor="FFF3CD"),
+            "fail": PatternFill("solid", fgColor="FDECEA"),
+            "info": PatternFill("solid", fgColor="EAF4FB"),
+        },
+        "status_fonts": {
+            "pass": Font(bold=True, color="166534"),
+            "warn": Font(bold=True, color="854D0E"),
+            "fail": Font(bold=True, color="991B1B"),
+            "info": Font(bold=True, color="075985"),
+        },
+        "title_fill": PatternFill("solid", fgColor="17324D"),
+        "title_font": Font(color="FFFFFF", bold=True, size=14),
+        "meta_label_font": Font(bold=True, color="334155"),
+        "cell_border": Border(bottom=Side(style="hair", color="E2E8F0")),
+        "align_center": Alignment(vertical="center"),
+        "align_center_wrap": Alignment(vertical="center", wrap_text=True),
+        "align_top_wrap": Alignment(vertical="top", wrap_text=True),
+    }
 
 
 def _is_disabled(status: Any) -> bool:
@@ -806,6 +813,11 @@ def evaluate_paloalto_pm_checklist(
 
 def export_pm_checklist_excel(result: dict[str, Any]) -> bytes:
     """Render a PM Lookup evaluation result to a formatted single-sheet Excel workbook."""
+    from openpyxl import Workbook
+
+    from .excel_style import excel_safe_value, style_report_header
+
+    styles = _excel_styles()
     wb = Workbook()
     ws = wb.active
     ws.title = "PM Lookup"
@@ -819,9 +831,9 @@ def export_pm_checklist_excel(result: dict[str, Any]) -> bytes:
 
     ws.merge_cells("A1:F1")
     title_cell = ws.cell(1, 1, excel_safe_value(f"{result['vendor_label']} Preventive Maintenance (PM) Lookup"))
-    title_cell.fill = _TITLE_FILL
-    title_cell.font = _TITLE_FONT
-    title_cell.alignment = Alignment(vertical="center")
+    title_cell.fill = styles["title_fill"]
+    title_cell.font = styles["title_font"]
+    title_cell.alignment = styles["align_center"]
     ws.row_dimensions[1].height = 28
 
     summary = result["summary"]
@@ -840,11 +852,11 @@ def export_pm_checklist_excel(result: dict[str, Any]) -> bytes:
         c3 = ws.cell(r_idx, 3, excel_safe_value(k2))
         ws.merge_cells(start_row=r_idx, start_column=4, end_row=r_idx, end_column=6)
         c4 = ws.cell(r_idx, 4, excel_safe_value(v2))
-        c1.font = _META_LABEL_FONT
-        c3.font = _META_LABEL_FONT
+        c1.font = styles["meta_label_font"]
+        c3.font = styles["meta_label_font"]
         for cell in (c1, c2, c3, c4):
-            cell.alignment = Alignment(vertical="center", wrap_text=True)
-            cell.border = _CELL_BORDER
+            cell.alignment = styles["align_center_wrap"]
+            cell.border = styles["cell_border"]
         ws.row_dimensions[r_idx].height = 20
 
     header_row = 5
@@ -865,12 +877,12 @@ def export_pm_checklist_excel(result: dict[str, Any]) -> bytes:
             row["guidance"],
         )
         status_key = row["status"].strip().lower()
-        status_fill = _STATUS_FILLS.get(status_key)
-        status_font = _STATUS_FONTS.get(status_key)
+        status_fill = styles["status_fills"].get(status_key)
+        status_font = styles["status_fonts"].get(status_key)
         for col_idx, val in enumerate(values, start=1):
             cell = ws.cell(r_idx, col_idx, excel_safe_value(val))
-            cell.alignment = Alignment(vertical="top", wrap_text=True)
-            cell.border = _CELL_BORDER
+            cell.alignment = styles["align_top_wrap"]
+            cell.border = styles["cell_border"]
             if col_idx == 4 and status_fill is not None and status_font is not None:
                 cell.fill = status_fill
                 cell.font = status_font

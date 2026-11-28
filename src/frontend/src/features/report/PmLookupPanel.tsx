@@ -238,7 +238,15 @@ export function PmLookupPanel({
         <p className="report-empty">No PM checks match the current filter.</p>
       ) : (
         <div className="report-table-wrap" role="region" aria-label="Preventive Maintenance checklist">
-          <table className="report-table fw-table fw-pm-table">
+          <table className="report-table fw-table fw-pm-table fw-pm-checklist-table">
+            <colgroup>
+              <col style={{ width: '58px' }} />
+              <col style={{ width: '132px' }} />
+              <col style={{ width: '185px' }} />
+              <col style={{ width: '84px' }} />
+              <col style={{ width: '34%' }} />
+              <col style={{ width: '34%' }} />
+            </colgroup>
             <thead>
               <tr>
                 <th scope="col">No.</th>

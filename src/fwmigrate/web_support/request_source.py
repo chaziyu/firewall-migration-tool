@@ -3,12 +3,19 @@ from dataclasses import dataclass
 import hashlib
 import json
 import os
+import re
 
 from flask import current_app, has_app_context, request
 from fwmigrate.collection import CollectionStatus
 from fwmigrate.collection.snapshot import FORMAT, MAX_BYTES, parse_snapshot, sanitize_source, make_snapshot
 from fwmigrate.source_reporting import source_reporters
 from .reporting import SourceSizeError, _decode_configuration, _timed
+
+_DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
+
+
+class SourceCacheExpiredError(ValueError):
+    """Raised when a client-referenced source_digest is not present in server RAM caches."""
 
 
 @dataclass(frozen=True)
@@ -70,6 +77,27 @@ def analyze_request_source(payload, vendor, *, target=False, metrics=None, use_c
         name = os.path.basename(uploaded.filename)
         evidence = {'vendor': vendor, 'source_text': text, 'source_name': name}
     else:
+        digest_arg = payload.get('target_source_digest' if target else 'source_digest')
+        if digest_arg is not None:
+            if not isinstance(digest_arg, str) or not _DIGEST_RE.fullmatch(digest_arg.strip()):
+                raise ValueError('Invalid source digest')
+            digest = digest_arg.strip()
+            name = payload.get('target_source_name' if target else 'source_name')
+            if name is not None and (not isinstance(name, str) or len(name) > 255):
+                raise ValueError('Source name must be a string of at most 255 characters')
+            options = {'metrics': metrics} if metrics is not None else {}
+            cache = current_app.extensions.get('analysis_cache') if has_app_context() else None
+            sealed_store = current_app.extensions.get('sealed_source_store') if has_app_context() else None
+            analysis = cache.get(vendor, digest) if (cache is not None and metrics is None) else None
+            if analysis is not None:
+                return RequestSource(vendor, digest, analysis, name, None, None)
+            sealed_text = sealed_store.get_text(vendor, digest) if sealed_store is not None else None
+            if sealed_text is None:
+                raise SourceCacheExpiredError('Cached source expired; please re-send configuration.')
+            analysis = _timed(metrics, 'source analysis', lambda: source_reporters.get(vendor).analyze_source(sealed_text, **options))
+            if cache is not None:
+                cache.put(vendor, digest, analysis)
+            return RequestSource(vendor, digest, analysis, name, None, {'vendor': vendor, 'source_text': sealed_text, 'source_name': name})
         raise ValueError('A vendor-native source file or snapshot is required')
     hasher = hashlib.sha256()
     hasher.update(text.encode('utf-8'))
@@ -77,11 +105,16 @@ def analyze_request_source(payload, vendor, *, target=False, metrics=None, use_c
     hasher.update(vendor.encode('utf-8'))
     digest = hasher.hexdigest()
     options = {'metrics': metrics} if metrics is not None else {}
-    cache = current_app.extensions.get('analysis_cache') if (use_cache and metrics is None and has_app_context()) else None
-    if cache is not None:
+    cache = current_app.extensions.get('analysis_cache') if (use_cache and has_app_context()) else None
+    sealed_store = current_app.extensions.get('sealed_source_store') if (use_cache and has_app_context()) else None
+    if sealed_store is not None:
+        sealed_store.put_text(vendor, digest, text)
+    if cache is not None and metrics is None:
         analysis = cache.get_or_load(vendor, digest, lambda: source_reporters.get(vendor).analyze_source(text, **options))
     else:
         analysis = _timed(metrics, 'source analysis', lambda: source_reporters.get(vendor).analyze_source(text, **options))
+        if cache is not None:
+            cache.put(vendor, digest, analysis)
     return RequestSource(vendor, digest, analysis, name, status, evidence)
 
 

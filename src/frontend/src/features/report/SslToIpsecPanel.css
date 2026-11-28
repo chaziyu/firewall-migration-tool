@@ -1,0 +1,113 @@
+/* Phase 4 FortiGate SSL-VPN -> Dial-up IPSec Assistant */
+.fw-ssl-ipsec-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.fw-ssl-ipsec-header-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.fw-ssl-ipsec-vdom-select {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.fw-ssl-ipsec-vdom-select select {
+  padding: 4px 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text-main);
+  font-size: 12px;
+}
+
+.fw-ssl-ipsec-alerts {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.fw-ssl-ipsec-alert {
+  padding: 9px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--text-heading);
+}
+
+.fw-ssl-ipsec-alert-warn {
+  border: 1px solid var(--fw-warn);
+  background: var(--fw-warn-soft);
+}
+
+.fw-ssl-ipsec-alert-info {
+  border: 1px solid var(--line-strong);
+  background: var(--surface-muted);
+}
+
+.fw-ssl-ipsec-callout {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-muted);
+  font-size: 12.5px;
+  color: var(--text-main);
+}
+
+.fw-ssl-ipsec-cli-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.fw-ssl-ipsec-cli {
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-muted);
+  color: var(--text-heading);
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-x: auto;
+  max-height: 460px;
+}
+
+.fw-ssl-ipsec-details {
+  background: var(--surface);
+}
+
+.fw-ssl-ipsec-details-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.fw-ssl-ipsec-details-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.fw-ssl-ipsec-subhead {
+  margin: 4px 0 0;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-heading);
+}

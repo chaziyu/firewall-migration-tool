@@ -79,7 +79,7 @@ def register_request_controls(app):
         if not request.path.startswith('/api/') or request.method == 'OPTIONS':
             return None
         origins = {request.host_url.rstrip('/')}
-        if app.config['WEB_MODE'] == 'local':
+        if app.config['WEB_MODE'] == 'local' and app.config.get('ALLOW_DEV_ORIGINS'):
             origins.update({'http://127.0.0.1:5173', 'http://localhost:5173'})
         origin = request.headers.get('Origin')
         if (origin is not None and origin not in origins) or (

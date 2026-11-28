@@ -30,7 +30,7 @@ from fwmigrate.source_reporting.lifecycle import (
 from fwmigrate.source_reporting.options import ExcelReportLimitError
 from fwmigrate.vendors.fortigate.where_used import search_fortigate_where_used
 from fwmigrate.vendors.palo_alto.where_used import search_paloalto_where_used
-from fwmigrate.web_support.request_source import analyze_request_source
+from fwmigrate.web_support.request_source import SourceCacheExpiredError, analyze_request_source
 from fwmigrate.web_support.request_controls import limit_export_response, live_device_access_allowed
 from fwmigrate.web_support.public_errors import safe_validation_message
 from fwmigrate.web_support.reporting import (
@@ -108,7 +108,11 @@ def register_source_routes(app, collector_registry=None) -> None:
 
     @app.route('/api/capabilities', methods=['GET'])
     def capabilities():
-        return jsonify({'live_device_access': live_device_access_allowed(app)})
+        return jsonify({
+            'live_device_access': live_device_access_allowed(app),
+            'tsf_enabled': True,
+            'tsf_max_zip_mb': int(app.config.get('TSF_MAX_ZIP_MB', 500)),
+        })
 
     @app.route('/api/vendors', methods=['GET'])
     def list_vendors():
@@ -153,7 +157,7 @@ def register_source_routes(app, collector_registry=None) -> None:
             started = perf_counter()
             reporter = source_reporters.get(source_vendor)
             source_vendor = reporter.vendor_id
-            entry = analyze_request_source({}, source_vendor, metrics=metrics)
+            entry = analyze_request_source({}, source_vendor, metrics=metrics, use_cache=True)
             analysis = entry.analysis
             preview_options = {'include_source_commands': False} if source_vendor == 'fortigate' else {}
             report = _timed(metrics, 'web_preview_construction', lambda: normalize_web_report(reporter.build_preview(analysis, **preview_options), source_vendor, copy=False))
@@ -174,6 +178,8 @@ def register_source_routes(app, collector_registry=None) -> None:
         except KeyError:
             return jsonify({'success': False, 'error': 'Unsupported source vendor'}), 400
         except SourceSizeError:
+            raise
+        except SourceCacheExpiredError:
             raise
         except ValueError:
             return jsonify({'success': False, 'error': 'Invalid source configuration'}), 400
@@ -311,7 +317,7 @@ def register_source_routes(app, collector_registry=None) -> None:
                 return jsonify({'error': 'source_vendor must be a string'}), 400
             reporter = source_reporters.get(source_vendor)
             source_vendor = reporter.vendor_id
-            entry = analyze_request_source(payload, source_vendor, metrics=metrics)
+            entry = analyze_request_source(payload, source_vendor, metrics=metrics, use_cache=True)
             analysis = entry.analysis
             workbook = io.BytesIO()
             export_started = perf_counter()
@@ -366,6 +372,8 @@ def register_source_routes(app, collector_registry=None) -> None:
             return jsonify({'error': 'Vendor-native Excel is not available'}), 422
         except SourceSizeError:
             raise
+        except SourceCacheExpiredError:
+            raise
         except ValueError:
             return jsonify({'success': False, 'error': 'Invalid source configuration'}), 400
         except HTTPException:
@@ -384,12 +392,14 @@ def register_source_routes(app, collector_registry=None) -> None:
             query = payload.get('query')
             if not isinstance(query, str) or not query.strip():
                 return jsonify({'success': False, 'error': 'Search query is required'}), 400
-            entry = analyze_request_source(payload, vendor)
+            entry = analyze_request_source(payload, vendor, use_cache=True)
             if vendor == 'fortigate':
                 result = search_fortigate_where_used(entry.analysis.extracted.config, query)
             else:
                 result = search_paloalto_where_used(entry.analysis.config, query)
             return jsonify({'success': True, **result})
+        except SourceCacheExpiredError:
+            raise
         except ConfigurationDecodeError:
             return jsonify({'success': False, 'error': 'Configuration file is not valid UTF-8.'}), 400
         except SourceSizeError:

@@ -265,3 +265,193 @@ export type PmChecklistResponse = {
   summary: PmChecklistSummary
   legend?: PmLegendItem[]
 }
+
+export type PolicyLookupRequest = {
+  vdom?: string
+  scope?: string
+  policy_type?: 'security' | 'nat'
+  src_iface?: string
+  dst_iface?: string
+  src_zone?: string
+  dst_zone?: string
+  src_addr: string
+  dst_addr: string
+  dst_port?: string
+  protocol?: string
+  src_user?: string
+}
+
+export type PolicyMatchRecord = Record<string, string | number | undefined>
+
+export type PolicyLookupResponse = {
+  success?: boolean
+  vendor: string
+  policy_type?: string
+  matched: boolean
+  action: string
+  reason: string
+  match: PolicyMatchRecord | null
+  shadowed: PolicyMatchRecord[]
+}
+
+export type RouteLookupRequest = {
+  dest_ip: string
+  vdom?: string
+  virtual_router?: string
+}
+
+export type RouteCandidate = {
+  vdom?: string
+  virtual_router?: string
+  type: string
+  route_name?: string
+  destination: string
+  prefix_len: number
+  gateway?: string
+  next_hop?: string
+  interface: string
+  distance?: number
+  priority?: number
+  ad?: number
+  metric?: number
+  comment?: string
+}
+
+export type RouteLookupResponse = {
+  success?: boolean
+  vendor: string
+  valid: boolean
+  dest_ip?: string
+  winner?: RouteCandidate | null
+  candidates?: RouteCandidate[]
+  active_policy_routes?: number
+  virtual_routers?: string[]
+  vdoms?: string[]
+  error?: string
+}
+
+export type PacketTraceRequest = {
+  src_ip: string
+  dst_ip: string
+  dst_port?: string
+  protocol?: string
+  vdom?: string
+  virtual_router?: string
+  scope?: string
+  check_return?: boolean
+}
+
+export type PacketTraceStep = {
+  step: string
+  stage: string
+  outcome: string
+  details: string
+  tone: 'info' | 'success' | 'warn' | 'danger' | string
+}
+
+export type PacketTraceResponse = {
+  success?: boolean
+  vendor: string
+  valid: boolean
+  verdict?: string
+  src?: string
+  dst?: string
+  ingress?: string
+  egress?: string
+  policy?: string
+  nat?: string
+  return_path?: string
+  steps?: PacketTraceStep[]
+  warnings?: string[]
+  error?: string
+}
+
+export type ConfigDiffRow = {
+  change: 'Added' | 'Modified' | 'Removed' | string
+  item: string
+  details: string
+  change_type: 'added' | 'modified' | 'removed' | string
+}
+
+export type ConfigDiffDomain = {
+  name: string
+  count: number
+  rows: ConfigDiffRow[]
+}
+
+export type ConfigDiffResponse = {
+  success?: boolean
+  vendor: string
+  before_name: string
+  after_name: string
+  has_diff: boolean
+  summary: {
+    added: number
+    modified: number
+    removed: number
+    total: number
+  }
+  domains: ConfigDiffDomain[]
+}
+
+export type SslToIpsecPolicyRow = {
+  id: string
+  name: string
+  status: string
+  srcintf: string
+  dstintf: string
+  srcaddr: string
+  dstaddr: string
+  service: string
+  action: string
+  nat: string
+  schedule: string
+  groups: string
+  users: string
+  profiles: string
+}
+
+export type SslToIpsecGuiRow = {
+  parameter: string
+  recommended_value: string
+  notes: string
+}
+
+export type SslToIpsecClientRow = {
+  setting: string
+  value: string
+}
+
+export type SslToIpsecCutoverRow = {
+  step: string
+  phase: string
+  action: string
+}
+
+export type SslToIpsecResponse = {
+  success?: boolean
+  has_ssl_vpn: boolean
+  vdom: string | null
+  vdoms: string[]
+  model: string
+  firmware: string
+  servercert?: string
+  is_factory_cert?: boolean
+  require_client_cert?: boolean
+  auth_mode?: 'saml' | 'cert' | 'eap' | string
+  auth_label?: string
+  wan_intf?: string
+  listen_interfaces?: string[]
+  primary_pool?: string
+  ip_pools?: string[]
+  portals_count?: number
+  ssl_policies_count?: number
+  referenced_groups?: string[]
+  warnings?: string[]
+  infos?: string[]
+  ssl_policies?: SslToIpsecPolicyRow[]
+  gui_rows?: SslToIpsecGuiRow[]
+  cli_draft?: string
+  forticlient_rows?: SslToIpsecClientRow[]
+  cutover_rows?: SslToIpsecCutoverRow[]
+}

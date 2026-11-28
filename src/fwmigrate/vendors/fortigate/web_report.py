@@ -763,11 +763,10 @@ def build_web_report(
         for owner in owners for bookmark in owner.bookmarks
     ]
     nac_policies = [
-        {"name": item.name, "vdom": item.vdom, "category": item.category,
-         "description": item.description, "mac": item.mac, "host": item.host,
-         "os": item.os, "family": item.family, "firewall_address": item.firewall_address,
-         "user_group": item.user_group, "status": item.status,
-         "review": _review(_messages(issue_index, vdom=item.vdom, names=(item.name,), domains=("nac_policy",)))}
+        {
+            **_source_details(item),
+            "review": _review(_messages(issue_index, vdom=item.vdom, names=(item.name,), domains=("nac_policy",))),
+        }
         for item in config.nac_policies
     ]
 
@@ -985,6 +984,7 @@ def build_web_report(
                 vpn_phase2_rows,
                 policy_vpn_phase1_rows,
                 policy_vpn_phase2_rows,
+                nac_policies,
                 validation_rows,
                 unresolved,
                 *source_sections.values(),

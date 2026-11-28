@@ -29,7 +29,7 @@ from ..model.selected_sections import (
     FGSSLSSHProfile, FGSSLSSHProtocolConfig,
     FGLDAPServer, FGRADIUSServer, FGTACACSServer, FGFSSOServer, FGFSSOPolling,
     FGFortiToken, FGUserSetting, FGPasswordPolicy, FGSystemPasswordPolicy,
-    FGWirelessVAP, FGWirelessWTP, FGWirelessWTPProfile, FGWirelessWIDSProfile,
+    FGWirelessVAP, FGWirelessWTP, FGWirelessWTPProfile, FGWirelessWTPProfilePlatform, FGWirelessWIDSProfile,
     FGManagedSwitch, FGManagedSwitchPort,
     FGSyslogSetting, FGLogMemorySetting, FGLogDiskSetting, FGLogSetting,
     FGLogThreatWeight, FGThreatWeightLevel, FGThreatWeightIPS,
@@ -63,6 +63,7 @@ class Config(Protocol):
 
 def extract_selected_sections(tree: SectionIndex, config: Config) -> None:
     _simple_edits(tree, config, "user nac-policy", "nac_policies", FGNACPolicy)
+    _extract_nac_settings(tree, config)
     _extract_address6_templates(tree, config)
     _extract_config_settings(tree, config, "ips settings", "ips_settings", FGIPSSettings)
     _extract_kmip(tree, config)
@@ -828,6 +829,23 @@ def _extract_wireless_wtps(tree, config):
         config.wireless_wtps.append(FGWirelessWTP(**values))
 
 
+def _extract_nac_settings(tree, config):
+    path = "switch-controller nac-settings"
+    for source in iter_section_configs(tree, path):
+        if source.config.edits:
+            for edit in source.config.edits:
+                evaluation = evaluate_edit(path, edit)
+                values = source_model_kwargs(evaluation, model_type=FGNACPolicy, name=edit.name, vdom=source.vdom)
+                values["source_path"] = path
+                config.nac_policies.append(FGNACPolicy(**values))
+        elif source.config.commands:
+            evaluation = evaluate_config(path, source.config)
+            values = source_model_kwargs(evaluation, model_type=FGNACPolicy, vdom=source.vdom)
+            values["name"] = values.get("name") or "nac-settings"
+            values["source_path"] = path
+            config.nac_policies.append(FGNACPolicy(**values))
+
+
 def _extract_wtp_profiles(tree, config):
     path = "wireless-controller wtp-profile"
     for source in iter_section_edits(tree, path):
@@ -835,6 +853,13 @@ def _extract_wtp_profiles(tree, config):
         values = source_model_kwargs(evaluation, model_type=FGWirelessWTPProfile, name=source.edit.name, vdom=source.vdom)
         values["login_passwd_configured"] = _secret_present(source.edit, "login-passwd")
         values["raw_extra"].pop("login-passwd", None)
+        platform_cfg = get_child_config(source.edit, "platform")
+        if platform_cfg is not None:
+            platform_eval = evaluate_config(f"{path} platform", platform_cfg)
+            platform_values = source_model_kwargs(platform_eval, model_type=FGWirelessWTPProfilePlatform)
+            values["platform_config"] = FGWirelessWTPProfilePlatform(**platform_values)
+            if values.get("platform") is None and platform_values.get("type") is not None:
+                values["platform"] = platform_values["type"]
         config.wtp_profiles.append(FGWirelessWTPProfile(**values))
 
 

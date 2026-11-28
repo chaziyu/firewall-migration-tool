@@ -1,5 +1,6 @@
 export class RequestError extends Error {
   readonly details: Record<string, unknown>
+  readonly status: number
 
   constructor(data: unknown, status: number) {
     const details = isRecord(data) ? data : {}
@@ -10,11 +11,45 @@ export class RequestError extends Error {
     super([...new Set(messages)].join('\n') || `Request failed (${status})`)
     this.name = 'RequestError'
     this.details = details
+    this.status = status
   }
 }
 
-export function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
-  return fetch(path, init)
+const MAX_429_RETRIES = 2
+const MAX_RETRY_DELAY_MS = 3000
+
+function sleepWithSignal(ms: number, signal?: AbortSignal | null): Promise<void> {
+  if (ms <= 0) return Promise.resolve()
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(signal.reason ?? new DOMException('Aborted', 'AbortError'))
+      return
+    }
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort)
+      resolve()
+    }, ms)
+    function onAbort() {
+      clearTimeout(timer)
+      reject(signal?.reason ?? new DOMException('Aborted', 'AbortError'))
+    }
+    signal?.addEventListener('abort', onAbort, { once: true })
+  })
+}
+
+export async function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
+  for (let attempt = 0; ; attempt++) {
+    const response = await fetch(path, init)
+    if (response.status !== 429 || attempt >= MAX_429_RETRIES) {
+      return response
+    }
+    const retryAfterSec = Number(response.headers?.get?.('Retry-After'))
+    const delayMs = Number.isFinite(retryAfterSec) && retryAfterSec > 0
+      ? Math.min(MAX_RETRY_DELAY_MS, retryAfterSec * 1000)
+      : Math.min(MAX_RETRY_DELAY_MS, 500 * (attempt + 1))
+    await response.body?.cancel?.().catch(() => {})
+    await sleepWithSignal(delayMs, init.signal)
+  }
 }
 
 async function readJsonResponse(response: Response): Promise<unknown> {

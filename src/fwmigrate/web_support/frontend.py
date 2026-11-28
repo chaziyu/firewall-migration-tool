@@ -10,6 +10,14 @@ import os
 
 from flask import jsonify, send_from_directory
 
+_IMMUTABLE_MAX_AGE = 31536000
+
+
+def _send_immutable(directory: str, filename: str):
+    response = send_from_directory(directory, filename, max_age=_IMMUTABLE_MAX_AGE)
+    response.headers["Cache-Control"] = f"public, max-age={_IMMUTABLE_MAX_AGE}, immutable"
+    return response
+
 
 def register_frontend_routes(app) -> None:
     @app.route("/")
@@ -21,11 +29,11 @@ def register_frontend_routes(app) -> None:
 
     @app.route("/assets/<path:filename>")
     def frontend_asset(filename):
-        return send_from_directory(os.path.join(app.config["FRONTEND_DIST_DIR"], "assets"), filename)
+        return _send_immutable(os.path.join(app.config["FRONTEND_DIST_DIR"], "assets"), filename)
 
     @app.route("/fonts/<path:filename>")
     def frontend_font(filename):
-        return send_from_directory(os.path.join(app.config["FRONTEND_DIST_DIR"], "fonts"), filename)
+        return _send_immutable(os.path.join(app.config["FRONTEND_DIST_DIR"], "fonts"), filename)
 
     @app.route("/favicon.svg")
     def frontend_favicon():

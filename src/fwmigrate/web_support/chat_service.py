@@ -176,7 +176,7 @@ def build_config_summary(
     sections = (preview or {}).get("sections") or {}
     if isinstance(sections, dict):
         priority_order = (
-            "interfaces", "interface_topology", "zones", "routes", "virtual_routers", "logical_routers",
+            "interfaces", "interface_topology", "sdwan", "zones", "routes", "virtual_routers", "logical_routers",
             "router_bgp", "router_ospf", "policy_routes", "policies", "security_rules", "default_security_rules",
             "proxy_policies", "auth_policies", "qos_rules", "pbf_rules", "decryption_rules",
             "nat", "nat_rules", "central_snat", "vips", "ip_pools",
@@ -185,6 +185,8 @@ def build_config_summary(
             "profile_groups", "security_profile_groups", "ips_sensors", "vulnerability_profiles",
             "antivirus_profiles", "anti_spyware_profiles", "webfilter_profiles", "url_filtering_profiles", "ssl_ssh_profiles",
             "administrators", "local_users", "user_groups", "ldap_servers", "radius_servers",
+            "wireless_wtps", "wireless_vaps", "wtp_profiles", "wids_profiles",
+            "managed_switches", "switch_port_policies", "nac_policies",
             "system_global", "system_settings", "ha_config", "ha_configs", "validation", "unresolved_references",
         )
         seen: set[str] = set()
@@ -294,7 +296,7 @@ def _call_gemini_rest(
     timeout: float = 45.0,
 ) -> str:
     encoded_model = urllib.parse.quote(model, safe="")
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{encoded_model}:generateContent?key={urllib.parse.quote(api_key, safe='')}"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{encoded_model}:generateContent"
     payload = {
         "system_instruction": {"parts": [{"text": system_prompt}]},
         "contents": contents,
@@ -306,7 +308,10 @@ def _call_gemini_rest(
     req = urllib.request.Request(
         url,
         data=json.dumps(payload).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
+        headers={
+            "Content-Type": "application/json",
+            "x-goog-api-key": api_key,
+        },
         method="POST",
     )
     with urllib.request.urlopen(req, timeout=timeout) as resp:

@@ -7,7 +7,10 @@ import type { WorkspaceTopbarActions } from '../../components/layout/PageHeader'
 import { FileUpload } from './FileUpload'
 import { SourceReport } from '../report/SourceReport'
 import { QuickSearchModal } from '../report/QuickSearchModal'
-import { downloadSecurityAuditReport, downloadSourceWorkbook, previewSource } from './sourceApi'
+import { TsfExplorer } from '../tsf/TsfExplorer'
+import { deleteTsfSession, fetchTsfProgress, uploadTsfArchive } from '../tsf/tsfApi'
+import type { TsfSessionInfo } from '../tsf/types'
+import { downloadSourceWorkbook, previewSource, rememberSourceDigest } from './sourceApi'
 import { detectUploadKind } from './autoDetect'
 import type { SourcePreviewData, SourceVendor } from './types'
 import { saveBlobWithFallback } from '../../utils/desktop'
@@ -19,16 +22,20 @@ const MAX_CONFIG_UPLOAD_BYTES = 50 * 1024 * 1024
 
 export function SourceConfiguration({
   liveDeviceAccess = false,
+  tsfMaxZipMb = 500,
   onWorkspaceActionsChange,
 }: {
   view?: WorkflowView
   liveDeviceAccess?: boolean
+  tsfMaxZipMb?: number
   onViewChange?: (view: WorkflowView) => void
   onWorkspaceActionsChange?: (actions: WorkspaceTopbarActions | null) => void
 }) {
   const [vendor, setVendor] = useState<SourceVendor>('')
   const [file, setFile] = useState<File | null>(null)
   const [preview, setPreview] = useState<SourcePreviewData | null>(null)
+  const [tsfSession, setTsfSession] = useState<TsfSessionInfo | null>(null)
+  const [tsfProgress, setTsfProgress] = useState<{ progress: number; message: string } | null>(null)
   const previewId = useMemo(
     () => preview?.source_digest || (preview?.source_evidence ? JSON.stringify(preview.source_evidence) : ''),
     [preview],
@@ -36,7 +43,6 @@ export function SourceConfiguration({
   const [workspaceReady, setWorkspaceReady] = useState(false)
   const [loading, setLoading] = useState(false)
   const [exporting, setExporting] = useState(false)
-  const [auditExporting, setAuditExporting] = useState(false)
   const [exportStatus, setExportStatus] = useState('')
   const [exportError, setExportError] = useState<string | null>(null)
   const [excelProfiles, setExcelProfiles] = useState<Record<string, 'fast' | 'full'>>({})
@@ -50,11 +56,19 @@ export function SourceConfiguration({
   const analysisRequest = useRef(0)
   const exportRequest = useRef(0)
   const exportController = useRef<AbortController | null>(null)
+  const tsfSessionIdRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    tsfSessionIdRef.current = tsfSession?.sessionId ?? null
+  }, [tsfSession])
 
   useEffect(() => () => {
     analysisRequest.current++
     exportRequest.current++
     exportController.current?.abort()
+    if (tsfSessionIdRef.current) {
+      void deleteTsfSession(tsfSessionIdRef.current).catch(() => { })
+    }
   }, [])
 
   useEffect(() => {
@@ -63,6 +77,9 @@ export function SourceConfiguration({
       .then((saved) => {
         if (!active) return
         if (saved.preview && (saved.preview.vendor === 'fortigate' || saved.preview.vendor === 'palo_alto')) {
+          if (typeof rememberSourceDigest === 'function') {
+            rememberSourceDigest(saved.preview.source_evidence, saved.preview.source_digest)
+          }
           setPreview(saved.preview)
           setVendor(saved.preview.vendor)
         }
@@ -84,17 +101,28 @@ export function SourceConfiguration({
 
   useEffect(() => {
     if (typeof window === 'undefined' || typeof window.dispatchEvent !== 'function') return
+    if (tsfSession) {
+      window.dispatchEvent(new CustomEvent('fw-workspace-meta', {
+        detail: {
+          vendorLabel: 'Palo Alto TSF',
+          filename: tsfSession.filename,
+          activeSection: 'TSF Explorer',
+          reportSections: [{ label: 'TSF Explorer', count: tsfSession.totalFiles }],
+        },
+      }))
+      return
+    }
     if (!preview) {
       window.dispatchEvent(new CustomEvent('fw-workspace-meta', { detail: null }))
     }
-  }, [preview])
+  }, [preview, tsfSession])
 
-  const canSearchAndAudit = Boolean(
+  const canSearch = Boolean(
     preview?.source_evidence && (vendor === 'fortigate' || vendor === 'palo_alto'),
   )
 
   useEffect(() => {
-    if (!canSearchAndAudit || typeof document === 'undefined') return
+    if (!canSearch || typeof document === 'undefined') return
     const onKeyDown = (event: KeyboardEvent) => {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
         event.preventDefault()
@@ -103,20 +131,14 @@ export function SourceConfiguration({
     }
     document.addEventListener('keydown', onKeyDown)
     return () => document.removeEventListener('keydown', onKeyDown)
-  }, [canSearchAndAudit])
+  }, [canSearch])
 
   async function analyse(sourceFile = file) {
     if (!sourceFile) return
     const detected = detectUploadKind(sourceFile.name)
-    if (detected === 'tsf') {
-      setError(
-        'Palo Alto TSF (.zip) Explorer is scheduled for Phase 5. Upload a FortiGate (.conf, .cfg, .txt) or Palo Alto PAN-OS (.xml) configuration.',
-      )
-      return
-    }
     if (detected === 'unknown') {
       setError(
-        'Unsupported file type. Upload a FortiGate (.conf, .cfg, .txt) or Palo Alto PAN-OS (.xml) configuration.',
+        'Unsupported file type. Upload a FortiGate (.conf, .cfg, .txt), Palo Alto PAN-OS (.xml), or Palo Alto TSF (.zip) archive.',
       )
       return
     }
@@ -124,6 +146,44 @@ export function SourceConfiguration({
     const request = ++analysisRequest.current
     setLoading(true)
     setError(null)
+    if (detected === 'tsf') {
+      setTsfProgress({ progress: 0.02, message: 'Uploading TSF archive…' })
+      try {
+        const uploadRes = await uploadTsfArchive(sourceFile)
+        if (request !== analysisRequest.current) return
+        while (request === analysisRequest.current) {
+          const prog = await fetchTsfProgress(uploadRes.job_id)
+          if (request !== analysisRequest.current) return
+          if (prog.status === 'done') {
+            setTsfProgress(null)
+            setTsfSession({
+              sessionId: prog.session_id,
+              filename: prog.filename || sourceFile.name,
+              totalFiles: prog.total_files,
+              skippedCount: prog.skipped_count,
+            })
+            break
+          }
+          if (prog.status === 'error') {
+            throw new Error(prog.error || 'TSF extraction failed.')
+          }
+          setTsfProgress({
+            progress: prog.progress,
+            message: prog.message || 'Extracting TSF archive…',
+          })
+          await new Promise((resolve) => setTimeout(resolve, 400))
+        }
+      } catch (cause) {
+        if (request !== analysisRequest.current) return
+        setTsfProgress(null)
+        setError(cause instanceof Error ? cause.message : 'TSF upload failed')
+      } finally {
+        if (request === analysisRequest.current) setLoading(false)
+      }
+      return
+    }
+
+    setTsfProgress(null)
     try {
       const result = await previewSource(sourceFile, 'auto')
       if (request !== analysisRequest.current) return
@@ -144,10 +204,16 @@ export function SourceConfiguration({
     setExportStatus('')
     setExportError(null)
     setExporting(false)
-    setAuditExporting(false)
     setSearchOpen(false)
     exportRequest.current++
     analysisRequest.current++
+    if (tsfSessionIdRef.current) {
+      const sid = tsfSessionIdRef.current
+      tsfSessionIdRef.current = null
+      void deleteTsfSession(sid).catch(() => { })
+    }
+    setTsfSession(null)
+    setTsfProgress(null)
     void saveWorkspace({ deterministicDraft: null, artifact: null }).catch((cause) => setError(String(cause)))
     setLoading(false)
     setPreview(null)
@@ -196,26 +262,6 @@ export function SourceConfiguration({
     }
   }, [previewId, preview, vendor, excelProfile, file])
 
-  const exportAuditReport = useCallback(async () => {
-    if (!preview?.source_evidence || !canSearchAndAudit) return
-    setAuditExporting(true)
-    setExportError(null)
-    setExportStatus('')
-    try {
-      const blob = await downloadSecurityAuditReport(vendor, preview.source_evidence)
-      const rawName = String(preview.source_evidence.source_name || file?.name || vendor || 'firewall')
-      const stem = rawName.replace(/^.*[\\/]/, '').replace(/\.[^.]+$/, '').replace(/[^A-Za-z0-9._-]+/g, '_')
-      const result = await saveBlobWithFallback(blob, `${stem || vendor}_security_audit_report.html`)
-      if (result.status === 'cancelled') setExportStatus('Audit report export cancelled.')
-      else if (result.status === 'saved') setExportStatus(`Audit report saved to Downloads: ${result.path || result.filename}.`)
-      else setExportStatus(`Audit report ready (${result.filename}) — open in browser to view or Print to PDF.`)
-    } catch (cause) {
-      setExportError(cause instanceof Error ? cause.message : 'Audit report export failed')
-    } finally {
-      setAuditExporting(false)
-    }
-  }, [preview, canSearchAndAudit, vendor, file])
-
   useEffect(() => {
     if (!onWorkspaceActionsChange) return
     if (!preview) {
@@ -223,24 +269,19 @@ export function SourceConfiguration({
       return
     }
     onWorkspaceActionsChange({
-      canSearch: canSearchAndAudit,
-      canAudit: canSearchAndAudit,
+      canSearch,
       excelProfile,
       exporting,
-      auditExporting,
       onOpenSearch: () => setSearchOpen(true),
-      onExportAuditReport: () => void exportAuditReport(),
       onExcelProfileChange: setExcelProfile,
       onExportExcel: () => void exportWorkbook(),
     })
   }, [
     onWorkspaceActionsChange,
     preview,
-    canSearchAndAudit,
+    canSearch,
     excelProfile,
     exporting,
-    auditExporting,
-    exportAuditReport,
     setExcelProfile,
     exportWorkbook,
   ])
@@ -255,7 +296,7 @@ export function SourceConfiguration({
 
   return (
     <main className="feature-content">
-      {!preview && (
+      {!preview && !tsfSession && (
         <section id="source-configuration" className="panel source-configuration fw-landing-panel" aria-label="Source configuration">
           <div className="fw-landing-header">
             <div className="fw-landing-eyebrow">Firewall Analysis Console</div>
@@ -302,25 +343,46 @@ export function SourceConfiguration({
                   <h3>Palo Alto TSF</h3>
                   <p>Technical Support File log archives</p>
                 </div>
-                <span className="fw-badge fw-badge-muted">Phase 5</span>
+                <span className="fw-badge fw-badge-info">TSF</span>
               </div>
               <div className="vendor-card-meta">
-                <span className="fw-badge fw-badge-muted">Tree &amp; Full-Text Search</span>
+                <span className="fw-badge fw-badge-info">Tree &amp; Full-Text Search</span>
                 <span className="fw-badge fw-badge-muted">.zip</span>
+                <span className="fw-badge fw-badge-muted">Max {tsfMaxZipMb} MB</span>
               </div>
             </div>
           </div>
 
           <FileUpload
             maxBytes={MAX_CONFIG_UPLOAD_BYTES}
+            maxBytesForFile={(selected) =>
+              detectUploadKind(selected.name) === 'tsf'
+                ? tsfMaxZipMb * 1024 * 1024
+                : MAX_CONFIG_UPLOAD_BYTES
+            }
             file={file}
             onChange={updateFile}
             accept=".xml,.conf,.cfg,.txt,.zip"
             title="Drop configuration file (.xml, .conf, .cfg, .txt) or TSF archive (.zip)"
-            helpText="Automatic vendor detection for FortiGate and Palo Alto PAN-OS · Config files up to 50 MB"
+            helpText={`Automatic vendor detection · Configs up to 50 MB · TSF .zip up to ${tsfMaxZipMb} MB`}
           >
             {loading ? (
-              <LoadingState label="Detecting vendor and preparing configuration inventory…" />
+              tsfProgress ? (
+                <div className="tsf-upload-progress" role="status" aria-live="polite">
+                  <div className="tsf-progress-track">
+                    <div
+                      className="tsf-progress-fill"
+                      style={{ width: `${Math.round(Math.max(0.03, Math.min(1, tsfProgress.progress)) * 100)}%` }}
+                    />
+                  </div>
+                  <div className="tsf-progress-meta">
+                    <span>{tsfProgress.message}</span>
+                    <span>{Math.round(tsfProgress.progress * 100)}%</span>
+                  </div>
+                </div>
+              ) : (
+                <LoadingState label="Detecting vendor and preparing configuration inventory…" />
+              )
             ) : error ? (
               <>
                 <ErrorBanner message={error} />
@@ -333,6 +395,12 @@ export function SourceConfiguration({
             Files are processed in ephemeral session memory and cleared automatically when the workspace resets or expires.
           </p>
         </section>
+      )}
+
+      {tsfSession && (
+        <div className="workflow-panel">
+          <TsfExplorer key={tsfSession.sessionId} session={tsfSession} />
+        </div>
       )}
 
       {preview && (
@@ -353,7 +421,7 @@ export function SourceConfiguration({
 
       {error && preview && <ErrorBanner message={error} />}
 
-      {preview && canSearchAndAudit && preview.source_evidence && (
+      {preview && canSearch && preview.source_evidence && (
         <QuickSearchModal
           open={searchOpen}
           onClose={() => setSearchOpen(false)}

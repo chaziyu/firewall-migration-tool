@@ -278,6 +278,10 @@ export function ConfigChatWidget({ vendor, filename, preview }: {
             <div className="fw-chat-mismatch">{vendorMismatch}</div>
           )}
 
+          <div className="fw-chat-privacy-notice" role="note">
+            Queries send a sanitized configuration summary (up to 250k chars) to Google Gemini.
+          </div>
+
           <div className="fw-chat-messages">
             {messages.length === 0 && !sending ? (
               <div className="fw-chat-empty">
