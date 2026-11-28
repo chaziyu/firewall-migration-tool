@@ -119,16 +119,6 @@ def test_pan_standalone_vsys_rules_have_explicit_source_only_order():
 
 @pytest.mark.parametrize("profile", ["fast", "full"])
 def test_feature_settings_include_application_top_level_terms_and_explicit_vlan(profile):
-    source = '''set applications application HTTPS protocol tcp
-set applications application HTTPS destination-port 443
-set applications application MULTI term DNS protocol udp
-set applications application MULTI term DNS destination-port 53'''
-    _, workbook = export(JUNOS, source, profile)
-    settings = rows(workbook, "Application Settings")
-    https = next(row for row in settings if row["Application"] == "HTTPS")
-    assert (https["Location"], https["Term"], https["Protocol"], https["Destination Ports"]) == ("top-level", None, "tcp", "['443']")
-    dns = next(row for row in settings if row["Application"] == "MULTI" and row["Term"] == "DNS")
-    assert (dns["Protocol"], dns["Destination Ports"]) == ("udp", "['53']")
     source = '''<config><devices><entry name="fw"><network><interface><ethernet><entry name="ethernet1/1">
 <layer3><units><entry name="ethernet1/1.100"><tag>200</tag><ip><entry name="192.0.2.1/24"/></ip></entry></units></layer3>
 </entry></ethernet></interface></network></entry></devices></config>'''

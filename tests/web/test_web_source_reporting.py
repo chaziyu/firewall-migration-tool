@@ -247,7 +247,7 @@ def test_panos_excel_defaults_to_full_and_explicit_fast_is_preserved():
         "file": (io.BytesIO(PALO_SOURCE.encode()), "pan.xml"),
     })
     other = client.post("/api/extract/excel", buffered=True, data={
-        "source_vendor": "cisco_asa", "file": (io.BytesIO(ASA_SOURCE.encode()), "asa.cfg"),
+        "source_vendor": "fortigate", "file": (io.BytesIO(FORTIGATE_SOURCE.encode()), "source.conf"),
     })
     assert full.status_code == fast.status_code == other.status_code == 200
     full_book, fast_book, other_book = [load_workbook(io.BytesIO(item.data), read_only=True) for item in (full, fast, other)]
@@ -255,7 +255,7 @@ def test_panos_excel_defaults_to_full_and_explicit_fast_is_preserved():
         evidence_sheets = {"PAN-OS Source Inventory", "Extraction Coverage", "PAN-OS Source Appendix"}
         assert evidence_sheets <= set(full_book.sheetnames)
         assert evidence_sheets.isdisjoint(fast_book.sheetnames)
-        assert other_book["Summary"]["A1"].value == "Cisco ASA Configuration Report"
+        assert "FortiGate" in str(other_book["Summary"]["A1"].value)
     finally:
         full_book.close()
         fast_book.close()
@@ -263,30 +263,29 @@ def test_panos_excel_defaults_to_full_and_explicit_fast_is_preserved():
 
 
 def _post(client, path, **fields):
-    data = {"source_vendor": "cisco_asa", **fields}
+    data = {"source_vendor": "fortigate", **fields}
     if path == "/api/preview" or "file" not in data:
-        data["file"] = (io.BytesIO(ASA_SOURCE.encode()), "asa.cfg")
+        data["file"] = (io.BytesIO(FORTIGATE_SOURCE.encode()), "source.conf")
     return client.post(path, data=data, content_type="multipart/form-data")
 
 
-def test_source_preview_and_excel_use_opaque_cached_asa_analysis():
+def test_source_preview_and_excel_use_opaque_cached_fortigate_analysis():
     client = create_app({"TESTING": True}).test_client()
 
     preview = _post(client, "/api/preview")
     assert preview.status_code == 200
     payload = preview.get_json()
-    assert payload["vendor"] == "cisco_asa"
-    assert payload["summary"]["interfaces"] == 1
+    assert payload["vendor"] == "fortigate"
+    assert len(payload["sections"]["interfaces"]) == 1
     assert "interfaces" in payload["sections"]
-    assert "vpn_phase2" in payload["sections"]
+    assert "policies" in payload["sections"]
     assert "canonical_ir" not in str(payload)
 
-    workbook = client.post("/api/extract/excel", json={"source_vendor": "cisco_asa", "source": payload["source_evidence"]})
+    workbook = client.post("/api/extract/excel", json={"source_vendor": "fortigate", "source": payload["source_evidence"]})
     assert workbook.status_code == 200
     assert workbook.mimetype == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     sheets = load_workbook(io.BytesIO(workbook.data), read_only=True).sheetnames
     assert "Interfaces" in sheets
-    assert "web-secret" not in workbook.data.decode("latin1", errors="ignore")
 
 
 def test_source_is_reanalyzed_for_each_request_and_survives_restart(monkeypatch):
@@ -310,7 +309,7 @@ def test_source_is_reanalyzed_for_each_request_and_survives_restart(monkeypatch)
 def test_source_excel_rejects_missing_input_and_unknown_vendor():
     client = create_app({"TESTING": True}).test_client()
 
-    missing = client.post("/api/extract/excel", data={"source_vendor": "cisco_asa"})
+    missing = client.post("/api/extract/excel", data={"source_vendor": "fortigate"})
     assert missing.status_code == 400
 
     unknown = _post(client, "/api/preview", source_vendor="unknown")

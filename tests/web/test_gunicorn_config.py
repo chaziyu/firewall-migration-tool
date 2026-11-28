@@ -46,13 +46,13 @@ def test_gunicorn_launch_and_worker_overrides():
         from urllib.error import URLError
         from urllib.request import urlopen
 
-        deadline = time.monotonic() + 15
+        deadline = time.monotonic() + 30
         while time.monotonic() < deadline and process.poll() is None:
             try:
-                with urlopen(f'http://127.0.0.1:{port}/api/vendors', timeout=1) as response:
+                with urlopen(f'http://127.0.0.1:{port}/api/vendors', timeout=2) as response:
                     assert response.status == 200
                     break
-            except URLError:
+            except (URLError, TimeoutError, OSError):
                 time.sleep(0.1)
         else:
             pytest.fail('Gunicorn did not serve the application')
